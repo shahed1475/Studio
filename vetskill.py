@@ -8,6 +8,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
 
 TEXT_SUFFIXES = {".py", ".sh", ".js", ".ts", ".md", ".json", ".yml", ".yaml", ".toml", ".txt", ".html", ".cfg", ""}
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv"}
@@ -27,19 +28,53 @@ PATTERNS = [
     ("medium", "reads environment secrets", re.compile(r"(os\.environ|os\.getenv|getenv)\(?[^)\n]*(KEY|TOKEN|SECRET|PASSWORD)", re.I)),
     ("low", "uploads data (POST)", re.compile(r"(requests\.post|urlopen\(|Request\([^)]*data=|method=['\"]POST)")),
 ]
-URL = re.compile(r"https?://([A-Za-z0-9.-]+)")
+URL = re.compile(r"https?://[^\s\"'<>)\]]+")
+BUILT_URL = re.compile(r"""['"]https?://['"]\s*\+|f['"]https?://\{|https?://['"]\s*%|['"]\s*\+\s*['"]https?:""")
 
 
-def _files(root: Path):
+MEDIA_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico", ".woff", ".woff2", ".ttf", ".otf", ".mp3", ".mp4", ".wav", ".pdf"}
+EXEC_SUFFIXES = {".pyc", ".pyo", ".so", ".dll", ".dylib", ".exe", ".bin", ".jar", ".class", ".wasm", ".node"}
+MAX_BYTES = 2_000_000
+
+
+def _classify(root: Path):
+    """(files to read, findings about everything that is NOT read). Nothing is skipped silently."""
+    read, gaps, media = [], [], 0
     for p in sorted(root.rglob("*")):
-        if p.is_file() and not (set(p.relative_to(root).parts) & SKIP_DIRS) and p.suffix.lower() in TEXT_SUFFIXES and p.stat().st_size < 600_000:
-            yield p
+        if not p.is_file():
+            continue
+        parts = set(p.relative_to(root).parts)
+        rel = str(p.relative_to(root))
+        if ".git" in parts:
+            continue  # version-control data, not code that runs
+        suffix = p.suffix.lower()
+        try:
+            head = p.read_bytes()[:4]
+        except OSError:
+            gaps.append(("medium", "file could not be read, so it was not scanned", rel))
+            continue
+        if parts & {"__pycache__", ".venv", "node_modules"} or suffix in EXEC_SUFFIXES or head[:4] == b"\x7fELF" or head[:2] == b"MZ":
+            gaps.append(("high", "compiled, bundled or executable file: cannot be read as text", rel))
+        elif suffix in MEDIA_SUFFIXES:
+            media += 1
+        elif suffix in TEXT_SUFFIXES and p.stat().st_size <= MAX_BYTES:
+            read.append(p)
+        elif suffix in TEXT_SUFFIXES:
+            gaps.append(("medium", f"file is larger than {MAX_BYTES // 1_000_000} MB and was not scanned", rel))
+        else:
+            gaps.append(("medium", f"unknown file type '{suffix}' was not scanned", rel))
+    if media:
+        gaps.append(("low", f"{media} image, font, audio or PDF files were not scanned", "(media)"))
+    return read, gaps
 
 
 def scan(root: Path) -> dict:
     findings, hosts = [], {}
     startup = []
-    for p in _files(root):
+    read, gaps = _classify(root)
+    for sev, what, rel in gaps:
+        findings.append({"severity": sev, "what": what, "file": rel, "line": 1, "excerpt": ""})
+    for p in read:
         rel = str(p.relative_to(root))
         try:
             text = p.read_text(errors="ignore")
@@ -50,17 +85,22 @@ def scan(root: Path) -> dict:
                 continue  # documentation may mention commands; only instructions aimed at the model matter there
             m = None
             for cand in rx.finditer(text):
-                if label.startswith("model-directed") and re.search(r"\b(never|do not|don't|must not|cannot|can't|not|no)\b[^.\n]{0,40}$", text[max(0, cand.start() - 60):cand.start()], re.I):
+                if label.startswith("model-directed") and re.search(r"\b(never|do not|don't|must not|cannot|can't)\s+(?:\w+\s+){0,2}$", text[max(0, cand.start() - 40):cand.start()], re.I):
                     continue  # a rule telling the model NOT to do this is a safeguard, not an attack
                 m = cand
                 break
             if m:
                 line = text.count("\n", 0, m.start()) + 1
                 findings.append({"severity": sev, "what": label, "file": rel, "line": line, "excerpt": text[max(0, m.start() - 20):m.end() + 40].replace("\n", " ")[:110]})
-        for h in URL.findall(text):
-            h = h.lower().rstrip(".")
-            if not any(h == s or h.endswith("." + s) for s in SAFE_HOSTS):
+        for u in URL.findall(text):
+            parts = urlsplit(u.rstrip(".,;:"))
+            if "@" in parts.netloc:
+                findings.append({"severity": "high", "what": "link with user@host: the real host is not the one that is shown", "file": rel, "line": text.count("\n", 0, text.find(u)) + 1, "excerpt": u[:110]})
+            h = (parts.hostname or "").lower().rstrip(".")
+            if h and not any(h == s or h.endswith("." + s) for s in SAFE_HOSTS):
                 hosts.setdefault(h, set()).add(rel)
+        if BUILT_URL.search(text):
+            findings.append({"severity": "medium", "what": "builds a web address from pieces (the host cannot be checked here)", "file": rel, "line": 1, "excerpt": "read how the address is assembled"})
         if p.name in ("hooks.json", ".mcp.json", "mcp.json") or p.parent.name == "hooks":
             startup.append(rel)
     for rel in startup:
