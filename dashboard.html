@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Story Studio</title>
+<style>
+@font-face{font-family:"Geist";src:url(/static/geist.woff2) format("woff2");font-weight:100 900;font-display:swap}
+@font-face{font-family:"Geist Mono";src:url(/static/geist-mono.woff2) format("woff2");font-weight:100 900;font-display:swap}
+
+/* Tokens. One accent (teal), zinc neutrals, one radius scale: 10px for every surface and control, pills only for status badges. */
+:root{
+  --bg:#f4f4f5;--surface:#ffffff;--sunken:#f4f4f5;--ink:#18181b;--ink2:#52525b;--line:#e4e4e7;
+  --accent:#0f766e;--accent-ink:#ffffff;--accent-soft:#e2f3f1;--accent-text:#0b5c56;
+  --ok:#15803d;--ok-bg:#e6f4ea;--warn:#a15c07;--warn-bg:#fbf0dc;--bad:#b42318;--bad-bg:#fcebe9;
+  --shadow:0 1px 2px rgb(24 24 27 / .05),0 4px 14px rgb(24 24 27 / .04);
+  --r:10px;--sidebar:244px;
+}
+:root[data-theme="dark"]{
+  --bg:#0e0f11;--surface:#17181b;--sunken:#101113;--ink:#ececee;--ink2:#a1a1aa;--line:#27282c;
+  --accent:#2dd4bf;--accent-ink:#04201d;--accent-soft:#12302d;--accent-text:#5eead4;
+  --ok:#4ade80;--ok-bg:#12301d;--warn:#fbbf24;--warn-bg:#33260c;--bad:#f87171;--bad-bg:#3a1616;
+  --shadow:0 1px 2px rgb(0 0 0 / .4);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.55 "Geist",ui-sans-serif,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.mono{font-family:"Geist Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+a{color:var(--accent-text)}
+h1,h2,h3,p{margin:0}
+h1{font-size:26px;font-weight:650;letter-spacing:-.02em;line-height:1.2}
+h2{font-size:16px;font-weight:620;letter-spacing:-.01em}
+.sub{color:var(--ink2);max-width:62ch}
+button,input,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* icons: real Phosphor glyphs, tinted by currentColor */
+.ic{display:inline-block;width:18px;height:18px;flex:none;background:currentColor;-webkit-mask:var(--i) center/contain no-repeat;mask:var(--i) center/contain no-repeat}
+.ic.lg{width:22px;height:22px}
+
+/* shell */
+.shell{display:grid;grid-template-columns:var(--sidebar) 1fr;min-height:100dvh}
+aside{background:var(--surface);border-right:1px solid var(--line);padding:22px 14px;position:sticky;top:0;height:100dvh;display:flex;flex-direction:column;gap:22px}
+.brand{font-weight:700;font-size:17px;letter-spacing:-.02em;padding:0 10px}
+.brand span{color:var(--accent-text)}
+nav{display:flex;flex-direction:column;gap:2px}
+nav button{display:flex;align-items:center;gap:11px;width:100%;text-align:left;background:none;border:0;border-radius:var(--r);padding:9px 10px;color:var(--ink2);cursor:pointer;font-weight:520}
+nav button:hover{background:var(--sunken);color:var(--ink)}
+nav button.on{background:var(--accent-soft);color:var(--accent-text)}
+nav .count{margin-left:auto;font-size:12px;background:var(--warn-bg);color:var(--warn);border-radius:99px;padding:0 8px;font-weight:650}
+.side-foot{margin-top:auto;display:flex;flex-direction:column;gap:10px;padding:0 6px}
+.runbox{border:1px solid var(--line);border-radius:var(--r);padding:11px 12px;font-size:13px;background:var(--sunken)}
+.runbox b{display:block;font-weight:620}
+.runbox.busy{border-color:var(--warn);background:var(--warn-bg)}
+.theme{background:none;border:0;color:var(--ink2);cursor:pointer;display:flex;align-items:center;gap:8px;padding:4px;font-size:13px}
+main{padding:36px clamp(16px,4vw,48px) 90px;max-width:1120px;width:100%}
+.view{animation:in .18s ease-out}
+@keyframes in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.head{display:flex;flex-direction:column;gap:6px;margin-bottom:26px}
+
+/* primitives */
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+.pad{padding:20px}
+.stack{display:flex;flex-direction:column;gap:14px}
+.sec{margin-top:34px}
+.sec>h2{margin-bottom:12px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);border-radius:var(--r);padding:9px 16px;font-weight:620;cursor:pointer;white-space:nowrap;transition:transform .08s,filter .15s}
+.btn:hover{filter:brightness(1.07)}
+.btn:active{transform:translateY(1px) scale(.99)}
+.btn.quiet{background:var(--surface);color:var(--ink);border-color:var(--line)}
+.btn.quiet:hover{background:var(--sunken);filter:none}
+.btn.danger{background:var(--surface);color:var(--bad);border-color:var(--line)}
+.btn:disabled{opacity:.45;cursor:not-allowed;filter:none;transform:none}
+.btn.sm{padding:6px 11px;font-size:14px}
+.badge{display:inline-flex;align-items:center;gap:6px;border-radius:99px;padding:2px 10px;font-size:12.5px;font-weight:620;white-space:nowrap}
+.b-ok{background:var(--ok-bg);color:var(--ok)}.b-warn{background:var(--warn-bg);color:var(--warn)}.b-bad{background:var(--bad-bg);color:var(--bad)}.b-mute{background:var(--sunken);color:var(--ink2);border:1px solid var(--line)}
+.rows>*{padding:13px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.rows>*+*{border-top:1px solid var(--line)}
+.grow{flex:1 1 220px;min-width:0}
+.ttl{font-weight:600;overflow-wrap:anywhere}
+.mute{color:var(--ink2);font-size:13.5px}
+label{font-weight:600;font-size:14px;display:block;margin-bottom:6px}
+input[type=text],input[type=password],input:not([type]),textarea{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:9px 12px}
+input::placeholder,textarea::placeholder{color:var(--ink2);opacity:.8}
+input:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--accent)}
+textarea{min-height:120px;resize:vertical}
+textarea.code{font-family:"Geist Mono",ui-monospace,monospace;font-size:12.5px}
+.help{font-size:13px;color:var(--ink2);margin-top:6px}
+.err{color:var(--bad);font-size:14px;background:var(--bad-bg);border-radius:var(--r);padding:10px 12px}
+
+/* next-step banner */
+.next{display:flex;gap:18px;align-items:center;flex-wrap:wrap;padding:22px;border-color:color-mix(in srgb,var(--accent) 45%,var(--line));background:linear-gradient(180deg,var(--accent-soft),var(--surface) 150%)}
+.next .ic.lg{color:var(--accent-text)}
+.next h2{font-size:19px}
+
+/* pipeline */
+.pipe{display:grid;grid-template-columns:repeat(4,1fr)}
+.pipe>div{padding:18px 20px}
+.pipe>div+div{border-left:1px solid var(--line)}
+.pipe .n{font-size:32px;font-weight:650;letter-spacing:-.03em;line-height:1.1}
+.pipe .l{color:var(--ink2);font-size:13.5px}
+
+/* videos */
+.vgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px}
+.vcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;cursor:pointer;text-align:left;padding:0;box-shadow:var(--shadow);transition:transform .15s,border-color .15s}
+.vcard:hover{border-color:var(--accent);transform:translateY(-2px)}
+.thumb{aspect-ratio:16/9;background:var(--sunken) center/cover no-repeat;display:grid;place-items:center;color:var(--ink2)}
+.vcard .meta{padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.switch-row{display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:22px}
+.checks>div{display:flex;gap:10px;align-items:flex-start;padding:9px 0}
+.checks .ic{margin-top:3px}.ck-ok{color:var(--ok)}.ck-bad{color:var(--bad)}.ck-warn{color:var(--warn)}
+.news{padding:16px 20px}.news h3{font-size:15px;margin-bottom:4px}
+.fld{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:16px}
+.slotrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.fld input[type=number]{width:100%}
+.slotrow select{width:auto;min-width:170px}
+.slotrow input{width:auto}
+.slotrow select,.fld input[type=number],.slotrow input{background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;font:inherit}
+.tick{display:flex;gap:10px;align-items:center}.tick input{width:18px;height:18px;accent-color:var(--accent)}
+.tgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.topt{background:var(--sunken);border:2px solid var(--line);border-radius:var(--r);padding:6px;cursor:pointer;display:flex;flex-direction:column;gap:6px;align-items:stretch;font-weight:600;color:var(--ink2)}
+.topt img{width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:6px;display:block}
+.topt.sel{border-color:var(--accent);color:var(--accent-text)}
+video{width:100%;max-height:62vh;background:#0b0b0c;border-radius:var(--r);display:block}
+.detail{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(280px,1fr);gap:22px;align-items:start}
+
+/* create */
+.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+.choice{padding:22px;display:flex;flex-direction:column;gap:12px;align-items:flex-start}
+.choice p{color:var(--ink2);flex:1}
+
+/* youtube steps */
+.step{display:flex;gap:16px;align-items:flex-start;padding:18px 20px}
+.step .no{width:30px;height:30px;border-radius:99px;display:grid;place-items:center;font-weight:700;background:var(--sunken);border:1px solid var(--line);flex:none}
+.step.done .no{background:var(--ok-bg);border-color:transparent;color:var(--ok)}
+.step.now .no{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+.step.lock{opacity:.55}
+ol.how{margin:10px 0 0;padding-left:20px;color:var(--ink2)}ol.how li{margin:5px 0}
+.drop{border:1.5px dashed var(--line);border-radius:var(--r);padding:22px;text-align:center;color:var(--ink2);cursor:pointer;background:var(--sunken)}
+.drop:hover,.drop.over{border-color:var(--accent);color:var(--ink)}
+
+pre.log{background:#0c0d0f;color:#d4d4d8;padding:16px;border-radius:var(--r);overflow:auto;max-height:420px;font:12.5px/1.6 "Geist Mono",ui-monospace,monospace;white-space:pre-wrap;margin:0}
+
+/* loading + empty */
+.skel{background:linear-gradient(90deg,var(--sunken) 25%,var(--line) 50%,var(--sunken) 75%);background-size:200% 100%;border-radius:var(--r);animation:sh 1.3s linear infinite}
+@keyframes sh{to{background-position:-200% 0}}
+.empty{padding:34px 20px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px;color:var(--ink2)}
+.empty .ic{width:30px;height:30px}
+.empty b{color:var(--ink);font-size:16px}
+
+.toast{position:fixed;bottom:22px;left:50%;transform:translate(-50%,12px);background:var(--ink);color:var(--bg);padding:11px 16px;border-radius:var(--r);opacity:0;transition:.2s;pointer-events:none;max-width:90vw;z-index:30;font-weight:520}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+@media(max-width:900px){
+  .shell{grid-template-columns:1fr}
+  aside{position:static;height:auto;display:grid;grid-template-columns:1fr auto;padding:12px 12px 8px;gap:8px 10px;border-right:0;border-bottom:1px solid var(--line)}
+  .brand{padding:0 4px}
+  nav{grid-column:1/-1;grid-row:2;flex-direction:row;overflow-x:auto;gap:4px;padding-bottom:4px}
+  nav button{width:auto;flex:none;padding:8px 12px}
+  .side-foot{margin:0;grid-row:1;grid-column:2;padding:0}
+  .runbox{display:none}
+  .detail{grid-template-columns:1fr}
+  .pipe{grid-template-columns:repeat(2,1fr)}
+  .pipe>div:nth-child(3){border-left:0}.pipe>div:nth-child(n+3){border-top:1px solid var(--line)}
+  main{padding-top:24px}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside>
+    <div class="brand">Story <span>Studio</span></div>
+    <nav id="nav" aria-label="Main"></nav>
+    <div class="side-foot">
+      <div class="runbox" id="runbox" aria-live="polite"></div>
+      <button class="theme" id="themebtn" onclick="toggleTheme()"><i class="ic" style="--i:url(/static/icons/sparkle.svg)"></i><span id="themelbl">Theme</span></button>
+    </div>
+  </aside>
+  <main id="main"><div class="stack"><div class="skel" style="height:34px;width:40%"></div><div class="skel" style="height:110px"></div><div class="skel" style="height:90px"></div></div></main>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+const NAV=[["home","Home","squares-four"],["videos","Videos","film-strip"],["create","Create","magic-wand"],["autopilot","Autopilot","robot"],["growth","Growth","sparkle"],["activity","Activity","pulse"],["youtube","YouTube","youtube-logo"],["settings","Settings","gear-six"]];
+let S=null,tab=(location.hash.slice(1)||"home"),openSlug=null,openJob=null,ytInfo=null,editing=false,lastSig="",logTimer=null;
+
+const url=u=>/^https?:\/\//i.test(u||"")?u:"";
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const ico=(n,c="")=>`<i class="ic ${c}" style="--i:url(/static/icons/${n}.svg)"></i>`;
+const safe=f=>{try{return f()}catch(e){return null}};
+function toast(m){const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("show"),3800)}
+async function api(path,body){
+  let r;try{r=await fetch(path,body===undefined?{}:{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})}catch(e){toast("Dashboard server not reachable");throw e}
+  const j=await r.json();if(j.error){toast(j.error);throw new Error(j.error)}return j;
+}
+const badge=(t,c)=>`<span class="badge b-${c}">${esc(t)}</span>`;
+const STATE={"needs review":["Needs review","warn"],approved:["Approved","ok"],uploaded:["On YouTube","mute"]};
+const stateBadge=s=>badge(...STATE[s]);
+const ago=t=>{const s=Math.max(0,Date.now()/1000-t);return s<60?"just now":s<3600?Math.round(s/60)+" min ago":s<86400?Math.round(s/3600)+" h ago":Math.round(s/86400)+" d ago"};
+const dur=s=>s<90?Math.round(s)+" s":Math.round(s/60)+" min";
+const running=()=>S&&S.jobs.find(j=>j.status==="running");
+const jobBadge=j=>badge(j.status==="done"?"Finished":j.status==="failed"?"Failed":"Running",j.status==="done"?"ok":j.status==="failed"?"bad":"warn");
+const empty=(icon,title,text,btn="")=>`<div class="empty">${ico(icon)}<b>${title}</b><span>${text}</span>${btn}</div>`;
+
+function setTheme(t){safe(()=>localStorage.setItem("theme",t));document.documentElement.dataset.theme=t;document.getElementById("themelbl").textContent=t==="dark"?"Switch to light":"Switch to dark"}
+function toggleTheme(){setTheme(document.documentElement.dataset.theme==="dark"?"light":"dark")}
+setTheme(safe(()=>localStorage.getItem("theme"))||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"));
+
+function go(t,opts={}){if(opts.slug!==undefined)openSlug=opts.slug;tab=t;location.hash=t;clearInterval(logTimer);render(true)}
+async function job(cmd,args=[]){const r=await api("/api/job",{cmd,args});openJob=r.id;toast("Started. It keeps running if you close this page.");await refresh(true);go("activity")}
+
+async function refresh(force){
+  let n;try{n=await api("/api/state")}catch(e){return}
+  const sig=JSON.stringify(n);
+  const playing=[...document.querySelectorAll("video")].some(v=>!v.paused&&!v.ended);
+  S=n;chrome();
+  if(sig===lastSig&&!force)return; lastSig=sig;
+  if(editing||playing)return;
+  render();
+}
+function chrome(){
+  const c=S.counts["needs review"],r=running();
+  document.getElementById("nav").innerHTML=NAV.map(([k,l,i])=>`<button class="${tab===k?"on":""}" onclick="go('${k}',{slug:null})" ${tab===k?'aria-current="page"':""}>${ico(i)}<span class="t">${l}</span>${k==="videos"&&c?`<span class="count">${c}</span>`:""}${k==="autopilot"&&S.autopilot.needs_you?`<span class="count">${S.autopilot.needs_you}</span>`:""}${k==="growth"&&S.agent&&S.agent.unread?`<span class="count">${S.agent.unread}</span>`:""}</button>`).join("");
+  document.getElementById("runbox").className="runbox"+(r?" busy":"");
+  document.getElementById("runbox").innerHTML=r?`<b>Working</b>${esc(r.cmd)}`:`<b>Idle</b>Nothing is running`;
+}
+function render(force){
+  if(!S)return;chrome();
+  const m=document.getElementById("main");
+  ({home,videos,create,autopilot,growth,activity,youtube,settings})[tab]?.(m);
+  m.firstElementChild?.classList.add("view");
+}
+
+/* ---------- Home ---------- */
+function nextStep(){
+  const r=running();
+  if(r)return{icon:"hourglass-medium",title:"Working on it",text:`Running: ${esc(r.cmd)}. A documentary takes a while, you can leave this page open.`,btn:`<button class="btn" onclick="openJob='${r.id}';go('activity')">Watch progress</button>`};
+  if(S.autopilot.needs_you)return{icon:"hand-palm",title:"A video needs your decision",text:`The reviewer agent flagged ${S.autopilot.needs_you===1?"a video":S.autopilot.needs_you+" videos"}. Nothing goes live until you decide.`,btn:`<button class="btn" onclick="go('autopilot')">See what was flagged</button>`};
+  const rev=S.videos.find(v=>v.state==="needs review");
+  if(rev)return{icon:"play",title:"Watch your new video",text:`"${esc(rev.title)}" is ready. Watch it, then approve it.`,btn:`<button class="btn" onclick="go('videos',{slug:'${rev.slug}'})">Watch and review</button>`};
+  const ap=S.videos.find(v=>v.state==="approved");
+  if(ap&&S.youtube.token)return{icon:"upload-simple",title:"Ready to upload",text:`"${esc(ap.title)}" is approved. It uploads as private first, so nothing goes public by accident.`,btn:`<button class="btn" onclick="go('videos',{slug:'${ap.slug}'})">Open and upload</button>`};
+  if(ap)return{icon:"plugs-connected",title:"Connect YouTube to upload",text:`"${esc(ap.title)}" is approved, but no channel is connected yet.`,btn:`<button class="btn" onclick="go('youtube')">Connect YouTube</button>`};
+  if(!S.queue.length)return{icon:"lightning",title:"Add some topics",text:"The queue is empty. Let the writer suggest ideas, or type your own.",btn:`<button class="btn" onclick="go('create')">Find topics</button>`};
+  return{icon:"film-strip",title:"Make the next documentary",text:`Up next: "${esc(S.queue[0])}"`,btn:`<button class="btn" onclick="go('create')">Go to Create</button>`};
+}
+function home(m){
+  const n=nextStep(),c=S.counts,h=S.health,y=S.youtube;
+  const check=(ok,label,fix,go_)=>`<div><div class="grow"><span class="ttl">${label}</span></div>${ok?badge("Ready","ok"):`<button class="btn quiet sm" onclick="${go_}">${fix}</button>`}</div>`;
+  m.innerHTML=`<div class="head"><h1>Home</h1><p class="sub">${esc(S.niche.name)}. Everything the automation did, and what to do next.</p></div>
+  <div class="panel next">${ico(n.icon,"lg")}<div class="grow stack" style="gap:4px"><h2>${n.title}</h2><p class="sub">${n.text}</p></div>${n.btn}</div>
+
+  <div class="sec"><h2>Pipeline</h2>
+    <div class="panel pipe">
+      <div><div class="n mono">${S.queue.length}</div><div class="l">Topics waiting</div></div>
+      <div><div class="n mono">${c["needs review"]}</div><div class="l">Need your review</div></div>
+      <div><div class="n mono">${c.approved}</div><div class="l">Approved, not uploaded</div></div>
+      <div><div class="n mono">${c.uploaded}</div><div class="l">On YouTube</div></div>
+    </div></div>
+
+  <div class="sec"><h2>Setup check</h2>
+    <div class="panel rows">
+      ${check(h.ollama,`Script writer <span class="mute">(${esc(h.model)})</span>`,"Start Ollama","go('settings')")}
+      ${check(h.ffmpeg,"Video renderer","Install ffmpeg","go('settings')")}
+      ${check(h.pexels,"Stock footage for Shorts <span class=\"mute\">(Pexels key)</span>","Add key","go('settings')")}
+      ${check(!!y.token,"YouTube channel","Connect","go('youtube')")}
+    </div></div>
+
+  <div class="sec"><h2>Latest videos</h2>${S.videos.length?`<div class="vgrid">${S.videos.slice(0,3).map(vcard).join("")}</div>`:`<div class="panel">${empty("film-strip","No videos yet","Make your first documentary from the Create page.",`<button class="btn" onclick="go('create')">Create</button>`)}</div>`}</div>`;
+}
+function vcard(v){return`<button class="vcard" onclick="go('videos',{slug:'${v.slug}'})"><div class="thumb" style="background-image:url('/thumb/${esc(v.slug)}')"></div><div class="meta"><div class="ttl">${esc(v.title)}</div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${stateBadge(v.state)}<span class="mute">${v.format==="doc"?"Documentary":"Short"}</span></div></div></button>`}
+
+/* ---------- Videos ---------- */
+function videos(m){
+  if(openSlug){
+    const v=S.videos.find(x=>x.slug===openSlug);if(!v){openSlug=null;return videos(m)}
+    const can=v.state!=="uploaded",yt=S.youtube.token;
+    m.innerHTML=`<div class="head"><div><button class="btn quiet sm" onclick="openSlug=null;editing=false;render()">${ico("arrow-left")}All videos</button></div><h1>${esc(v.title)}</h1>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${stateBadge(v.state)}<span class="mute">${v.format==="doc"?"Documentary":"Short"}, ${v.mb} MB, made ${esc(v.made)}</span></div></div>
+    <div class="detail">
+      <div class="stack"><video controls preload="metadata" poster="/thumb/${esc(v.slug)}" src="/video/${esc(v.slug)}"></video>
+        ${v.format==="doc"?thumbPanel(v):""}
+        ${v.format==="doc"?seoPanel(v):""}
+        ${subsPanel(v)}
+        ${reviewPanel(v)}
+        <div class="panel pad stack" style="gap:12px">
+          <h2>Next</h2>
+          ${v.state==="needs review"?`<p class="sub">Watch the whole video first. Approving tells the system you checked it.</p><div><button class="btn" onclick="approve('${v.slug}')">${ico("check-circle")}I watched it, approve</button></div>`:""}
+          ${v.state==="approved"?(yt?`<p class="sub">Private is the safe default. You can make it public later in YouTube Studio.</p><div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn" onclick="upl('${v.slug}',false)">${ico("upload-simple")}Upload as private</button><button class="btn quiet" onclick="upl('${v.slug}',true)">Upload as public</button></div>`:`<p class="sub">Connect your YouTube channel to upload this video.</p><div><button class="btn" onclick="go('youtube')">${ico("plugs-connected")}Connect YouTube</button></div>`):""}
+          ${v.state==="uploaded"?`<p class="sub">This video is on your channel.</p><div><a class="btn quiet" target="_blank" rel="noopener" href="https://youtu.be/${esc(v.video_id)}">Open on YouTube</a></div>`:""}
+        </div></div>
+      <div class="panel pad stack"><h2>Title and description</h2>
+        ${can?`<div><label for="et">Title</label><input id="et" value="${esc(v.title)}" oninput="editing=true" maxlength="100"><div class="help">Up to 100 characters.</div></div>
+        <div><label for="ed">Description</label><textarea id="ed" style="min-height:230px" oninput="editing=true">${esc(v.description)}</textarea></div>
+        <div><button class="btn quiet" onclick="saveMeta('${v.slug}')">Save changes</button></div>`:`<p class="sub" style="white-space:pre-wrap">${esc(v.description)}</p>`}
+      </div></div>`;
+    return;
+  }
+  m.innerHTML=`<div class="head"><h1>Videos</h1><p class="sub">Everything the pipeline has made. Review first, then approve, then upload.</p></div>`+
+    (S.videos.length?`<div class="vgrid">${S.videos.map(vcard).join("")}</div>`:`<div class="panel">${empty("film-strip","Nothing here yet","Videos you make show up here with a preview.",`<button class="btn" onclick="go('create')">Make a video</button>`)}</div>`);
+}
+const CK={duration:"Video length",resolution:"Picture size",audio:"Narration audio",black_frames:"No black screens",title:"Title",title_length:"Title length",duplicate_title:"Not a repeat of an older title",description:"Description",chapters:"Chapters",credits:"Image credits",thumbnail:"Thumbnail",tags:"Tags",script_length:"Script length",script_loop:"No repeated lines",subtitles:"Subtitles",hook:"Short hook (first line)",claims:"Facts stated without hedging",llm_review:"Script review by the writer model",invented_facts:"Invented facts risk",policy_risk:"YouTube policy risk",title_matches:"Title matches the story",invented_facts_watch:"Invented facts risk",policy_watch:"Policy risk"};
+const verdictBadge=r=>r==="pass"?badge("Passed","ok"):r==="needs_human"?badge("Needs your eyes","warn"):badge("Blocked","bad");
+function subsPanel(v){
+  const b=running(),burned=v.subtitles==="burned";
+  return `<div class="panel pad stack" style="gap:12px"><h2>Subtitles</h2>
+  <p class="sub">${burned?"Subtitles are burned into this video, so viewers see them everywhere without turning anything on.":"This video has no burned-in subtitles yet."}</p>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+  ${v.format==="doc"&&!burned&&v.state!=="uploaded"?`<button class="btn quiet" ${b?"disabled":""} onclick="if(confirm('This re-encodes the video with subtitles. It takes a few minutes. Continue?'))job('subtitles',['${v.slug}','--burn'])">${ico("magic-wand")}Burn subtitles into this video</button>`:""}
+  ${!v.has_srt?`<button class="btn quiet" ${b?"disabled":""} onclick="job('subtitles',['${v.slug}'])">Make a subtitle file</button>`:`<a class="btn quiet" href="/captions/${esc(v.slug)}.srt" download>Download the .srt file</a>`}
+  </div></div>`}
+function reviewPanel(v){
+  const r=v.review,b=running(),bad=r?r.checks.filter(c=>!c.ok):[],good=r?r.checks.filter(c=>c.ok):[];
+  const row=c=>`<div><i class="ic ${c.ok?"ck-ok":c.severity==="warn"?"ck-warn":"ck-bad"}" style="--i:url(/static/icons/${c.ok?"check":c.severity==="warn"?"warning":"x"}.svg)"></i><div><div class="ttl" style="font-weight:560">${esc(CK[c.name]||c.name)}</div><div class="mute">${esc(c.detail)}</div></div></div>`;
+  return `<div class="panel pad stack" style="gap:12px"><h2>Reviewer report</h2>
+  ${r?`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${verdictBadge(r.verdict)}<span class="mute">${bad.length?bad.length+" to look at":"All "+good.length+" checks passed"}${v.approved_by?", approved by "+(v.approved_by==="you"?"you":"the reviewer agent"):""}</span></div>
+  ${bad.length?`<div class="checks">${bad.map(row).join("")}</div>`:""}
+  <details><summary class="mute" style="cursor:pointer">Passed checks (${good.length})</summary><div class="checks">${good.map(row).join("")}</div></details>`:empty("shield-check","Not checked yet","The reviewer agent checks the files, the script and the metadata before anything is uploaded.")}
+  <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn quiet" ${b||v.state==="uploaded"?"disabled":""} onclick="job('review',['${v.slug}'])">${ico("shield-check")}${r?"Check again":"Run the reviewer"}</button>
+  ${v.state!=="uploaded"?`<button class="btn quiet" onclick="apHold('${v.slug}',${!v.hold})">${ico("hand-palm")}${v.hold?"Release hold":"Hold this video"}</button>`:""}</div>
+  ${v.hold?`<p class="help">On hold: autopilot will not upload this video.</p>`:""}</div>`}
+function thumbPanel(v){
+  const b=running();
+  return `<div class="panel pad stack" style="gap:12px"><h2>Thumbnail</h2>
+  <p class="sub">The thumbnail is what people see before they click. Pick the one that reads best small, like on a phone.</p>
+  ${v.thumbs.length?`<div class="tgrid">${v.thumbs.map((t,i)=>`<button class="topt ${v.thumbnail===t?"sel":""}" onclick="chooseThumb('${v.slug}',${i+1})" aria-pressed="${v.thumbnail===t}"><img alt="Thumbnail option ${i+1}" src="/thumbopt/${esc(v.slug)}/${i+1}?v=${v.thumb_v}"><span>${v.thumbnail===t?"Selected":"Use this"}</span></button>`).join("")}</div>`:empty("film-strip","No thumbnails yet","Make 3 options from the best frames of this video.")}
+  <div><label for="hk">Text on the thumbnail</label><input id="hk" value="${esc(v.hook)}" maxlength="40" placeholder="2 to 4 words, for example WHERE DID THEY GO?" oninput="editing=true"><div class="help">Leave it empty to let the writer suggest one.</div></div>
+  <div><button class="btn quiet" ${b||v.state==="uploaded"?"disabled":""} onclick="makeThumbs('${v.slug}')">${ico("magic-wand")}${v.thumbs.length?"Make new options":"Make 3 options"}</button> <span class="mute">Takes about a minute.</span></div></div>`}
+function seoPanel(v){
+  const b=running(),seo=v.seo,locked=v.state==="uploaded";
+  return `<div class="panel pad stack" style="gap:12px"><h2>Search and title</h2>
+  <p class="sub">The writer reads what people actually type into YouTube search, then proposes titles, a description opening and tags. Nothing here guarantees ranking, it just aims the video at real searches.</p>
+  ${seo?`<div><label>Title options</label><div class="stack" style="gap:8px">${seo.titles.map(t=>`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="grow ttl" style="font-weight:520">${esc(t)}</span><button class="btn quiet sm" ${locked||v.title===t?"disabled":""} onclick="useTitle('${v.slug}',this.dataset.t)" data-t="${esc(t)}">${v.title===t?"In use":"Use this title"}</button></div>`).join("")}</div></div>
+  <div><label>Main search phrase</label><span class="mono">${esc(seo.core)}</span></div>
+  <div><label>Tags (${v.tags.length})</label><div style="display:flex;gap:6px;flex-wrap:wrap">${v.tags.map(t=>`<span class="badge b-mute">${esc(t)}</span>`).join("")}</div></div>`:empty("magic-wand","Not researched yet","Find what people search for and get title options.")}
+  <div><button class="btn quiet" ${b||locked?"disabled":""} onclick="job('seo',['${v.slug}'])">${ico("magic-wand")}${seo?"Research again":"Research titles and tags"}</button> <span class="mute">Takes about a minute. Rewrites the description opening and the tags.</span></div></div>`}
+async function useTitle(slug,t){await api("/api/video/update",{slug,title:t});toast("Title updated");refresh(true)}
+function makeThumbs(slug){const h=(document.getElementById("hk")?.value||"").trim();editing=false;job("thumbs",h?[slug,h]:[slug])}
+async function chooseThumb(slug,n){await api("/api/thumbs/choose",{slug,n});toast("Thumbnail selected");refresh(true)}
+async function approve(slug){await api("/api/video/approve",{slug});toast("Approved. You can upload it now.");refresh(true)}
+async function saveMeta(slug){await api("/api/video/update",{slug,title:document.getElementById("et").value,description:document.getElementById("ed").value});editing=false;toast("Saved");refresh(true)}
+function upl(slug,pub){
+  if(!confirm(pub?"Publish this video PUBLICLY on your channel?":"Upload this video to your channel as private?"))return;
+  job("upload",pub?[slug,"--public"]:[slug]);
+}
+
+/* ---------- Create ---------- */
+function create(m){
+  const busy=!!running();
+  m.innerHTML=`<div class="head"><h1>Create</h1><p class="sub">Pick a format. The system writes the script, records the narration, finds images and renders the video. You review it before anything is uploaded.</p></div>
+  <div class="choices">
+    <div class="panel choice">${ico("film-strip","lg")}<h2>Documentary</h2><p>Widescreen, around five minutes, archive images and chapters. Takes a while to render.</p><button class="btn" ${busy?"disabled":""} onclick="job('doc')">Make documentary</button></div>
+    <div class="panel choice">${ico("lightning","lg")}<h2>Short</h2><p>Vertical, under a minute, with captions over stock footage.</p><button class="btn quiet" ${busy?"disabled":""} onclick="job('make')">Make short</button></div>
+  </div>
+  ${busy?`<p class="help" style="margin-top:12px">Another job is running. Wait for it to finish first.</p>`:""}
+  <div class="sec"><h2>Topic queue</h2>
+    <div class="panel">
+      <div class="pad" style="display:flex;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--line)">
+        <div class="grow"><label for="nt" style="position:absolute;left:-9999px">New topic</label><input id="nt" placeholder="Type a topic, for example: The Lost Colony of Roanoke" onkeydown="if(event.key==='Enter')addTopic()"></div>
+        <button class="btn" onclick="addTopic()">${ico("plus")}Add</button>
+        <button class="btn quiet" ${busy?"disabled":""} onclick="job('ideas',[10])">${ico("sparkle")}Suggest 10</button>
+        <button class="btn quiet" ${busy?"disabled":""} onclick="job('research',[3])">Trend research</button>
+      </div>
+      ${S.queue.length?`<div class="rows">${S.queue.map((t,i)=>`<div><div class="grow"><span class="ttl">${esc(t)}</span>${i===0?` ${badge("Next up","ok")}`:""}</div>
+        <button class="btn quiet sm" ${busy?"disabled":""} onclick="makeTopic(${i},'doc')">Documentary</button>
+        <button class="btn quiet sm" ${busy?"disabled":""} onclick="makeTopic(${i},'make')">Short</button>
+        <button class="btn danger sm" aria-label="Remove topic" onclick="rmTopic(${i})">${ico("trash")}</button></div>`).join("")}</div>`:empty("queue","The queue is empty","Type a topic above, or press Suggest 10 and the writer will propose some.")}
+    </div></div>`;
+}
+async function addTopic(){const i=document.getElementById("nt");if(!i.value.trim())return toast("Type a topic first");await api("/api/queue/add",{topic:i.value});refresh(true)}
+async function rmTopic(i){await api("/api/queue/remove",{index:i});refresh(true)}
+async function makeTopic(i,cmd){const t=S.queue[i];await api("/api/queue/remove",{index:i});job(cmd,[t])}
+
+/* ---------- Autopilot ---------- */
+const DAYS=[["mon","Monday"],["tue","Tuesday"],["wed","Wednesday"],["thu","Thursday"],["fri","Friday"],["sat","Saturday"],["sun","Sunday"]];
+let AP=null,apSlots=null,apShort=null;Object.defineProperty(window,'apSlots',{get:()=>apSlots});Object.defineProperty(window,'apShort',{get:()=>apShort});
+async function apRefresh(){AP=await api("/api/autopilot");apSlots=null;apShort=null}
+async function autopilot(m){
+  if(!editing||!AP){try{await apRefresh()}catch(e){return}}
+  const A=AP,c=A.config,last=A.status.last_tick,busy=!!running()||A.status.running;
+  if(!apSlots)apSlots=c.slots.map(x=>({...x}));if(!apShort)apShort=c.short_slots.map(x=>({...x}));
+  const warn=[];if(!S.youtube.token)warn.push("YouTube is not connected, so nothing can be uploaded yet.");if(!S.health.ollama)warn.push("The script writer (Ollama) is not running.");if(!A.timer_installed)warn.push("The 30 minute timer is not installed. Run ./scripts/install-timers.sh once so autopilot runs by itself.");
+  const did=last?last.actions.reduce((a,x)=>(a[x.do]=(a[x.do]||0)+1,a),{}):{};
+  m.innerHTML=`<div class="head"><h1>Autopilot</h1><p class="sub">Picks topics, makes videos, checks them and schedules them. Every video waits for a public time, so you can stop it before it goes live.</p></div>
+  <div class="panel switch-row"><div class="grow stack" style="gap:4px"><h2>Autopilot is ${c.enabled?"on":"off"}</h2><p class="sub">${c.enabled?"It works in the background, one pass every 30 minutes.":"Nothing runs by itself until you turn this on."}</p></div>
+    <button class="btn ${c.enabled?"quiet":""}" onclick="apSet({enabled:${!c.enabled}})">${c.enabled?"Turn off":"Turn on"}</button>
+    <button class="btn quiet" ${busy?"disabled":""} onclick="job('autopilot',['tick'])">${ico("arrow-clockwise")}Run one pass now</button></div>
+  ${warn.length?`<div class="err" style="margin-top:12px">${warn.map(esc).join("<br>")}</div>`:""}
+  <p class="help" style="margin-top:10px">${last?`Last pass ${ago(Date.parse(last.at)/1000)}. ${Object.keys(did).length?"Did: "+Object.entries(did).map(([k,n])=>n+" "+k.replace("_"," ")).join(", ")+".":"Nothing to do."}`:"No pass has run yet."}${last&&last.errors.length?` <span style="color:var(--bad)">Problems: ${esc(last.errors.join(" | "))}</span>`:""}</p>
+
+  <div class="sec"><h2>Needs you (${A.needs_you.length})</h2><div class="panel">${A.needs_you.length?`<div class="rows">${A.needs_you.map(v=>`<div><div class="grow"><div class="ttl">${esc(v.title)}</div><div class="mute">${v.why.length?esc(v.why.join(" ")):"Reviewer flagged this video."}</div></div>${verdictBadge(v.verdict)}<button class="btn quiet sm" onclick="go('videos',{slug:'${v.slug}'})">Open</button></div>`).join("")}</div>`:empty("check-circle","Nothing needs you","Videos the reviewer is unsure about, and every news video, show up here.")}</div></div>
+
+  <div class="sec"><h2>Scheduled</h2><div class="panel">${A.scheduled.length?`<div class="rows">${A.scheduled.map(v=>`<div><div class="grow"><div class="ttl">${esc(v.title)}</div><div class="mute">${v.format==="doc"?"Documentary":"Short"}, public ${esc(v.us)} US Eastern, ${esc(v.bd)} Bangladesh</div></div>${v.fails>=3?badge("Stopped after 3 failures, press Release","bad"):v.hold?badge("On hold","warn"):v.uploaded?badge("Uploaded, goes public on time","ok"):badge("Waiting, uploads shortly before","mute")}${v.uploaded?"":`<button class="btn quiet sm" onclick="apHold('${v.slug}',${v.hold||v.fails>=3?false:true})">${v.hold||v.fails>=3?"Release":"Hold"}</button>`}<button class="btn quiet sm" onclick="go('videos',{slug:'${v.slug}'})">Open</button></div>`).join("")}</div>`:empty("calendar-check","Nothing scheduled","Videos that pass the reviewer get the next free slot automatically.")}</div></div>
+
+  <div class="sec"><h2>Rules</h2><div class="panel pad stack">
+    <div class="fld">
+      <div><label for="ap_up">Videos per day</label><input id="ap_up" type="number" min="1" max="5" value="${c.uploads_per_day}" oninput="editing=true"><div class="help">1 to 5. One a day is a safe start.</div></div>
+      <div><label for="ap_rw">Hours before going public</label><input id="ap_rw" type="number" min="6" max="168" value="${c.review_window_hours}" oninput="editing=true"><div class="help">Your time to stop a video.</div></div>
+      <div><label for="ap_q">Topics kept ready</label><input id="ap_q" type="number" min="1" max="20" value="${c.min_queue}" oninput="editing=true"></div>
+      <div><label for="ap_w">Finished videos waiting</label><input id="ap_w" type="number" min="1" max="5" value="${c.max_waiting}" oninput="editing=true"></div>
+    </div>
+    <label class="tick"><input type="checkbox" id="ap_aa" ${c.auto_approve?"checked":""} onchange="editing=true"> Approve videos that pass every check</label>
+    <label class="tick"><input type="checkbox" id="ap_nv" ${c.news_videos?"checked":""} onchange="editing=true"> Make draft videos from the weekly YouTube news (these always wait for you)</label>
+    <div><label>Documentary publish times (US Eastern)</label>${slotEditor("apSlots")}</div>
+    <hr style="border:0;border-top:1px solid var(--line);margin:4px 0">
+    <label class="tick"><input type="checkbox" id="ap_sh" ${c.shorts?"checked":""} onchange="editing=true"> Also make YouTube Shorts (vertical videos under a minute)</label>
+    <div class="fld">
+      <div><label for="ap_spd">Shorts per day</label><input id="ap_spd" type="number" min="1" max="5" value="${c.shorts_per_day}" oninput="editing=true"><div class="help">Steady beats bursts. One a day is a good start.</div></div>
+      <div><label for="ap_sw">Finished Shorts waiting</label><input id="ap_sw" type="number" min="1" max="10" value="${c.max_waiting_shorts}" oninput="editing=true"></div>
+    </div>
+    <div><label>Shorts publish times (US Eastern)</label>${slotEditor("apShort")}</div>
+    <div><button class="btn" onclick="apSave()">Save rules</button></div></div></div>
+
+  <div class="sec"><h2>Niche trends</h2><p class="sub" style="margin-bottom:12px">Once a week the agent reads public titles, view counts and lengths of popular videos in this niche through the official YouTube API. It learns what people click and suggests original topics. It never copies or downloads anyone's video.</p>
+    <div class="panel">${A.trends&&!A.trends.error&&A.trends.videos.length?`<div class="pad" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;border-bottom:1px solid var(--line)">
+      <div><div class="mono" style="font-size:22px;font-weight:650">${A.trends.summary.median_views.toLocaleString()}</div><div class="mute">Median views</div></div>
+      <div><div class="mono" style="font-size:22px;font-weight:650">${Math.round(A.trends.summary.short_share*100)}%</div><div class="mute">Are Shorts</div></div>
+      <div><div class="mono" style="font-size:22px;font-weight:650">${A.trends.summary.avg_minutes} min</div><div class="mute">Average long video</div></div>
+      <div><div class="mute">Titles with a question: <b>${A.trends.summary.patterns.question}</b><br>"Real story" wording: <b>${A.trends.summary.patterns.real_story}</b><br>A number: <b>${A.trends.summary.patterns.number}</b></div></div></div>
+      <div class="rows">${A.trends.videos.slice(0,8).map(v=>`<div><div class="grow"><a target="_blank" rel="noopener" href="${esc(url(v.url))}">${esc(v.title)}</a><div class="mute">${esc(v.channel)}, ${v.views.toLocaleString()} views, ${Math.max(1,Math.round(v.seconds/60))} min</div></div></div>`).join("")}</div>
+      ${A.trends.ideas.length?`<div class="pad" style="border-top:1px solid var(--line)"><b>Topic ideas to review</b><p class="mute" style="margin:4px 0 8px">The writer model can get facts wrong, so check each idea before adding it.</p>${A.trends.ideas.map(t=>`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:6px 0"><span class="grow">${esc(t)}</span><button class="btn quiet sm" data-t="${esc(t)}" onclick="apIdea(this)">Add to queue</button></div>`).join("")}</div>`:""}}`
+      :empty("pulse",A.trends&&A.trends.error?"The last check hit a problem":"No trend check yet",A.trends&&A.trends.error?esc(A.trends.error):"Press Check now to read what is popular in this niche.")}
+      <div class="pad" style="border-top:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn quiet" ${busy?"disabled":""} onclick="job('trends')">${ico("pulse")}Check now</button>${A.trends?`<span class="mute">Last check ${esc(A.trends.week)}</span>`:""}<span class="mute">Uses about 600 of your 10,000 daily YouTube API units.</span></div></div></div>
+
+  <div class="sec"><h2>Reference channels</h2><p class="sub" style="margin-bottom:12px">Pick 3 to 5 channels in your niche. The agent reads their public top videos and tells you which themes already work. It never copies a script, a video or a title: ideas come back as proposals in fresh wording from public-domain stories and documented history.</p>
+    <div class="panel">
+      <div class="pad" style="display:flex;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--line)"><div class="grow"><label for="ch_in" style="position:absolute;left:-9999px">Channel</label><input id="ch_in" placeholder="@channelname or a youtube.com/@name link" onkeydown="if(event.key==='Enter')apChannelAdd()"></div><button class="btn" onclick="apChannelAdd()">${ico("plus")}Add channel</button></div>
+      ${A.channels.refs.length?`<div class="rows">${A.channels.refs.map(r=>{const c=(A.channels.digest?.channels||[]).find(x=>(x.channel_id===r)||(x.ref===r));return `<div><div class="grow"><div class="ttl">${esc(c?c.channel:r)}</div>${c&&c.top&&c.top.length?`<div class="mute">Top: ${c.top.slice(0,3).map(v=>`<a target="_blank" rel="noopener" href="${esc(url(v.url))}">${esc(v.title)}</a> (${v.views.toLocaleString()})`).join(", ")}</div>`:`<div class="mute">${c&&c.error?esc(c.error):"Not studied yet. Press Study now."}</div>`}</div><button class="btn danger sm" data-r="${esc(r)}" aria-label="Remove channel" onclick="apChannelRemove(this)">${ico("trash")}</button></div>`}).join("")}</div>`:empty("youtube-logo","No reference channels yet","Add 3 to 5 channels that make videos like yours.")}
+      ${A.channels.suggestions.length?`<div class="pad" style="border-top:1px solid var(--line)"><b>Channels that keep showing up in your niche</b><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${A.channels.suggestions.slice(0,6).map(c=>`<button class="btn quiet sm" data-r="${esc(c.channel_id)}" onclick="apChannelSuggest(this)">${esc(c.channel)}</button>`).join("")}</div></div>`:""}
+      ${A.channels.digest&&A.channels.digest.ideas.length?`<div class="pad" style="border-top:1px solid var(--line)"><b>Topic ideas to review</b><p class="mute" style="margin:4px 0 8px">Fresh angles on themes that work. The writer model can get facts wrong, so check each one.</p>${A.channels.digest.ideas.map(t=>`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:6px 0"><span class="grow">${esc(t)}</span><button class="btn quiet sm" data-t="${esc(t)}" onclick="apIdea(this)">Add to queue</button></div>`).join("")}</div>`:""}
+      <div class="pad" style="border-top:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn quiet" ${busy||!A.channels.refs.length?"disabled":""} onclick="job('channels')">${ico("pulse")}Study now</button><span class="mute">About 3 API units per channel.</span></div></div></div>
+
+  <div class="sec"><h2>YouTube watch</h2><p class="sub" style="margin-bottom:12px">Every Monday the agent reads official YouTube and Google security and policy news and writes a plain summary. It only repeats what the sources say.</p>
+    <div class="panel">${A.news&&A.news.items.length?`<div class="rows">${A.news.items.map(i=>`<div class="news" style="display:block"><h3>${esc(i.title)}</h3><p class="sub">${esc(i.what_changed)}</p><p class="mute" style="margin-top:4px">Why it matters: ${esc(i.why_it_matters)}</p>${(i.steps||[]).length?`<ul class="mute" style="margin:6px 0 0;padding-left:20px">${i.steps.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:""}${i.link?`<p style="margin-top:6px"><a target="_blank" rel="noopener" href="${esc(url(i.link))}">Read the source</a></p>`:""}</div>`).join("")}</div>`:empty("newspaper",A.news?"Nothing relevant this week":"No digest yet","Press Check now to read the latest official news.")}
+      <div class="pad" style="border-top:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn quiet" ${busy?"disabled":""} onclick="job('newswatch')">${ico("newspaper")}Check now</button>${A.news?`<span class="mute">Digest for ${esc(A.news.week)}</span>`:""}</div></div>
+    ${A.proposals.length?`<h2 style="margin:22px 0 10px">Video ideas from the news</h2><div class="panel rows">${A.proposals.map(t=>`<div><div class="grow ttl">${esc(t.topic)}</div><button class="btn quiet sm" data-t="${esc(t.topic)}" data-s="${esc(JSON.stringify(t.sources))}" data-w="${esc(t.week)}" onclick="apNews(this)">Make a video</button></div>`).join("")}</div>`:""}
+    ${A.news_queue.length?`<h2 style="margin:22px 0 10px">Queued news videos</h2><div class="panel rows">${A.news_queue.map(t=>`<div><div class="grow ttl">${esc(t.topic)}</div><button class="btn quiet sm" data-t="${esc(t.topic)}" ${busy?"disabled":""} onclick="job('newsvideo',[this.dataset.t])">Make it now</button></div>`).join("")}</div><p class="help" style="margin-top:8px">Autopilot makes these when it has room. News videos always wait for your approval.</p>`:""}
+  </div>`;
+  m.firstElementChild.classList.add("view");
+}
+function slotEditor(name){
+  const arr=window[name]||(name==="apSlots"?apSlots:apShort);
+  return `<div class="stack" style="gap:8px">${arr.map((sl,i)=>`<div class="slotrow"><select onchange="${name}[${i}].day=this.value;editing=true">${DAYS.map(([k,l])=>`<option value="${k}" ${sl.day===k?"selected":""}>${l}</option>`).join("")}</select><input type="time" value="${esc(sl.time)}" onchange="${name}[${i}].time=this.value;editing=true"><button class="btn danger sm" aria-label="Remove time" onclick="${name}.splice(${i},1);editing=true;autopilot(document.getElementById('main'))">${ico("trash")}</button></div>`).join("")}</div><div style="margin-top:8px"><button class="btn quiet sm" onclick="${name}.push({day:'sat',time:'10:00'});editing=true;autopilot(document.getElementById('main'))">${ico("plus")}Add a time</button></div>`}
+async function apSet(o){await api("/api/autopilot/config",o);editing=false;toast(o.enabled?"Autopilot is on":o.enabled===false?"Autopilot is off":"Saved");await apRefresh();refresh(true)}
+async function apSave(){const n=id=>parseInt(document.getElementById(id).value,10);await apSet({uploads_per_day:n("ap_up"),review_window_hours:n("ap_rw"),min_queue:n("ap_q"),max_waiting:n("ap_w"),auto_approve:document.getElementById("ap_aa").checked,news_videos:document.getElementById("ap_nv").checked,slots:apSlots,shorts:document.getElementById("ap_sh").checked,shorts_per_day:n("ap_spd"),max_waiting_shorts:n("ap_sw"),short_slots:apShort})}
+async function apIdea(b){await api("/api/queue/add",{topic:b.dataset.t});b.disabled=true;b.textContent="Added";toast("Added to the topic queue")}
+async function apChannelAdd(){const i=document.getElementById("ch_in");if(!i.value.trim())return toast("Type a channel first");await api("/api/channels/add",{ref:i.value});toast("Channel added");AP=null;refresh(true)}
+async function apChannelRemove(b){await api("/api/channels/remove",{ref:b.dataset.r});AP=null;refresh(true)}
+async function apChannelSuggest(b){await api("/api/channels/add",{ref:b.dataset.r});toast("Channel added");AP=null;refresh(true)}
+async function apHold(slug,hold){await api("/api/autopilot/hold",{slug,hold});toast(hold?"On hold. It will not be uploaded.":"Released");AP=null;refresh(true)}
+async function apNews(b){await api("/api/news/queue",{topic:b.dataset.t,sources:JSON.parse(b.dataset.s),week:b.dataset.w});toast("Queued. Autopilot will make it.");AP=null;refresh(true)}
+
+/* ---------- Activity ---------- */
+async function activity(m){
+  if(!openJob&&S.jobs[0])openJob=S.jobs[0].id;
+  m.innerHTML=`<div class="head"><h1>Activity</h1><p class="sub">Every job the dashboard started, with its live log.</p></div>
+  <div class="panel">${S.jobs.length?`<div class="rows">${S.jobs.map(j=>`<div><div class="grow"><span class="ttl">${esc(j.cmd)}</span><div class="mute">${ago(j.started)}${j.ended?", took "+dur(j.ended-j.started):""}</div></div>${jobBadge(j)}<button class="btn quiet sm" onclick="openJob='${j.id}';activity(document.getElementById('main'))">${j.id===openJob?"Showing":"Show log"}</button></div>`).join("")}</div>`:empty("pulse","No jobs yet","When you create a video or approve one, progress appears here.",`<button class="btn" onclick="go('create')">Go to Create</button>`)}</div>
+  ${S.jobs.length?`<div class="sec"><h2>Log</h2><pre class="log" id="log">Loading…</pre></div>`:""}`;
+  m.firstElementChild.classList.add("view");
+  const pull=async()=>{if(!openJob||tab!=="activity")return clearInterval(logTimer);try{const r=await api("/api/log?id="+openJob);const p=document.getElementById("log");if(!p)return;const bottom=p.scrollHeight-p.scrollTop-p.clientHeight<40;p.textContent=r.text||"(no output yet)";if(bottom)p.scrollTop=p.scrollHeight}catch(e){}};
+  clearInterval(logTimer);await pull();logTimer=setInterval(pull,2000);
+}
+
+/* ---------- Growth agent ---------- */
+let AG=null;
+const AG_MODES=[["off","Off","The agent does nothing."],["handoff","Hand-off","The agent researches and suggests. Nothing changes until you press Apply."],["automatic","Automatic","The agent researches and applies the safe changes by itself: editing settings and new story ideas. Every video still goes through the reviewer, and nothing goes public without it."]];
+const AG_KIND={topic:"Story idea",title:"Titles",format:"Video format",edit:"Editing",schedule:"When to publish",thumbnail:"Thumbnails"};
+const AG_EVENT={info:["Info","mute"],found:["Found","ok"],strategy:["New idea","ok"],applied:["Applied","ok"],error:["Problem","bad"]};
+async function agMode(mode){try{await api("/api/agent/config",{mode});toast(mode==="off"?"Agent is off":mode==="handoff"?"Hand-off mode: it suggests, you decide":"Automatic mode: it applies safe changes")}catch(e){}growth(document.getElementById("main"))}
+async function agAct(id,action){try{await api("/api/agent/strategy",{id,action});toast(action==="apply"?"Applied":action==="dismiss"?"Dismissed":"Back in the list")}catch(e){}growth(document.getElementById("main"))}
+function agCard(x){
+  const prof=x.profile?`<div class="help">Changes: ${Object.entries(x.profile).map(([k,v])=>k==="target_lufs"?"loudness "+v+" LUFS":"pause between sentences "+v+" ms").join(", ")}</div>`:"";
+  const done=x.status==="applied"?badge("Applied","ok"):x.status==="dismissed"?badge("Dismissed","mute"):x.auto_ok?badge("You can apply this","warn"):badge("Advice for you to do","mute");
+  const btns=x.status==="proposed"?`${x.auto_ok?`<button class="btn sm" onclick="agAct('${x.id}','apply')">Apply</button>`:""}<button class="btn quiet sm" onclick="agAct('${x.id}','dismiss')">${x.auto_ok?"Dismiss":"Got it"}</button>`:x.status==="dismissed"?`<button class="btn quiet sm" onclick="agAct('${x.id}','restore')">Bring back</button>`:"";
+  return `<div><div class="grow"><div class="ttl">${esc(x.text)}</div><div class="mute">${badge(AG_KIND[x.kind]||x.kind,"mute")} ${esc(x.why)}</div>${x.evidence.length?`<div class="help">Evidence: ${x.evidence.map(esc).join("; ")}</div>`:""}${prof}</div>${done}${btns}</div>`;
+}
+async function growth(m){
+  try{AG=await api("/api/agent");if(AG.unread)api("/api/agent/read",{}).catch(()=>{})}catch(e){return}
+  const A=AG,c=A.config,rep=A.report,an=rep?rep.analysis:null,busy=!!running();
+  const warn=[];if(!S.youtube.token)warn.push("YouTube is not connected, so the agent cannot read any channel numbers.");if(!A.timer_installed)warn.push("The daily timer is not installed. Run ./scripts/install-timers.sh once so the agent works every morning at 06:30.");
+  const open=A.strategies.filter(x=>x.status==="proposed"),past=A.strategies.filter(x=>x.status!=="proposed").slice(0,8);
+  const refs=new Set(A.refs),studied=rep?rep.studied:[],studiedIds=new Set(studied.map(x=>x.channel_id));
+  const comp=[...studied.map(x=>({name:x.channel||x.channel_id,line:`${(x.median_views||0).toLocaleString()} views for a typical video`,mine:refs.has(x.channel_id)})),
+    ...A.discovered.filter(d=>!studiedIds.has(d.id)).map(d=>({name:d.title,line:`${d.subscribers.toLocaleString()} subscribers, ${Math.round(d.score).toLocaleString()} views per video`,mine:false}))];
+  m.innerHTML=`<div class="head"><h1>Growth</h1><p class="sub">The agent studies our channel and our competitors every morning, then suggests how to get more views. Everything it does is listed here.</p></div>
+  <div class="panel pad stack"><h2>How much should it do by itself?</h2>
+    <div class="row" style="gap:8px;flex-wrap:wrap">${AG_MODES.map(([k,l])=>`<button class="btn ${c.mode===k?"":"quiet"}" aria-pressed="${c.mode===k}" onclick="agMode('${k}')">${l}</button>`).join("")}
+      <button class="btn quiet" ${busy||c.mode==="off"?"disabled":""} onclick="job('agent',['force'])">${ico("arrow-clockwise")}Research now</button></div>
+    <p class="sub">${esc(AG_MODES.find(x=>x[0]===c.mode)[2])}</p>
+    <p class="help">Current edit settings: loudness ${A.profile.target_lufs} LUFS, pause between sentences ${A.profile.sentence_pause_ms} ms. It only reads public numbers from YouTube. It never copies another channel's videos or scripts, and it never uploads anything.</p></div>
+  ${warn.length?`<div class="err" style="margin-top:12px">${warn.map(esc).join("<br>")}</div>`:""}
+  ${rep&&rep.errors.length?`<div class="err" style="margin-top:12px">Last run had problems: ${rep.errors.map(esc).join(" | ")}</div>`:""}
+
+  <div class="sec"><h2>What I suggest (${open.length})</h2><div class="panel">${open.length?`<div class="rows">${open.map(agCard).join("")}</div>`:empty("sparkle","No open suggestions",c.mode==="off"?"Turn the agent on to get suggestions.":"New suggestions appear after the next research run.")}</div>
+  ${past.length?`<details style="margin-top:10px"><summary class="help">Earlier suggestions (${past.length})</summary><div class="panel" style="margin-top:8px"><div class="rows">${past.map(agCard).join("")}</div></div></details>`:""}</div>
+
+  <div class="sec"><h2>Our channel</h2><div class="panel pad">${A.own?`<div class="stack" style="gap:6px"><div><b>${A.own.subscribers.toLocaleString()}</b> subscribers, <b>${A.own.views.toLocaleString()}</b> views, <b>${A.own.videos}</b> videos</div>
+    ${an?`<div class="mute">Last 7 days: ${an.subs_delta_7d>=0?"+":""}${an.subs_delta_7d} subscribers, +${an.views_delta_7d.toLocaleString()} views. About ${an.uploads_per_week} uploads a week.${an.gap_ratio?` A typical video of ours gets ${Math.round(an.gap_ratio*100)}% of the views a competitor video gets.`:""}</div>`:""}</div>`:empty("youtube-logo","No numbers yet","They appear after the first research run, once YouTube is connected.")}</div></div>
+
+  <div class="sec"><h2>Competitors I watch (${comp.length})</h2><div class="panel">${comp.length?`<div class="rows">${comp.map(x=>`<div><div class="grow"><div class="ttl">${esc(x.name)}</div><div class="mute">${esc(x.line)}</div></div>${x.mine?badge("You added","mute"):badge("Found by the agent","ok")}</div>`).join("")}</div>`:empty("plugs-connected","None yet","The agent finds competitors on its own during the first run.")}</div></div>
+
+  <div class="sec"><h2>What the agent did</h2><div class="panel">${A.events.length?`<div class="rows">${A.events.map(e=>`<div><div class="grow"><div class="ttl">${e.read?"":"&#9679; "}${esc(e.title)}</div><div class="mute">${esc(e.detail)} ${ago(Date.parse(e.at)/1000)}</div></div>${badge(...(AG_EVENT[e.kind]||AG_EVENT.info))}</div>`).join("")}</div>`:empty("pulse","Nothing yet","Every step the agent takes is written here in plain words.")}</div></div>`;
+  m.firstElementChild.classList.add("view");
+}
+
+/* ---------- YouTube ---------- */
+async function youtube(m){
+  const y=S.youtube;
+  if(!editing&&y.token){ytInfo=await safe(()=>api("/api/youtube"))||ytInfo}
+  if(!y.token)ytInfo=null;
+  const info=ytInfo||{},ch=info.channel,err=info.error||y.error;
+  const st=n=>n===1?(y.secret?"done":"now"):n===2?(y.token?"done":y.secret?"now":"lock"):(ch?"done":y.token?"now":"lock");
+  m.innerHTML=`<div class="head"><h1>YouTube</h1><p class="sub">Connect your channel once. After that, uploads happen from the Videos page, as private unless you choose public.</p></div>
+  ${err?`<div class="err" style="margin-bottom:14px">${esc(err)}</div>`:""}
+  <div class="panel rows">
+    <div class="step ${st(1)}"><div class="no">${y.secret?ico("check-circle"):"1"}</div><div class="grow stack" style="gap:10px">
+      <div><div class="ttl">Add your Google client file</div><div class="mute">YouTube needs an OAuth client of type Desktop app. A plain API key cannot upload videos.</div></div>
+      ${y.secret&&!editing?`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${badge("Saved","ok")}<button class="btn quiet sm" onclick="editing=true;youtube(document.getElementById('main'))">Replace</button></div>`:`
+      <details ${y.secret?"open":""} ${y.secret?"":"open"}><summary class="mute" style="cursor:pointer">How to get this file (5 steps)</summary>
+        <ol class="how">
+          <li>Open <a target="_blank" rel="noopener" href="https://console.cloud.google.com/projectcreate">Google Cloud Console</a> and create a project.</li>
+          <li>Turn on <a target="_blank" rel="noopener" href="https://console.cloud.google.com/apis/library/youtube.googleapis.com">YouTube Data API v3</a>.</li>
+          <li>Open <a target="_blank" rel="noopener" href="https://console.cloud.google.com/auth/audience">Audience</a>, choose External, and add your own Google account as a test user.</li>
+          <li>Open <a target="_blank" rel="noopener" href="https://console.cloud.google.com/auth/clients">Clients</a>, create a client of type Desktop app, then download the JSON.</li>
+          <li>Drop that file below, or paste its text.</li>
+        </ol></details>
+      <div class="drop" id="drop" onclick="document.getElementById('pick').click()">Drop client_secret.json here, or click to choose a file</div>
+      <input type="file" id="pick" accept=".json,application/json" hidden>
+      <div><label for="secret">Or paste the file contents</label><textarea class="code" id="secret" placeholder='{"installed":{"client_id":"...","client_secret":"..."}}' oninput="editing=true"></textarea></div>
+      <div><button class="btn" onclick="saveSecret()">Save client file</button>${y.secret?` <button class="btn quiet" onclick="editing=false;youtube(document.getElementById('main'))">Cancel</button>`:""}</div>`}
+    </div></div>
+
+    <div class="step ${st(2)}"><div class="no">${y.token?ico("check-circle"):"2"}</div><div class="grow stack" style="gap:10px">
+      <div><div class="ttl">Sign in with Google</div><div class="mute">A browser tab opens on this computer. Choose the account that owns your channel and allow access.</div></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <button class="btn" ${y.secret&&!y.connecting?"":"disabled"} onclick="ytConnect()">${y.connecting?"Waiting for you in the browser…":y.token?"Sign in again":"Sign in with Google"}</button>
+        ${y.token?`<button class="btn danger" onclick="ytDisc()">Disconnect</button>`:""}
+      </div>
+      ${y.secret&&!y.token&&!y.connecting?`<div class="help">Google may say the app is not verified. That is normal for your own project: choose Advanced, then continue.</div>`:""}
+    </div></div>
+
+    <div class="step ${st(3)}"><div class="no">${ch?ico("check-circle"):"3"}</div><div class="grow stack" style="gap:10px">
+      <div><div class="ttl">Test the connection</div><div class="mute">Reads your channel name and counts. It uploads nothing.</div></div>
+      ${ch?`<div class="panel pad" style="background:var(--sunken);box-shadow:none"><div class="ttl" style="font-size:17px">${esc(ch.title)}</div><div class="mute mono" style="margin-top:4px">${esc(ch.subs)} subscribers, ${esc(ch.views)} views, ${esc(ch.videos)} videos</div></div>`:""}
+      <div><button class="btn quiet" ${y.token?"":"disabled"} onclick="ytInfo=null;youtube(document.getElementById('main'))">${ico("arrow-clockwise")}Run test</button></div>
+    </div></div>
+  </div>
+  <h2 style="margin-top:34px">Channel look</h2>
+  <div class="panel pad stack"><p class="sub">A profile picture, banner and description that match your channel. Download them, then upload in YouTube Studio under Customization, then Branding. (Changing a channel's look needs a permission we do not ask for, so you do this part.)</p>
+    <div class="fld"><div><label for="br_n">Channel name</label><input id="br_n" value="The Sleeping Library" oninput="editing=true"></div><div><label for="br_t">Tagline</label><input id="br_t" value="Calm stories for quiet nights" oninput="editing=true"></div></div>
+    <div><button class="btn" ${running()?"disabled":""} onclick="job('branding',[document.getElementById('br_n').value,document.getElementById('br_t').value])">${ico("magic-wand")}Make avatar and banner</button></div>
+    <div id="brand_out"></div></div>`;
+  m.firstElementChild.classList.add("view");
+  brandPreview();
+  const d=document.getElementById("drop"),p=document.getElementById("pick");
+  if(d){
+    const read=f=>{const r=new FileReader();r.onload=()=>{document.getElementById("secret").value=r.result;editing=true;saveSecret()};r.readAsText(f)};
+    p.onchange=()=>p.files[0]&&read(p.files[0]);
+    d.ondragover=e=>{e.preventDefault();d.classList.add("over")};d.ondragleave=()=>d.classList.remove("over");
+    d.ondrop=e=>{e.preventDefault();d.classList.remove("over");e.dataTransfer.files[0]&&read(e.dataTransfer.files[0])};
+  }
+}
+async function brandPreview(){
+  const o=document.getElementById("brand_out");if(!o)return;
+  try{const r=await fetch("/branding/description.txt");if(!r.ok){o.innerHTML="";return}
+    const txt=await r.text(),v=Date.now();
+    o.innerHTML=`<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start"><div><img alt="Profile picture preview" src="/branding/avatar.png?v=${v}" style="width:140px;height:140px;border-radius:10px;display:block"><a class="btn quiet sm" style="margin-top:8px" href="/branding/avatar.png" download>Download picture</a></div>
+      <div style="flex:1;min-width:260px"><img alt="Banner preview" src="/branding/banner.png?v=${v}" style="width:100%;border-radius:10px;display:block"><a class="btn quiet sm" style="margin-top:8px" href="/branding/banner.png" download>Download banner</a></div></div>
+      <div style="margin-top:14px"><label for="br_d">Channel description</label><textarea id="br_d" readonly style="min-height:150px">${esc(txt)}</textarea></div>`}catch(e){}
+}
+async function saveSecret(){const v=document.getElementById("secret").value;if(!v.trim())return toast("Choose a file or paste its text first");await api("/api/youtube/secret",{json:v});editing=false;toast("Client file saved");ytInfo=null;await refresh(true)}
+async function ytConnect(){await api("/api/youtube/connect",{});toast("Finish signing in on the browser tab that opened");await refresh(true);const t=setInterval(async()=>{await refresh();if(!S.youtube.connecting){clearInterval(t);ytInfo=null;render(true)}},2000)}
+async function ytDisc(){if(!confirm("Disconnect this channel? You can sign in again later."))return;await api("/api/youtube/disconnect",{});ytInfo=null;refresh(true)}
+
+/* ---------- Settings ---------- */
+const usd=n=>n<0.01&&n>0?"under $0.01":"$"+n.toFixed(n<1?3:2);
+const ROLE_LABEL={script:["Writer","Scripts and the news summary. This is where facts and storytelling matter most."],review:["Fact-checker","Reads each script before it is approved. Must be a different model from the writer."],cheap:["Helper","Titles, tags, thumbnail text and topic ideas. A cheap model is fine."]};
+async function settings(m){
+  const h=S.health;let L;try{L=await api("/api/llm")}catch(e){L=null}
+  const cfg=L?L.config:null,est=L&&L.estimate;
+  const aiPanel=L?`<div class="panel pad stack" style="margin-bottom:16px"><h2>AI models</h2>
+    <p class="sub">${cfg.enabled&&L.key_set?`OpenRouter is on. Spent today: <b class="mono">${usd(L.spent_today)}</b> of the <b class="mono">${usd(cfg.daily_budget_usd)}</b> daily cap (${L.calls_today} calls). At the cap, everything switches to the local model.`:"Only the local model is used now. Add an OpenRouter key and choose models below for better scripts and a real fact-check."}</p>
+    <div><label for="or_key">OpenRouter key</label><input id="or_key" type="password" autocomplete="off" placeholder="${L.key_set?"Saved. Paste a new key to replace it":"Paste your key here, never into a chat"}" oninput="editing=true"><div class="help">Stored in settings.json on this computer and never shown again.${L.key_set?` <button class="btn danger sm" onclick="llmClearKey()">Remove key</button>`:""}</div></div>
+    <label class="tick"><input type="checkbox" id="or_on" ${cfg.enabled?"checked":""} onchange="editing=true"> Use OpenRouter for the jobs below</label>
+    <datalist id="or_models">${L.models.map(x=>`<option value="${esc(x.id)}">${esc(x.id)} (in $${x.in}, out $${x.out} per million tokens)</option>`).join("")}</datalist>
+    ${["script","review","cheap"].map(r=>{const pr=L.role_prices[r];return `<div><label for="or_${r}">${ROLE_LABEL[r][0]}</label><input id="or_${r}" list="or_models" value="${esc(cfg.models[r])}" placeholder="Model ID from openrouter.ai/models (empty = local model)" oninput="editing=true"><div class="help">${ROLE_LABEL[r][1]} ${pr?(cfg.models[r]?`Price: $${pr[0].toFixed(2)} in, $${pr[1].toFixed(2)} out per million tokens. `:"Local model: free. "):`<span style="color:var(--bad)">Model ID not found in OpenRouter's list.</span> `}${cfg.models[r]?`<button class="btn quiet sm" onclick="llmTest('${r}')">Test it</button> <span id="t_${r}" class="mute"></span>`:""}</div></div>`}).join("")}
+    <div class="fld"><div><label for="or_cap">Daily cap (US dollars)</label><input id="or_cap" type="number" min="0.05" max="100" step="0.05" value="${cfg.daily_budget_usd}" oninput="editing=true"><div class="help">A hard stop. Every call after it uses the local model.</div></div>
+      <div><label for="or_max">Longest answer (tokens)</label><input id="or_max" type="number" min="500" max="16000" step="500" value="${cfg.max_output_tokens}" oninput="editing=true"><div class="help">Limits what one call can cost.</div></div></div>
+    <div><button class="btn" onclick="llmSave()">Save AI settings</button></div>
+    ${L.fallbacks.length?`<div class="err">${L.fallbacks.map(esc).join("<br>")}</div>`:""}
+    <div><h2 style="font-size:15px;margin:6px 0 8px">What it costs for this channel</h2>
+    ${est?`<div class="panel rows" style="box-shadow:none"><div><span class="grow">One documentary</span><span class="mono">${usd(est.per_doc_usd)}</span></div><div><span class="grow">One Short</span><span class="mono">${usd(est.per_short_usd)}</span></div><div><span class="grow">Each day (${L.plan.docs_per_day} documentary, ${L.plan.shorts_per_day} Short)</span><span class="mono">${usd(est.per_day_usd)}</span></div><div><span class="grow">Weekly news and trend research</span><span class="mono">${usd(est.weekly_usd)}</span></div><div><b class="grow">Each month</b><b class="mono">${usd(est.per_month_usd)}</b></div></div>
+    <p class="help">Estimated from typical prompt sizes and the prices above. The real spend shows at the top of this panel. The daily cap protects you if the estimate is low.</p>`:`<p class="help">Pick models that exist on OpenRouter to see an estimate.</p>`}</div>
+    ${L.history.length?`<div class="mute">Last days: ${L.history.map(d=>`${esc(d.day.slice(5))} ${usd(d.usd)}`).join(", ")}</div>`:""}</div>`:"";
+  m.innerHTML=`<div class="head"><h1>Settings</h1><p class="sub">Keys are stored in settings.json next to the project, readable only by you.</p></div>${aiPanel}
+  <div class="panel pad stack"><h2>Pexels API key (optional)</h2>
+    <p class="sub">Shorts use public-domain archive images by default. A Pexels key adds moving stock video, but Pexels has paused new keys. Free at <a target="_blank" rel="noopener" href="https://www.pexels.com/api/">pexels.com/api</a>. ${S.settings.pexels_key?`Current key: <span class="mono">${esc(S.settings.pexels_key)}</span>`:"No key saved yet."}</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><div class="grow"><label for="pk" style="position:absolute;left:-9999px">Pexels key</label><input id="pk" placeholder="Paste your key" oninput="editing=true"></div><button class="btn" onclick="savePk()">Save key</button></div></div>
+  <div class="panel pad stack" style="margin-top:16px"><h2>Pipeline</h2>
+    <div class="rows" style="margin:0 -20px -20px">
+      <div><span class="grow">Voice</span><span class="mono mute">${esc(h.voice)}</span></div>
+      <div><span class="grow">Script model</span><span class="mono mute">${esc(h.model)}</span></div>
+      <div><span class="grow">Free disk space</span><span class="mono mute">${h.disk_free_gb} GB</span></div>
+    </div>
+    <p class="help">Rules kept on purpose: every video needs your approval, uploads are labelled as AI-narrated, uploads default to private, at most 5 uploads a day. Change voice or model with the YT_VOICE and YT_MODEL environment variables, and the niche in niche.json.</p></div>`;
+}
+async function llmSave(){
+  const g=id=>document.getElementById(id),body={enabled:g("or_on").checked,daily_budget_usd:parseFloat(g("or_cap").value),max_output_tokens:parseInt(g("or_max").value,10),models:{script:g("or_script").value.trim(),review:g("or_review").value.trim(),cheap:g("or_cheap").value.trim()}};
+  const k=g("or_key").value.trim();if(k)body.key=k;
+  await api("/api/llm/config",body);editing=false;toast("AI settings saved");render(true)}
+async function llmClearKey(){if(!confirm("Remove the saved OpenRouter key? OpenRouter will be turned off."))return;await api("/api/llm/config",{enabled:false,clear_key:true});editing=false;toast("Key removed");render(true)}
+async function llmTest(role){const el=document.getElementById("t_"+role);el.textContent="Testing...";try{const r=await api("/api/llm/test",{role});el.innerHTML=r.ok?`Works. ${r.seconds} s, cost ${usd(r.usd)}`:`<span style="color:var(--bad)">${esc(r.error)}</span>`}catch(e){el.textContent=""}}
+async function savePk(){const v=document.getElementById("pk").value;if(!v.trim())return toast("Paste a key first");await api("/api/settings",{pexels_key:v});editing=false;toast("Key saved");refresh(true)}
+
+window.addEventListener("hashchange",()=>{const t=location.hash.slice(1);if(t&&t!==tab&&NAV.some(n=>n[0]===t)){tab=t;render(true)}});
+refresh(true);setInterval(()=>refresh(),4000);
+</script>
+</body>
+</html>

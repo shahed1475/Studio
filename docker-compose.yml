@@ -1,0 +1,45 @@
+# Two containers from one image: the dashboard and the always-on worker.
+# The project folder is mounted at /app, so code, settings, videos and secrets stay on the host and survive rebuilds.
+# Host networking with loopback-only listening: nothing is reachable from the internet (the dashboard has no login).
+# Open it through an SSH tunnel:  deploy/tunnel.sh
+name: studio
+x-studio: &studio
+  build: .
+  image: studio:local
+  network_mode: host
+  init: true
+  restart: unless-stopped
+  user: "${STUDIO_UID:-1000}:${STUDIO_GID:-1000}"
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  volumes: [".:/app"]
+  environment:
+    OLLAMA_URL: ${OLLAMA_URL:-http://127.0.0.1:11434}
+    YT_MODEL: ${YT_MODEL:-qwen3:8b}
+  logging:
+    driver: json-file
+    options: {max-size: "10m", max-file: "3"}
+
+services:
+  dashboard:
+    <<: *studio
+    container_name: studio-dashboard
+    command: ["python", "dashboard.py"]
+    cpus: 0.5
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://127.0.0.1:8913/api/state"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+  worker:
+    <<: *studio
+    container_name: studio-worker
+    command: ["python", "worker.py"]
+    cpus: 2
+    mem_limit: 3g
+    healthcheck:
+      test: ["CMD", "python", "-c", "import worker,sys; sys.exit(0 if worker.alive() else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3

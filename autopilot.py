@@ -1,0 +1,275 @@
+"""Autopilot: decides what to do next (plan_actions) and does it (tick). Run every 30 minutes by a systemd timer."""
+import datetime as dt
+import fcntl
+import json
+import os
+from pathlib import Path
+
+import config
+import scheduler
+
+CONFIG_FILE = config.ROOT / "autopilot.json"
+STATE_FILE = config.ROOT / "autopilot_state.json"
+LOCK_FILE = config.ROOT / "autopilot.lock"
+NEWS_QUEUE = config.ROOT / "news_queue.json"
+LOG = config.ROOT / "logs" / "autopilot.log"
+JOB_FILE = config.ROOT / "job.pid"   # written by the dashboard while one of its jobs runs
+
+DEFAULTS = {
+    "enabled": False,            # master switch, off until the user turns it on
+    "auto_approve": True,        # reviewer-agent "pass" counts as approval
+    "uploads_per_day": 1,
+    "review_window_hours": 24,   # time between a pass and the public slot, for the human veto
+    "upload_lead_hours": 2,      # upload this long before the slot (private, publishAt set)
+    "min_queue": 3,
+    "max_waiting": 2,            # finished videos not yet uploaded
+    "slots": scheduler.SLOTS_DEFAULT,
+    "news_videos": True,         # build drafts from the weekly YouTube news digest (always need a human)
+    "shorts": True,              # also make YouTube Shorts (vertical, under a minute)
+    "shorts_per_day": 1,
+    "max_waiting_shorts": 3,     # finished Shorts not yet uploaded
+    "short_slots": scheduler.SHORT_SLOTS_DEFAULT,
+}
+MAX_FAILS = 3
+
+
+def load_config() -> dict:
+    cfg = dict(DEFAULTS)
+    if CONFIG_FILE.exists():
+        cfg.update({k: v for k, v in json.loads(CONFIG_FILE.read_text()).items() if k in DEFAULTS})
+    return cfg
+
+
+def save_config(cfg: dict) -> None:
+    CONFIG_FILE.write_text(json.dumps({k: cfg[k] for k in DEFAULTS}, indent=2))
+
+
+def _parse(ts: str) -> dt.datetime:
+    return dt.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+
+
+def counts_as_failure(exc: BaseException) -> bool:
+    """Only video-specific problems count toward the 3-strike limit. Network, auth, quota and guard errors are retried."""
+    name = type(exc).__name__
+    if isinstance(exc, (SystemExit, OSError)) or name in ("RefreshError", "TransportError", "DefaultCredentialsError"):
+        return False
+    if name == "HttpError":
+        status = getattr(getattr(exc, "resp", None), "status", 0)
+        return not (status in (401, 403, 429) or status >= 500)
+    return True
+
+
+def dashboard_busy(job_file: Path = JOB_FILE) -> bool:
+    """True while a dashboard job (its own make or upload) is running, so a tick never races it."""
+    try:
+        pid = int(job_file.read_text().strip())
+        os.kill(pid, 0)
+        return True
+    except (FileNotFoundError, ValueError, ProcessLookupError):
+        return False
+    except PermissionError:
+        return True
+
+
+def plan_actions(state: dict, cfg: dict, now: dt.datetime) -> list[dict]:
+    if not cfg["enabled"] or state["busy"]:
+        return []
+    acts = []
+    total = state["uploads_today"]
+    by_fmt = dict(state.get("uploads_by_format") or {"doc": state["uploads_today"]})
+    lead = dt.timedelta(hours=cfg["upload_lead_hours"])
+    waiting = {"doc": 0, "short": 0}
+    for v in state["videos"]:
+        if v["video_id"] or v["hold"] or v["fails"] >= MAX_FAILS:
+            continue
+        fmt = v.get("format") or "doc"
+        by_you = v["approved"] and v.get("approved_by") == "you"
+        eligible = (v["verdict"] == "pass" and v["source"] != "news") or (v["verdict"] == "needs_human" and by_you)
+        if v["verdict"] in (None, "pass") or eligible:
+            waiting[fmt] += 1
+        if v["verdict"] is None:
+            acts.append({"do": "review", "slug": v["slug"]})
+        elif eligible:
+            pub = _parse(v["publish_at"]) if v["publish_at"] else None
+            cap = cfg["shorts_per_day"] if fmt == "short" else cfg["uploads_per_day"]
+            if pub is None or pub <= now + dt.timedelta(minutes=10):
+                acts.append({"do": "schedule", "slug": v["slug"]})
+            elif (v["approved"] and state["connected"] and by_fmt.get(fmt, 0) < cap
+                  and total < config.MAX_UPLOADS_PER_DAY and pub - lead <= now):
+                acts.append({"do": "upload", "slug": v["slug"]})
+                by_fmt[fmt] = by_fmt.get(fmt, 0) + 1
+                total += 1
+    if not state["busy"]:
+        if state["queue_len"] < cfg["min_queue"]:
+            acts.append({"do": "ideas", "slug": None})
+        if cfg["shorts"] and waiting["short"] < cfg["max_waiting_shorts"] and state["queue_len"] > 0:
+            acts.append({"do": "make_short", "slug": None})
+        if waiting["doc"] < cfg["max_waiting"]:
+            if cfg["news_videos"] and state["news_pending"] > 0:
+                acts.append({"do": "make_news", "slug": None})
+            elif state["queue_len"] > 0:
+                acts.append({"do": "make", "slug": None})
+    return acts
+
+
+def build_state(now: dt.datetime, cfg: dict) -> dict:
+    import upload
+
+    videos = []
+    for m in sorted(config.OUT.glob("*/meta.json")):
+        d = json.loads(m.read_text())
+        videos.append({
+            "slug": m.parent.name, "format": d.get("format", "short"), "source": d.get("source"), "approved": bool(d.get("approved")),
+            "verdict": (d.get("review") or {}).get("verdict"), "hold": bool(d.get("hold")),
+            "approved_by": d.get("approved_by"),
+            "video_id": d.get("video_id"), "publish_at": d.get("publish_at"), "fails": d.get("autopilot_fails", 0),
+        })
+    by_fmt: dict = {}
+    day = now.astimezone(dt.timezone.utc).strftime("%Y-%m-%d")
+    for m in config.OUT.glob("*/meta.json"):
+        d = json.loads(m.read_text())
+        if str(d.get("uploaded_at", "")).startswith(day):
+            by_fmt[d.get("format", "short")] = by_fmt.get(d.get("format", "short"), 0) + 1
+    queue = json.loads(config.TOPICS_FILE.read_text()) if config.TOPICS_FILE.exists() else []
+    news = json.loads(NEWS_QUEUE.read_text()) if NEWS_QUEUE.exists() else []
+    return {
+        "queue_len": len(queue), "connected": upload.SECRET.exists() and upload.TOKEN.exists(), "busy": dashboard_busy(),
+        "uploads_today": upload.uploads_today(config.OUT, now), "uploads_by_format": by_fmt,
+        "news_pending": sum(1 for n in news if n.get("status") == "queued"), "videos": videos,
+    }
+
+
+# ---- executors: (slug, cfg, now) ----
+def _meta(slug: str) -> tuple[Path, dict]:
+    p = config.OUT / slug / "meta.json"
+    return p, json.loads(p.read_text())
+
+
+def do_review(slug, cfg, now):
+    import reviewer
+
+    result = reviewer.review(config.OUT / slug)
+    if result["verdict"] == "pass" and cfg["auto_approve"]:
+        p, meta = _meta(slug)
+        meta.update(approved=True, approved_by="reviewer-agent")
+        p.write_text(json.dumps(meta, indent=2))
+
+
+def do_schedule(slug, cfg, now):
+    p, meta = _meta(slug)
+    fmt = meta.get("format", "short")
+    taken = []
+    for m in config.OUT.glob("*/meta.json"):  # only same-format videos block a slot; a Short may publish near a documentary
+        d = json.loads(m.read_text())
+        if m.parent.name != slug and d.get("format", "short") == fmt and d.get("publish_at") and not d.get("hold"):
+            taken.append(_parse(d["publish_at"]))
+    slots = cfg["short_slots"] if fmt == "short" else cfg["slots"]
+    meta["publish_at"] = scheduler.to_rfc3339(scheduler.next_slot(now, slots, taken, cfg["review_window_hours"]))
+    p.write_text(json.dumps(meta, indent=2))
+
+
+def do_upload(slug, cfg, now):
+    import upload
+
+    _, meta = _meta(slug)
+    upload.upload(config.OUT / slug, "private", meta["publish_at"])
+
+
+def do_ideas(slug, cfg, now):
+    import run
+
+    run.cmd_research(3)
+
+
+def finish_video(folder: Path) -> None:
+    """Thumbnails, then search-based metadata, then the best title option. The reviewer sees the finished package."""
+    import seo
+    import thumbnail
+
+    p = folder / "meta.json"
+    meta = json.loads(p.read_text())
+    if meta.get("format") == "doc":  # Shorts use a frame YouTube picks; custom thumbnails are for long videos
+        thumbnail.make(folder)
+    seo.make(folder)
+    meta = json.loads(p.read_text())
+    titles = (meta.get("seo") or {}).get("titles") or []
+    if titles:
+        meta["title"] = titles[0]
+        p.write_text(json.dumps(meta, indent=2))
+
+
+def do_make(slug, cfg, now):
+    import run
+
+    finish_video(run.cmd_doc())
+
+
+def do_make_short(slug, cfg, now):
+    import run
+
+    finish_video(run.cmd_make())
+
+
+def do_make_news(slug, cfg, now):
+    import newswatch
+
+    newswatch.make_next_news_video()
+
+
+EXECUTORS = {"review": do_review, "schedule": do_schedule, "upload": do_upload,
+             "ideas": do_ideas, "make": do_make, "make_short": do_make_short, "make_news": do_make_news}
+
+
+def _log(msg: str) -> None:
+    LOG.parent.mkdir(exist_ok=True)
+    with LOG.open("a") as f:
+        f.write(f"{dt.datetime.now().isoformat(timespec='seconds')} {msg}\n")
+
+
+def tick(now: dt.datetime | None = None) -> dict:
+    now = now or dt.datetime.now(dt.timezone.utc)
+    lock = open(LOCK_FILE, "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return {"skipped": "locked"}
+    try:
+        cfg = load_config()
+        actions, errors, heavy = [], [], False
+        for a in plan_actions(build_state(now, cfg), cfg, now):
+            if a["do"] in ("make", "make_news"):
+                if heavy:
+                    continue
+                heavy = True
+            try:
+                EXECUTORS[a["do"]](a["slug"], cfg, now)
+                actions.append(a)
+                _log(f"ok {a['do']} {a['slug'] or ''}")
+            except (Exception, SystemExit) as e:  # one failing step must not stop the rest
+                errors.append(f"{a['do']} {a['slug'] or ''}: {e}".strip())
+                _log(f"FAIL {errors[-1]}")
+                if a["slug"] and counts_as_failure(e):
+                    p, meta = _meta(a["slug"])
+                    meta["autopilot_fails"] = meta.get("autopilot_fails", 0) + 1
+                    p.write_text(json.dumps(meta, indent=2))
+        result = {"at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "enabled": cfg["enabled"], "actions": actions, "errors": errors}
+        STATE_FILE.write_text(json.dumps(result, indent=2))
+        return result
+    finally:
+        lock.close()
+
+
+def is_running() -> bool:
+    """True while a tick holds the lock (the dashboard waits for it before starting its own jobs)."""
+    LOCK_FILE.touch(exist_ok=True)
+    with open(LOCK_FILE) as f:
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return False
+        except BlockingIOError:
+            return True
+
+
+def status() -> dict:
+    last = json.loads(STATE_FILE.read_text()) if STATE_FILE.exists() else None
+    return {"config": load_config(), "last_tick": last, "running": is_running()}

@@ -1,0 +1,8 @@
+[Unit]
+Description=Story Studio autopilot pass (make, review, schedule, upload)
+
+[Service]
+Type=oneshot
+WorkingDirectory=__ROOT__
+ExecStart=__ROOT__/.venv/bin/python run.py autopilot tick
+TimeoutStartSec=3h

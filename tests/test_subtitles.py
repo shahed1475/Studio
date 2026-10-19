@@ -1,0 +1,63 @@
+import re
+
+import subtitles
+
+
+def words(text, line=0, start=0.0, per=0.4):
+    out, t = [], start
+    for w in text.split():
+        out.append({"s": t, "e": t + per, "w": w, "i": line})
+        t += per
+    return out
+
+
+def lines_of(cue):
+    return cue["text"].split("\n")
+
+
+def test_cues_break_at_line_boundaries():
+    ws = words("The town was quiet.", 0) + words("Then the music began.", 1, start=2.0)
+    cues = subtitles.build_cues(ws)
+    assert [c["text"].replace("\n", " ") for c in cues] == ["The town was quiet.", "Then the music began."]
+
+
+def test_long_line_split_into_two_line_cues():
+    ws = words(" ".join(f"word{i:02d}" for i in range(30)), 0)
+    cues = subtitles.build_cues(ws)
+    assert len(cues) >= 2
+    for c in cues:
+        assert len(lines_of(c)) <= 2 and all(len(l) <= 42 for l in lines_of(c))
+
+
+def test_cue_never_longer_than_six_seconds():
+    ws = words("slow " * 40, 0, per=0.9)
+    assert all(c["end"] - c["start"] <= 6.0 + 1e-6 for c in subtitles.build_cues(ws))
+
+
+def test_cues_ordered_and_not_overlapping_and_positive():
+    ws = words("one two three four five six seven eight nine ten eleven twelve", 0) + words("Next sentence here.", 1, start=5.0)
+    cues = subtitles.build_cues(ws)
+    for a, b in zip(cues, cues[1:]):
+        assert a["end"] <= b["start"] + 1e-9
+    assert all(c["end"] > c["start"] for c in cues)
+
+
+def test_minimum_duration_one_second_when_room():
+    cues = subtitles.build_cues(words("Hi.", 0, per=0.2) + words("Much later words arrive.", 1, start=10.0))
+    assert cues[0]["end"] - cues[0]["start"] >= 1.0
+
+
+def test_srt_format():
+    assert subtitles.to_srt([{"start": 0.0, "end": 1.5, "text": "Hello there"}]) == "1\n00:00:00,000 --> 00:00:01,500\nHello there\n\n"
+
+
+def test_ass_has_playres_and_dialogue():
+    ass = subtitles.to_ass([{"start": 0.0, "end": 1.5, "text": "Hello\nthere"}], (1920, 1080))
+    assert "PlayResX: 1920" in ass and "PlayResY: 1080" in ass
+    assert re.search(r"Dialogue: 0,0:00:00\.00,0:00:01\.50,Sub,Hello\\Nthere", ass)
+
+
+def test_timings_match():
+    ws = words("a b c", 0)
+    assert subtitles.timings_match(ws, 1.2 + 0.5) is True
+    assert subtitles.timings_match(ws, 30.0) is False

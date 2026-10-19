@@ -1,0 +1,36 @@
+# secrets: never commit
+.env
+.env.*
+!.env.example
+client_secret*.json
+token*.json
+settings.json
+llm.json
+*.pem
+*.key
+
+# runtime state and generated media (lives on the machine that runs the studio)
+output/
+cache/
+logs/
+data/
+music/
+topics.json
+news_topics.json
+autopilot_state.json
+autopilot.lock
+agent.lock
+agent.json
+edit_profile.json
+reference_channels.json
+-encoders
+
+# python and tools
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.superpowers/
+.claude/settings*.json
+.git
+docs/

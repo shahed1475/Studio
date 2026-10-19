@@ -1,0 +1,10 @@
+[Unit]
+Description=Story Studio weekly YouTube security and policy news digest
+
+[Service]
+Type=oneshot
+WorkingDirectory=__ROOT__
+ExecStart=__ROOT__/.venv/bin/python run.py newswatch
+ExecStartPost=-__ROOT__/.venv/bin/python run.py trends
+ExecStartPost=-__ROOT__/.venv/bin/python run.py channels
+TimeoutStartSec=1h

@@ -1,0 +1,8 @@
+[Unit]
+Description=Story Studio growth agent: daily channel and competitor research
+
+[Service]
+Type=oneshot
+WorkingDirectory=__ROOT__
+ExecStart=__ROOT__/.venv/bin/python run.py agent
+TimeoutStartSec=30min

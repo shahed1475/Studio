@@ -1,0 +1,178 @@
+"""Free footage: Pexels stock video when a key is set, otherwise public-domain archive images from Wikimedia Commons."""
+import hashlib
+import re
+import time
+from pathlib import Path
+
+import requests
+
+import archive_video
+import config
+
+
+def clip_for(query: str) -> Path | None:
+    if not query:
+        return None
+    if not config.PEXELS_KEY:  # no stock-video key: public-domain film from the Internet Archive, else an archive image
+        if config.ARCHIVE_VIDEO:
+            clip = archive_video.fetch_clip(query)
+            if clip:
+                return clip
+        hit = image_for(query)
+        return hit[0] if hit else None
+    config.CACHE.mkdir(exist_ok=True)
+    dest = config.CACHE / f"{hashlib.md5(query.lower().encode()).hexdigest()[:12]}.mp4"
+    if dest.exists():
+        return dest
+    try:
+        r = requests.get(
+            "https://api.pexels.com/videos/search",
+            headers={"Authorization": config.PEXELS_KEY},
+            params={"query": query, "orientation": "portrait", "size": "medium", "per_page": 5},
+            timeout=30,
+        )
+        r.raise_for_status()
+        for v in r.json().get("videos", []):
+            files = [f for f in v["video_files"] if f.get("file_type") == "video/mp4" and f.get("height", 0) >= 1280]
+            if not files:
+                continue
+            best = min(files, key=lambda f: f["height"])
+            data = requests.get(best["link"], timeout=120)
+            data.raise_for_status()
+            dest.write_bytes(data.content)
+            return dest
+    except requests.RequestException as e:
+        print(f"  footage lookup failed for '{query}': {e}")
+    return None
+
+
+def credit_for(path: Path) -> str | None:
+    """Credit line stored beside a cached clip or image, if any."""
+    f = Path(path).with_suffix(".txt")
+    return f.read_text() if f.exists() else None
+
+
+def collect_credits(clips: list) -> list[str]:
+    out: list[str] = []
+    for c in clips:
+        line = credit_for(c) if c else None
+        if line and line not in out:
+            out.append(line)
+    return out
+
+
+def enough_footage(clips: list, min_ratio: float = 0.6) -> bool:
+    """A Short where most scenes have no picture is just coloured screens: not worth publishing."""
+    return bool(clips) and sum(c is not None for c in clips) / len(clips) >= min_ratio
+
+
+_PD = ("public domain", "cc0", "pd-", "pd ")
+
+
+def image_relevant(title: str, categories: str, anchors: list[str]) -> bool:
+    """An image only counts when its title or Commons categories name the subject (no anchors known: no filter)."""
+    if not anchors:
+        return True
+    text = f"{title} {categories}".lower()
+    return any(a.lower() in text for a in anchors)
+
+
+def _download(info: dict, page: dict, meta: dict, key: str) -> tuple[Path, str] | None:
+    dest, credit_file = config.CACHE / f"{key}.jpg", config.CACHE / f"{key}.txt"
+    if dest.exists() and credit_file.exists():
+        return dest, credit_file.read_text()
+    img = None
+    for wait in (2, 8, 20):  # the image server rate-limits too
+        time.sleep(wait)
+        img = requests.get(info["thumburl"], headers={"User-Agent": "SleepingLibraryBot/1.0 (educational storytelling channel)"}, timeout=60)
+        if img.status_code != 429:
+            break
+    if img is None or not img.ok:
+        return None
+    dest.write_bytes(img.content)
+    credit = f"{page.get('title', '').removeprefix('File:')} (Wikimedia Commons, {meta['LicenseShortName']['value']})"
+    credit_file.write_text(credit)
+    return dest, credit
+
+
+def images_for(query: str, anchors: list[str] | None = None, limit: int = 1, skip=(), judge=None) -> list[tuple[Path, str]]:
+    """Public-domain / CC0 images from Wikimedia Commons whose title or categories name the subject. [(file, credit)]."""
+    if not query:
+        return []
+    config.CACHE.mkdir(exist_ok=True)
+    anchors = anchors or []
+    found: list[tuple[Path, str]] = []
+    try:
+        for attempt in range(4):  # Wikimedia rate-limits bursts (429): wait and retry
+            time.sleep(1.2 + attempt * 4)
+            r = requests.get(
+                "https://commons.wikimedia.org/w/api.php",
+                headers={"User-Agent": "SleepingLibraryBot/1.0 (educational storytelling channel)"},
+                params={
+                    "action": "query", "format": "json", "generator": "search", "gsrnamespace": 6,
+                    "gsrsearch": f"{query} filetype:bitmap", "gsrlimit": 30, "prop": "imageinfo",
+                    "iiprop": "url|extmetadata", "iiurlwidth": 1920,
+                },
+                timeout=30,
+            )
+            if r.status_code != 429:
+                break
+        r.raise_for_status()
+        cands = []
+        for page in (r.json().get("query", {}).get("pages", {}) or {}).values():
+            info = (page.get("imageinfo") or [{}])[0]
+            meta = info.get("extmetadata", {})
+            lic = meta.get("LicenseShortName", {}).get("value", "").lower()
+            if not info.get("thumburl") or not lic.startswith(_PD):
+                continue
+            title = page.get("title", "").removeprefix("File:")
+            cats = meta.get("Categories", {}).get("value", "") + " " + re.sub(r"<[^>]+>", " ", meta.get("ImageDescription", {}).get("value", ""))
+            if image_relevant(title, cats, anchors):
+                cands.append((title, page, info, meta))
+        if judge and cands:  # a name match is not enough: "Apollo" also names a moon mission
+            keep = set(judge([c[0] for c in cands]))
+            cands = [c for c in cands if c[0] in keep]
+        for title, page, info, meta in cands:
+            key = hashlib.md5(info["thumburl"].encode()).hexdigest()[:12]
+            hit = _download(info, page, meta, key)
+            if hit and hit[0] not in skip and hit[0] not in [f[0] for f in found]:
+                found.append(hit)
+            if len(found) >= limit:
+                break
+    except requests.RequestException as e:
+        print(f"  image lookup failed for '{query}': {e}")
+    return found
+
+
+def image_for(query: str, anchors: list[str] | None = None) -> tuple[Path, str] | None:
+    hits = images_for(query, anchors, 1)
+    return hits[0] if hits else None
+
+
+def scene_images(lines: list[dict], topic: str, anchors: list[str], pool_size: int = 10, judge=None) -> tuple[list, list[str], dict]:
+    """One relevant image per scene: a specific search first, then unused images about the subject, then reuse.
+    A scene only goes blank when nothing about the subject can be found at all."""
+    used: list[Path] = []
+    credit: dict[Path, str] = {}
+    pool: list[tuple[Path, str]] = []
+    for q in dict.fromkeys([topic, *anchors]):  # the subject itself: a reserve of on-topic images
+        pool += [h for h in images_for(q, anchors, pool_size, skip=[p for p, _ in pool], judge=judge) if h[0] not in [p for p, _ in pool]]
+    clips: list[Path | None] = []
+    for l in lines:
+        hit = None
+        if l.get("visual"):
+            hits = images_for(l["visual"], anchors, 1, skip=used, judge=judge)
+            hit = hits[0] if hits else None
+        if not hit:
+            hit = next((h for h in pool if h[0] not in used), None)
+        if hit:
+            if hit[0] not in used:
+                used.append(hit[0])
+                credit[hit[0]] = hit[1]
+            clips.append(hit[0])
+        elif used:  # everything on-topic was already shown: show the least recently used one again
+            clips.append(used[len([c for c in clips if c]) % len(used)])
+        else:
+            clips.append(None)
+    stats = {"scenes": len(lines), "unique": len(used), "missing": sum(c is None for c in clips)}
+    return clips, [credit[p] for p in used], stats
