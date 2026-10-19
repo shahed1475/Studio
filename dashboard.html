@@ -237,7 +237,7 @@ button.wd{cursor:pointer}button.wd:hover{transform:translateY(-2px);border-color
     <nav id="nav" aria-label="Main"></nav>
     <div class="side-foot">
       <div class="runbox" id="runbox" aria-live="polite"></div>
-      <button class="theme" id="themebtn" onclick="toggleTheme()"><i class="ic" style="--i:url(/static/icons/sparkle.svg)"></i><span id="themelbl">Theme</span></button>
+      <nav id="nav2" aria-label="Settings"></nav>
     </div>
   </aside>
   <main id="main"><div class="stack"><div class="skel" style="height:34px;width:40%"></div><div class="skel" style="height:110px"></div><div class="skel" style="height:90px"></div></div></main>
@@ -245,7 +245,7 @@ button.wd{cursor:pointer}button.wd:hover{transform:translateY(-2px);border-color
 <div class="toast" id="toast" role="status"></div>
 
 <script>
-const NAV=[["home","Home","squares-four"],["videos","Videos","film-strip"],["create","Create","magic-wand"],["autopilot","Autopilot","robot"],["growth","Growth","sparkle"],["activity","Activity","pulse"],["youtube","YouTube","youtube-logo"],["settings","Settings","gear-six"]];
+const NAV=[["home","Home","squares-four"],["videos","Videos","film-strip"],["create","Create","magic-wand"],["autopilot","Autopilot","robot"],["growth","Growth","sparkle"],["activity","Activity","pulse"],["youtube","YouTube","youtube-logo"]]; const SET=["settings","Settings","gear-six"];
 let S=null,tab=(location.hash.slice(1)||"home"),openSlug=null,openJob=null,ytInfo=null,editing=false,lastSig="",logTimer=null;
 
 const url=u=>/^https?:\/\//i.test(u||"")?u:"";
@@ -266,7 +266,7 @@ const running=()=>S&&S.jobs.find(j=>j.status==="running");
 const jobBadge=j=>badge(j.status==="done"?"Finished":j.status==="failed"?"Failed":"Running",j.status==="done"?"ok":j.status==="failed"?"bad":"warn");
 const empty=(icon,title,text,btn="")=>`<div class="empty">${ico(icon)}<b>${title}</b><span>${text}</span>${btn}</div>`;
 
-function setTheme(t){safe(()=>localStorage.setItem("theme",t));document.documentElement.dataset.theme=t;document.getElementById("themelbl").textContent=t==="dark"?"Switch to light":"Switch to dark"}
+function setTheme(t){safe(()=>localStorage.setItem("theme",t));document.documentElement.dataset.theme=t;const l=document.getElementById("themelbl");if(l)l.textContent=t==="dark"?"Switch to light":"Switch to dark"}
 function toggleTheme(){setTheme(document.documentElement.dataset.theme==="dark"?"light":"dark")}
 setTheme(safe(()=>localStorage.getItem("theme"))||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"));
 
@@ -285,6 +285,7 @@ async function refresh(force){
 function chrome(){
   const c=S.counts["needs review"],r=running();
   document.getElementById("nav").innerHTML=NAV.map(([k,l,i])=>`<button class="${tab===k?"on":""}" onclick="go('${k}',{slug:null})" ${tab===k?'aria-current="page"':""}>${ico(i)}<span class="t">${l}</span>${k==="videos"&&c?`<span class="count">${c}</span>`:""}${k==="autopilot"&&S.autopilot.needs_you?`<span class="count">${S.autopilot.needs_you}</span>`:""}${k==="growth"&&S.agent&&S.agent.unread?`<span class="count">${S.agent.unread}</span>`:""}</button>`).join("");
+  document.getElementById("nav2").innerHTML=(([k,l,i])=>`<button class="${tab===k?"on":""}" onclick="go('${k}',{slug:null})" ${tab===k?'aria-current="page"':""}>${ico(i)}<span class="t">${l}</span></button>`)(SET);
   document.getElementById("runbox").className="runbox"+(r?" busy":"");
   document.getElementById("runbox").innerHTML=r?`<b>Working</b>${esc(r.cmd)}`:`<b>Idle</b>Nothing is running`;
 }
@@ -292,7 +293,7 @@ function render(force){
   if(!S)return;chrome();
   const m=document.getElementById("main");
   ({home,videos,create,autopilot,growth,activity,youtube,settings})[tab]?.(m);
-  m.firstElementChild?.classList.add("view");
+  m.firstElementChild?.classList.add("view");setTheme(document.documentElement.dataset.theme);
 }
 
 /* ---------- Home ---------- */
@@ -759,7 +760,8 @@ async function settings(m){
     ${est?`<div class="panel rows" style="box-shadow:none"><div><span class="grow">One documentary</span><span class="mono">${usd(est.per_doc_usd)}</span></div><div><span class="grow">One Short</span><span class="mono">${usd(est.per_short_usd)}</span></div><div><span class="grow">Each day (${L.plan.docs_per_day} documentary, ${L.plan.shorts_per_day} Short)</span><span class="mono">${usd(est.per_day_usd)}</span></div><div><span class="grow">Weekly news and trend research</span><span class="mono">${usd(est.weekly_usd)}</span></div><div><b class="grow">Each month</b><b class="mono">${usd(est.per_month_usd)}</b></div></div>
     <p class="help">Estimated from typical prompt sizes and the prices above. The real spend shows at the top of this panel. The daily cap protects you if the estimate is low.</p>`:`<p class="help">Pick models that exist on OpenRouter to see an estimate.</p>`}</div>
     ${L.history.length?`<div class="mute">Last days: ${L.history.map(d=>`${esc(d.day.slice(5))} ${usd(d.usd)}`).join(", ")}</div>`:""}</div>`:"";
-  m.innerHTML=`<div class="head"><h1>Settings</h1><p class="sub">Keys are stored in settings.json next to the project, readable only by you.</p></div>${aiPanel}
+  m.innerHTML=`<div class="head"><h1>Settings</h1><p class="sub">Keys are stored in settings.json next to the project, readable only by you.</p></div>
+  <div class="panel pad stack"><h2>Appearance</h2><div><button class="btn" id="themebtn" onclick="toggleTheme()"><span id="themelbl">Theme</span></button></div></div>${aiPanel}
   <div class="panel pad stack"><h2>Pexels API key (optional)</h2>
     <p class="sub">Shorts use public-domain archive images by default. A Pexels key adds moving stock video, but Pexels has paused new keys. Free at <a target="_blank" rel="noopener" href="https://www.pexels.com/api/">pexels.com/api</a>. ${S.settings.pexels_key?`Current key: <span class="mono">${esc(S.settings.pexels_key)}</span>`:"No key saved yet."}</p>
     <div style="display:flex;gap:10px;flex-wrap:wrap"><div class="grow"><label for="pk" style="position:absolute;left:-9999px">Pexels key</label><input id="pk" placeholder="Paste your key" oninput="editing=true"></div><button class="btn" onclick="savePk()">Save key</button></div></div>
