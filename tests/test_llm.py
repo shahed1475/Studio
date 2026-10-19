@@ -168,3 +168,31 @@ def test_env_file_is_read_without_overriding_real_environment(tmp_path, monkeypa
     assert os.environ["OTHER"] == "already"          # a real environment variable wins
     assert os.environ["YT_X"] == "spaced"
     config.load_env(tmp_path / "missing")            # no file: no error
+
+
+def test_claude_ids_go_to_anthropic_and_come_back_openrouter_shaped(monkeypatch):
+    sent = {}
+
+    class R:
+        def raise_for_status(self): pass
+        def json(self): return {"content": [{"type": "text", "text": '{"ok": 1}'}], "usage": {"input_tokens": 12, "output_tokens": 5}}
+
+    monkeypatch.setattr(llm.requests, "post", lambda url, **kw: sent.update(url=url, **kw) or R())
+    body = llm._post({"model": "claude-sonnet-5-5", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 50, "response_format": {"type": "json_object"}}, "sk-ant-test")
+    assert sent["url"] == "https://api.anthropic.com/v1/messages" and sent["headers"]["x-api-key"] == "sk-ant-test"
+    assert "JSON" in sent["json"]["messages"][0]["content"]
+    assert body["choices"][0]["message"]["content"] == '{"ok": 1}' and body["usage"] == {"prompt_tokens": 12, "completion_tokens": 5}
+
+
+def test_claude_model_uses_anthropic_key_and_openrouter_ids_do_not(monkeypatch, tmp_path):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "ant-key-123456")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key-123456")
+    assert llm.key_for("claude-sonnet-5-5") == "ant-key-123456"
+    assert llm.key_for("anthropic/claude-sonnet-4.5") == "or-key-123456"
+    assert llm.is_claude("claude-opus-5-5") and not llm.is_claude("anthropic/claude-opus-5-5")
+
+
+def test_claude_price_lookup_matches_openrouter_dots(monkeypatch):
+    monkeypatch.setattr(llm, "model_prices", lambda: {"anthropic/claude-sonnet-4.5": (3.0, 15.0)})
+    assert llm._usd("claude-sonnet-4-5", 1_000_000, 0) == 3.0
+    assert llm._usd("claude-unknown-9", 1_000_000, 0) == llm.UNKNOWN_PRICE[0]  # an unknown model is priced high on purpose

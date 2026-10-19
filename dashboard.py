@@ -151,7 +151,7 @@ def llm_view() -> dict:
     est = llm.estimate({r: v for r, v in role_prices.items() if v}, ap["uploads_per_day"], ap["shorts_per_day"] if ap["shorts"] else 0) if known else None
     today = usage.get(llm._day(now), {})
     return {
-        "config": cfg, "key_set": bool(llm.api_key()), "spent_today": round(llm.spent_today(now), 4), "calls_today": today.get("calls", 0),
+        "config": cfg, "key_set": bool(llm.api_key()), "anthropic_key_set": bool(llm.anthropic_key()), "spent_today": round(llm.spent_today(now), 4), "calls_today": today.get("calls", 0),
         "fallbacks": today.get("fallbacks", [])[-5:], "by_role_today": today.get("by_role", {}),
         "history": [{"day": d, "usd": round(v["usd"], 4), "calls": v["calls"]} for d, v in sorted(usage.items())[-7:]],
         "role_prices": {r: v for r, v in role_prices.items()}, "estimate": est,
@@ -603,14 +603,25 @@ class H(BaseHTTPRequestHandler):
             b = dict(b)
             key = b.pop("key", None)
             clear = b.pop("clear_key", False)
+            akey = b.pop("anthropic_key", None)
+            aclear = b.pop("clear_anthropic_key", False)
             clean = llm.validate_config(b)
             cfg = llm.load_config()
             cfg.update({k: v for k, v in clean.items() if k != "models"})
             cfg["models"].update(clean.get("models", {}))
-            if (cfg["enabled"] or cfg["free"]) and not (llm.api_key() or (key or "").strip()):
-                raise ValueError("save your OpenRouter key before turning it on")
+            if (cfg["enabled"] or cfg["free"]) and not (llm.api_key() or llm.anthropic_key() or (key or "").strip() or (akey or "").strip()):
+                raise ValueError("save your OpenRouter or Anthropic key before turning it on")
             llm.save_config(cfg)
             st = load_settings()
+            if aclear:
+                st.pop("anthropic_key", None)
+                save_settings(st)
+            elif akey and akey.strip():
+                akey = akey.strip()
+                if not 10 <= len(akey) <= 300 or re.search(r"\s", akey):
+                    raise ValueError("that does not look like an API key")
+                st["anthropic_key"] = akey
+                save_settings(st)
             if clear:
                 st.pop("openrouter_key", None)
                 save_settings(st)

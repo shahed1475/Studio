@@ -94,6 +94,25 @@ def api_key() -> str:
     return json.loads(SETTINGS_FILE.read_text()).get("openrouter_key", "") if SETTINGS_FILE.exists() else ""
 
 
+def anthropic_key() -> str:
+    """A direct Anthropic key (for model ids that start with claude-), from ANTHROPIC_API_KEY or settings.json."""
+    import os
+
+    env = os.getenv("ANTHROPIC_API_KEY")
+    if env:
+        return env
+    return json.loads(SETTINGS_FILE.read_text()).get("anthropic_key", "") if SETTINGS_FILE.exists() else ""
+
+
+def is_claude(model: str) -> bool:
+    """Ids like claude-sonnet-5-5 go straight to Anthropic; ids like anthropic/claude-sonnet-4.5 stay on OpenRouter."""
+    return model.startswith("claude-")
+
+
+def key_for(model: str) -> str:
+    return anthropic_key() if is_claude(model) else api_key()
+
+
 # ---- usage and spend ----
 def _usage() -> dict:
     return json.loads(USAGE_FILE.read_text()) if USAGE_FILE.exists() else {}
@@ -147,7 +166,9 @@ def model_prices() -> dict:
 
 
 def _usd(model: str, tin: int, tout: int) -> float:
-    pin, pout = model_prices().get(model, UNKNOWN_PRICE)
+    prices = model_prices()
+    # direct Anthropic ids use dashes (claude-sonnet-4-5), OpenRouter's list uses dots (anthropic/claude-sonnet-4.5)
+    pin, pout = prices.get(model) or prices.get("anthropic/" + re.sub(r"(\d)-(\d)", r"\1.\2", model)) or UNKNOWN_PRICE
     return (tin * pin + tout * pout) / 1e6
 
 
@@ -178,7 +199,25 @@ def parse_json(text: str) -> dict:
     raise ValueError("no JSON object in the reply")
 
 
+def _post_anthropic(payload: dict, key: str) -> dict:
+    """Anthropic's Messages API, with the answer reshaped like an OpenRouter reply so the rest of this module is unchanged."""
+    prompt = payload["messages"][0]["content"]
+    if payload.get("response_format"):
+        prompt += "\n\nReply with one JSON object and nothing else."
+    r = requests.post("https://api.anthropic.com/v1/messages", timeout=240,
+                      headers={"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
+                      json={"model": payload["model"], "max_tokens": payload["max_tokens"], "temperature": payload.get("temperature", 0.7),
+                            "messages": [{"role": "user", "content": prompt}]})
+    r.raise_for_status()
+    b = r.json()
+    u = b.get("usage") or {}
+    text = "".join(c.get("text", "") for c in b.get("content", []) if c.get("type") == "text")
+    return {"choices": [{"message": {"content": text}}], "usage": {"prompt_tokens": u.get("input_tokens", 0), "completion_tokens": u.get("output_tokens", 0)}}
+
+
 def _post(payload: dict, key: str) -> dict:
+    if is_claude(payload["model"]):
+        return _post_anthropic(payload, key)
     r = requests.post("https://openrouter.ai/api/v1/chat/completions", json=payload, timeout=240,
                       headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json", "X-Title": "Story Studio"})
     r.raise_for_status()
@@ -242,6 +281,8 @@ def chat(prompt: str, role: str = "cheap", fallback=None, now: dt.datetime | Non
     now = now or _now()
     cfg, key = load_config(), api_key()
     model = cfg["models"].get(role, "")
+    if model and is_claude(model):
+        key = anthropic_key()
     if cfg["enabled"] and key and model:
         if spent_today(now) >= cfg["daily_budget_usd"]:
             _note(now, f"{role}: the daily cap was reached, used the local model")
@@ -259,7 +300,8 @@ def chat(prompt: str, role: str = "cheap", fallback=None, now: dt.datetime | Non
                     continue
             else:
                 _note(now, f"{role}: invalid JSON from {model}, used the local model")
-    if cfg["free"] and key:
+    if cfg["free"] and api_key():
+        key = api_key()
         got = _free_chat(prompt, role, cfg, key, now)
         if got is not None:
             return got
@@ -281,10 +323,11 @@ def decide(question: str, state: str, options: list[str], role: str = "cheap", f
 
 def test_call(role: str) -> dict:
     """One tiny real call, no fallback, so a wrong key or model ID shows its real error."""
-    cfg, key = load_config(), api_key()
+    cfg = load_config()
     model = cfg["models"].get(role, "")
+    key = key_for(model) if model else api_key()
     if not key:
-        return {"ok": False, "error": "no OpenRouter key saved yet"}
+        return {"ok": False, "error": "no Anthropic key saved yet" if is_claude(model) else "no OpenRouter key saved yet"}
     if not model:
         return {"ok": False, "error": "no model chosen for this job"}
     start = time.time()
