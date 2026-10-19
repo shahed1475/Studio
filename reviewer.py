@@ -30,18 +30,25 @@ def _in_source(claim: str, source: str) -> bool:
     return bool(source) and bool(key) and key.lower() in source.lower()
 
 
-def unhedged_claims(lines: list[str], source: str = "") -> list[str]:
-    """Specific names, years, centuries and quotes stated without any hedging word in the same line.
-    With the source article given, a specific that the article itself contains is verified and not counted."""
+def claim_lines(lines: list[str], source: str = "", verified=()) -> list[tuple[int, str, str]]:
+    """(line number, claim, line) for every specific name, year, century or quote stated without a hedging word in its line,
+    that neither the source article contains nor an earlier web check has verified."""
     found = []
-    for line in lines:
+    for i, line in enumerate(lines):
         if HEDGES.search(line):
             continue
         for rx in SPECIFICS:
             m = rx.search(line)
-            if m and not _in_source(m.group(0).strip(), source):
-                found.append(m.group(0).strip())
+            if m:
+                claim = m.group(0).strip()
+                if claim not in verified and not _in_source(claim, source):
+                    found.append((i, claim, line))
     return found
+
+
+def unhedged_claims(lines: list[str], source: str = "", verified=()) -> list[str]:
+    """The claims of claim_lines, as plain strings. With the source article given, a specific the article contains is verified and not counted."""
+    return [c for _, c, _ in claim_lines(lines, source, verified)]
 
 
 def source_title(meta: dict) -> str:
@@ -183,7 +190,7 @@ def rule_checks(meta: dict, probe: dict, existing_titles: list[str], thumb_bytes
     out.append(_c("script_length", words >= lim["words"], f"{words} words (need {lim['words']})"))
     dupes = len(lines) - len(set(lines))
     out.append(_c("script_loop", dupes <= max(1, len(lines) // 10), f"{dupes} repeated narration lines"))
-    claims = unhedged_claims([l["text"] for l in meta.get("lines", [])], source)
+    claims = unhedged_claims([l["text"] for l in meta.get("lines", [])], source, meta.get("verified_claims", []))
     out += metadata_checks(meta)
     out += variety_checks(meta, recent or [])
     out.append(_c("claims", len(claims) < 2, f"{len(claims)} specific claims stated as fact{' and not found in the source article' if source else ''}, check them: {'; '.join(claims[:5])}" if claims else ("every specific name and year is in the source article" if source else "no unhedged specifics"), "human"))

@@ -23,6 +23,7 @@ import reviewer
 import scriptgen
 import seo
 import topicqueue
+import webcheck
 
 MAX_ATTEMPTS = 2
 SIMILAR = 0.7  # a new title may not be more like another video's title than this
@@ -105,6 +106,31 @@ def rewrite_lines(meta: dict, source: str, problems: list[str], chat=None) -> in
     return changed
 
 
+def verify_claims(meta: dict, source: str, now: dt.datetime | None = None) -> dict:
+    """Check, one by one, the specific claims the source article does not contain (at most six, about a cent each) against the web.
+    Supported ones are remembered in meta (so the reviewer stops counting them) and their pages are added to the sources.
+    Returns {"verified": n, "wrong": [corrections], "unsure": [lines]}."""
+    cl = reviewer.claim_lines([l["text"] for l in meta.get("lines", [])], source, meta.get("verified_claims", []))
+    out = {"verified": 0, "wrong": [], "unsure": [], "found": len(cl)}
+    for n, (i, claim, line) in enumerate(cl):
+        if n >= webcheck.MAX_CLAIMS_PER_VIDEO:
+            out["unsure"].append(line)
+            continue
+        r = webcheck.verify(line, meta.get("topic", ""), now)
+        if r["verdict"] == "supported":
+            meta.setdefault("verified_claims", []).append(claim)
+            for u in r["urls"]:
+                note = f"Checked against: {u}"
+                if note not in meta.setdefault("sources", []):
+                    meta["sources"].append(note)
+            out["verified"] += 1
+        elif r["verdict"] == "contradicted":
+            out["wrong"].append(f"Line {i} says '{line}' but a reliable source says: {r['fact'] or 'this is not correct'}")
+        else:
+            out["unsure"].append(line)
+    return out
+
+
 def archive(folder: Path) -> Path:
     """Move a video to output_old (never deleted), under a name that is not taken."""
     dest_root = config.ROOT / "output_old"
@@ -154,16 +180,22 @@ def fix(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) -> 
     if {"claims", "invented_facts", "policy_risk"} & set(failing):
         source = reviewer.source_text(meta)
         problems = [c["detail"] for n, c in failing.items() if n in ("claims", "invented_facts", "policy_risk")]
-        if is_doc and source:
-            problems += reviewer.unhedged_claims([l["text"] for l in meta.get("lines", [])], source)
+        checked = verify_claims(meta, source, now)  # the web settles what the source article does not say
+        if checked["verified"]:
+            fixed.append(f"checked {checked['verified']} claims against the web and credited the pages")
+        left = checked["wrong"] or checked["unsure"] or ({"invented_facts", "policy_risk"} & set(failing)) or (checked["found"] == 0 and "claims" in failing)
+        if not left:
+            pass  # every flagged claim is now verified: the reviewer decides again below
+        elif is_doc and source:
+            problems += checked["wrong"] + [f"not verified: {l}" for l in checked["unsure"]]
             n = rewrite_lines(meta, source, problems, chat)
             if n:
                 fixed.append(f"rewrote {n} narration lines from the source")
                 rewrite = True
             else:
-                archive_reason = "its facts could not be repaired from the source"
+                archive_reason = "its facts could not be repaired from the source or the web"
         else:
-            archive_reason = "a script whose facts cannot be checked against a source"
+            archive_reason = "a script with claims that are wrong or cannot be verified"
     if "grounded" in failing or ("images" in failing and failing["images"]["severity"] == "block"):
         archive_reason = archive_reason or ("its script has no source article" if "grounded" in failing else "its pictures do not match the story")
 
