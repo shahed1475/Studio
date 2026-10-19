@@ -77,7 +77,7 @@ def test_git_config_is_judged_by_an_allowlist_and_active_hooks_are_flagged(tmp_p
     (g / "hooks" / "post-checkout").write_text("#!/bin/sh\necho hi\n")
     r = vetskill.scan(tmp_path)
     what = " | ".join(f["what"] for f in r["findings"] if f["severity"] == "high")
-    for needle in ("core.editor", "[filter]", "[alias]", "[include]", "remote address that runs a program", "an active git hook"):
+    for needle in ("core.editor", "[filter]", "[alias]", "[include]", "not a plain https", "an active git hook"):
         assert needle in what, needle
     assert not any("pre-commit.sample" in f["file"] and f["severity"] == "high" for f in r["findings"])
 
@@ -95,3 +95,13 @@ def test_a_plain_git_config_is_not_an_alarm_and_a_gitdir_pointer_is(tmp_path):
     (ptr / ".git").write_text(f"gitdir: {elsewhere}\n")
     whats = [f["what"] for f in vetskill.scan(ptr)["findings"] if f["severity"] == "high"]
     assert any("pointer" in w for w in whats) and any("active git hook" in w for w in whats)  # the pointed-to folder is scanned too
+
+
+def test_git_config_parser_differentials_are_flagged(tmp_path):
+    g = tmp_path / ".git"
+    g.mkdir()
+    (g / "config").write_text('[core] editor = /tmp/x\n[remote "o"]\n\turl = "ext::sh -c evil"\n[core\n\tfilemode = true\n\tpager = evil\n')
+    whats = " | ".join(f["what"] for f in vetskill.scan(tmp_path)["findings"] if f["severity"] == "high")
+    assert "cannot read safely" in whats and "not a plain https" in whats and "no section.pager" in whats
+    (g / "config").write_text('editor = x\n')
+    assert any("no section.editor" in f["what"] for f in vetskill.scan(tmp_path)["findings"])

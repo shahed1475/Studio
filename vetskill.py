@@ -61,18 +61,25 @@ def _git_config_findings(cfg: Path, label: str) -> list[dict]:
         line = raw.strip()
         if not line or line[0] in "#;":
             continue
-        m = re.match(r'\[\s*([A-Za-z0-9.-]+)(?:\s+"[^"]*")?\s*\]', line)
-        if m:
+        bad = lambda what: out.append({"severity": "high", "what": what, "file": label, "line": n, "excerpt": line[:110]})
+        if line[0] == "[":
+            m = re.fullmatch(r'\[\s*([A-Za-z0-9.-]+)(?:\s+"[^"\\]*")?\s*\]\s*(?:[#;].*)?', line)
+            if not m:  # text after the header, or a header that does not parse: git may read it differently from this scanner
+                bad(f"{label} line that this scanner cannot read safely")
+                section = ""
+                continue
             section = m.group(1).lower()
             if section not in GIT_ALLOWED:
-                out.append({"severity": "high", "what": f"unusual [{section}] section in {label} (can run a program or pull in more config)", "file": label, "line": n, "excerpt": line[:110]})
+                bad(f"unusual [{section}] section in {label} (can run a program or pull in more config)")
             continue
-        key = line.split("=", 1)[0].strip().lower()
-        value = line.split("=", 1)[1].strip().lower() if "=" in line else ""
-        if section in GIT_ALLOWED and key not in GIT_ALLOWED[section]:
-            out.append({"severity": "high", "what": f"{section}.{key} in {label} is not a plain setting", "file": label, "line": n, "excerpt": line[:110]})
-        elif key in ("url", "pushurl") and (value.startswith(("ext::", "fd::", "!")) or "\\" in value):
-            out.append({"severity": "high", "what": "remote address that runs a program", "file": label, "line": n, "excerpt": line[:110]})
+        key, _, value = line.partition("=")
+        key = key.strip().lower()
+        if key not in GIT_ALLOWED.get(section, ()):  # no section yet, or an unknown section, counts as not allowed
+            bad(f"{section or 'no section'}.{key} in {label} is not a plain setting")
+        elif key in ("url", "pushurl"):
+            v = re.sub(r"\s+[#;].*$", "", value.strip()).strip('"').strip()
+            if not re.match(r"(https?|ssh|git|file)://[^\s\\]+$|[\w.@-]+@[\w.-]+:[^\s\\:][^\s\\]*$|/[^\s\\]+$", v):
+                bad("remote address that is not a plain https, ssh, git, file or path address (could run a program)")
     return out
 
 
