@@ -242,8 +242,13 @@ def agent_view() -> dict:
     import growth
     import strategy
 
+    import datetime as dt
+
+    import monetization
+
     own = growth.load_snapshots(1)
-    return {"config": agent.load_config(), "events": agentlog.recent(50), "unread": agentlog.unread(), "strategies": strategy.load()[::-1],
+    return {"monetization": monetization.progress(own[-1], dt.datetime.now(dt.timezone.utc), monetization.ready_count()) if own else None,
+            "config": agent.load_config(), "events": agentlog.recent(50), "unread": agentlog.unread(), "strategies": strategy.load()[::-1],
             "report": agent.latest_report(), "discovered": discover.load(), "refs": channelwatch.load_refs(), "own": own[-1] if own else None,
             "profile": editprofile.load(), "timer_installed": timer_installed("story-agent.timer")}
 

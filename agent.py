@@ -91,7 +91,12 @@ def run(now: dt.datetime | None = None, yt=None, chat=None, force: bool = False)
                 study.append(channelwatch.breakdown(yt, ref))
             except Exception as e:
                 fail(f"study {ref}", e)
-        analysis = growth.analyze(growth.load_snapshots(), study)
+        snaps = growth.load_snapshots()
+        analysis = growth.analyze(snaps, study)
+        if snaps:
+            import monetization
+
+            analysis["monetization"] = monetization.progress(snaps[-1], now, monetization.ready_count())
         added = strategy.add(strategy.generate(analysis, study, chat))
         applied = []
         if cfg["mode"] == "automatic":

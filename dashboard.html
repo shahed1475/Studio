@@ -72,6 +72,7 @@ main{padding:36px clamp(16px,4vw,48px) 90px;max-width:1120px;width:100%}
 .btn.danger{background:var(--surface);color:var(--bad);border-color:var(--line)}
 .btn:disabled{opacity:.45;cursor:not-allowed;filter:none;transform:none}
 .btn.sm{padding:6px 11px;font-size:14px}
+.bar{height:8px;border-radius:99px;background:var(--sunken);border:1px solid var(--line);overflow:hidden}.bar>i{display:block;height:100%;background:var(--accent);border-radius:99px;min-width:0}
 .badge{display:inline-flex;align-items:center;gap:6px;border-radius:99px;padding:2px 10px;font-size:12.5px;font-weight:620;white-space:nowrap}
 .b-ok{background:var(--ok-bg);color:var(--ok)}.b-warn{background:var(--warn-bg);color:var(--warn)}.b-bad{background:var(--bad-bg);color:var(--bad)}.b-mute{background:var(--sunken);color:var(--ink2);border:1px solid var(--line)}
 .rows>*{padding:13px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
@@ -470,6 +471,14 @@ const AG_EVENT={info:["Info","mute"],found:["Found","ok"],strategy:["New idea","
 async function agMode(mode){try{await api("/api/agent/config",{mode});toast(mode==="off"?"Agent is off":mode==="handoff"?"Hand-off mode: it suggests, you decide":"Automatic mode: it applies safe changes")}catch(e){}growth(document.getElementById("main"))}
 async function agProfile(key,val){try{await api("/api/agent/profile",{[key]:val});toast("Saved. New videos use it.")}catch(e){}growth(document.getElementById("main"))}
 async function agAct(id,action){try{await api("/api/agent/strategy",{id,action});toast(action==="apply"?"Applied":action==="dismiss"?"Dismissed":"Back in the list")}catch(e){}growth(document.getElementById("main"))}
+function agBar(label,o){return `<div class="stack" style="gap:5px"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px"><span>${label}</span><b class="mono">${o.have===null?"not readable yet":o.have.toLocaleString()} <span class="mute">of ${o.need.toLocaleString()}</span></b></div><div class="bar" role="progressbar" aria-valuenow="${o.pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${o.pct}%"></i></div></div>`}
+function agRoad(M){
+  if(!M)return `<div class="panel pad">${empty("youtube-logo","No numbers yet","The road to monetization appears after the first research run, once YouTube is connected.")}</div>`;
+  const E=M.early,F=M.full;
+  return `<div class="panel pad stack"><div class="fld"><div class="stack"><h2 style="font-size:15px">First step: memberships and Super Thanks</h2>${agBar("Subscribers",E.subs)}${agBar("Public videos in 90 days",E.uploads)}${agBar("Watch hours, 12 months",E.watch_hours)}${agBar("or Shorts views, 90 days",E.shorts_views)}</div>
+    <div class="stack"><h2 style="font-size:15px">Ad revenue</h2>${agBar("Subscribers",F.subs)}${agBar("Watch hours, 12 months",F.watch_hours)}${agBar("or Shorts views, 90 days",F.shorts_views)}</div></div>
+    <div><b>What is nearest</b><ul style="margin:6px 0 0 18px;padding:0">${M.next.map(x=>`<li style="margin:3px 0">${esc(x)}</li>`).join("")}</ul></div>
+    <details><summary class="help">About these rules</summary><p class="help">${esc(M.note)}</p></details></div>`}
 function agCard(x){
   const prof=x.profile?`<div class="help">Changes: ${Object.entries(x.profile).map(([k,v])=>k==="target_lufs"?"loudness "+v+" LUFS":k==="motion"?"motion level "+v:"pause between sentences "+v+" ms").join(", ")}</div>`:"";
   const done=x.status==="applied"?badge("Applied","ok"):x.status==="dismissed"?badge("Dismissed","mute"):x.auto_ok?badge("You can apply this","warn"):badge("Advice for you to do","mute");
@@ -497,6 +506,8 @@ async function growth(m){
       <div class="help">Camera moves give one picture several different shots. Loudness is ${A.profile.target_lufs} LUFS and the pause between sentences is ${A.profile.sentence_pause_ms} ms.</div></div></div>
   ${warn.length?`<div class="err" style="margin-top:12px">${warn.map(esc).join("<br>")}</div>`:""}
   ${rep&&rep.errors.length?`<div class="err" style="margin-top:12px">Last run had problems: ${rep.errors.map(esc).join(" | ")}</div>`:""}
+
+  <div class="sec"><h2>Road to monetization</h2>${agRoad(A.monetization)}</div>
 
   <div class="sec"><h2>What I suggest (${open.length})</h2><div class="panel">${open.length?`<div class="rows">${open.map(agCard).join("")}</div>`:empty("sparkle","No open suggestions",c.mode==="off"?"Turn the agent on to get suggestions.":"New suggestions appear after the next research run.")}</div>
   ${past.length?`<details style="margin-top:10px"><summary class="help">Earlier suggestions (${past.length})</summary><div class="panel" style="margin-top:8px"><div class="rows">${past.map(agCard).join("")}</div></div></details>`:""}</div>

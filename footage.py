@@ -1,5 +1,6 @@
 """Free footage: Pexels stock video when a key is set, otherwise public-domain archive images from Wikimedia Commons."""
 import hashlib
+import json
 import re
 import time
 from pathlib import Path
@@ -67,6 +68,35 @@ def enough_footage(clips: list, min_ratio: float = 0.6) -> bool:
 
 
 _PD = ("public domain", "cc0", "pd-", "pd ")
+
+
+JUDGE_CACHE = config.ROOT / "data" / "image_judge.json"
+
+
+def cached_judge(topic: str, ask):
+    """Wrap a model check ("which of these picture titles show the subject?") so every title is judged once per topic.
+    ask(titles) returns the titles to keep and may raise; a failed check keeps everything and is not remembered."""
+    key = hashlib.md5(topic.lower().encode()).hexdigest()[:10]
+
+    def judge(titles: list[str]) -> list[str]:
+        try:
+            cache = json.loads(JUDGE_CACHE.read_text())
+        except (OSError, ValueError):
+            cache = {}
+        known = cache.get(key, {})
+        new = [t for t in dict.fromkeys(titles) if t not in known]
+        if new:
+            try:
+                kept = set(ask(new))
+            except Exception:
+                return list(titles)
+            known.update({t: t in kept for t in new})
+            cache[key] = known
+            JUDGE_CACHE.parent.mkdir(parents=True, exist_ok=True)
+            JUDGE_CACHE.write_text(json.dumps(cache))
+        return [t for t in titles if known.get(t)]
+
+    return judge
 
 
 def image_relevant(title: str, categories: str, anchors: list[str]) -> bool:

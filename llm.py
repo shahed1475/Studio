@@ -200,6 +200,7 @@ def _account(now, role, model, body) -> float:
     return usd
 
 
+CHEAP_SHARE = 0.4  # small jobs (titles, tags, picture checks) may use at most this share of the free requests; the rest is for scripts and fact-checks
 _last_free: dict[str, str] = {}  # the free model that last answered each role (the reviewer must differ from the writer)
 
 
@@ -211,7 +212,9 @@ def _free_chat(prompt: str, role: str, cfg: dict, key: str, now: dt.datetime) ->
             if freemodels.requests_today(now) >= cfg["free_daily_limit"]:
                 _note(now, f"{role}: today's free request limit is used, used the local model")
                 return None
-            freemodels.count_request(now)  # failed requests count against the limit too
+            if role == "cheap" and freemodels.requests_today(now, "cheap") >= int(cfg["free_daily_limit"] * CHEAP_SHARE):
+                return None  # keep the rest of the free requests for scripts and fact-checks
+            freemodels.count_request(now, role)  # failed requests count against the limit too
             try:
                 body = _post(_payload(mid, prompt, cfg["max_output_tokens"], json_mode), key)
             except Exception as e:

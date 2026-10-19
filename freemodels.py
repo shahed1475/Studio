@@ -104,14 +104,18 @@ def record(model: str, ok: bool, now: dt.datetime) -> None:
     _save(d)
 
 
-def requests_today(now: dt.datetime) -> int:
-    return _load().get("usage", {}).get(now.strftime("%Y-%m-%d"), 0)
+def requests_today(now: dt.datetime, role: str | None = None) -> int:
+    d, day = _load(), now.strftime("%Y-%m-%d")
+    return d.get("usage", {}).get(day, 0) if role is None else d.get("roles", {}).get(day, {}).get(role, 0)
 
 
-def count_request(now: dt.datetime) -> None:
+def count_request(now: dt.datetime, role: str = "") -> None:
     d = _load()
     day = now.strftime("%Y-%m-%d")
     usage = d.setdefault("usage", {})
     usage[day] = usage.get(day, 0) + 1
     d["usage"] = dict(sorted(usage.items())[-7:])
+    roles = d.setdefault("roles", {})
+    roles.setdefault(day, {})[role] = roles.get(day, {}).get(role, 0) + 1
+    d["roles"] = dict(sorted(roles.items())[-7:])
     _save(d)

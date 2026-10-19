@@ -188,19 +188,16 @@ def anchor_terms(topic: str, anchors: list[str], article: str = "") -> list[str]
 
 
 def _image_judge(topic: str):
-    def judge(titles: list[str]) -> list[str]:
-        try:
-            out = scriptgen._chat(
-                f"A documentary about: {topic}. Below are archive image file names. Return the numbers of the ones that "
-                "plausibly show that subject (its place, people, artwork, objects or maps). Reject anything about a "
-                "different subject that merely shares a word (a space mission, an aircraft, a castle elsewhere, a flag).\n"
-                + "\n".join(f"{i}: {t}" for i, t in enumerate(titles)) + '\n\nReturn JSON: {"keep": [numbers]}'
-            )
-            keep = {int(n) for n in out.get("keep", []) if str(n).isdigit()}
-            return [t for i, t in enumerate(titles) if i in keep]
-        except Exception:
-            return titles
-    return judge
+    def ask(titles: list[str]) -> list[str]:
+        out = scriptgen._chat(
+            f"A documentary about: {topic}. Below are archive image file names. Return the numbers of the ones that "
+            "plausibly show that subject (its place, people, artwork, objects or maps). Reject anything about a "
+            "different subject that merely shares a word (a space mission, an aircraft, a castle elsewhere, a flag).\n"
+            + "\n".join(f"{i}: {t}" for i, t in enumerate(titles)) + '\n\nReturn JSON: {"keep": [numbers]}'
+        )
+        keep = {int(n) for n in out.get("keep", []) if str(n).isdigit()}
+        return [t for i, t in enumerate(titles) if i in keep]
+    return footage.cached_judge(topic, ask)
 
 
 def _produce_doc(data: dict, folder: Path | None = None) -> Path:
