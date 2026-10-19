@@ -34,3 +34,5 @@ __pycache__/
 .pytest_cache/
 .superpowers/
 .claude/settings*.json
+autopilot.json
+job.pid
