@@ -85,6 +85,22 @@ def _ass(words: list[tuple], motion: int = 0, pos: str = "bottom") -> str:
     return _ass_rich(words, pos) if motion >= 1 else _ass_plain(words)
 
 
+MAX_CAPTION_CHARS = 16  # about 55 px a letter at the caption size: more than this runs off the sides of a 1080 px wide Short
+
+
+def caption_spans(texts: list[str], limit: int = MAX_CAPTION_CHARS) -> list[tuple[int, int]]:
+    """Groups of up to three words that fit the screen width: (start, end) indexes. A single long word stays alone."""
+    spans, i = [], 0
+    while i < len(texts):
+        j, n = i + 1, len(texts[i])
+        while j < len(texts) and j - i < 3 and n + 1 + len(texts[j]) <= limit:
+            n += 1 + len(texts[j])
+            j += 1
+        spans.append((i, j))
+        i = j
+    return spans
+
+
 def _ass_rich(words: list[tuple], pos: str = "bottom") -> str:
     head = (
         "[Script Info]\nScriptType: v4.00+\n"
@@ -109,8 +125,8 @@ def _ass_rich(words: list[tuple], pos: str = "bottom") -> str:
         by_line.setdefault(line_of(w), []).append(w)
     for ws in by_line.values():
         found = keywords.kinds([w[2] for w in ws])  # judged on the whole line, so "Hamelin" at the start is not mistaken for a name
-        for i in range(0, len(ws), 3):
-            chunk, mark = ws[i : i + 3], keywords.limit(found[i : i + 3], 2)
+        for i, j in caption_spans([w[2] for w in ws]):
+            chunk, mark = ws[i:j], keywords.limit(found[i:j], 2)
             for k, w in enumerate(chunk):
                 nxt = chunk[k + 1][0] if k + 1 < len(chunk) else w[1] + 0.15
                 shown = []
@@ -132,9 +148,9 @@ def _ass_plain(words: list[tuple[float, float, str]]) -> str:
         "[Events]\nFormat: Layer,Start,End,Style,Text\n"
     )
     rows = []
-    for i in range(0, len(words), 3):  # three words at a time reads well on a phone
-        chunk = words[i : i + 3]
-        end = words[i + 3][0] if i + 3 < len(words) else chunk[-1][1] + 0.15
+    for i, j in caption_spans([w[2] for w in words]):  # up to three words at a time reads well on a phone
+        chunk = words[i:j]
+        end = words[j][0] if j < len(words) else chunk[-1][1] + 0.15
         text = " ".join(w[2] for w in chunk).upper()
         rows.append(f"Dialogue: 0,{_ts(chunk[0][0])},{_ts(end)},Cap,{text}")
     return head + "\n".join(rows) + "\n"

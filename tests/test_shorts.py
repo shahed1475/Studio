@@ -114,3 +114,14 @@ def test_tick_makes_short_and_doc_but_only_one_doc(tmp_path, monkeypatch):
     monkeypatch.setattr(autopilot, "EXECUTORS", {k: (lambda k: lambda slug, cfg, now: calls.append(k))(k) for k in ("make_short", "make", "make_news", "ideas")})
     autopilot.tick(NOW)
     assert calls.count("make_short") == 1 and (calls.count("make") + calls.count("make_news")) == 1
+
+
+def test_caption_groups_never_run_wider_than_the_screen():
+    import tts
+    ws = "Minos ordered Daedalus to build a vast Labyrinth Theseus volunteered to sail".split()
+    spans = tts.caption_spans(ws)
+    assert spans[0][0] == 0 and spans[-1][1] == len(ws) and all(a < b for a, b in spans)
+    assert all(b - a <= 3 for a, b in spans)
+    assert all(len(" ".join(ws[a:b])) <= tts.MAX_CAPTION_CHARS or b - a == 1 for a, b in spans)
+    assert (0, 2) == spans[0]  # "Minos ordered" (13) + "Daedalus" would be 22
+    assert tts.caption_spans(["Extraordinarily"]) == [(0, 1)]
