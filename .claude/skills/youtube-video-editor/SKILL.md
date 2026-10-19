@@ -12,7 +12,7 @@ A clean ffmpeg exit is not proof of quality. Look at frames: `.venv/bin/python .
 ## Edit plans
 - Pacing: a cut every 4 to 8 seconds for Shorts; the inspection reports the measured mean seconds between cuts.
 - Captions: up to 3 words, at most 16 characters a group, bottom position, keywords coloured. Documentary captions keep the script's punctuation and break at clauses.
-- Pictures: real public-domain first; AI storybook art only to fill gaps (max 10 per documentary, 4 per Short); no picture more than twice.
+- Pictures: real public-domain first; AI storybook art only to fill gaps (max 16 per documentary, 6 per Short); no picture more than twice.
 - Re-render a documentary from its saved script with `.venv/bin/python run.py redo <slug>`; never edit `video.mp4` by hand. Remember that re-rendering resets review and approval.
 
 ## Never

@@ -19,7 +19,7 @@ MODEL = "google/gemini-3.1-flash-lite-image"
 STYLE = ("Antique storybook illustration, muted watercolour and ink, warm candlelit palette, soft paper texture, painterly, "
          "no text, no letters, no captions, no watermark")
 CREDIT = "Illustration: AI-generated storybook art (Google Gemini image model via OpenRouter)"
-MAX_PER_VIDEO = {"doc": 10, "short": 4}
+MAX_PER_VIDEO = {"doc": 16, "short": 6}
 _off_until: dict = {}  # a failed call (no credit) pauses drawing for the rest of the day
 
 
