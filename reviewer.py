@@ -285,4 +285,10 @@ def review(folder: Path, existing_titles: list[str] | None = None, use_llm: bool
               "at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
     apply_verdict(meta, result)
     meta_path.write_text(json.dumps(meta, indent=2))
+    try:
+        import ledger
+
+        ledger.write(folder, meta, source)  # the claim ledger: what was checked, against what, and what is still open
+    except Exception:
+        pass
     return result

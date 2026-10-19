@@ -125,6 +125,7 @@ def verify_claims(meta: dict, source: str, now: dt.datetime | None = None) -> di
                     meta["sources"].append(note)
             out["verified"] += 1
         elif r["verdict"] == "contradicted":
+            meta.setdefault("conflicting_claims", []).append({"claim": claim, "fact": r["fact"], "urls": r["urls"]})
             out["wrong"].append(f"Line {i} says '{line}' but a reliable source says: {r['fact'] or 'this is not correct'}")
         else:
             out["unsure"].append(line)
