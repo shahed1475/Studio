@@ -212,15 +212,17 @@ def analyze(frames: list[dict], metadata: dict, transcript: str | None, stats: d
             f"Whole-video statistics (measured, not guessed): {json.dumps(stats)}\n"
             f"Transcript or narration: {(transcript or 'none available')[:5000]}\n"
             f"Question from the user: {question or 'give a general analysis'}\n"
-            f"Frames follow with their timestamps. Reply with JSON only: {SCHEMA}")
+            f"Keep every field to one or two short sentences. Frames follow with their timestamps. Reply with JSON only: {SCHEMA}")
     content = [{"type": "text", "text": text}]
     for fr in frames:
         data = base64.b64encode(Path(fr["file"]).read_bytes()).decode()
         mime = "image/png" if str(fr["file"]).endswith(".png") else "image/jpeg"
         content += [{"type": "text", "text": f"Frame at {fr['t']:.1f} s ({fr['reason']})"}, {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{data}"}}]
-    payload = {"model": model, "messages": [{"role": "user", "content": content}], "max_tokens": 1800, "temperature": 0.2, "usage": {"include": True}}
+    payload = {"model": model, "messages": [{"role": "user", "content": content}], "max_tokens": 4500, "temperature": 0.2, "usage": {"include": True}}
     body = post(payload, llm.key_for(model))
     llm._account(now, "review", model, body)
+    if body["choices"][0].get("finish_reason") == "length":
+        raise ValueError("the model's reply was cut off at the token limit, so it is not used")
     return llm.parse_json(body["choices"][0]["message"]["content"])
 
 

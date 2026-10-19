@@ -135,3 +135,12 @@ def test_visual_review_rows_are_warnings_and_carry_the_coverage_statement(world)
     assert {r["name"] for r in rows} == {"captions_readable", "pictures_fit_story", "no_repeated_pictures", "visual_coverage"}
     assert all(r["severity"] in ("warn", "info") for r in rows) and not next(r for r in rows if r["name"] == "no_repeated_pictures")["ok"]
     assert "not a full viewing" in next(r for r in rows if r["name"] == "visual_coverage")["detail"]
+
+
+def test_a_reply_cut_off_at_the_token_limit_is_an_error_not_a_half_analysis(world):
+    d = world / "output" / "v4"
+    make_video(d)
+    cut = reply()
+    cut["choices"][0]["finish_reason"] = "length"
+    report = vi.inspect_source("v4", frames=3, post=lambda p, k: cut)
+    assert "analysis" not in report and any("cut off" in e["error"] for e in report["errors"])
