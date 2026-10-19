@@ -37,7 +37,7 @@ EXEC_SUFFIXES = {".pyc", ".pyo", ".so", ".dll", ".dylib", ".exe", ".bin", ".jar"
 MAX_BYTES = 2_000_000
 
 
-FILLER = r"(?:(?:ever|to|simply|just|now|you|please)\s+)*"
+FILLER = r"(?:(?:ever|to|simply|just|now|please)\s+)*"
 
 
 def _excused(before: str) -> bool:
@@ -46,6 +46,24 @@ def _excused(before: str) -> bool:
     if re.search(r"\b(hesitate|forget|fail|wait|refuse)\b", before, re.I):
         return False
     return bool(re.search(r"\b(never|do not|don't|must not|cannot|can't)\s+" + FILLER + r"$", before, re.I))
+
+
+GIT_HIGH = re.compile(r"(fsmonitor|hookspath|sshcommand|core\.pager|textconv|\b(clean|smudge|process)\s*=|\bcommand\s*=|\bexec\b)", re.I)
+
+
+def _git_findings(root: Path) -> list[dict]:
+    """A repository's own .git folder can run programs: its config (fsmonitor, hooksPath, sshCommand, filters) and any hook that is not a .sample file."""
+    out = []
+    cfg = root / ".git" / "config"
+    if cfg.is_file():
+        for n, line in enumerate(cfg.read_text(errors="ignore").splitlines(), 1):
+            if GIT_HIGH.search(line):
+                out.append({"severity": "high", "what": ".git/config can run a program", "file": ".git/config", "line": n, "excerpt": line.strip()[:110]})
+    hooks = root / ".git" / "hooks"
+    for h in sorted(hooks.glob("*")) if hooks.is_dir() else []:
+        if h.is_file() and not h.name.endswith(".sample"):
+            out.append({"severity": "high", "what": "an active git hook (runs on git commands)", "file": f".git/hooks/{h.name}", "line": 1, "excerpt": h.read_text(errors="ignore")[:80].replace("\n", " ")})
+    return out
 
 
 def _classify(root: Path):
@@ -58,7 +76,7 @@ def _classify(root: Path):
         rel = str(p.relative_to(root))
         if p.relative_to(root).parts[0] == ".git":
             if not any(g[2] == ".git" for g in gaps):
-                gaps.append(("low", "the top-level .git folder (version-control data) was not scanned", ".git"))
+                gaps.append(("low", "the rest of the top-level .git folder (objects and history) was not scanned", ".git"))
             continue
         if ".git" in parts:
             gaps.append(("medium", "a nested .git folder: its contents were not scanned", rel))
@@ -88,6 +106,7 @@ def scan(root: Path) -> dict:
     findings, hosts = [], {}
     startup = []
     read, gaps = _classify(root)
+    findings.extend(_git_findings(root))
     for sev, what, rel in gaps:
         findings.append({"severity": sev, "what": what, "file": rel, "line": 1, "excerpt": ""})
     for p in read:
@@ -99,12 +118,15 @@ def scan(root: Path) -> dict:
         for sev, label, rx in PATTERNS:
             if p.suffix == ".md" and label not in ("model-directed instruction to hide or skip approval", "shell pipe to interpreter"):
                 continue  # documentation may mention commands; only instructions aimed at the model matter there
-            m = None
+            m, negated = None, False
             for cand in rx.finditer(text):
                 if label.startswith("model-directed") and _excused(text[max(0, cand.start() - 40):cand.start()]):
-                    continue  # a rule telling the model NOT to do this is a safeguard, not an attack
+                    negated = negated or cand  # worded as a safeguard ("never skip ..."), but a reader must still confirm that
+                    continue
                 m = cand
                 break
+            if not m and negated:
+                m, sev, label = negated, "medium", "model-directed instruction worded as a safeguard (read it)"
             if m:
                 line = text.count("\n", 0, m.start()) + 1
                 findings.append({"severity": sev, "what": label, "file": rel, "line": line, "excerpt": text[max(0, m.start() - 20):m.end() + 40].replace("\n", " ")[:110]})
