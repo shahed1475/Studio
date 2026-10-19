@@ -61,3 +61,19 @@ def test_timings_match():
     ws = words("a b c", 0)
     assert subtitles.timings_match(ws, 1.2 + 0.5) is True
     assert subtitles.timings_match(ws, 30.0) is False
+
+
+def test_punctuation_is_restored_from_the_narration_line_when_word_counts_match():
+    ws = words("In the heart of medieval Germany a town once thrived", 0)
+    got = subtitles.with_punctuation(ws, ["In the heart of medieval Germany, a town once thrived."])
+    assert [w["w"] for w in got][5:7] == ["Germany,", "a"] and got[-1]["w"] == "thrived."
+    assert [w["w"] for w in ws][5] == "Germany"  # the input is not changed
+    odd = subtitles.with_punctuation(ws, ["A line with a different number of words."])
+    assert [w["w"] for w in odd] == [w["w"] for w in ws]
+
+
+def test_cues_break_after_a_clause_instead_of_in_the_middle():
+    line = "Historians disagree on what happened, but the tale of his song has echoed through time."
+    ws = subtitles.with_punctuation(words(line.replace(",", "").replace(".", ""), 0, per=0.3), [line])
+    cues = subtitles.build_cues(ws)
+    assert cues[0]["text"].replace("\n", " ").endswith("happened,")

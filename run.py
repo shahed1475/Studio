@@ -121,7 +121,7 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
     render.render(clips, durations, narration, ass, work, folder / "video.mp4", loudness=prof["target_lufs"], shots=prof["motion"] >= 1,
                   crossfade=0.3 if prof["motion"] >= 2 and len(clips) <= 20 else 0.0, grain=prof["motion"] >= 2)
     shutil.copy(work / "words.json", folder / "words.json")
-    subtitles.write_files(folder, subtitles.load_words(work / "words.json"))
+    subtitles.write_files(folder, subtitles.with_punctuation(subtitles.load_words(work / "words.json"), [l["text"] for l in data["lines"]]))
     shutil.rmtree(work)
     data["subtitles"] = "burned"
     data["credits"] = credits
@@ -207,7 +207,7 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
                          "not rendering a video of unrelated pictures")
     music = sorted(Path("music").glob("*.mp3")) if Path("music").exists() else []
     print(f"Rendering ({sum(c is not None for c in clips)}/{len(clips)} scenes have footage)...")
-    words = subtitles.load_words(work / "words.json")
+    words = subtitles.with_punctuation(subtitles.load_words(work / "words.json"), [l["text"] for l in data["lines"]])
     doc_ass = None
     if config.DOC_SUBTITLES:
         doc_ass = work / "doc_captions.ass"
@@ -327,7 +327,7 @@ def main() -> None:
             subtitles.burn_into_video(folder)
             print("subtitles burned in; captions.srt written")
         else:
-            subtitles.write_files(folder, subtitles.ensure_words(folder))
+            subtitles.write_files(folder, subtitles.with_punctuation(subtitles.ensure_words(folder), [l["text"] for l in json.loads((folder / "meta.json").read_text())["lines"]]))
             print("captions.srt written")
     elif a[0] == "newswatch":
         import newswatch

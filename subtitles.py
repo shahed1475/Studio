@@ -20,13 +20,32 @@ def _fits(words: list[str], max_chars: int) -> bool:
     return all(len(l) <= max_chars for l in _wrap(words, max_chars).split("\n"))
 
 
+def with_punctuation(words: list[dict], lines: list[str]) -> list[dict]:
+    """The voice's word timings carry no punctuation. Where a narration line has the same number of words as its timings, show the
+    line's own words (commas, full stops, apostrophes) so captions read naturally and can break at clauses."""
+    out = [dict(w) for w in words]
+    by_line: dict[int, list[int]] = {}
+    for k, w in enumerate(out):
+        by_line.setdefault(w["i"], []).append(k)
+    for i, idx in by_line.items():
+        toks = lines[i].split() if 0 <= i < len(lines) else []
+        if len(toks) == len(idx):
+            for k, t in zip(idx, toks):
+                out[k]["w"] = t
+    return out
+
+
+CLAUSE_END = ",.;:?!"
+
+
 def build_cues(words: list[dict], max_chars: int = 42) -> list[dict]:
     """Words are {s, e, w, i}: start, end, text and narration line index. A cue never spans two narration lines."""
     groups: list[list[dict]] = []
     cur: list[dict] = []
     for w in words:
         if cur and (w["i"] != cur[-1]["i"] or w["e"] - cur[0]["s"] > MAX_CUE_SECONDS - 0.2
-                    or not _fits([x["w"] for x in cur] + [w["w"]], max_chars)):
+                    or not _fits([x["w"] for x in cur] + [w["w"]], max_chars)
+                    or (len(cur) >= 3 and cur[-1]["w"][-1] in CLAUSE_END)):  # break after a clause, not in the middle of one
             groups.append(cur)
             cur = []
         cur.append(w)
@@ -59,7 +78,7 @@ def to_ass(cues: list[dict], size: tuple[int, int] = (1920, 1080), pos: str = "b
         f"[Script Info]\nScriptType: v4.00+\nPlayResX: {w}\nPlayResY: {h}\nWrapStyle: 2\n\n"
         "[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,OutlineColour,BackColour,Bold,"
         "BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV\n"
-        f"Style: Sub,DejaVu Sans,{round(h * 0.052)},&H00FFFFFF,&H00000000,&H64000000,1,1,4,2,{8 if pos == 'top' else 2},{round(w * 0.08)},{round(w * 0.08)},{round(h * (0.07 if pos == 'top' else 0.06))}\n\n"
+        f"Style: Sub,DejaVu Sans,{round(h * 0.06)},&H00FFFFFF,&H00000000,&H64000000,1,1,4,2,{8 if pos == 'top' else 2},{round(w * 0.08)},{round(w * 0.08)},{round(h * (0.07 if pos == 'top' else 0.06))}\n\n"
         "[Events]\nFormat: Layer,Start,End,Style,Text\n"
     )
     rows = [f"Dialogue: 0,{_ass_ts(c['start'])},{_ass_ts(c['end'])},Sub,{keywords.colorize(keywords.clean(c['text'])).replace(chr(10), chr(92) + 'N')}" for c in cues]
@@ -125,7 +144,7 @@ def burn_into_video(folder: Path) -> None:
         raise SystemExit("Shorts already have burned-in captions")
     if meta.get("subtitles") == "burned":
         raise SystemExit("this video already has burned-in subtitles")
-    words = ensure_words(folder)
+    words = with_punctuation(ensure_words(folder), [l["text"] for l in meta["lines"]])
     ass = folder / "burn.ass"
     ass.write_text(to_ass(build_cues(words), (1920, 1080), __import__("editprofile").load()["caption_pos"]))
     tmp = folder / "video.tmp.mp4"
