@@ -70,7 +70,7 @@ def make_doc(root, name, clips=(), verdict="pass", n=12, secs=8.0):
     words = [{"s": i * secs, "e": i * secs + secs - 0.1, "w": "w", "i": i} for i in range(n)]
     (d / "words.json").write_text(json.dumps(words))
     meta = {"topic": "t", "format": "doc", "title": name, "tags": [], "anchors": ["A"], "lines": LINES[:n], "chapters": CHAPTERS,
-            "review": {"verdict": verdict}, "clips": list(clips), "approved": True}
+            "review": {"verdict": verdict}, "clips": list(clips), "approved": True, "publish_at": "2026-10-25T14:00:00Z"}
     (d / "meta.json").write_text(json.dumps(meta))
     return d
 
@@ -164,3 +164,12 @@ def test_produce_short_threshold_is_configurable(tmp_path, monkeypatch):
         run._produce_short(data, "t", requeue=False, pool_size=10, min_unique=3)
     with pytest.raises(SystemExit, match="not enough footage"):  # the stricter default needs 4 different pictures
         run._produce_short(data, "t", requeue=False)
+
+
+def test_a_doc_that_is_not_scheduled_yet_is_not_clipped(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "OUT", tmp_path)
+    d = make_doc(tmp_path, "doc-a")
+    m = json.loads((d / "meta.json").read_text())
+    m.pop("publish_at")
+    (d / "meta.json").write_text(json.dumps(m))
+    assert clipper.clippable() == 0  # its Short would say "the full story is on our channel" before it is

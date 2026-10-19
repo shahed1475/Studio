@@ -111,7 +111,8 @@ def _docs() -> list:
         except ValueError:
             continue
         ok = (d.get("review") or {}).get("verdict") == "pass" or (d.get("approved") and d.get("approved_by") == "you")
-        if d.get("format") == "doc" and d.get("lines") and d.get("chapters") and ok and len(d.get("clips", [])) + len(d.get("clips_failed", [])) < MAX_CLIPS:
+        scheduled = bool(d.get("publish_at") or d.get("video_id"))  # the Short says "the full story is on our channel": only once that film is on its way
+        if d.get("format") == "doc" and d.get("lines") and d.get("chapters") and ok and scheduled and len(d.get("clips", [])) + len(d.get("clips_failed", [])) < MAX_CLIPS:
             out.append((m, d))
     return out
 
