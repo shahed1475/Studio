@@ -271,13 +271,16 @@ def agent_view() -> dict:
     return {"monetization": monetization.progress(own[-1], dt.datetime.now(dt.timezone.utc), monetization.ready_count()) if own else None,
             "config": agent.load_config(), "events": agentlog.recent(50), "unread": agentlog.unread(), "strategies": strategy.load()[::-1],
             "report": agent.latest_report(), "discovered": discover.load(), "refs": channelwatch.load_refs(), "own": own[-1] if own else None,
-            "profile": editprofile.load(), "timer_installed": timer_installed("story-agent.timer")}
+            "profile": editprofile.load(), "timer_installed": timer_installed("story-agent.timer"),
+            "refs_meta": channelwatch.load_meta()}
 
 
 def agent_config(b: dict) -> dict:
     import agent
 
-    return agent.save_config({**agent.load_config(), "mode": b.get("mode")})
+    cfg = agent.load_config()
+    cfg.update({k: b[k] for k in ("mode", "auto_channels", "auto_per_day", "max_auto") if k in b})
+    return agent.save_config(cfg)
 
 
 def agent_strategy(b: dict) -> dict:
@@ -450,7 +453,9 @@ class H(BaseHTTPRequestHandler):
 
             self.send_json({**autopilot_view(), "config": autopilot.load_config(), "status": autopilot.status(),
                             "news": newswatch.latest_digest(), "trends": __import__("trendwatch").latest(),
+                            "agent_config": __import__("agent").load_config(),
                             "channels": {"refs": __import__("channelwatch").load_refs(), "digest": __import__("channelwatch").latest(),
+                                         "meta": __import__("channelwatch").load_meta(), "max": __import__("channelwatch").MAX_REFS,
                                          "suggestions": __import__("channelwatch").suggest(__import__("trendwatch").latest())},
                             "timer_installed": timer_installed("story-autopilot.timer"),
                             "proposals": [t for t in (json.loads(newswatch.TOPICS_FILE.read_text()) if newswatch.TOPICS_FILE.exists() else []) if t["status"] == "proposed"],

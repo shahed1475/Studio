@@ -77,18 +77,18 @@ def test_fit_niche_filters_by_model_answer():
     assert [c["id"] for c in got] == ["B"]
 
 
-def test_run_caps_at_15_keeping_best_and_never_returns_own_or_refs(tmp_path, monkeypatch):
+def test_run_caps_the_list_keeping_best_and_never_returns_own_or_refs(tmp_path, monkeypatch):
     monkeypatch.setattr(discover, "FILE", tmp_path / "d.json")
     import agentlog
 
     monkeypatch.setattr(agentlog, "FILE", tmp_path / "events.jsonl")
-    ids = [f"UC{i:022d}" for i in range(20)]
+    ids = [f"UC{i:022d}" for i in range(50)]
     stats = {i: st(20000, 1000 * (n + 1) * 100, 100) for n, i in enumerate(ids)}
     yt = FakeYT(ids, stats)
-    new = discover.run(yt, own_id=ids[19], refs=[ids[18]], chat=lambda p: {"fits": ids})
+    new = discover.run(yt, own_id=ids[49], refs=[ids[48]], chat=lambda p: {"fits": ids})
     saved = discover.load()
-    assert len(saved) == discover.MAX_FOUND == 15
-    assert ids[19] not in [c["id"] for c in saved] and ids[18] not in [c["id"] for c in saved]
-    assert saved[0]["id"] == ids[17]  # best remaining score first
+    assert len(saved) == discover.MAX_FOUND == 40
+    assert ids[49] not in [c["id"] for c in saved] and ids[48] not in [c["id"] for c in saved]
+    assert saved[0]["id"] == ids[47]  # best remaining score first
     assert {c["id"] for c in new} == {c["id"] for c in saved}
-    assert discover.run(yt, own_id=ids[19], refs=[ids[18]], chat=lambda p: {"fits": ids}) == []  # nothing new the second time
+    assert discover.run(yt, own_id=ids[49], refs=[ids[48]], chat=lambda p: {"fits": ids}) == []  # nothing new the second time

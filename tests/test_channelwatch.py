@@ -77,14 +77,14 @@ def test_breakdown_returns_top_five_by_views_with_summary():
 
 def test_refs_add_remove_limit(tmp_path, monkeypatch):
     monkeypatch.setattr(channelwatch, "REF_FILE", tmp_path / "refs.json")
-    for i in range(5):
-        channelwatch.add_ref(f"@chan{i}")
-    channelwatch.add_ref("@chan0")  # duplicate ignored
-    assert len(channelwatch.load_refs()) == 5
-    with pytest.raises(ValueError, match="at most 5"):
-        channelwatch.add_ref("@chan9")
-    channelwatch.remove_ref("@chan0")
-    assert "@chan0" not in channelwatch.load_refs()
+    for i in range(channelwatch.MAX_REFS):
+        channelwatch.add_ref(f"@chan{i:02d}")
+    channelwatch.add_ref("@chan00")  # duplicate ignored
+    assert len(channelwatch.load_refs()) == 40
+    with pytest.raises(ValueError, match="at most 40"):
+        channelwatch.add_ref("@chan99")
+    channelwatch.remove_ref("@chan00")
+    assert "@chan00" not in channelwatch.load_refs() and "@chan00" not in channelwatch.load_meta()
 
 
 def test_run_writes_digest_with_original_proposals(tmp_path, monkeypatch):
@@ -129,3 +129,22 @@ def test_empty_digest_from_before_channels_were_added_is_redone_the_same_day(tmp
     calls = FakeYT(VIDS)
     channelwatch.run(NOW, calls)  # a filled digest is kept: still once a day
     assert calls.calls == []
+
+
+def test_meta_records_who_added_a_channel_and_counts_the_agents(tmp_path, monkeypatch):
+    monkeypatch.setattr(channelwatch, "REF_FILE", tmp_path / "refs.json")
+    channelwatch.add_ref("@mine")
+    channelwatch.add_ref("UC" + "a" * 22, source="agent", info={"title": "Found one", "why": "fits"})
+    meta = channelwatch.load_meta()
+    assert meta["@mine"]["source"] == "user" and meta["UC" + "a" * 22]["source"] == "agent" and meta["UC" + "a" * 22]["title"] == "Found one"
+    assert channelwatch.auto_count() == 1
+    channelwatch.remove_ref("UC" + "a" * 22)
+    assert channelwatch.auto_count() == 0
+
+
+def test_breakdown_reports_latest_upload_and_videos_in_the_last_year():
+    out = channelwatch.breakdown(FakeYT(VIDS), "@LegendLab", now=NOW)
+    assert out["latest"] == "2026-01-01T00:00:00Z" and out["recent_year"] == 8
+    later = datetime(2028, 1, 1, tzinfo=timezone.utc)
+    assert channelwatch.breakdown(FakeYT(VIDS), "@LegendLab", now=later)["recent_year"] == 0
+    assert channelwatch.is_active({"recent_year": 3}) and not channelwatch.is_active({"recent_year": 2})

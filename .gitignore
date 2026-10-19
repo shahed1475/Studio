@@ -36,3 +36,4 @@ __pycache__/
 .claude/settings*.json
 autopilot.json
 job.pid
+reference_meta.json

@@ -14,7 +14,8 @@ CONFIG_FILE = config.ROOT / "agent.json"
 LOCK_FILE = config.ROOT / "agent.lock"
 REPORTS = config.ROOT / "data" / "agent" / "reports"
 MODES = ("off", "handoff", "automatic")
-DEFAULTS = {"mode": "handoff", "study_per_run": 4}
+DEFAULTS = {"mode": "handoff", "study_per_run": 4,
+            "auto_channels": True, "auto_per_day": 3, "max_auto": 25}  # the agent may add this many reference channels a day, up to max_auto in all
 
 
 def load_config() -> dict:
@@ -24,8 +25,13 @@ def load_config() -> dict:
             raw = json.loads(CONFIG_FILE.read_text())
             if raw.get("mode") in MODES:
                 cfg["mode"] = raw["mode"]
-            if isinstance(raw.get("study_per_run"), int) and 0 <= raw["study_per_run"] <= 10:
+            if isinstance(raw.get("study_per_run"), int) and 0 <= raw["study_per_run"] <= 20:
                 cfg["study_per_run"] = raw["study_per_run"]
+            if isinstance(raw.get("auto_channels"), bool):
+                cfg["auto_channels"] = raw["auto_channels"]
+            for k, hi in (("auto_per_day", 10), ("max_auto", 35)):
+                if isinstance(raw.get(k), int) and not isinstance(raw.get(k), bool) and 0 <= raw[k] <= hi:
+                    cfg[k] = raw[k]
         except ValueError:
             pass
     return cfg
@@ -34,6 +40,12 @@ def load_config() -> dict:
 def save_config(cfg: dict) -> dict:
     if cfg.get("mode") not in MODES:
         raise ValueError("mode must be off, handoff or automatic")
+    if not isinstance(cfg.get("auto_channels", True), bool):
+        raise ValueError("auto_channels must be on or off")
+    for k, lo, hi in (("auto_per_day", 1, 10), ("max_auto", 0, 35)):
+        v = cfg.get(k, DEFAULTS[k])
+        if isinstance(v, bool) or not isinstance(v, int) or not lo <= v <= hi:
+            raise ValueError(f"{k} must be a whole number from {lo} to {hi}")
     out = {**DEFAULTS, **{k: cfg[k] for k in DEFAULTS if k in cfg}}
     CONFIG_FILE.write_text(json.dumps(out, indent=2))
     return out
@@ -85,12 +97,31 @@ def run(now: dt.datetime | None = None, yt=None, chat=None, force: bool = False)
             new = discover.run(yt, own_id, refs, chat)
         except Exception as e:
             fail("find competitors", e)
+        added_channels: list[dict] = []
+        try:  # the best new finds, and the channels that keep showing up in the weekly search, join the reference list
+            import trendwatch
+
+            pool = new + [c for c in discover.load() if c["id"] not in {n["id"] for n in new}]
+            if cfg["auto_channels"]:
+                pool += discover.trend_candidates(trendwatch.latest(), chat, own_id)
+            added_channels = discover.auto_add(yt, pool, cfg, now, own_id)
+        except Exception as e:
+            fail("add reference channels", e)
+        refs = channelwatch.load_refs()
         study = []
         for ref in refs + [c["id"] for c in discover.load()[:cfg["study_per_run"]] if c["id"] not in refs]:
             try:
-                study.append(channelwatch.breakdown(yt, ref))
+                b = channelwatch.breakdown(yt, ref, now=now)
+                b["ref"] = ref
+                study.append(b)
             except Exception as e:
                 fail(f"study {ref}", e)
+        removed_channels: list[str] = []
+        try:
+            removed_channels = discover.prune_inactive(study, now)
+            discover.review_fit([b for b in study if b["ref"] in set(refs)], chat, now)
+        except Exception as e:
+            fail("check reference channels", e)
         snaps = growth.load_snapshots()
         analysis = growth.analyze(snaps, study)
         if snaps:
@@ -112,15 +143,16 @@ def run(now: dt.datetime | None = None, yt=None, chat=None, force: bool = False)
             agentlog.event("strategy", f"{len(added)} new growth idea{'s' if len(added) != 1 else ''}",
                            "; ".join(s["text"] for s in added[:3]), notify=True, now=now)
         agentlog.event("info", "Daily research finished",
-                       f"Studied {len(study)} channels, found {len(new)} new, {len(added)} new ideas, {len(applied)} applied", now=now)
+                       f"Studied {len(study)} channels, found {len(new)} new, added {len(added_channels)} to your list, {len(added)} new ideas, {len(applied)} applied", now=now)
         REPORTS.mkdir(parents=True, exist_ok=True)
         (REPORTS / f"{today}.json").write_text(json.dumps({
             "date": today, "at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "mode": cfg["mode"], "analysis": analysis,
             "studied": [{"channel": c.get("channel"), "channel_id": c.get("channel_id"), "median_views": c.get("summary", {}).get("median_views", 0),
                          "top": c.get("top", [])[:3]} for c in study],
-            "new_channels": [c["id"] for c in new], "strategies_added": [s["id"] for s in added], "applied": [s["id"] for s in applied],
+            "new_channels": [c["id"] for c in new], "channels_added": [c["id"] for c in added_channels], "channels_removed": removed_channels,
+            "strategies_added": [s["id"] for s in added], "applied": [s["id"] for s in applied],
             "errors": errors}, indent=2))
-        return {"mode": cfg["mode"], "new_channels": len(new), "studied": len(study), "strategies_added": len(added),
+        return {"mode": cfg["mode"], "new_channels": len(new), "channels_added": len(added_channels), "studied": len(study), "strategies_added": len(added),
                 "applied": len(applied), "errors": errors}
     finally:
         lock.close()
