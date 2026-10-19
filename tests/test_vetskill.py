@@ -114,3 +114,11 @@ def test_branch_remote_must_be_a_declared_plain_name(tmp_path):
     assert any("branch.remote" in f["what"] for f in vetskill.scan(tmp_path)["findings"])
     (g / "config").write_text('[remote "origin"]\n\turl = https://github.com/x/y.git\n[branch "main"]\n\tremote = origin\n\tmerge = refs/heads/main\n')
     assert vetskill.scan(tmp_path)["counts"]["high"] == 0
+
+
+def test_branch_remote_is_matched_exactly(tmp_path):
+    g = tmp_path / ".git"
+    g.mkdir()
+    for bad in ("Origin", '"origin"', "origin ; x", "origin # c"):
+        (g / "config").write_text(f'[remote "origin"]\n\turl = https://github.com/x/y.git\n[branch "main"]\n\tremote = {bad}\n')
+        assert any("branch.remote" in f["what"] for f in vetskill.scan(tmp_path)["findings"]), bad
