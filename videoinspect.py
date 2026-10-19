@@ -196,8 +196,8 @@ def own_transcript(path: Path) -> tuple[str | None, str]:
 
 # ---- the vision reading ----
 SCHEMA = ('{"hook": "what the opening frames and words do", "structure": ["sections in order"], "pacing": "how fast the picture changes, using the cut statistics given", '
-          '"editing_patterns": ["..."], "visual_storytelling": "how pictures support the story", "caption_issues": [{"t": 0, "issue": "..."}], '
-          '"picture_issues": [{"t": 0, "issue": "pictures that do not fit the narration, plain colour screens, watermarks, artefacts"}], "repeated_visuals": false, '
+          '"editing_patterns": ["..."], "visual_storytelling": "how pictures support the story", "caption_issues": [{"t": 0, "issue": "ONLY real defects: cut off, unreadable, wrong words; [] when there are none"}], '
+          '"picture_issues": [{"t": 0, "issue": "ONLY real defects: pictures that do not fit the narration, plain colour screens, watermarks, artefacts; [] when there are none"}], "repeated_visuals": false, '
           '"strengths": ["..."], "problems": ["..."], "cannot_tell": ["things the frames do not show"]}')
 
 
