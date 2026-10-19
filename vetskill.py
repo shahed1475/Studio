@@ -57,7 +57,9 @@ def _git_config_findings(cfg: Path, label: str) -> list[dict]:
     """Allowlist, not denylist: a .git/config may hold only plain settings. Anything else (editor, pager, fsmonitor, hooksPath, filters, aliases, includes,
     credential or ssh helpers, an ext:: remote) can run a program and is reported as high."""
     out, section = [], ""
-    for n, raw in enumerate(cfg.read_text(errors="ignore").splitlines(), 1):
+    text = cfg.read_text(errors="ignore")
+    declared = {m.lower() for m in re.findall(r'^\s*\[\s*remote\s+"([^"\\]+)"\s*\]', text, re.M)}
+    for n, raw in enumerate(text.splitlines(), 1):
         line = raw.strip()
         if not line or line[0] in "#;":
             continue
@@ -76,6 +78,11 @@ def _git_config_findings(cfg: Path, label: str) -> list[dict]:
         key = key.strip().lower()
         if key not in GIT_ALLOWED.get(section, ()):  # no section yet, or an unknown section, counts as not allowed
             bad(f"{section or 'no section'}.{key} in {label} is not a plain setting")
+        elif section == "branch" and key in ("remote", "merge", "rebase"):
+            v = re.sub(r"\s+[#;].*$", "", value.strip()).strip('"').strip()
+            ok = (v.lower() in declared or v == ".") if key == "remote" else bool(re.fullmatch(r"(refs/[\w./-]+|true|false)", v))
+            if not ok:
+                bad(f"branch.{key} is not a plain name declared in this file")
         elif key in ("url", "pushurl"):
             v = re.sub(r"\s+[#;].*$", "", value.strip()).strip('"').strip()
             if not re.match(r"(https?|ssh|git|file)://[^\s\\]+$|[\w.@-]+@[\w.-]+:[^\s\\:][^\s\\]*$|/[^\s\\]+$", v):

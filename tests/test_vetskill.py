@@ -105,3 +105,12 @@ def test_git_config_parser_differentials_are_flagged(tmp_path):
     assert "cannot read safely" in whats and "not a plain https" in whats and "no section.pager" in whats
     (g / "config").write_text('editor = x\n')
     assert any("no section.editor" in f["what"] for f in vetskill.scan(tmp_path)["findings"])
+
+
+def test_branch_remote_must_be_a_declared_plain_name(tmp_path):
+    g = tmp_path / ".git"
+    g.mkdir()
+    (g / "config").write_text('[remote "origin"]\n\turl = https://github.com/x/y.git\n[branch "main"]\n\tremote = ext::sh -c evil\n\tmerge = refs/heads/main\n')
+    assert any("branch.remote" in f["what"] for f in vetskill.scan(tmp_path)["findings"])
+    (g / "config").write_text('[remote "origin"]\n\turl = https://github.com/x/y.git\n[branch "main"]\n\tremote = origin\n\tmerge = refs/heads/main\n')
+    assert vetskill.scan(tmp_path)["counts"]["high"] == 0
