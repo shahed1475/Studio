@@ -761,7 +761,7 @@ async function settings(m){
     <p class="help">Estimated from typical prompt sizes and the prices above. The real spend shows at the top of this panel. The daily cap protects you if the estimate is low.</p>`:`<p class="help">Pick models that exist on OpenRouter to see an estimate.</p>`}</div>
     ${L.history.length?`<div class="mute">Last days: ${L.history.map(d=>`${esc(d.day.slice(5))} ${usd(d.usd)}`).join(", ")}</div>`:""}</div>`:"";
   m.innerHTML=`<div class="head"><h1>Settings</h1><p class="sub">Keys are stored in settings.json next to the project, readable only by you.</p></div>
-  <div class="panel pad stack"><h2>Appearance</h2><div><button class="btn" id="themebtn" onclick="toggleTheme()"><span id="themelbl">Theme</span></button></div></div>${aiPanel}
+  <div class="panel pad stack"><h2>Appearance</h2><div><button class="btn" id="themebtn" onclick="toggleTheme()"><span id="themelbl">${document.documentElement.dataset.theme==="dark"?"Switch to light":"Switch to dark"}</span></button></div></div>${aiPanel}
   <div class="panel pad stack"><h2>Pexels API key (optional)</h2>
     <p class="sub">Shorts use public-domain archive images by default. A Pexels key adds moving stock video, but Pexels has paused new keys. Free at <a target="_blank" rel="noopener" href="https://www.pexels.com/api/">pexels.com/api</a>. ${S.settings.pexels_key?`Current key: <span class="mono">${esc(S.settings.pexels_key)}</span>`:"No key saved yet."}</p>
     <div style="display:flex;gap:10px;flex-wrap:wrap"><div class="grow"><label for="pk" style="position:absolute;left:-9999px">Pexels key</label><input id="pk" placeholder="Paste your key" oninput="editing=true"></div><button class="btn" onclick="savePk()">Save key</button></div></div>
