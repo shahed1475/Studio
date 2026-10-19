@@ -63,3 +63,24 @@ def remove(index: int) -> bool:
         cur.pop(index)
         _write(cur)
         return True
+
+
+MAX_TRIES = 2  # a topic that could not be made this many times (no pictures found) is dropped
+
+
+def requeue_failed(topic: str) -> bool:
+    """A topic that could not be made goes to the back of the queue, so the next run tries a different one. After MAX_TRIES it is dropped.
+    Returns True when it was kept."""
+    fails_file = config.ROOT / "data" / "topic_fails.json"
+    with filelock.locked(config.TOPICS_FILE):
+        try:
+            fails = json.loads(fails_file.read_text())
+        except (OSError, ValueError):
+            fails = {}
+        fails[topic] = fails.get(topic, 0) + 1
+        keep = fails[topic] < MAX_TRIES
+        fails_file.parent.mkdir(parents=True, exist_ok=True)
+        filelock.write_atomic(fails_file, json.dumps(fails))
+        rest = [t for t in _read() if t != topic]
+        _write(rest + [topic] if keep else rest)
+        return keep

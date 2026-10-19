@@ -228,3 +228,14 @@ def test_encoder_probe_runs_once(monkeypatch):
     render._venc("22", "veryfast")
     render._venc("21", "medium")
     assert len(calls) == 1
+
+
+def test_failed_topic_goes_to_the_back_then_is_dropped(tmp_path, monkeypatch):
+    import config, topicqueue
+    monkeypatch.setattr(config, "TOPICS_FILE", tmp_path / "topics.json")
+    monkeypatch.setattr(config, "ROOT", tmp_path)
+    topicqueue._write(["A", "B", "C"])
+    assert topicqueue.requeue_failed("A") is True
+    assert topicqueue.items() == ["B", "C", "A"]  # the next run tries B, not A again
+    assert topicqueue.requeue_failed("A") is False
+    assert topicqueue.items() == ["B", "C"]

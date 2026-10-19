@@ -114,9 +114,9 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
             clips = [None] * len(clips)
     if not footage.enough_footage(clips):
         if requeue:
-            topicqueue.push_front(topic)  # keep the topic for a later try
+            kept = topicqueue.requeue_failed(topic)  # to the back of the queue, so the next run tries another topic; dropped after two failures
         shutil.rmtree(folder, ignore_errors=True)
-        raise SystemExit("not enough footage found for this Short" + ("; topic put back in the queue" if requeue else ""))
+        raise SystemExit("not enough footage found for this Short" + (("; topic moved to the back of the queue" if kept else "; topic dropped after two failed tries") if requeue else ""))
     print("Rendering...")
     render.render(clips, durations, narration, ass, work, folder / "video.mp4", loudness=prof["target_lufs"], shots=prof["motion"] >= 1,
                   crossfade=0.3 if prof["motion"] >= 2 and len(clips) <= 20 else 0.0, grain=prof["motion"] >= 2)
