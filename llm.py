@@ -12,13 +12,15 @@ import time
 import requests
 
 import config
+import freemodels
 
 CONFIG_FILE = config.ROOT / "llm.json"
 USAGE_FILE = config.ROOT / "data" / "llm_usage.json"
 SETTINGS_FILE = config.ROOT / "settings.json"
 PRICES_FILE = config.ROOT / "data" / "or_prices.json"
 ROLES = ("script", "review", "cheap")
-DEFAULTS = {"enabled": False, "models": {"script": "", "review": "", "cheap": ""}, "daily_budget_usd": 1.0, "max_output_tokens": 6000}
+DEFAULTS = {"enabled": False, "models": {"script": "", "review": "", "cheap": ""}, "daily_budget_usd": 1.0, "max_output_tokens": 6000,
+            "free": False, "free_daily_limit": 45}  # free: try OpenRouter free models first (50 requests a day without credits)
 MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9/._:+-]{1,99}$")
 UNKNOWN_PRICE = (10.0, 30.0)  # per million tokens: deliberately high, so an unknown model cannot slip past the cap
 
@@ -38,7 +40,7 @@ def load_config() -> dict:
     cfg = copy.deepcopy(DEFAULTS)
     if CONFIG_FILE.exists():
         raw = json.loads(CONFIG_FILE.read_text())
-        cfg.update({k: raw[k] for k in ("enabled", "daily_budget_usd", "max_output_tokens") if k in raw})
+        cfg.update({k: raw[k] for k in ("enabled", "daily_budget_usd", "max_output_tokens", "free", "free_daily_limit") if k in raw})
         cfg["models"].update({k: v for k, v in raw.get("models", {}).items() if k in ROLES})
     return cfg
 
@@ -60,6 +62,12 @@ def validate_config(raw: dict) -> dict:
         elif k == "max_output_tokens":
             if isinstance(v, bool) or not isinstance(v, int) or not 500 <= v <= 16000:
                 raise ValueError("max tokens per call must be between 500 and 16000")
+        elif k == "free":
+            if not isinstance(v, bool):
+                raise ValueError("free models must be on or off")
+        elif k == "free_daily_limit":
+            if isinstance(v, bool) or not isinstance(v, int) or not 1 <= v <= 1000:
+                raise ValueError("the free request limit must be between 1 and 1000 a day")
         elif k == "models":
             if not isinstance(v, dict):
                 raise ValueError("models must be a set of job names and model IDs")
@@ -177,9 +185,11 @@ def _post(payload: dict, key: str) -> dict:
     return r.json()
 
 
-def _payload(model: str, prompt: str, max_tokens: int) -> dict:
-    return {"model": model, "messages": [{"role": "user", "content": prompt}], "response_format": {"type": "json_object"},
-            "max_tokens": max_tokens, "temperature": 0.7, "usage": {"include": True}}
+def _payload(model: str, prompt: str, max_tokens: int, json_mode: bool = True) -> dict:
+    p = {"model": model, "messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens, "temperature": 0.7, "usage": {"include": True}}
+    if json_mode:  # some free models reject JSON mode: they are asked again without it
+        p["response_format"] = {"type": "json_object"}
+    return p
 
 
 def _account(now, role, model, body) -> float:
@@ -188,6 +198,40 @@ def _account(now, role, model, body) -> float:
     usd = float(u["cost"]) if u.get("cost") is not None else _usd(model, tin, tout)
     record(now, role, model, tin, tout, usd)
     return usd
+
+
+_last_free: dict[str, str] = {}  # the free model that last answered each role (the reviewer must differ from the writer)
+
+
+def _free_chat(prompt: str, role: str, cfg: dict, key: str, now: dt.datetime) -> dict | None:
+    """Try up to three free models in turn. None means: use the local model."""
+    freemodels.refresh(now)
+    for mid in freemodels.choose(role, now, avoid=_last_free.get("script") if role == "review" else None):
+        for json_mode in (True, False):
+            if freemodels.requests_today(now) >= cfg["free_daily_limit"]:
+                _note(now, f"{role}: today's free request limit is used, used the local model")
+                return None
+            freemodels.count_request(now)  # failed requests count against the limit too
+            try:
+                body = _post(_payload(mid, prompt, cfg["max_output_tokens"], json_mode), key)
+            except Exception as e:
+                if json_mode and isinstance(e, requests.HTTPError) and getattr(e.response, "status_code", None) == 400:
+                    continue
+                freemodels.record(mid, False, now)
+                _note(now, f"{role}: free model {mid}: {type(e).__name__}")
+                break
+            u = body.get("usage") or {}
+            record(now, role, mid, int(u.get("prompt_tokens", 0)), int(u.get("completion_tokens", 0)), 0.0)
+            try:
+                out = parse_json(body["choices"][0]["message"]["content"])
+            except (ValueError, KeyError, IndexError, TypeError):
+                freemodels.record(mid, False, now)
+                _note(now, f"{role}: free model {mid} did not return JSON")
+                break
+            freemodels.record(mid, True, now)
+            _last_free[role] = mid
+            return out
+    return None
 
 
 def chat(prompt: str, role: str = "cheap", fallback=None, now: dt.datetime | None = None) -> dict:
@@ -212,6 +256,10 @@ def chat(prompt: str, role: str = "cheap", fallback=None, now: dt.datetime | Non
                     continue
             else:
                 _note(now, f"{role}: invalid JSON from {model}, used the local model")
+    if cfg["free"] and key:
+        got = _free_chat(prompt, role, cfg, key, now)
+        if got is not None:
+            return got
     if fallback is None:
         raise RuntimeError("no model is available for this job")
     return fallback(prompt)

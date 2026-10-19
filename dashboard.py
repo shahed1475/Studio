@@ -154,6 +154,8 @@ def llm_view() -> dict:
         "history": [{"day": d, "usd": round(v["usd"], 4), "calls": v["calls"]} for d, v in sorted(usage.items())[-7:]],
         "role_prices": {r: v for r, v in role_prices.items()}, "estimate": est,
         "plan": {"docs_per_day": ap["uploads_per_day"], "shorts_per_day": ap["shorts_per_day"] if ap["shorts"] else 0},
+        "free": {"on": cfg["free"], "limit": cfg["free_daily_limit"], "requests_today": __import__("freemodels").requests_today(now),
+                 "chain": __import__("freemodels").choose("cheap", now)},
         "models": sorted(({"id": k, "in": round(v[0], 3), "out": round(v[1], 3)} for k, v in prices.items()
                           if v[0] > 0 and not any(t in k for t in (":free", ":batch", "image", "audio", "embed"))), key=lambda m: m["id"]),
     }
@@ -525,7 +527,7 @@ class H(BaseHTTPRequestHandler):
             cfg = llm.load_config()
             cfg.update({k: v for k, v in clean.items() if k != "models"})
             cfg["models"].update(clean.get("models", {}))
-            if cfg["enabled"] and not (llm.api_key() or (key or "").strip()):
+            if (cfg["enabled"] or cfg["free"]) and not (llm.api_key() or (key or "").strip()):
                 raise ValueError("save your OpenRouter key before turning it on")
             llm.save_config(cfg)
             st = load_settings()
