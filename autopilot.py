@@ -2,6 +2,7 @@
 import datetime as dt
 import fcntl
 import json
+import re
 import os
 from pathlib import Path
 
@@ -154,20 +155,47 @@ def _meta(slug: str) -> tuple[Path, dict]:
     return p, json.loads(p.read_text())
 
 
-def do_review(slug, cfg, now):
-    import reviewer
+def visually_ok(slug: str) -> bool:
+    """Before the reviewer's pass becomes an approval, a vision model reads sampled frames. A clearly bad picture set (three or more pictures that do not fit,
+    or a garbled caption) sends the video to the owner instead. A reading that cannot run never blocks: the rule checks already passed."""
+    import videoinspect
 
-    result = reviewer.review(config.OUT / slug)
-    if result["verdict"] == "pass" and cfg["auto_approve"]:
+    try:
+        rows = videoinspect.visual_review(config.OUT / slug)
+    except Exception:
+        return True
+    pics = next((r for r in rows if r["name"] == "pictures_fit_story"), None)
+    caps = next((r for r in rows if r["name"] == "captions_readable"), None)
+    n_pics = (pics["detail"].count(" s: ") if pics and not pics["ok"] else 0)
+    garbled = bool(caps and not caps["ok"] and re.search(r"garbl|gibberish|stray|nonsens", caps["detail"], re.I))
+    if n_pics >= 3 or garbled:
+        p, meta = _meta(slug)
+        review = meta.setdefault("review", {"checks": []})
+        review["checks"].append({"name": "visual_review", "ok": False, "severity": "human", "detail": " | ".join(r["detail"] for r in rows if not r["ok"])[:400]})
+        review["verdict"] = "needs_human"
+        meta["approved"] = False
+        p.write_text(json.dumps(meta, indent=2))
+        return False
+    return True
+
+
+def _approve(slug: str) -> None:
+    if visually_ok(slug):
         p, meta = _meta(slug)
         meta.update(approved=True, approved_by="reviewer-agent")
         p.write_text(json.dumps(meta, indent=2))
 
 
+def do_review(slug, cfg, now):
+    import reviewer
+
+    result = reviewer.review(config.OUT / slug)
+    if result["verdict"] == "pass" and cfg["auto_approve"]:
+        _approve(slug)
+
+
 def do_approve(slug, cfg, now):
-    p, meta = _meta(slug)
-    meta.update(approved=True, approved_by="reviewer-agent")
-    p.write_text(json.dumps(meta, indent=2))
+    _approve(slug)
 
 
 def do_fix(slug, cfg, now):
@@ -175,9 +203,7 @@ def do_fix(slug, cfg, now):
 
     out = fixer.fix(slug, now=now)
     if out.get("verdict") == "pass" and cfg["auto_approve"]:
-        p, meta = _meta(slug)
-        meta.update(approved=True, approved_by="reviewer-agent")
-        p.write_text(json.dumps(meta, indent=2))
+        _approve(slug)
 
 
 def do_schedule(slug, cfg, now):

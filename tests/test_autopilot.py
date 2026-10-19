@@ -200,3 +200,28 @@ def test_a_video_the_reviewer_passed_earlier_but_nobody_approved_gets_the_review
     assert ("approve", "p") not in plan(state([vid("p", verdict="pass", approved=True)]))
     assert ("approve", "p") not in plan(state([vid("p", verdict="pass")]), {**CFG, "auto_approve": False})
     assert ("approve", "n") not in plan(state([vid("n", verdict="needs_human")]))
+
+
+def test_a_clearly_bad_picture_set_is_not_auto_approved_but_a_few_warnings_are(tmp_path, monkeypatch):
+    import config, videoinspect
+    monkeypatch.setattr(config, "OUT", tmp_path)
+
+    def video(name):
+        d = tmp_path / name
+        d.mkdir()
+        (d / "meta.json").write_text(json.dumps({"review": {"verdict": "pass", "checks": []}}))
+    rows = lambda pics, cap="fine": [{"name": "pictures_fit_story", "ok": not pics, "severity": "warn", "detail": "; ".join(f"{i} s: bad" for i in pics) or "ok"},
+                                      {"name": "captions_readable", "ok": cap == "fine", "severity": "warn", "detail": cap}]
+    video("bad")
+    monkeypatch.setattr(videoinspect, "visual_review", lambda folder: rows([1, 2, 3]))
+    assert autopilot.visually_ok("bad") is False
+    meta = json.loads((tmp_path / "bad" / "meta.json").read_text())
+    assert meta["review"]["verdict"] == "needs_human" and meta["approved"] is False and meta["review"]["checks"][-1]["name"] == "visual_review"
+    video("garbled")
+    monkeypatch.setattr(videoinspect, "visual_review", lambda folder: rows([], "caption reads TOF LOST TALESR, garbled"))
+    assert autopilot.visually_ok("garbled") is False
+    video("ok")
+    monkeypatch.setattr(videoinspect, "visual_review", lambda folder: rows([1, 2]))
+    assert autopilot.visually_ok("ok") is True
+    monkeypatch.setattr(videoinspect, "visual_review", lambda folder: (_ for _ in ()).throw(RuntimeError("no model")))
+    assert autopilot.visually_ok("ok") is True  # a reading that cannot run never blocks
