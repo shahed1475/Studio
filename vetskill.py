@@ -37,6 +37,17 @@ EXEC_SUFFIXES = {".pyc", ".pyo", ".so", ".dll", ".dylib", ".exe", ".bin", ".jar"
 MAX_BYTES = 2_000_000
 
 
+FILLER = r"(?:(?:ever|to|simply|just|now|you|please)\s+)*"
+
+
+def _excused(before: str) -> bool:
+    """True only when a negation sits directly in front of the instruction ("never skip ...", "you must not ignore ..."). Words that turn the negation around
+    ("do not hesitate to ...") or any other words in between mean the match is NOT excused."""
+    if re.search(r"\b(hesitate|forget|fail|wait|refuse)\b", before, re.I):
+        return False
+    return bool(re.search(r"\b(never|do not|don't|must not|cannot|can't)\s+" + FILLER + r"$", before, re.I))
+
+
 def _classify(root: Path):
     """(files to read, findings about everything that is NOT read). Nothing is skipped silently."""
     read, gaps, media = [], [], 0
@@ -45,8 +56,13 @@ def _classify(root: Path):
             continue
         parts = set(p.relative_to(root).parts)
         rel = str(p.relative_to(root))
+        if p.relative_to(root).parts[0] == ".git":
+            if not any(g[2] == ".git" for g in gaps):
+                gaps.append(("low", "the top-level .git folder (version-control data) was not scanned", ".git"))
+            continue
         if ".git" in parts:
-            continue  # version-control data, not code that runs
+            gaps.append(("medium", "a nested .git folder: its contents were not scanned", rel))
+            continue
         suffix = p.suffix.lower()
         try:
             head = p.read_bytes()[:4]
@@ -85,7 +101,7 @@ def scan(root: Path) -> dict:
                 continue  # documentation may mention commands; only instructions aimed at the model matter there
             m = None
             for cand in rx.finditer(text):
-                if label.startswith("model-directed") and re.search(r"\b(never|do not|don't|must not|cannot|can't)\s+(?:\w+\s+){0,2}$", text[max(0, cand.start() - 40):cand.start()], re.I):
+                if label.startswith("model-directed") and _excused(text[max(0, cand.start() - 40):cand.start()]):
                     continue  # a rule telling the model NOT to do this is a safeguard, not an attack
                 m = cand
                 break
