@@ -197,12 +197,14 @@ def verdict_from(checks: list[dict], source: str | None) -> str:
     return "needs_human" if human or source == "news" else "pass"
 
 
-def llm_review(meta: dict) -> list[dict]:
+def llm_review(meta: dict, source: str = "") -> list[dict]:
     text = " ".join(l["text"] for l in meta.get("lines", []))[:7000]
+    grounding = (f"SOURCE ARTICLE the script was built from (a detail this article supports is NOT invented; only count details it does not support):\n{source[:12000]}\n\n"
+                 if source else "")
     try:
         r = scriptgen._review_chat(
             "You check a YouTube video script before it is published. Be strict.\n"
-            f"Title: {meta.get('title')}\nDescription: {meta.get('description', '')[:600]}\nNarration: {text}\n\n"
+            f"{grounding}Title: {meta.get('title')}\nDescription: {meta.get('description', '')[:600]}\nNarration: {text}\n\n"
             "Score 0 to 10: invented_facts_risk (specific names, dates, numbers or quotes that look made up or are "
             "stated as certain when the history is uncertain), policy_risk (hateful, graphic, dangerous, medical or "
             "financial advice, or anything advertisers or YouTube policy would reject). misleading_title is true when "
@@ -265,9 +267,10 @@ def review(folder: Path, existing_titles: list[str] | None = None, use_llm: bool
     kind = "doc" if meta.get("format") == "doc" else "short"
     others = sorted((m for m in folder.parent.glob("*/meta.json") if m.parent != folder), key=lambda m: m.stat().st_mtime, reverse=True)
     recent = [d for d in (json.loads(m.read_text()) for m in others[:30]) if ("doc" if d.get("format") == "doc" else "short") == kind][:12]
-    checks = rule_checks(meta, probe_video(folder / "video.mp4"), existing_titles, thumb_bytes, recent, source_text(meta))
+    source = source_text(meta)
+    checks = rule_checks(meta, probe_video(folder / "video.mp4"), existing_titles, thumb_bytes, recent, source)
     if use_llm:
-        checks += llm_review(meta)
+        checks += llm_review(meta, source)
     result = {"verdict": verdict_from(checks, meta.get("source")), "checks": checks,
               "at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
     apply_verdict(meta, result)

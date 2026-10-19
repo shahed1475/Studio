@@ -116,3 +116,23 @@ def test_after_two_tries_it_gives_up_tells_you_and_does_not_try_a_third_time(tmp
     assert final["fix_gave_up"] is True and final["fix_attempts"] == 2
     assert fixer.fix("doc-3", chat=chat, rerender=world["rerender"]) == {"skipped": "already tried"}
     assert any("Needs your eyes" in e["title"] for e in agentlog.recent())
+
+
+def test_a_title_the_reviewer_called_misleading_is_replaced_by_an_honest_one_from_the_writer_first(tmp_path, world):
+    d = video(tmp_path, "doc-4", title="What Really Happened to the Children?", seo={"titles": ["The Pied Piper: The Whole Truth Revealed"]},
+              review=result("fail", ("title_matches", "block", "title may mislead: it promises a definitive answer")))
+    world["results"] = [result("pass")]
+    seen = []
+    chat = lambda p: seen.append(p) or {"titles": ["The Pied Piper of Hamelin: What the Records Actually Say"]}
+    fixer.fix("doc-4", chat=chat, rerender=world["rerender"])
+    assert json.loads((d / "meta.json").read_text())["title"] == "The Pied Piper of Hamelin: What the Records Actually Say"
+    assert "definite answer" in seen[0]  # the writer is told what was wrong
+
+
+def test_the_ai_review_is_given_the_source_article_so_supported_details_are_not_called_invented(monkeypatch):
+    seen = []
+    monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p: seen.append(p) or {"invented_facts_risk": 1, "policy_risk": 0, "misleading_title": False, "issues": []})
+    reviewer.llm_review({"title": "T", "lines": [{"text": "Hans Dobbertin proposed a migration theory."}]}, "Hans Dobbertin proposed that the children left as settlers.")
+    assert "SOURCE ARTICLE" in seen[0] and "Hans Dobbertin proposed that" in seen[0] and "NOT invented" in seen[0]
+    reviewer.llm_review({"title": "T", "lines": []}, "")
+    assert "SOURCE ARTICLE" not in seen[1]

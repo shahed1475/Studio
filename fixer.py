@@ -40,19 +40,27 @@ def other_titles(folder: Path) -> list[str]:
     return [json.loads(m.read_text()).get("title", "") for m in folder.parent.glob("*/meta.json") if m.parent != folder]
 
 
-def pick_title(meta: dict, others: list[str], chat=None) -> str | None:
-    """A title that is not like any other video's: the search-based options first, then three new ones from the writer."""
+def pick_title(meta: dict, others: list[str], chat=None, misleading: str = "") -> str | None:
+    """A title that is not like any other video's: the search-based options first, then three new ones from the writer.
+    When the reviewer said the title promises more than the story delivers, the writer goes first and is told why."""
     chat = chat or scriptgen._chat
     options = [seo.polish_title(t) for t in (meta.get("seo") or {}).get("titles", [])]
-    for t in options:
+    for t in ([] if misleading else options):
         if t != meta.get("title") and not _too_similar(t, others):
             return t
     story = " ".join(l["text"] for l in meta.get("lines", [])[:8])
     try:
         got = chat("Write 3 different YouTube titles, each under 65 characters, for this story. Honest about what the video covers, no ALL CAPS, "
                    "no emojis, a curiosity hook or a question. They must be clearly different from these existing titles: "
-                   + json.dumps(others[:15]) + f"\nStory: {story}\nReturn JSON: {{\"titles\": [\"...\"]}}")
+                   + json.dumps(others[:15]) + (f"\nThe reviewer rejected the current title: {misleading[:400]} Do not promise a definite answer the story does not give; "
+                                               "a question or a 'what we know' angle is honest." if misleading else "")
+                   + f"\nStory: {story}\nReturn JSON: {{\"titles\": [\"...\"]}}")
     except Exception:
+        got = {}
+    if not got and misleading:  # the writer was down: fall back to the search-based options
+        for t in options:
+            if t != meta.get("title") and not _too_similar(t, others):
+                return t
         return None
     for t in (seo.polish_title(x) for x in got.get("titles", []) if isinstance(x, str)):
         if 8 < len(t) <= 70 and t != meta.get("title") and not _too_similar(t, others):
@@ -127,7 +135,7 @@ def fix(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) -> 
     archive_reason = None
 
     if "duplicate_title" in failing or "title_matches" in failing or not any(ch.isupper() for ch in meta.get("title", "")):
-        t = pick_title(meta, other_titles(folder), chat)
+        t = pick_title(meta, other_titles(folder), chat, failing["title_matches"]["detail"] if "title_matches" in failing else "")
         if t:
             meta["title"] = t
             fixed.append(f"new title: {t}")
