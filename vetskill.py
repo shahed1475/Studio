@@ -48,21 +48,55 @@ def _excused(before: str) -> bool:
     return bool(re.search(r"\b(never|do not|don't|must not|cannot|can't)\s+" + FILLER + r"$", before, re.I))
 
 
-GIT_HIGH = re.compile(r"(fsmonitor|hookspath|sshcommand|core\.pager|textconv|\b(clean|smudge|process)\s*=|\bcommand\s*=|\bexec\b)", re.I)
+GIT_ALLOWED = {"core": {"repositoryformatversion", "filemode", "bare", "logallrefupdates", "ignorecase", "precomposeunicode", "symlinks", "autocrlf", "eol"},
+               "remote": {"url", "fetch", "pushurl", "tagopt"}, "branch": {"remote", "merge", "rebase", "vscode-merge-base"}, "user": {"name", "email"},
+               "init": {"defaultbranch"}, "gc": {"auto"}, "submodule": {"active"}}
+
+
+def _git_config_findings(cfg: Path, label: str) -> list[dict]:
+    """Allowlist, not denylist: a .git/config may hold only plain settings. Anything else (editor, pager, fsmonitor, hooksPath, filters, aliases, includes,
+    credential or ssh helpers, an ext:: remote) can run a program and is reported as high."""
+    out, section = [], ""
+    for n, raw in enumerate(cfg.read_text(errors="ignore").splitlines(), 1):
+        line = raw.strip()
+        if not line or line[0] in "#;":
+            continue
+        m = re.match(r'\[\s*([A-Za-z0-9.-]+)(?:\s+"[^"]*")?\s*\]', line)
+        if m:
+            section = m.group(1).lower()
+            if section not in GIT_ALLOWED:
+                out.append({"severity": "high", "what": f"unusual [{section}] section in {label} (can run a program or pull in more config)", "file": label, "line": n, "excerpt": line[:110]})
+            continue
+        key = line.split("=", 1)[0].strip().lower()
+        value = line.split("=", 1)[1].strip().lower() if "=" in line else ""
+        if section in GIT_ALLOWED and key not in GIT_ALLOWED[section]:
+            out.append({"severity": "high", "what": f"{section}.{key} in {label} is not a plain setting", "file": label, "line": n, "excerpt": line[:110]})
+        elif key in ("url", "pushurl") and (value.startswith(("ext::", "fd::", "!")) or "\\" in value):
+            out.append({"severity": "high", "what": "remote address that runs a program", "file": label, "line": n, "excerpt": line[:110]})
+    return out
 
 
 def _git_findings(root: Path) -> list[dict]:
-    """A repository's own .git folder can run programs: its config (fsmonitor, hooksPath, sshCommand, filters) and any hook that is not a .sample file."""
-    out = []
-    cfg = root / ".git" / "config"
-    if cfg.is_file():
-        for n, line in enumerate(cfg.read_text(errors="ignore").splitlines(), 1):
-            if GIT_HIGH.search(line):
-                out.append({"severity": "high", "what": ".git/config can run a program", "file": ".git/config", "line": n, "excerpt": line.strip()[:110]})
-    hooks = root / ".git" / "hooks"
-    for h in sorted(hooks.glob("*")) if hooks.is_dir() else []:
-        if h.is_file() and not h.name.endswith(".sample"):
-            out.append({"severity": "high", "what": "an active git hook (runs on git commands)", "file": f".git/hooks/{h.name}", "line": 1, "excerpt": h.read_text(errors="ignore")[:80].replace("\n", " ")})
+    """A repository's own .git folder can run programs: its config and any hook that is not a .sample file. A .git FILE points to a git folder elsewhere."""
+    out, gitdirs = [], []
+    g = root / ".git"
+    if g.is_file():
+        target = g.read_text(errors="ignore").strip().removeprefix("gitdir:").strip()
+        out.append({"severity": "high", "what": ".git is a pointer to a git folder somewhere else", "file": ".git", "line": 1, "excerpt": target[:110]})
+        d = (root / target).resolve()
+        if d.is_dir():
+            gitdirs.append((d, f".git -> {target}"))
+    elif g.is_dir():
+        gitdirs.append((g, ".git"))
+    for d, label in gitdirs:
+        for extra in ("config", "config.worktree"):
+            if (d / extra).is_file():
+                out += _git_config_findings(d / extra, f"{label}/{extra}")
+        if (d / "commondir").is_file():
+            out.append({"severity": "high", "what": "commondir: this git folder shares settings and hooks with another one", "file": f"{label}/commondir", "line": 1, "excerpt": (d / "commondir").read_text(errors="ignore")[:110]})
+        for h in sorted((d / "hooks").glob("*")) if (d / "hooks").is_dir() else []:
+            if h.is_file() and not h.name.endswith(".sample"):
+                out.append({"severity": "high", "what": "an active git hook (runs on git commands)", "file": f"{label}/hooks/{h.name}", "line": 1, "excerpt": h.read_text(errors="ignore")[:80].replace("\n", " ")})
     return out
 
 

