@@ -2,6 +2,8 @@
 import json
 from pathlib import Path
 
+import keywords
+
 MAX_CUE_SECONDS = 6.0
 
 
@@ -51,16 +53,16 @@ def _ass_ts(t: float) -> str:
     return f"{cs // 360000}:{cs // 6000 % 60:02d}:{cs // 100 % 60:02d}.{cs % 100:02d}"
 
 
-def to_ass(cues: list[dict], size: tuple[int, int] = (1920, 1080)) -> str:
+def to_ass(cues: list[dict], size: tuple[int, int] = (1920, 1080), pos: str = "bottom") -> str:
     w, h = size
     head = (
         f"[Script Info]\nScriptType: v4.00+\nPlayResX: {w}\nPlayResY: {h}\nWrapStyle: 2\n\n"
         "[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,OutlineColour,BackColour,Bold,"
         "BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV\n"
-        f"Style: Sub,DejaVu Sans,{round(h * 0.052)},&H00FFFFFF,&H00000000,&H64000000,1,1,4,2,2,{round(w * 0.08)},{round(w * 0.08)},{round(h * 0.06)}\n\n"
+        f"Style: Sub,DejaVu Sans,{round(h * 0.052)},&H00FFFFFF,&H00000000,&H64000000,1,1,4,2,{8 if pos == 'top' else 2},{round(w * 0.08)},{round(w * 0.08)},{round(h * (0.07 if pos == 'top' else 0.06))}\n\n"
         "[Events]\nFormat: Layer,Start,End,Style,Text\n"
     )
-    rows = [f"Dialogue: 0,{_ass_ts(c['start'])},{_ass_ts(c['end'])},Sub,{c['text'].replace(chr(10), chr(92) + 'N')}" for c in cues]
+    rows = [f"Dialogue: 0,{_ass_ts(c['start'])},{_ass_ts(c['end'])},Sub,{keywords.colorize(c['text']).replace(chr(10), chr(92) + 'N')}" for c in cues]
     return head + "\n".join(rows) + "\n"
 
 
@@ -125,7 +127,7 @@ def burn_into_video(folder: Path) -> None:
         raise SystemExit("this video already has burned-in subtitles")
     words = ensure_words(folder)
     ass = folder / "burn.ass"
-    ass.write_text(to_ass(build_cues(words), (1920, 1080)))
+    ass.write_text(to_ass(build_cues(words), (1920, 1080), __import__("editprofile").load()["caption_pos"]))
     tmp = folder / "video.tmp.mp4"
     try:
         subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", "video.mp4", "-vf", f"subtitles={ass.name}",

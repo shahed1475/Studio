@@ -265,6 +265,15 @@ def agent_strategy(b: dict) -> dict:
     raise ValueError("unknown action")
 
 
+def agent_profile(b: dict) -> dict:
+    import editprofile
+
+    clean = editprofile.validate(b)
+    if not clean or set(clean) != set(b):
+        raise ValueError("that is not a valid setting")
+    return editprofile.update(clean)
+
+
 def agent_read() -> dict:
     import agentlog
 
@@ -507,6 +516,8 @@ class H(BaseHTTPRequestHandler):
             return {"config": agent_config(b)}
         if path == "/api/agent/strategy":
             return {"strategy": agent_strategy(b)}
+        if path == "/api/agent/profile":
+            return {"profile": agent_profile(b)}
         if path == "/api/agent/read":
             return agent_read()
         if path == "/api/autopilot/hold":

@@ -73,3 +73,11 @@ def test_timer_counts_as_installed_when_worker_is_alive(monkeypatch):
     monkeypatch.setattr(worker, "alive", lambda: True)
     assert dashboard.agent_view()["timer_installed"] is True
     assert dashboard.timer_installed("story-autopilot.timer") is True
+
+
+def test_profile_update_validates_and_saves():
+    got = dashboard.agent_profile({"caption_pos": "top", "motion": 1})
+    assert got["caption_pos"] == "top" and got["motion"] == 1 and editprofile.load()["caption_pos"] == "top"
+    for bad in ({"caption_pos": "middle"}, {"motion": 7}, {"evil": 1}, {"motion": 1, "evil": 1}, {}):
+        with pytest.raises(ValueError):
+            dashboard.agent_profile(bad)

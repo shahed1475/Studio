@@ -114,7 +114,7 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
     folder.mkdir(parents=True, exist_ok=True)
     print("Voice + captions...")
     prof = editprofile.load()
-    narration, ass, durations = tts.narrate([l["text"] for l in data["lines"]], work, prof["sentence_pause_ms"] / 1000)
+    narration, ass, durations = tts.narrate([l["text"] for l in data["lines"]], work, prof["sentence_pause_ms"] / 1000, prof["motion"], prof["caption_pos"])
     print("Footage...")
     if config.PEXELS_KEY:
         clips = [footage.clip_for(l["visual"]) for l in data["lines"]]
@@ -130,7 +130,8 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
         shutil.rmtree(folder, ignore_errors=True)
         raise SystemExit("not enough footage found for this Short" + ("; topic put back in the queue" if requeue else ""))
     print("Rendering...")
-    render.render(clips, durations, narration, ass, work, folder / "video.mp4", loudness=prof["target_lufs"])
+    render.render(clips, durations, narration, ass, work, folder / "video.mp4", loudness=prof["target_lufs"], shots=prof["motion"] >= 1,
+                  crossfade=0.3 if prof["motion"] >= 2 and len(clips) <= 20 else 0.0, grain=prof["motion"] >= 2)
     shutil.copy(work / "words.json", folder / "words.json")
     subtitles.write_files(folder, subtitles.load_words(work / "words.json"))
     shutil.rmtree(work)
@@ -225,9 +226,9 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
     doc_ass = None
     if config.DOC_SUBTITLES:
         doc_ass = work / "doc_captions.ass"
-        doc_ass.write_text(subtitles.to_ass(subtitles.build_cues(words), (1920, 1080)))
+        doc_ass.write_text(subtitles.to_ass(subtitles.build_cues(words), (1920, 1080), prof["caption_pos"]))
     render.render(clips, durations, narration, doc_ass, work, folder / "video.mp4",
-                  size=(1920, 1080), music=random.choice(music) if music else None, loudness=prof["target_lufs"])
+                  size=(1920, 1080), music=random.choice(music) if music else None, loudness=prof["target_lufs"], shots=prof["motion"] >= 1)
     shutil.copy(work / "words.json", folder / "words.json")
     subtitles.write_files(folder, words)
     shutil.rmtree(work)

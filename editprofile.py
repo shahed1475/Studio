@@ -4,8 +4,10 @@ import json
 import config
 
 FILE = config.ROOT / "edit_profile.json"
-DEFAULTS = {"target_lufs": -16.0, "sentence_pause_ms": 120}
-LIMITS = {"target_lufs": (-20.0, -12.0), "sentence_pause_ms": (100, 900)}
+DEFAULTS = {"target_lufs": -16.0, "sentence_pause_ms": 120, "motion": 2, "caption_pos": "bottom"}  # motion: 0 plain, 1 camera shots and word captions, 2 also crossfades and film grain
+LIMITS = {"target_lufs": (-20.0, -12.0), "sentence_pause_ms": (100, 900), "motion": (0, 2)}
+INTS = ("sentence_pause_ms", "motion")
+CHOICES = {"caption_pos": ("bottom", "top")}  # where subtitles sit: never in the middle of the picture
 
 
 def validate(raw: dict) -> dict:
@@ -16,7 +18,10 @@ def validate(raw: dict) -> dict:
         except (KeyError, TypeError, ValueError):
             continue
         if lo <= v <= hi:
-            out[key] = int(v) if key == "sentence_pause_ms" else v
+            out[key] = int(v) if key in INTS else v
+    for key, allowed in CHOICES.items():
+        if raw.get(key) in allowed:
+            out[key] = raw[key]
     return out
 
 

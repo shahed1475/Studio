@@ -468,9 +468,10 @@ const AG_MODES=[["off","Off","The agent does nothing."],["handoff","Hand-off","T
 const AG_KIND={topic:"Story idea",title:"Titles",format:"Video format",edit:"Editing",schedule:"When to publish",thumbnail:"Thumbnails"};
 const AG_EVENT={info:["Info","mute"],found:["Found","ok"],strategy:["New idea","ok"],applied:["Applied","ok"],error:["Problem","bad"]};
 async function agMode(mode){try{await api("/api/agent/config",{mode});toast(mode==="off"?"Agent is off":mode==="handoff"?"Hand-off mode: it suggests, you decide":"Automatic mode: it applies safe changes")}catch(e){}growth(document.getElementById("main"))}
+async function agProfile(key,val){try{await api("/api/agent/profile",{[key]:val});toast("Saved. New videos use it.")}catch(e){}growth(document.getElementById("main"))}
 async function agAct(id,action){try{await api("/api/agent/strategy",{id,action});toast(action==="apply"?"Applied":action==="dismiss"?"Dismissed":"Back in the list")}catch(e){}growth(document.getElementById("main"))}
 function agCard(x){
-  const prof=x.profile?`<div class="help">Changes: ${Object.entries(x.profile).map(([k,v])=>k==="target_lufs"?"loudness "+v+" LUFS":"pause between sentences "+v+" ms").join(", ")}</div>`:"";
+  const prof=x.profile?`<div class="help">Changes: ${Object.entries(x.profile).map(([k,v])=>k==="target_lufs"?"loudness "+v+" LUFS":k==="motion"?"motion level "+v:"pause between sentences "+v+" ms").join(", ")}</div>`:"";
   const done=x.status==="applied"?badge("Applied","ok"):x.status==="dismissed"?badge("Dismissed","mute"):x.auto_ok?badge("You can apply this","warn"):badge("Advice for you to do","mute");
   const btns=x.status==="proposed"?`${x.auto_ok?`<button class="btn sm" onclick="agAct('${x.id}','apply')">Apply</button>`:""}<button class="btn quiet sm" onclick="agAct('${x.id}','dismiss')">${x.auto_ok?"Dismiss":"Got it"}</button>`:x.status==="dismissed"?`<button class="btn quiet sm" onclick="agAct('${x.id}','restore')">Bring back</button>`:"";
   return `<div><div class="grow"><div class="ttl">${esc(x.text)}</div><div class="mute">${badge(AG_KIND[x.kind]||x.kind,"mute")} ${esc(x.why)}</div>${x.evidence.length?`<div class="help">Evidence: ${x.evidence.map(esc).join("; ")}</div>`:""}${prof}</div>${done}${btns}</div>`;
@@ -488,7 +489,12 @@ async function growth(m){
     <div class="row" style="gap:8px;flex-wrap:wrap">${AG_MODES.map(([k,l])=>`<button class="btn ${c.mode===k?"":"quiet"}" aria-pressed="${c.mode===k}" onclick="agMode('${k}')">${l}</button>`).join("")}
       <button class="btn quiet" ${busy||c.mode==="off"?"disabled":""} onclick="job('agent',['force'])">${ico("arrow-clockwise")}Research now</button></div>
     <p class="sub">${esc(AG_MODES.find(x=>x[0]===c.mode)[2])}</p>
-    <p class="help">Current edit settings: loudness ${A.profile.target_lufs} LUFS, pause between sentences ${A.profile.sentence_pause_ms} ms. It only reads public numbers from YouTube. It never copies another channel's videos or scripts, and it never uploads anything.</p></div>
+    <p class="help">It only reads public numbers from YouTube. It never copies another channel's videos or scripts, and it never uploads anything.</p></div>
+  <div class="panel pad stack" style="margin-top:12px"><h2>How new videos look</h2>
+    <div><label>Subtitles</label><div class="row" style="gap:8px">${[["bottom","Bottom"],["top","Top"]].map(([k,l])=>`<button class="btn ${A.profile.caption_pos===k?"":"quiet"}" aria-pressed="${A.profile.caption_pos===k}" onclick="agProfile('caption_pos','${k}')">${l}</button>`).join("")}</div>
+      <div class="help">Never in the middle of the picture. Bottom sits above YouTube's own title text. Important words are coloured: gold for people and places, blue for numbers and years, red for danger and mystery.</div></div>
+    <div><label>Movement</label><div class="row" style="gap:8px;flex-wrap:wrap">${[[0,"Plain"],[1,"Camera moves"],[2,"Full: dissolves and film grain"]].map(([k,l])=>`<button class="btn ${A.profile.motion===k?"":"quiet"}" aria-pressed="${A.profile.motion===k}" onclick="agProfile('motion',${k})">${l}</button>`).join("")}</div>
+      <div class="help">Camera moves give one picture several different shots. Loudness is ${A.profile.target_lufs} LUFS and the pause between sentences is ${A.profile.sentence_pause_ms} ms.</div></div></div>
   ${warn.length?`<div class="err" style="margin-top:12px">${warn.map(esc).join("<br>")}</div>`:""}
   ${rep&&rep.errors.length?`<div class="err" style="margin-top:12px">Last run had problems: ${rep.errors.map(esc).join(" | ")}</div>`:""}
 

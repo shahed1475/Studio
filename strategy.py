@@ -101,7 +101,7 @@ def generate(analysis: dict, study: list[dict], chat=None) -> list[dict]:
         + "\n".join(titles) +
         "\n\nGive up to 6 strategies the numbers support. Each is JSON with kind, text (one plain sentence), why (one sentence), evidence (short facts from the data). "
         "Kinds: topic (an original story idea from public-domain legends or well-documented history), title, format, schedule, thumbnail (advice), "
-        'and edit, which also needs "profile" using only these keys: target_lufs (-20 to -12), sentence_pause_ms (100 to 900). '
+        'and edit, which also needs "profile" using only these keys: target_lufs (-20 to -12), sentence_pause_ms (100 to 900), motion (0 plain, 1 camera shots and word captions, 2 also crossfades and film grain), caption_pos (\"bottom\" or \"top\"). '
         'Reply JSON {"strategies": [...]}. Do not invent numbers that are not in the data.')
     try:
         got = chat(prompt)

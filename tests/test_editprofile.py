@@ -9,7 +9,7 @@ import tts
 
 def test_defaults_when_no_file(tmp_path, monkeypatch):
     monkeypatch.setattr(editprofile, "FILE", tmp_path / "p.json")
-    assert editprofile.load() == {"target_lufs": -16.0, "sentence_pause_ms": 120}
+    assert editprofile.load() == {"target_lufs": -16.0, "sentence_pause_ms": 120, "motion": 2, "caption_pos": "bottom"}
 
 
 def test_validate_drops_unknown_and_out_of_range():
@@ -20,7 +20,7 @@ def test_validate_drops_unknown_and_out_of_range():
 def test_update_persists(tmp_path, monkeypatch):
     monkeypatch.setattr(editprofile, "FILE", tmp_path / "p.json")
     got = editprofile.update({"target_lufs": -14, "junk": 3})
-    assert got["target_lufs"] == -14.0 and got["sentence_pause_ms"] == 120
+    assert got["target_lufs"] == -14.0 and got["sentence_pause_ms"] == 120 and got["motion"] == 2
     assert json.loads((tmp_path / "p.json").read_text())["target_lufs"] == -14.0
     assert editprofile.load()["target_lufs"] == -14.0
 
@@ -97,3 +97,16 @@ def test_synth_line_gives_up_after_four_tries(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="No audio"):
         asyncio.run(tts._synth_line("hello", tmp_path / "a.mp3"))
     assert len(calls) == 4
+
+
+def test_motion_level_is_a_validated_integer():
+    assert editprofile.validate({"motion": 1}) == {"motion": 1}
+    assert editprofile.validate({"motion": "0"}) == {"motion": 0}
+    assert editprofile.validate({"motion": 3}) == {}
+    assert editprofile.validate({"motion": -1}) == {}
+
+
+def test_caption_position_is_a_validated_choice():
+    assert editprofile.validate({"caption_pos": "top"}) == {"caption_pos": "top"}
+    assert editprofile.validate({"caption_pos": "middle"}) == {}
+    assert editprofile.validate({"caption_pos": 3}) == {}
