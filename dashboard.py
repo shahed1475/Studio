@@ -61,7 +61,12 @@ def videos() -> list[dict]:
             "mb": round(v.stat().st_size / 1e6, 1) if v.exists() else 0,
             "made": time.strftime("%Y-%m-%d %H:%M", time.localtime(v.stat().st_mtime)) if v.exists() else "",
             "mtime": v.stat().st_mtime if v.exists() else 0,
+            "made_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(v.stat().st_mtime)) if v.exists() else "",
+            "uploaded_at": d.get("uploaded_at"),
         })
+        made = out[-1]["made_at"]  # the day a video belongs to: when it went up, when it goes public, or when it was made
+        out[-1]["when"] = ({"kind": "uploaded", "at": d.get("uploaded_at") or made} if d.get("video_id")
+                           else {"kind": "scheduled", "at": d["publish_at"]} if d.get("publish_at") else {"kind": "made", "at": made})
     return sorted(out, key=lambda x: -x["mtime"])
 
 
