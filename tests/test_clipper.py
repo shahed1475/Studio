@@ -156,7 +156,7 @@ def test_produce_short_threshold_is_configurable(tmp_path, monkeypatch):
     monkeypatch.setattr(run.config, "OUT", tmp_path)
     monkeypatch.setattr(run.config, "PEXELS_KEY", "")
     monkeypatch.setattr(run.tts, "narrate", lambda lines, work, pause=0.12, motion=0, pos="bottom": (work / "n.mp3", work / "c.ass", [1.0] * len(lines)))
-    monkeypatch.setattr(footage, "scene_images", lambda lines, topic, anchors, pool_size=6, judge=None: (["a", "b", "c", "a"], [], {"scenes": 4, "unique": 3, "missing": 0, "pool": pool_size}))
+    monkeypatch.setattr(footage, "scene_images", lambda lines, topic, anchors, pool_size=6, judge=None, **kw: (["a", "b", "c", "a"], [], {"scenes": 4, "unique": 3, "missing": 0, "pool": pool_size}))
     monkeypatch.setattr(footage, "enough_footage", lambda clips: all(clips))
     monkeypatch.setattr(run.render, "render", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("reached render")))
     data = {"title": "T", "topic": "t", "anchors": [], "lines": [{"text": "x", "visual": "y"}] * 4}

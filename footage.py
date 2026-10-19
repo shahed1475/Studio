@@ -179,10 +179,12 @@ def image_for(query: str, anchors: list[str] | None = None) -> tuple[Path, str] 
     return hits[0] if hits else None
 
 
-def scene_images(lines: list[dict], topic: str, anchors: list[str], pool_size: int = 10, judge=None) -> tuple[list, list[str], dict]:
+def scene_images(lines: list[dict], topic: str, anchors: list[str], pool_size: int = 10, judge=None, art=None, art_limit: int = 0) -> tuple[list, list[str], dict]:
     """One relevant image per scene: a specific search first, then unused images about the subject, then reuse.
+    When no real picture is left, art(line) may draw one illustration (up to art_limit per video) instead of repeating a picture.
     A scene only goes blank when nothing about the subject can be found at all."""
     used: list[Path] = []
+    drawn = 0
     credit: dict[Path, str] = {}
     pool: list[tuple[Path, str]] = []
     for q in dict.fromkeys([topic, *anchors]):  # the subject itself: a reserve of on-topic images
@@ -195,6 +197,9 @@ def scene_images(lines: list[dict], topic: str, anchors: list[str], pool_size: i
             hit = hits[0] if hits else None
         if not hit:
             hit = next((h for h in pool if h[0] not in used), None)
+        if not hit and art and drawn < art_limit:
+            hit = art(l)
+            drawn += bool(hit)
         if hit:
             if hit[0] not in used:
                 used.append(hit[0])
@@ -204,5 +209,5 @@ def scene_images(lines: list[dict], topic: str, anchors: list[str], pool_size: i
             clips.append(used[len([c for c in clips if c]) % len(used)])
         else:
             clips.append(None)
-    stats = {"scenes": len(lines), "unique": len(used), "missing": sum(c is None for c in clips)}
-    return clips, [credit[p] for p in used], stats
+    stats = {"scenes": len(lines), "unique": len(used), "missing": sum(c is None for c in clips), "drawn": drawn}
+    return clips, list(dict.fromkeys(credit[p] for p in used)), stats

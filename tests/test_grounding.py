@@ -48,7 +48,7 @@ def test_scene_images_prefers_specific_then_pool_then_reuse(monkeypatch):
     clips, credits, stats = footage.scene_images(lines, "Pied Piper", ["Pied Piper"])
     assert clips[0] == a and clips[1:3] == [b, c]          # specific first, then unused pool images
     assert all(clips) and len(clips) == 5                  # later scenes reuse rather than going blank
-    assert stats == {"scenes": 5, "unique": 3, "missing": 0}
+    assert stats == {"scenes": 5, "unique": 3, "missing": 0, "drawn": 0}
     assert credits == ["A", "B", "C"]
 
 
@@ -180,3 +180,25 @@ def test_anchor_terms_add_topic_and_article_names():
     import run
     got = run.anchor_terms("The Pied Piper of Hamelin", ["Town Gate", "Hamelin"], "Pied Piper of Hamelin")
     assert "Hamelin" in got and "Pied Piper" in got and got.count("Hamelin") == 1 and "The" not in got
+
+
+def test_when_real_pictures_run_out_illustrations_are_drawn_up_to_the_limit_then_pictures_repeat(monkeypatch):
+    a = Path("a.jpg")
+    _fake_images(monkeypatch, {"Hamelin church": [(a, "A")]})
+    drawn = []
+
+    def art(line):
+        drawn.append(line["text"])
+        return Path(f"art{len(drawn)}.jpg"), "Illustration: AI-generated"
+
+    lines = [{"visual": "Hamelin church", "text": "t0"}] + [{"visual": "none", "text": f"t{i}"} for i in range(1, 6)]
+    clips, credits, stats = footage.scene_images(lines, "Pied Piper", ["Pied Piper"], art=art, art_limit=3)
+    assert clips[0] == a and clips[1:4] == [Path("art1.jpg"), Path("art2.jpg"), Path("art3.jpg")]
+    assert drawn == ["t1", "t2", "t3"] and stats["drawn"] == 3 and stats["unique"] == 4 and all(clips)  # then the limit: repeats, never blank
+    assert credits == ["A", "Illustration: AI-generated"]  # one credit line, not one per drawing
+
+
+def test_no_art_function_means_no_drawing(monkeypatch):
+    _fake_images(monkeypatch, {})
+    clips, _, stats = footage.scene_images([{"visual": "x", "text": "t"}], "T", [], art=None, art_limit=5)
+    assert clips == [None] and stats["drawn"] == 0

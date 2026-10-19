@@ -111,7 +111,11 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
         clips = [footage.clip_for(l["visual"]) for l in data["lines"]]
         credits = footage.collect_credits(clips)
     else:  # archive pictures: only ones that name the subject
-        clips, credits, stats = footage.scene_images(data["lines"], topic, data.get("anchors") or [], pool_size=pool_size, judge=_image_judge(topic))
+        import aiart
+
+        art = lambda l: aiart.generate(l["text"], l.get("visual", ""), topic, vertical=True)
+        clips, credits, stats = footage.scene_images(data["lines"], topic, data.get("anchors") or [], pool_size=pool_size, judge=_image_judge(topic),
+                                                     art=art, art_limit=aiart.MAX_PER_VIDEO["short"])
         data["footage"] = stats
         if stats["missing"] or stats["unique"] < min_unique:
             clips = [None] * len(clips)
@@ -203,7 +207,11 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
     narration, _ass, durations = tts.narrate([l["text"] for l in data["lines"]], work, prof["sentence_pause_ms"] / 1000)
     print("Archival images (only pictures that name the subject)...")
     anchors = data.get("anchors") or []
-    clips, credits, stats = footage.scene_images(data["lines"], data["topic"], anchors, judge=_image_judge(data["topic"]))
+    import aiart
+
+    art = lambda l: aiart.generate(l["text"], l.get("visual", ""), data["topic"])
+    clips, credits, stats = footage.scene_images(data["lines"], data["topic"], anchors, judge=_image_judge(data["topic"]),
+                                                 art=art, art_limit=aiart.MAX_PER_VIDEO["doc"])
     if stats["missing"] or stats["unique"] < 6:
         shutil.rmtree(folder, ignore_errors=True)
         raise SystemExit(f"only {stats['unique']} on-topic images found ({stats['missing']} scenes without one); "

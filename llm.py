@@ -20,7 +20,7 @@ SETTINGS_FILE = config.ROOT / "settings.json"
 PRICES_FILE = config.ROOT / "data" / "or_prices.json"
 ROLES = ("script", "review", "cheap")
 DEFAULTS = {"enabled": False, "models": {"script": "", "review": "", "cheap": ""}, "daily_budget_usd": 1.0, "max_output_tokens": 6000,
-            "free": False, "free_daily_limit": 900, "local_fallback": False}  # free: try OpenRouter free models first; local_fallback: ask the local Ollama model when no cloud model answers (slow, off by default)
+            "free": False, "free_daily_limit": 900, "local_fallback": False, "ai_art": False}  # free: try OpenRouter free models first; local_fallback: ask the local Ollama model when no cloud model answers (slow, off by default)
 MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9/._:+-]{1,99}$")
 UNKNOWN_PRICE = (10.0, 30.0)  # per million tokens: deliberately high, so an unknown model cannot slip past the cap
 
@@ -44,7 +44,7 @@ def load_config() -> dict:
     cfg = copy.deepcopy(DEFAULTS)
     if CONFIG_FILE.exists():
         raw = json.loads(CONFIG_FILE.read_text())
-        cfg.update({k: raw[k] for k in ("enabled", "daily_budget_usd", "max_output_tokens", "free", "free_daily_limit") if k in raw})
+        cfg.update({k: raw[k] for k in DEFAULTS if k != "models" and k in raw})  # every setting, including local_fallback and ai_art
         cfg["models"].update({k: v for k, v in raw.get("models", {}).items() if k in ROLES})
     return cfg
 
@@ -69,9 +69,9 @@ def validate_config(raw: dict) -> dict:
         elif k == "free":
             if not isinstance(v, bool):
                 raise ValueError("free models must be on or off")
-        elif k == "local_fallback":
+        elif k in ("local_fallback", "ai_art"):
             if not isinstance(v, bool):
-                raise ValueError("the local fallback must be on or off")
+                raise ValueError(f"{k} must be on or off")
         elif k == "free_daily_limit":
             if isinstance(v, bool) or not isinstance(v, int) or not 1 <= v <= 1000:
                 raise ValueError("the free request limit must be between 1 and 1000 a day")
