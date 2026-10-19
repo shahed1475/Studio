@@ -193,3 +193,10 @@ def test_the_fixer_leaves_alone_what_it_already_tried_twice_news_drafts_and_vide
 
 def test_a_passing_video_is_never_sent_to_the_fixer():
     assert ("fix", "ok") not in plan(state([vid("ok", verdict="pass", approved=True)]))
+
+
+def test_a_video_the_reviewer_passed_earlier_but_nobody_approved_gets_the_reviewers_approval():
+    assert ("approve", "p") in plan(state([vid("p", verdict="pass")]))
+    assert ("approve", "p") not in plan(state([vid("p", verdict="pass", approved=True)]))
+    assert ("approve", "p") not in plan(state([vid("p", verdict="pass")]), {**CFG, "auto_approve": False})
+    assert ("approve", "n") not in plan(state([vid("n", verdict="needs_human")]))

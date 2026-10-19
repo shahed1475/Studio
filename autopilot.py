@@ -93,6 +93,8 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime) -> list[dict]:
                 and v.get("fix_attempts", 0) < 2 and not v.get("gave_up"):
             acts.append({"do": "fix", "slug": v["slug"]})  # the fixer agent repairs what it can, then the reviewer decides again
         elif eligible:
+            if cfg["auto_approve"] and not v["approved"] and v["verdict"] == "pass":
+                acts.append({"do": "approve", "slug": v["slug"]})  # reviewed earlier (by hand or by the fixer): the reviewer's pass counts
             pub = _parse(v["publish_at"]) if v["publish_at"] else None
             cap = cfg["shorts_per_day"] if fmt == "short" else cfg["uploads_per_day"]
             if pub is None or pub <= now + dt.timedelta(minutes=10):
@@ -160,6 +162,12 @@ def do_review(slug, cfg, now):
         p, meta = _meta(slug)
         meta.update(approved=True, approved_by="reviewer-agent")
         p.write_text(json.dumps(meta, indent=2))
+
+
+def do_approve(slug, cfg, now):
+    p, meta = _meta(slug)
+    meta.update(approved=True, approved_by="reviewer-agent")
+    p.write_text(json.dumps(meta, indent=2))
 
 
 def do_fix(slug, cfg, now):
@@ -248,7 +256,7 @@ def do_make_news(slug, cfg, now):
     newswatch.make_next_news_video()
 
 
-EXECUTORS = {"review": do_review, "fix": do_fix, "schedule": do_schedule, "upload": do_upload,
+EXECUTORS = {"review": do_review, "approve": do_approve, "fix": do_fix, "schedule": do_schedule, "upload": do_upload,
              "ideas": do_ideas, "make": do_make, "make_short": do_make_short, "make_clip": do_make_clip, "make_news": do_make_news}
 
 
