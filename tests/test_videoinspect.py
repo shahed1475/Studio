@@ -100,6 +100,7 @@ def test_a_youtube_link_gets_metadata_and_the_thumbnail_but_the_video_is_never_d
     report = vi.inspect_source("https://www.youtube.com/watch?v=dQw4w9WgXcQ", yt=FakeYT(), post=lambda p, k: reply())
     c = report["coverage"]
     assert c["metadata"] and c["thumbnail"] and c["frames_inspected"] == 0 and c["whole_video_watched"] is False and downloads == []
+    assert "thumbnail only" in c["statement"] and "not a viewing of the video" in c["statement"]
     assert "official API gives no transcript" in c["transcript"] and any("terms do not allow downloading" in e["error"] for e in report["errors"])
     assert json.loads((world / "research" / report["dir"].split("/")[-1] / "metadata.json").read_text())["title"] == "Big Mystery"
 

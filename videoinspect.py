@@ -331,9 +331,13 @@ def inspect_source(source: str, question: str = "", frames: int = 12, now: dt.da
         report["stats"] = stats
         n = coverage["frames_inspected"] or len(flist)
         span = f" of a {stats['duration_seconds']:.0f} second video" if stats else ""
-        coverage["statement"] = (f"Looked at {n} sampled frame{'s' if n != 1 else ''}{span}"
-                                 + (f"; measured {stats['scene_cuts']} scene cuts across the whole video" if stats else "")
-                                 + f". Transcript: {coverage['transcript']}. This is not a full viewing" + ("." if flist else "; no image was inspected."))
+        if kind == "youtube":
+            coverage["statement"] = ("Read the video's official metadata" + (" and looked at its thumbnail only" if thumb else "") +
+                                     ". The video itself was not accessed, so nothing about its content, pacing or narration was seen or heard. This is not a viewing of the video.")
+        else:
+          coverage["statement"] = (f"Looked at {n} sampled frame{'s' if n != 1 else ''}{span}"
+                                   + (f"; measured {stats['scene_cuts']} scene cuts across the whole video" if stats else "")
+                                   + f". Transcript: {coverage['transcript']}. This is not a full viewing" + ("." if flist else "; no image was inspected."))
     (out / "errors.json").write_text(json.dumps(errors, indent=2))
     (out / "report.md").write_text(render_report(report, meta))
     return report
