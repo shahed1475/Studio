@@ -5,7 +5,9 @@ import json
 
 import config
 import editprofile
+import filelock
 import scriptgen
+import topicqueue
 
 FILE = config.ROOT / "data" / "agent" / "strategies.json"
 KINDS = {"topic", "title", "format", "edit", "schedule", "thumbnail"}
@@ -41,53 +43,55 @@ def load() -> list[dict]:
 
 
 def _save(rows: list[dict]) -> None:
-    FILE.parent.mkdir(parents=True, exist_ok=True)
-    FILE.write_text(json.dumps(rows, indent=2))
+    filelock.write_atomic(FILE, json.dumps(rows, indent=2))
 
 
 def add(items: list[dict]) -> list[dict]:
-    rows = load()
-    have = {r["id"] for r in rows}
     added = []
-    for raw in items:
-        s = validate(raw)
-        if s and s["id"] not in have:
-            have.add(s["id"])
-            added.append(s)
-    if added:
-        _save(rows + added)
+    with filelock.locked(FILE):
+        rows = load()
+        have = {r["id"] for r in rows}
+        for raw in items:
+            s = validate(raw)
+            if s and s["id"] not in have:
+                have.add(s["id"])
+                added.append(s)
+        if added:
+            _save(rows + added)
     return added
+
+
+def _find(rows: list[dict], sid: str) -> dict:
+    row = next((r for r in rows if r["id"] == sid), None)
+    if row is None:
+        raise ValueError("unknown strategy")
+    return row
 
 
 def set_status(sid: str, status: str) -> dict:
     if status not in STATUSES:
         raise ValueError("unknown status")
-    rows = load()
-    for r in rows:
-        if r["id"] == sid:
-            r["status"] = status
-            _save(rows)
-            return r
-    raise ValueError("unknown strategy")
+    with filelock.locked(FILE):
+        rows = load()
+        row = _find(rows, sid)
+        row["status"] = status
+        _save(rows)
+        return row
 
 
 def apply(sid: str) -> dict:
-    row = next((r for r in load() if r["id"] == sid), None)
-    if row is None:
-        raise ValueError("unknown strategy")
-    if row["kind"] not in AUTO_KINDS:
-        raise ValueError("advice only: this one is for you to do, the agent cannot change it")
-    if row["kind"] == "edit":
-        editprofile.update(row["profile"])
-    else:
-        queue = json.loads(config.TOPICS_FILE.read_text()) if config.TOPICS_FILE.exists() else []
-        if row["text"].lower() not in (q.lower() for q in queue):
-            config.TOPICS_FILE.write_text(json.dumps(queue + [row["text"]], indent=2))
-    done = set_status(sid, "applied")
-    done["applied_at"] = _now()
-    rows = [done if r["id"] == sid else r for r in load()]
-    _save(rows)
-    return done
+    with filelock.locked(FILE):
+        rows = load()
+        row = _find(rows, sid)
+        if row["kind"] not in AUTO_KINDS:
+            raise ValueError("advice only: this one is for you to do, the agent cannot change it")
+        if row["kind"] == "edit":
+            editprofile.update(row["profile"])
+        else:
+            topicqueue.append_unique(row["text"])
+        row["status"], row["applied_at"] = "applied", _now()
+        _save(rows)
+        return row
 
 
 def generate(analysis: dict, study: list[dict], chat=None) -> list[dict]:

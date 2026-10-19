@@ -234,6 +234,8 @@ EXECUTORS = {"review": do_review, "schedule": do_schedule, "upload": do_upload,
 
 def _log(msg: str) -> None:
     LOG.parent.mkdir(exist_ok=True)
+    if LOG.exists() and LOG.stat().st_size > 2_000_000:  # one old copy is enough
+        LOG.replace(LOG.with_name(LOG.name + ".1"))
     with LOG.open("a") as f:
         f.write(f"{dt.datetime.now().isoformat(timespec='seconds')} {msg}\n")
 

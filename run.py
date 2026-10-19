@@ -34,16 +34,8 @@ import footage
 import subtitles
 import render
 import scriptgen
+import topicqueue
 import tts
-
-
-def _queue() -> list[str]:
-    return json.loads(config.TOPICS_FILE.read_text()) if config.TOPICS_FILE.exists() else []
-
-
-def _save_queue(q: list[str]) -> None:
-    config.TOPICS_FILE.write_text(json.dumps(q, indent=2))
-
 
 STALE = {"approved", "approved_by", "review", "publish_at", "autopilot_fails"}
 
@@ -64,29 +56,25 @@ def unique_folder(base: Path) -> Path:
 
 
 def cmd_ideas(n: int = 10) -> None:
-    q = _queue()
-    new = [t for t in scriptgen.ideas(n) if t not in q]
-    _save_queue(q + new)
+    new = topicqueue.extend(scriptgen.ideas(n))
     print("\n".join(f"+ {t}" for t in new) or "no new ideas")
 
 
 def cmd_research(n: int = 3) -> None:
     import research
 
-    q = _queue()
-    new = [t for t in research.run(n) if t not in q]
-    _save_queue(q + new)
+    new = topicqueue.extend(research.run(n))
     print("\n".join(f"+ {t}" for t in new) or "nothing new")
 
 
 def cmd_make(topic: str | None = None) -> Path:
-    q = _queue()
     if not topic:
-        if not q:
+        topic = topicqueue.pop_first()
+        if not topic:
             cmd_ideas(10)
-            q = _queue()
-        topic = q.pop(0)
-        _save_queue(q)
+            topic = topicqueue.pop_first()
+        if not topic:
+            raise SystemExit("no topics: could not make any ideas")
     print(f"Topic: {topic}")
     data = None
     import wikipedia
@@ -126,7 +114,7 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
             clips = [None] * len(clips)
     if not footage.enough_footage(clips):
         if requeue:
-            _save_queue([topic] + _queue())  # keep the topic for a later try
+            topicqueue.push_front(topic)  # keep the topic for a later try
         shutil.rmtree(folder, ignore_errors=True)
         raise SystemExit("not enough footage found for this Short" + ("; topic put back in the queue" if requeue else ""))
     print("Rendering...")
@@ -146,13 +134,13 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
 def cmd_doc(topic: str | None = None) -> Path:
     import random
 
-    q = _queue()
     if not topic:
-        if not q:
+        topic = topicqueue.pop_first()
+        if not topic:
             cmd_research(3)
-            q = _queue()
-        topic = q.pop(0)
-        _save_queue(q)
+            topic = topicqueue.pop_first()
+        if not topic:
+            raise SystemExit("no topics: could not make any ideas")
     print(f"Documentary: {topic}")
     data = None
     import wikipedia

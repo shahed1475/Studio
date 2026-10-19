@@ -20,6 +20,8 @@ news_topics.json
 autopilot_state.json
 autopilot.lock
 agent.lock
+*.lock
+*.tmp
 agent.json
 edit_profile.json
 reference_channels.json

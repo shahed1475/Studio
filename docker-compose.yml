@@ -16,6 +16,7 @@ x-studio: &studio
   environment:
     OLLAMA_URL: ${OLLAMA_URL:-http://127.0.0.1:11434}
     YT_MODEL: ${YT_MODEL:-qwen3:8b}
+    STUDIO_PRUNE_UPLOADED_DAYS: ${STUDIO_PRUNE_UPLOADED_DAYS:-0}  # 0 = never delete local videos; e.g. 30 removes video files 30 days after upload
   logging:
     driver: json-file
     options: {max-size: "10m", max-file: "3"}

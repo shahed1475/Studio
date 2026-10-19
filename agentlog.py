@@ -4,6 +4,7 @@ import json
 import subprocess
 
 import config
+import filelock
 
 FILE = config.ROOT / "data" / "agent" / "events.jsonl"
 KINDS = ("info", "found", "strategy", "applied", "error")
@@ -13,7 +14,7 @@ def event(kind: str, title: str, detail: str = "", notify: bool = False, now: dt
     now = now or dt.datetime.now(dt.timezone.utc)
     e = {"at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "kind": kind if kind in KINDS else "info", "title": title, "detail": detail, "read": False}
     FILE.parent.mkdir(parents=True, exist_ok=True)
-    with FILE.open("a") as f:
+    with filelock.locked(FILE), FILE.open("a") as f:
         f.write(json.dumps(e) + "\n")
     if notify:
         try:
@@ -44,6 +45,7 @@ def unread() -> int:
 
 
 def mark_read() -> None:
-    rows = _all()
-    if rows:
-        FILE.write_text("".join(json.dumps({**e, "read": True}) + "\n" for e in rows))
+    with filelock.locked(FILE):  # an event another process appends meanwhile waits for the lock instead of being overwritten
+        rows = _all()
+        if rows:
+            filelock.write_atomic(FILE, "".join(json.dumps({**e, "read": True}) + "\n" for e in rows))

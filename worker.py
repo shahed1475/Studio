@@ -1,12 +1,16 @@
 """Always-on worker for the container: runs the jobs a desktop would get from systemd timers. All times are UTC."""
 import datetime as dt
 import json
+import os
+import re
+import shutil
 import subprocess
 import sys
 import threading
 import time
 from pathlib import Path
 
+import agentlog
 import config
 
 STATE = config.ROOT / "data" / "worker_state.json"
@@ -105,6 +109,49 @@ def prune_cache(cache: Path, max_age_days: int, now: dt.datetime) -> int:
     return freed
 
 
+def prune_uploaded(out: Path, days: int, now: dt.datetime) -> int:
+    """Delete the local video file of videos that have been on YouTube for more than `days` days. Off when days is 0 (the default):
+    the owner opts in, because this deletes files. The record (meta.json, thumbnails, captions) stays. Returns bytes freed."""
+    if days <= 0:
+        return 0
+    freed = 0
+    cutoff = (now - dt.timedelta(days=days)).strftime(TS)
+    for m in out.glob("*/meta.json"):
+        try:
+            meta = json.loads(m.read_text())
+            video = m.parent / "video.mp4"
+            if meta.get("video_id") and str(meta.get("uploaded_at", "9")) < cutoff and video.exists():
+                freed += video.stat().st_size
+                video.unlink()
+                meta["local_video_removed"] = True
+                m.write_text(json.dumps(meta, indent=2))
+        except (OSError, ValueError):
+            continue
+    return freed
+
+
+def prune_logs(logs: Path, max_age_days: int, now: dt.datetime) -> int:
+    """Delete the per-job logs the dashboard writes (HHMMSS-name.log) once they are old. Named logs (worker, autopilot) are left alone."""
+    n, cutoff = 0, now.timestamp() - max_age_days * 86400
+    for f in logs.glob("*.log") if logs.exists() else []:
+        try:
+            if re.fullmatch(r"\d{6}-.+\.log", f.name) and f.stat().st_mtime < cutoff:
+                f.unlink()
+                n += 1
+        except OSError:
+            continue
+    return n
+
+
+def check_disk(path: Path, min_free_gb: float = 10.0) -> bool:
+    """Tell the owner (feed and desktop notification) when the disk is nearly full. True when it is."""
+    free = shutil.disk_usage(path).free
+    if free < min_free_gb * 1e9:
+        agentlog.event("error", "The server disk is almost full", f"{free / 1e9:.1f} GB left. Old videos in output/ can be removed once they are on YouTube.", notify=True)
+        return True
+    return False
+
+
 def _beat() -> None:
     while True:
         try:
@@ -136,7 +183,12 @@ def main() -> None:
             save_state(state)
         state = load_state()
         if state.get("prune", "")[:10] != now.strftime("%Y-%m-%d"):
-            _log(f"pruned {prune_cache(config.CACHE, CACHE_MAX_AGE_DAYS, now)} bytes of old cache")
+            _log(f"pruned {prune_cache(config.CACHE, CACHE_MAX_AGE_DAYS, now)} bytes of old cache, {prune_logs(config.ROOT / 'logs', 14, now)} old job logs")
+            days = int(os.getenv("STUDIO_PRUNE_UPLOADED_DAYS", "0") or 0)  # 0 = never delete local videos
+            if days:
+                _log(f"removed {prune_uploaded(config.OUT, days, now)} bytes of videos already on YouTube for {days}+ days")
+            if check_disk(config.ROOT):
+                _log("disk is almost full")
             state["prune"] = now.strftime(TS)
             save_state(state)
         time.sleep(30)

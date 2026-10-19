@@ -69,10 +69,6 @@ def queue() -> list[str]:
     return json.loads(config.TOPICS_FILE.read_text()) if config.TOPICS_FILE.exists() else []
 
 
-def save_queue(q: list[str]) -> None:
-    config.TOPICS_FILE.write_text(json.dumps(q, indent=2))
-
-
 def ollama_ok() -> bool:
     try:
         with urllib.request.urlopen(config.OLLAMA_URL + "/api/tags", timeout=2) as r:
@@ -502,13 +498,14 @@ class H(BaseHTTPRequestHandler):
         if path == "/api/queue/add":
             t = b["topic"].strip()
             if t:
-                save_queue(queue() + [t])
+                import topicqueue
+
+                topicqueue.append_unique(t)
             return {"ok": True}
         if path == "/api/queue/remove":
-            q = queue()
-            if 0 <= b["index"] < len(q):
-                q.pop(b["index"])
-                save_queue(q)
+            import topicqueue
+
+            topicqueue.remove(b["index"])
             return {"ok": True}
         if path == "/api/autopilot/config":
             import autopilot

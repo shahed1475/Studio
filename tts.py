@@ -81,6 +81,7 @@ def _wrap_hook(words: list[str], max_chars: int = 16) -> str:
 def _ass(words: list[tuple], motion: int = 0, pos: str = "bottom") -> str:
     """Captions for a Short. motion 0: three words at a time in the middle. motion 1 and up: the first line (the hook) as a big title,
     then a lower-third caption where the word being spoken is highlighted and pops."""
+    words = [(w[0], w[1], keywords.clean(w[2]), *w[3:]) for w in words]
     return _ass_rich(words, pos) if motion >= 1 else _ass_plain(words)
 
 

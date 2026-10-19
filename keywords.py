@@ -14,6 +14,11 @@ STOP = {"the", "and", "but", "for", "with", "from", "that", "this", "then", "whe
 NUMBER = re.compile(r"\d[\d,.]*(st|nd|rd|th|s)?")
 
 
+def clean(text: str) -> str:
+    """Narration is spliced into ASS subtitle lines: braces and backslashes would open override blocks, so they are dropped."""
+    return re.sub(r"[{}\\]", "", text)
+
+
 def _clean(token: str) -> str:
     return re.sub(r"^[^\w]+|[^\w]+$", "", token)
 

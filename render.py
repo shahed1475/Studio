@@ -1,4 +1,5 @@
 """Assemble a video with ffmpeg: stock clips, picture shots with camera moves, colour backgrounds, optional crossfades and film grain."""
+import functools
 import subprocess
 from pathlib import Path
 
@@ -22,10 +23,15 @@ def shot_plan(k: int) -> dict:
     return dict(SHOTS[k % len(SHOTS)])
 
 
+@functools.lru_cache(maxsize=1)
+def _encoder_flags() -> bool:
+    """True when this ffmpeg has libx264 (asked once, not once per scene)."""
+    return "libx264" in subprocess.run(["ffmpeg", "-hide_banner", "-encoders"], capture_output=True, text=True).stdout
+
+
 def _venc(crf: str, preset: str) -> list[str]:
     """libx264 when this ffmpeg has it; Fedora's build only ships openh264 (bitrate-based)."""
-    enc = subprocess.run(["ffmpeg", "-hide_banner", "-encoders"], capture_output=True, text=True).stdout
-    if "libx264" in enc:
+    if _encoder_flags():
         return ["-c:v", "libx264", "-preset", preset, "-crf", crf, "-pix_fmt", "yuv420p"]
     return ["-c:v", "libopenh264", "-b:v", "8M", "-pix_fmt", "yuv420p"]
 

@@ -7,6 +7,7 @@ import json
 import re
 
 import config
+import filelock
 import scriptgen
 
 MAX_CLIPS = 3  # per documentary
@@ -93,6 +94,15 @@ def build_short(meta: dict, w: dict, h: dict, doc_slug: str) -> dict:
             "source_doc": doc_slug, "clip_start_line": w["start"]}
 
 
+def _record(path, key: str, start: int) -> dict:
+    """Add a chapter to the documentary's clip list without overwriting anything the owner changed while the Short was rendering."""
+    with filelock.locked(path):
+        cur = json.loads(path.read_text())
+        cur[key] = [*cur.get(key, []), start]
+        filelock.write_atomic(path, json.dumps(cur, indent=2))
+        return cur
+
+
 def _docs() -> list:
     out = []
     for m in sorted(config.OUT.glob("*/meta.json")):
@@ -128,10 +138,8 @@ def make_next(produce=None, chat=None):
             try:
                 folder = produce(data, d["topic"], requeue=False, pool_size=10, min_unique=3)
             except (Exception, SystemExit):  # missing footage, a voice failure: skip this chapter for good, try the next
-                d["clips_failed"] = [*d.get("clips_failed", []), w["start"]]
-                m.write_text(json.dumps(d, indent=2))
+                _record(m, "clips_failed", w["start"])
                 continue
-            d["clips"] = [*d.get("clips", []), w["start"]]
-            m.write_text(json.dumps(d, indent=2))
+            _record(m, "clips", w["start"])
             return folder
     return None
