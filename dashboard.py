@@ -83,6 +83,23 @@ def ollama_ok() -> bool:
         return False
 
 
+def writer_status() -> tuple[bool, str]:
+    """Is a model available for the script writer, and what is it? Cloud models first; the local one only when switched on."""
+    import freemodels
+    import llm
+
+    cfg = llm.load_config()
+    if llm.api_key() and cfg["free"]:
+        q = freemodels.quota(llm.api_key())
+        left = f", {q['remaining']} of {q['limit']} free requests left today" if q else ""
+        return True, f"OpenRouter free models{left}"
+    if llm.api_key() and cfg["enabled"]:
+        return True, "OpenRouter paid models"
+    if cfg.get("local_fallback") and ollama_ok():
+        return True, f"local {config.MODEL}"
+    return False, "no model set up"
+
+
 def pexels_key() -> str:
     return config.PEXELS_KEY or load_settings().get("pexels_key", "")
 
@@ -157,6 +174,7 @@ def llm_view() -> dict:
         "role_prices": {r: v for r, v in role_prices.items()}, "estimate": est,
         "plan": {"docs_per_day": ap["uploads_per_day"], "shorts_per_day": ap["shorts_per_day"] if ap["shorts"] else 0},
         "free": {"on": cfg["free"], "limit": cfg["free_daily_limit"], "requests_today": __import__("freemodels").requests_today(now),
+                 "openrouter": __import__("freemodels").quota(llm.api_key()) if llm.api_key() else None,
                  "chain": __import__("freemodels").choose("cheap", now)},
         "models": sorted(({"id": k, "in": round(v[0], 3), "out": round(v[1], 3)} for k, v in prices.items()
                           if v[0] > 0 and not any(t in k for t in (":free", ":batch", "image", "audio", "embed"))), key=lambda m: m["id"]),
@@ -175,7 +193,7 @@ def state() -> dict:
         "videos": vids, "queue": queue(), "niche": config.niche(),
         "counts": {k: sum(v["state"] == k for v in vids) for k in ("needs review", "approved", "uploaded")},
         "health": {
-            "ollama": ollama_ok(), "model": config.MODEL, "ffmpeg": bool(shutil.which("ffmpeg")),
+            "ollama": writer_status()[0], "model": writer_status()[1], "ffmpeg": bool(shutil.which("ffmpeg")),
             "pexels": bool(pexels_key()), "voice": config.VOICE, "disk_free_gb": round(shutil.disk_usage(config.ROOT).free / 1e9, 1),
         },
         "youtube": {"secret": SECRET.exists(), "token": TOKEN.exists(), "connecting": YT_STATE["connecting"], "error": YT_STATE["error"]},

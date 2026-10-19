@@ -20,7 +20,7 @@ SETTINGS_FILE = config.ROOT / "settings.json"
 PRICES_FILE = config.ROOT / "data" / "or_prices.json"
 ROLES = ("script", "review", "cheap")
 DEFAULTS = {"enabled": False, "models": {"script": "", "review": "", "cheap": ""}, "daily_budget_usd": 1.0, "max_output_tokens": 6000,
-            "free": False, "free_daily_limit": 45}  # free: try OpenRouter free models first (50 requests a day without credits)
+            "free": False, "free_daily_limit": 900, "local_fallback": False}  # free: try OpenRouter free models first; local_fallback: ask the local Ollama model when no cloud model answers (slow, off by default)
 MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9/._:+-]{1,99}$")
 UNKNOWN_PRICE = (10.0, 30.0)  # per million tokens: deliberately high, so an unknown model cannot slip past the cap
 
@@ -30,6 +30,10 @@ TOKENS = {
     "short": {"script": (700, 450), "review": (700, 100), "cheap": (1100, 330)},
     "weekly": {"script": (3000, 800), "cheap": (1200, 400)},  # news digest, trend and channel ideas
 }
+
+
+class ModelUnavailable(RuntimeError):
+    """No cloud model could answer. The job stops cleanly and is tried again later; the slow local model is not used unless switched on."""
 
 
 def _now() -> dt.datetime:
@@ -65,6 +69,9 @@ def validate_config(raw: dict) -> dict:
         elif k == "free":
             if not isinstance(v, bool):
                 raise ValueError("free models must be on or off")
+        elif k == "local_fallback":
+            if not isinstance(v, bool):
+                raise ValueError("the local fallback must be on or off")
         elif k == "free_daily_limit":
             if isinstance(v, bool) or not isinstance(v, int) or not 1 <= v <= 1000:
                 raise ValueError("the free request limit must be between 1 and 1000 a day")
@@ -243,36 +250,46 @@ CHEAP_SHARE = 0.4  # small jobs (titles, tags, picture checks) may use at most t
 _last_free: dict[str, str] = {}  # the free model that last answered each role (the reviewer must differ from the writer)
 
 
+ROUNDS = 3  # passes over the free models; a busy provider (429) usually frees up within a minute or two
+
+
 def _free_chat(prompt: str, role: str, cfg: dict, key: str, now: dt.datetime) -> dict | None:
-    """Try up to three free models in turn. None means: use the local model."""
+    """Try the free models in turn, waiting and trying again when they are all busy. None means: nothing answered."""
     freemodels.refresh(now)
-    for mid in freemodels.choose(role, now, avoid=_last_free.get("script") if role == "review" else None):
-        for json_mode in (True, False):
-            if freemodels.requests_today(now) >= cfg["free_daily_limit"]:
-                _note(now, f"{role}: today's free request limit is used, used the local model")
-                return None
-            if role == "cheap" and freemodels.requests_today(now, "cheap") >= int(cfg["free_daily_limit"] * CHEAP_SHARE):
-                return None  # keep the rest of the free requests for scripts and fact-checks
-            freemodels.count_request(now, role)  # failed requests count against the limit too
-            try:
-                body = _post(_payload(mid, prompt, cfg["max_output_tokens"], json_mode), key)
-            except Exception as e:
-                if json_mode and isinstance(e, requests.HTTPError) and getattr(e.response, "status_code", None) == 400:
-                    continue
-                freemodels.record(mid, False, now)
-                _note(now, f"{role}: free model {mid}: {type(e).__name__}")
-                break
-            u = body.get("usage") or {}
-            record(now, role, mid, int(u.get("prompt_tokens", 0)), int(u.get("completion_tokens", 0)), 0.0)
-            try:
-                out = parse_json(body["choices"][0]["message"]["content"])
-            except (ValueError, KeyError, IndexError, TypeError):
-                freemodels.record(mid, False, now)
-                _note(now, f"{role}: free model {mid} did not return JSON")
-                break
-            freemodels.record(mid, True, now)
-            _last_free[role] = mid
-            return out
+    for rnd in range(ROUNDS):
+        models = freemodels.choose(role, now, avoid=_last_free.get("script") if role == "review" else None, n=4)
+        if not models:
+            break
+        for mid in models:
+            for json_mode in (True, False):
+                if freemodels.remaining(now, key, cfg["free_daily_limit"]) <= 0:
+                    _note(now, f"{role}: today's free request allowance is used up")
+                    return None
+                if role == "cheap" and freemodels.requests_today(now, "cheap") >= int(cfg["free_daily_limit"] * CHEAP_SHARE):
+                    return None  # keep the rest of the free requests for scripts and fact-checks
+                freemodels.count_request(now, role)  # failed requests count against the limit too
+                try:
+                    body = _post(_payload(mid, prompt, cfg["max_output_tokens"], json_mode), key)
+                except Exception as e:
+                    code = getattr(getattr(e, "response", None), "status_code", None)
+                    if json_mode and isinstance(e, requests.HTTPError) and code == 400:
+                        continue
+                    freemodels.record(mid, False, now, status=code)
+                    _note(now, f"{role}: free model {mid}: {type(e).__name__}{f' {code}' if code else ''}")
+                    break
+                u = body.get("usage") or {}
+                record(now, role, mid, int(u.get("prompt_tokens", 0)), int(u.get("completion_tokens", 0)), 0.0)
+                try:
+                    out = parse_json(body["choices"][0]["message"]["content"])
+                except (ValueError, KeyError, IndexError, TypeError):
+                    freemodels.record(mid, False, now)
+                    _note(now, f"{role}: free model {mid} did not return JSON")
+                    break
+                freemodels.record(mid, True, now)
+                _last_free[role] = mid
+                return out
+        if rnd < ROUNDS - 1:
+            time.sleep(20 * (rnd + 1))  # everyone was busy: wait, then ask again
     return None
 
 
@@ -305,8 +322,8 @@ def chat(prompt: str, role: str = "cheap", fallback=None, now: dt.datetime | Non
         got = _free_chat(prompt, role, cfg, key, now)
         if got is not None:
             return got
-    if fallback is None:
-        raise RuntimeError("no model is available for this job")
+    if fallback is None or not cfg.get("local_fallback"):
+        raise ModelUnavailable(f"no cloud model answered the {role} job; it will be tried again later")
     return fallback(prompt)
 
 

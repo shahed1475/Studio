@@ -196,3 +196,15 @@ def test_claude_price_lookup_matches_openrouter_dots(monkeypatch):
     monkeypatch.setattr(llm, "model_prices", lambda: {"anthropic/claude-sonnet-4.5": (3.0, 15.0)})
     assert llm._usd("claude-sonnet-4-5", 1_000_000, 0) == 3.0
     assert llm._usd("claude-unknown-9", 1_000_000, 0) == llm.UNKNOWN_PRICE[0]  # an unknown model is priced high on purpose
+
+
+def test_no_local_model_by_default_raises_model_unavailable(monkeypatch):
+    monkeypatch.setitem(llm.DEFAULTS, "local_fallback", False)
+    monkeypatch.setattr(llm, "CONFIG_FILE", llm.CONFIG_FILE)
+    with pytest.raises(llm.ModelUnavailable):
+        llm.chat("hi", "script", fallback=lambda p: {"from": "local"}, now=NOW)
+
+
+def test_local_model_only_when_switched_on(monkeypatch):
+    monkeypatch.setitem(llm.DEFAULTS, "local_fallback", True)
+    assert llm.chat("hi", "script", fallback=lambda p: {"from": "local"}, now=NOW) == {"from": "local"}

@@ -346,7 +346,7 @@ function home(m){
 
   <div class="sec"><h2>Setup check</h2>
     <div class="panel rows">
-      ${check(h.ollama,`Script writer <span class="mute">(${esc(h.model)})</span>`,"Start Ollama","go('settings')")}
+      ${check(h.ollama,`Script writer <span class="mute">(${esc(h.model)})</span>`,"Open Settings","go('settings')")}
       ${check(h.ffmpeg,"Video renderer","Install ffmpeg","go('settings')")}
       <div><div class="grow"><span class="ttl">Stock video for Shorts <span class="mute">(Pexels key)</span></span><div class="mute">Optional. Without it the studio uses free public-domain pictures and old films.</div></div>${h.pexels?badge("Ready","ok"):badge("Optional","mute")}</div>
       ${check(!!y.token,"YouTube channel","Connect","go('youtube')")}
@@ -542,7 +542,7 @@ async function autopilot(m){
   if(!editing||!AP){try{await apRefresh()}catch(e){return}}
   const A=AP,c=A.config,last=A.status.last_tick,busy=!!running()||A.status.running;
   if(!apSlots)apSlots=c.slots.map(x=>({...x}));if(!apShort)apShort=c.short_slots.map(x=>({...x}));
-  const warn=[];if(!S.youtube.token)warn.push("YouTube is not connected, so nothing can be uploaded yet.");if(!S.health.ollama)warn.push("The script writer (Ollama) is not running.");if(!A.timer_installed)warn.push("The 30 minute timer is not installed. Run ./scripts/install-timers.sh once so autopilot runs by itself.");
+  const warn=[];if(!S.youtube.token)warn.push("YouTube is not connected, so nothing can be uploaded yet.");if(!S.health.ollama)warn.push("No model is set up for the script writer. Open Settings and turn on the free OpenRouter models.");if(!A.timer_installed)warn.push("The 30 minute timer is not installed. Run ./scripts/install-timers.sh once so autopilot runs by itself.");
   const did=last?last.actions.reduce((a,x)=>(a[x.do]=(a[x.do]||0)+1,a),{}):{};
   m.innerHTML=`<div class="head"><h1>Autopilot</h1><p class="sub">Picks topics, makes videos, checks them and schedules them. Every video waits for a public time, so you can stop it before it goes live.</p></div>
   <div class="panel switch-row"><div class="grow stack" style="gap:4px"><h2>Autopilot is ${c.enabled?"on":"off"}</h2><p class="sub">${c.enabled?"It works in the background, one pass every 30 minutes.":"Nothing runs by itself until you turn this on."}</p></div>
@@ -762,6 +762,7 @@ async function settings(m){
     <div><label for="or_key">OpenRouter key</label><input id="or_key" type="password" autocomplete="off" placeholder="${L.key_set?"Saved. Paste a new key to replace it":"Paste your key here, never into a chat"}" oninput="editing=true"><div class="help">Stored in settings.json on this computer and never shown again.${L.key_set?` <button class="btn danger sm" onclick="llmClearKey()">Remove key</button>`:""}</div></div>
     <div><label for="an_key">Claude (Anthropic) key</label><input id="an_key" type="password" autocomplete="off" placeholder="${L.anthropic_key_set?"Saved. Paste a new key to replace it":"Paste your key here, never into a chat"}" oninput="editing=true"><div class="help">Optional. Type a Claude model id such as <span class="mono">claude-sonnet-5-5</span> in a job below and it is called directly, with the same daily cap.${L.anthropic_key_set?` <button class="btn danger sm" onclick="llmClearAKey()">Remove key</button>`:""}</div></div>
     <label class="tick"><input type="checkbox" id="or_free" ${cfg.free?"checked":""} onchange="editing=true"> Try free OpenRouter models first (costs nothing)</label>
+    <label class="tick"><input type="checkbox" id="or_local" ${cfg.local_fallback?"checked":""} onchange="editing=true"> If no cloud model answers, use the slow local model instead of waiting (needs Ollama)</label>
     <div class="fld"><div><label for="or_flim">Free requests per day</label><input id="or_flim" type="number" min="1" max="1000" value="${cfg.free_daily_limit}" oninput="editing=true"><div class="help">OpenRouter allows 50 a day on free models, or 1,000 after you have bought $10 of credit once. Used today: <b class="mono">${L.free.requests_today}</b>. ${L.free.on?`Free models in line: ${L.free.chain.length?L.free.chain.map(esc).join(", "):"none found yet, the list loads on the first request"}. If they fail or the limit is reached, the local model writes instead.`:"Off: only the local model writes unless you turn on paid models below."}</div></div></div>
     <label class="tick"><input type="checkbox" id="or_on" ${cfg.enabled?"checked":""} onchange="editing=true"> Use paid models (OpenRouter or Claude) for the jobs below</label>
     <datalist id="or_models">${L.models.map(x=>`<option value="${esc(x.id)}">${esc(x.id)} (in $${x.in}, out $${x.out} per million tokens)</option>`).join("")}</datalist>
@@ -788,7 +789,7 @@ async function settings(m){
     <p class="help">Rules kept on purpose: every video needs your approval, uploads are labelled as AI-narrated, uploads default to private, at most 5 uploads a day. Change voice or model with the YT_VOICE and YT_MODEL environment variables, and the niche in niche.json.</p></div>`;
 }
 async function llmSave(){
-  const g=id=>document.getElementById(id),body={free:g("or_free").checked,free_daily_limit:parseInt(g("or_flim").value,10),enabled:g("or_on").checked,daily_budget_usd:parseFloat(g("or_cap").value),max_output_tokens:parseInt(g("or_max").value,10),models:{script:g("or_script").value.trim(),review:g("or_review").value.trim(),cheap:g("or_cheap").value.trim()}};
+  const g=id=>document.getElementById(id),body={free:g("or_free").checked,local_fallback:g("or_local").checked,free_daily_limit:parseInt(g("or_flim").value,10),enabled:g("or_on").checked,daily_budget_usd:parseFloat(g("or_cap").value),max_output_tokens:parseInt(g("or_max").value,10),models:{script:g("or_script").value.trim(),review:g("or_review").value.trim(),cheap:g("or_cheap").value.trim()}};
   const k=g("or_key").value.trim();if(k)body.key=k;
   const ak=g("an_key").value.trim();if(ak)body.anthropic_key=ak;
   await api("/api/llm/config",body);editing=false;toast("AI settings saved");render(true)}

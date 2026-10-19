@@ -12,3 +12,15 @@ def _isolate_autopilot_log(tmp_path, monkeypatch):
     import autopilot
 
     monkeypatch.setattr(autopilot, "LOG", tmp_path / "autopilot.log")
+
+
+@pytest.fixture(autouse=True)
+def _local_fallback_for_old_tests(monkeypatch):
+    """The production default is no local model; most older tests exercise the fallback path, so they opt in here."""
+    import llm
+
+    monkeypatch.setitem(llm.DEFAULTS, "local_fallback", True)
+    monkeypatch.setattr(llm.time, "sleep", lambda s: None)
+    import freemodels
+
+    monkeypatch.setattr(freemodels, "quota", lambda *a, **k: None)  # tests never ask the real OpenRouter

@@ -14,6 +14,9 @@ FILE = config.ROOT / "data" / "free_models.json"
 URL = "https://openrouter.ai/api/v1/models"
 TTL = dt.timedelta(hours=24)
 COOLDOWN = dt.timedelta(hours=6)
+BUSY_COOLDOWN = dt.timedelta(minutes=10)  # a 429 means the provider is busy right now, not that the model is broken
+RESERVE = 5  # of the count OpenRouter reports, always left unused, so a failed attempt cannot push the account over its limit
+QUOTA_TTL = 60  # seconds the daily-quota answer is reused
 MAX_FAILS = 3
 DEFAULT_MIN_CTX = 16000
 MIN_CTX = {"script": 32000}  # a documentary prompt is long
@@ -88,20 +91,55 @@ def choose(role: str, now: dt.datetime, avoid: str | None = None, n: int = 3) ->
     for m in d.get("models", []):
         h = health.get(m["id"], {})
         cooling = h.get("fails", 0) >= MAX_FAILS and now - _parse(h["last_fail"]) < COOLDOWN
-        if m["context"] >= need and m["id"] != avoid and not cooling:
-            out.append(m["id"])
-    return out[:n]
+        busy = bool(h.get("busy_until")) and now < _parse(h["busy_until"])
+        if m["context"] >= need and m["id"] != avoid and not cooling and not busy:
+            out.append(m)
+    out.sort(key=lambda m: -min(health.get(m["id"], {}).get("ok", 0), 5))  # models that answered well before go first (stable otherwise)
+    return [m["id"] for m in out][:n]
 
 
-def record(model: str, ok: bool, now: dt.datetime) -> None:
+def record(model: str, ok: bool, now: dt.datetime, status: int | None = None) -> None:
     d = _load()
     h = d.setdefault("health", {}).setdefault(model, {"fails": 0})
     if ok:
         h["fails"] = 0
+        h["ok"] = h.get("ok", 0) + 1
+        h.pop("busy_until", None)
+    elif status == 429:
+        h["busy_until"] = _ts(now + BUSY_COOLDOWN)  # skip it for ten minutes; no long penalty
     else:
         h["fails"] += 1
         h["last_fail"] = _ts(now)
     _save(d)
+
+
+_quota_cache: dict = {}
+
+
+def quota(key: str, now_s: float | None = None, get=requests.get) -> dict | None:
+    """What OpenRouter itself says about today's free requests: {"used", "limit", "remaining"}. None when it cannot be read.
+    Failed attempts count there too, so this is the number to trust, not our own counter."""
+    import time
+
+    t = now_s if now_s is not None else time.time()
+    if _quota_cache.get("key") == key and t - _quota_cache.get("at", 0) < QUOTA_TTL:
+        return _quota_cache["data"]
+    try:
+        r = get("https://openrouter.ai/api/v1/key", headers={"Authorization": f"Bearer {key}"}, timeout=15)
+        r.raise_for_status()
+        q = r.json()["data"]["free_model_daily_requests"]
+        data = {"used": int(q["used"]), "limit": int(q["limit"]), "remaining": int(q["remaining"])}
+    except Exception:
+        return None
+    _quota_cache.update(key=key, at=t, data=data)
+    return data
+
+
+def remaining(now: dt.datetime, key: str, own_limit: int) -> int:
+    """Free requests we may still use today: the smaller of OpenRouter's own count and our own ceiling minus what we counted."""
+    ours = own_limit - requests_today(now)
+    q = quota(key)
+    return min(ours, q["remaining"] - RESERVE) if q else ours
 
 
 def requests_today(now: dt.datetime, role: str | None = None) -> int:

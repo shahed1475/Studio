@@ -104,7 +104,7 @@ def reply(text):
 
 def test_free_default_is_off_and_validated(tmp_path, monkeypatch):
     monkeypatch.setattr(llm, "CONFIG_FILE", tmp_path / "none.json")
-    assert llm.load_config()["free"] is False and llm.load_config()["free_daily_limit"] == 45
+    assert llm.load_config()["free"] is False and llm.load_config()["free_daily_limit"] == 900
     assert llm.validate_config({"free": True, "free_daily_limit": 900}) == {"free": True, "free_daily_limit": 900}
     for bad in ({"free": "yes"}, {"free_daily_limit": 0}, {"free_daily_limit": 5000}):
         with pytest.raises(ValueError):
@@ -185,7 +185,7 @@ def test_dashboard_view_shows_free_status(tmp_path, monkeypatch):
     monkeypatch.setattr(llm, "_now", lambda: NOW)
     freemodels.refresh(NOW, get=lambda *a, **k: Resp([model("a/m1:free")]))
     view = dashboard.llm_view()
-    assert view["free"] == {"on": False, "limit": 45, "requests_today": 0, "chain": ["a/m1:free"]}
+    assert view["free"] == {"on": False, "limit": 900, "requests_today": 0, "openrouter": None, "chain": ["a/m1:free"]}
 
 
 def test_dashboard_refuses_free_without_key(tmp_path, monkeypatch):
@@ -195,3 +195,28 @@ def test_dashboard_refuses_free_without_key(tmp_path, monkeypatch):
     monkeypatch.setattr(llm, "api_key", lambda: "")
     with pytest.raises(ValueError, match="key"):
         dashboard.H.route(object(), "/api/llm/config", {"free": True})
+
+
+def test_busy_429_skips_a_model_for_ten_minutes_but_does_not_ban_it(tmp_path, monkeypatch):
+    monkeypatch.setattr(freemodels, "FILE", tmp_path / "free.json")
+    freemodels.refresh(NOW, get=lambda *a, **k: Resp([model("a/m1:free"), model("b/m2:free")]))
+    first = freemodels.choose("cheap", NOW)[0]
+    freemodels.record(first, False, NOW, status=429)
+    assert first not in freemodels.choose("cheap", NOW + dt.timedelta(minutes=5))
+    assert first in freemodels.choose("cheap", NOW + dt.timedelta(minutes=11))
+
+
+def test_models_that_answered_before_are_asked_first(tmp_path, monkeypatch):
+    monkeypatch.setattr(freemodels, "FILE", tmp_path / "free.json")
+    freemodels.refresh(NOW, get=lambda *a, **k: Resp([model("a/m1:free"), model("b/m2:free")]))
+    second = freemodels.choose("cheap", NOW)[1]
+    freemodels.record(second, True, NOW)
+    assert freemodels.choose("cheap", NOW)[0] == second
+
+
+def test_remaining_trusts_openrouters_own_count_with_a_reserve(tmp_path, monkeypatch):
+    monkeypatch.setattr(freemodels, "FILE", tmp_path / "free.json")
+    monkeypatch.setattr(freemodels, "quota", lambda key: {"used": 990, "limit": 1000, "remaining": 10})
+    assert freemodels.remaining(NOW, "k", 900) == 10 - freemodels.RESERVE
+    monkeypatch.setattr(freemodels, "quota", lambda key: None)
+    assert freemodels.remaining(NOW, "k", 900) == 900
