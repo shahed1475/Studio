@@ -24,17 +24,51 @@ SPECIFICS = [re.compile(r"\b(1[0-9]{3}|20[0-2][0-9])\b"), re.compile(r"\b\d{1,2}
              re.compile(r"[\"\u201c][^\"\u201d]{20,}[\"\u201d]")]
 
 
-def unhedged_claims(lines: list[str]) -> list[str]:
-    """Specific names, years, centuries and quotes stated without any hedging word in the same line."""
+def _in_source(claim: str, source: str) -> bool:
+    """True when the name or year of a claim appears in the source text the script was built from."""
+    key = re.sub(r"^(named|called|known as)\s+", "", claim, flags=re.I).strip()
+    return bool(source) and bool(key) and key.lower() in source.lower()
+
+
+def unhedged_claims(lines: list[str], source: str = "") -> list[str]:
+    """Specific names, years, centuries and quotes stated without any hedging word in the same line.
+    With the source article given, a specific that the article itself contains is verified and not counted."""
     found = []
     for line in lines:
         if HEDGES.search(line):
             continue
         for rx in SPECIFICS:
             m = rx.search(line)
-            if m:
+            if m and not _in_source(m.group(0).strip(), source):
                 found.append(m.group(0).strip())
     return found
+
+
+def source_title(meta: dict) -> str:
+    """The Wikipedia article a script was built from, read from its source line ("Wikipedia: Delphi (CC BY-SA 4.0), ...")."""
+    for s in meta.get("sources") or []:
+        m = re.match(r"Wikipedia:\s*(.+?)\s*\(CC", str(s))
+        if m:
+            return m.group(1)
+    return ""
+
+
+def source_text(meta: dict) -> str:
+    """The text of the video's source article, cached on disk. Empty for a script with no source."""
+    title = source_title(meta)
+    if not title or meta.get("grounded") is not True:
+        return ""
+    import config
+    import wikipedia
+
+    f = config.CACHE / "wiki" / (re.sub(r"[^A-Za-z0-9]+", "-", title).strip("-")[:60] + ".txt")
+    if f.exists():
+        return f.read_text()
+    text = wikipedia.article_text(title)
+    if text:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(text)
+    return text
 
 
 def _chapters(description: str) -> list[tuple[int, str]]:
@@ -104,7 +138,7 @@ def variety_checks(meta: dict, recent: list[dict]) -> list[dict]:
     return out
 
 
-def rule_checks(meta: dict, probe: dict, existing_titles: list[str], thumb_bytes: int | None, recent: list[dict] | None = None) -> list[dict]:
+def rule_checks(meta: dict, probe: dict, existing_titles: list[str], thumb_bytes: int | None, recent: list[dict] | None = None, source: str = "") -> list[dict]:
     kind = "doc" if meta.get("format") == "doc" else "short"
     lim = LIMITS[kind]
     out = []
@@ -149,10 +183,10 @@ def rule_checks(meta: dict, probe: dict, existing_titles: list[str], thumb_bytes
     out.append(_c("script_length", words >= lim["words"], f"{words} words (need {lim['words']})"))
     dupes = len(lines) - len(set(lines))
     out.append(_c("script_loop", dupes <= max(1, len(lines) // 10), f"{dupes} repeated narration lines"))
-    claims = unhedged_claims([l["text"] for l in meta.get("lines", [])])
+    claims = unhedged_claims([l["text"] for l in meta.get("lines", [])], source)
     out += metadata_checks(meta)
     out += variety_checks(meta, recent or [])
-    out.append(_c("claims", len(claims) < 2, f"{len(claims)} specific claims stated as fact, check them: {'; '.join(claims[:5])}" if claims else "no unhedged specifics", "human"))
+    out.append(_c("claims", len(claims) < 2, f"{len(claims)} specific claims stated as fact{' and not found in the source article' if source else ''}, check them: {'; '.join(claims[:5])}" if claims else ("every specific name and year is in the source article" if source else "no unhedged specifics"), "human"))
     return out
 
 
@@ -231,7 +265,7 @@ def review(folder: Path, existing_titles: list[str] | None = None, use_llm: bool
     kind = "doc" if meta.get("format") == "doc" else "short"
     others = sorted((m for m in folder.parent.glob("*/meta.json") if m.parent != folder), key=lambda m: m.stat().st_mtime, reverse=True)
     recent = [d for d in (json.loads(m.read_text()) for m in others[:30]) if ("doc" if d.get("format") == "doc" else "short") == kind][:12]
-    checks = rule_checks(meta, probe_video(folder / "video.mp4"), existing_titles, thumb_bytes, recent)
+    checks = rule_checks(meta, probe_video(folder / "video.mp4"), existing_titles, thumb_bytes, recent, source_text(meta))
     if use_llm:
         checks += llm_review(meta)
     result = {"verdict": verdict_from(checks, meta.get("source")), "checks": checks,

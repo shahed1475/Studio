@@ -32,3 +32,12 @@ def facts_for(topic: str, chars: int = 7000) -> tuple[str, str] | None:
         return None
     text = re.sub(r"\n{3,}", "\n\n", page.get("extract", "")).strip()
     return (page.get("title", hits[0]["title"]), text[:chars]) if len(text) > 400 or text else None
+
+
+def article_text(title: str, chars: int = 80000) -> str:
+    """The plain text of one article (for checking a script's names and years against its own source). Empty when it cannot be read."""
+    try:
+        page = next(iter(_api({"action": "query", "prop": "extracts", "explaintext": 1, "redirects": 1, "titles": title}).get("query", {}).get("pages", {}).values()), {})
+    except requests.RequestException:
+        return ""
+    return re.sub(r"\n{3,}", "\n\n", page.get("extract", "")).strip()[:chars]

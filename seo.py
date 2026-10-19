@@ -12,6 +12,46 @@ OFF_TOPIC = re.compile(r"\b(cartoon|disney|movie|film|musical|animated|lyrics|so
 SEEDS = ["history stories for sleep", "legends and folklore", "unsolved mysteries"]  # niche phrases people search
 
 
+SMALL_WORDS = {"a", "an", "the", "and", "or", "but", "of", "in", "on", "at", "to", "for", "vs", "with"}
+GENERIC_TAG_WORDS = {"history", "histories", "stories", "story", "legend", "legends", "folklore", "mystery", "mysteries", "unsolved", "ancient", "documentary",
+                     "explained", "true", "real", "sleep", "myth", "myths", "mythology", "facts", "secrets", "secret", "truth", "interesting", "for", "of", "the",
+                     "and", "a", "in", "to", "what", "why", "how", "was", "is", "did", "about", "behind", "really", "lost", "forgotten", "world", "folktales"}
+
+
+def polish_title(title: str, limit: int = 70) -> str:
+    """Plain, properly capitalised title: no dashes or quote marks around it, no trailing full stop, cut at a word if too long."""
+    t = re.sub(r"\s+", " ", re.sub(r"[\u2014\u2013]", "-", str(title))).strip().strip('"\u201c\u201d').rstrip(".")
+    if t and not any(ch.isupper() for ch in t):  # all lower case: capitalise like a title
+        words, out = t.split(" "), []
+        for i, w in enumerate(words):
+            starts = i == 0 or words[i - 1].endswith((":", "?", "!", "-"))
+            out.append(w if w[:1].isdigit() else (w[:1].upper() + w[1:] if starts or w not in SMALL_WORDS else w))
+        t = " ".join(out)
+    elif t[:1].islower():
+        t = t[:1].upper() + t[1:]
+    if len(t) > limit:
+        t = t[:limit].rsplit(" ", 1)[0].rstrip(":,-")
+    return t
+
+
+def relevant_tags(tags: list[str], corpus: str, limit: int = 15) -> list[str]:
+    """Keep a tag only when every word in it appears in the video's own title, topic, description or script, or is a plain niche word.
+    This drops search suggestions that belong to other things (a game, a novel series, a song) whatever the model says."""
+    words = set(re.findall(r"[a-z0-9']+", corpus.lower()))
+    out: list[str] = []
+    for t in tags:
+        t = str(t).strip().lower()
+        toks = re.findall(r"[a-z0-9']+", t)
+        if toks and t not in out and len(t) <= 30 and not OFF_TOPIC.search(t) and all(w in words or w in GENERIC_TAG_WORDS for w in toks):
+            out.append(t)
+    return out[:limit]
+
+
+def corpus_of(meta: dict) -> str:
+    return " ".join([meta.get("title", ""), meta.get("topic", ""), meta.get("description", ""), " ".join(meta.get("anchors") or []),
+                     " ".join(l.get("text", "") for l in meta.get("lines", []))])
+
+
 def suggest(q: str) -> list[str]:
     url = "https://suggestqueries.google.com/complete/search?" + urllib.parse.urlencode(
         {"client": "youtube", "ds": "yt", "hl": "en", "gl": "us", "q": q})
@@ -69,10 +109,10 @@ def make(folder: Path) -> dict:
         "- description_intro: 2 sentences that hook the viewer and use the main phrase once, naturally. Only facts the story supports.\n"
         "- tags: 12 search phrases people would type, taken from or close to the suggestions above, each under 30 characters.\n"
         'Return JSON: {"titles": ["..."], "description_intro": "...", "tags": ["..."]}')
-    titles = [re.sub(r"[—–]", "-", str(t)).strip().strip('"') for t in data["titles"] if 8 < len(str(t)) <= 70][:5]
+    titles = [polish_title(t) for t in data["titles"] if 8 < len(str(t)) <= 70][:5]
     tags, total = [], 0
-    for t in [str(x).strip().lower() for x in data["tags"]] + [core] + kws[:6]:
-        if t and len(t) <= 30 and not OFF_TOPIC.search(t) and t not in tags and total + len(t) < 450:
+    for t in relevant_tags([str(x).strip().lower() for x in data["tags"]] + [core] + kws[:6], corpus_of(meta)):
+        if total + len(t) < 450:
             tags.append(t)
             total += len(t)
     intro = re.sub(r"[—–]", "-", str(data["description_intro"]).strip())

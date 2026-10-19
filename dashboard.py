@@ -279,7 +279,7 @@ def agent_config(b: dict) -> dict:
     import agent
 
     cfg = agent.load_config()
-    cfg.update({k: b[k] for k in ("mode", "auto_channels", "auto_per_day", "max_auto") if k in b})
+    cfg.update({k: b[k] for k in ("mode", "auto_channels", "auto_per_day", "max_auto", "auto_topics", "topics_per_day") if k in b})
     return agent.save_config(cfg)
 
 

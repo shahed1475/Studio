@@ -89,6 +89,9 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime) -> list[dict]:
             waiting[fmt] += 1
         if v["verdict"] is None:
             acts.append({"do": "review", "slug": v["slug"]})
+        elif v["verdict"] in ("fail", "needs_human") and not eligible and not by_you and v["source"] != "news" \
+                and v.get("fix_attempts", 0) < 2 and not v.get("gave_up"):
+            acts.append({"do": "fix", "slug": v["slug"]})  # the fixer agent repairs what it can, then the reviewer decides again
         elif eligible:
             pub = _parse(v["publish_at"]) if v["publish_at"] else None
             cap = cfg["shorts_per_day"] if fmt == "short" else cfg["uploads_per_day"]
@@ -124,7 +127,7 @@ def build_state(now: dt.datetime, cfg: dict) -> dict:
         videos.append({
             "slug": m.parent.name, "format": d.get("format", "short"), "source": d.get("source"), "approved": bool(d.get("approved")),
             "verdict": (d.get("review") or {}).get("verdict"), "hold": bool(d.get("hold")),
-            "approved_by": d.get("approved_by"),
+            "approved_by": d.get("approved_by"), "fix_attempts": d.get("fix_attempts", 0), "gave_up": bool(d.get("fix_gave_up")),
             "video_id": d.get("video_id"), "publish_at": d.get("publish_at"), "fails": d.get("autopilot_fails", 0),
         })
     by_fmt: dict = {}
@@ -154,6 +157,16 @@ def do_review(slug, cfg, now):
 
     result = reviewer.review(config.OUT / slug)
     if result["verdict"] == "pass" and cfg["auto_approve"]:
+        p, meta = _meta(slug)
+        meta.update(approved=True, approved_by="reviewer-agent")
+        p.write_text(json.dumps(meta, indent=2))
+
+
+def do_fix(slug, cfg, now):
+    import fixer
+
+    out = fixer.fix(slug, now=now)
+    if out.get("verdict") == "pass" and cfg["auto_approve"]:
         p, meta = _meta(slug)
         meta.update(approved=True, approved_by="reviewer-agent")
         p.write_text(json.dumps(meta, indent=2))
@@ -196,10 +209,17 @@ def finish_video(folder: Path) -> None:
         thumbnail.make(folder)
     seo.make(folder)
     meta = json.loads(p.read_text())
-    titles = (meta.get("seo") or {}).get("titles") or []
+    import fixer
+
+    others = fixer.other_titles(folder)
+    titles = [t for t in (meta.get("seo") or {}).get("titles", []) if not fixer._too_similar(t, others)] or (meta.get("seo") or {}).get("titles") or []
     if titles:
         meta["title"] = titles[0]
-        p.write_text(json.dumps(meta, indent=2))
+    import seo
+
+    meta["tags"] = fixer.clean_tags(meta)
+    meta["title"] = seo.polish_title(meta["title"])
+    p.write_text(json.dumps(meta, indent=2))
 
 
 def do_make(slug, cfg, now):
@@ -228,7 +248,7 @@ def do_make_news(slug, cfg, now):
     newswatch.make_next_news_video()
 
 
-EXECUTORS = {"review": do_review, "schedule": do_schedule, "upload": do_upload,
+EXECUTORS = {"review": do_review, "fix": do_fix, "schedule": do_schedule, "upload": do_upload,
              "ideas": do_ideas, "make": do_make, "make_short": do_make_short, "make_clip": do_make_clip, "make_news": do_make_news}
 
 
@@ -251,7 +271,7 @@ def tick(now: dt.datetime | None = None) -> dict:
         cfg = load_config()
         actions, errors, heavy = [], [], False
         for a in plan_actions(build_state(now, cfg), cfg, now):
-            if a["do"] in ("make", "make_news"):
+            if a["do"] in ("make", "make_news", "fix"):
                 if heavy:
                     continue
                 heavy = True

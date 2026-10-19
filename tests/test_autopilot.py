@@ -178,3 +178,18 @@ def test_make_clip_executor_finishes_the_short(monkeypatch):
     monkeypatch.setattr(clipper, "make_next", lambda: None)
     autopilot.do_make_clip(None, CFG, NOW)
     assert calls == ["folder"]  # nothing made, nothing finished
+
+
+def test_blocked_or_human_check_videos_go_to_the_fixer_first():
+    fixable = vid("a", verdict="fail") , vid("b", verdict="needs_human")
+    assert [p for p in plan(state(fixable)) if p[0] == "fix"] == [("fix", "a"), ("fix", "b")]
+
+
+def test_the_fixer_leaves_alone_what_it_already_tried_twice_news_drafts_and_videos_you_approved():
+    st = state([vid("tried", verdict="fail", fix_attempts=2), vid("gave", verdict="fail", gave_up=True), vid("news", verdict="needs_human", source="news"),
+                vid("mine", verdict="needs_human", approved=True, approved_by="you"), vid("fine", verdict="pass")])
+    assert not [p for p in plan(st) if p[0] == "fix"]
+
+
+def test_a_passing_video_is_never_sent_to_the_fixer():
+    assert ("fix", "ok") not in plan(state([vid("ok", verdict="pass", approved=True)]))

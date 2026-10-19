@@ -75,6 +75,9 @@ def isolate(tmp_path, monkeypatch):
     monkeypatch.setattr(agent, "LOCK_FILE", tmp_path / "agent.lock")
     monkeypatch.setattr(editprofile, "FILE", tmp_path / "profile.json")
     monkeypatch.setattr(channelwatch, "REF_FILE", tmp_path / "refs.json")
+    monkeypatch.setattr(channelwatch, "DATA_DIR", tmp_path / "channels")  # the real research digests must not leak into a test
+    import trendwatch
+    monkeypatch.setattr(trendwatch, "DATA_DIR", tmp_path / "trends")
     monkeypatch.setattr(config, "TOPICS_FILE", tmp_path / "topics.json")
     (tmp_path / "topics.json").write_text("[]")
     (tmp_path / "refs.json").write_text(json.dumps([IDS[1]]))
