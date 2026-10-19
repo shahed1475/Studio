@@ -159,3 +159,52 @@ def test_short_with_tight_hook_is_fine_and_doc_has_no_hook_check():
     ok = run(meta=short_meta("Ever notice the tiny hole in a plane window?"), probe=SHORT_PROBE, thumb=None)
     assert "hook" not in failed(ok, "warn") and "hook" not in failed(ok)
     assert not any(c["name"] == "hook" for c in run())
+
+
+# ---- anti-template checks: YouTube judges the pattern across recent uploads ----
+def _other(first, last, title):
+    return {"title": title, "lines": [{"text": first}, {"text": "middle line of the story goes here"}, {"text": last}]}
+
+
+def _mine(first, last, title="A Fresh Title About Something Else"):
+    m = copy.deepcopy(GOOD_META)
+    m["title"], m["lines"] = title, [{"text": first}, {"text": "another middle line of a different story"}, {"text": last}]
+    return m
+
+
+def test_same_opening_as_a_recent_video_needs_a_human():
+    prev = _other("Long ago, in a quiet valley, something strange began to happen.", "And that is why they still whisper about it.", "T1")
+    c = reviewer.rule_checks(_mine("Long ago, in a quiet valley, something strange began.", "A totally different way to end."), dict(GOOD_PROBE), [], 150_000, [prev])
+    assert "variety_script" in failed(c, "human")
+
+
+def test_same_ending_as_a_recent_video_needs_a_human():
+    prev = _other("An entirely different beginning here.", "And that is why they still whisper about it tonight.", "T1")
+    c = reviewer.rule_checks(_mine("Nothing like the other opening at all, really.", "And that is why they still whisper about it."), dict(GOOD_PROBE), [], 150_000, [prev])
+    assert "variety_script" in failed(c, "human")
+
+
+def test_different_scripts_pass_variety():
+    prev = _other("Long ago, in a quiet valley, something strange began to happen.", "And that is why they still whisper about it.", "T1")
+    c = reviewer.rule_checks(_mine("The ship never reached the harbour that night.", "Nobody ever found the captain."), dict(GOOD_PROBE), [], 150_000, [prev])
+    assert "variety_script" not in failed(c, "human") and "variety_title" not in failed(c, "warn")
+
+
+def test_repeated_title_opening_warns():
+    prev = [_other("a b c d e f", "x y z w v u", f"The Legend of Place {i}") for i in range(3)]
+    c = reviewer.rule_checks(_mine("The ship never reached the harbour that night.", "Nobody ever found the captain.", "The Legend of Another Place"), dict(GOOD_PROBE), [], 150_000, prev)
+    assert "variety_title" in failed(c, "warn")
+
+
+def test_more_than_fifteen_hashtags_blocks():
+    m = copy.deepcopy(GOOD_META)
+    m["description"] += "\n" + " ".join(f"#tag{i}" for i in range(14))
+    assert "hashtags" in failed(run(meta=m))
+    assert "hashtags" not in failed(run())
+
+
+def test_shouting_title_warns():
+    m = copy.deepcopy(GOOD_META)
+    m["title"] = "YOU WON'T BELIEVE WHAT HAPPENED IN HAMELIN!!!"
+    assert "title_style" in failed(run(meta=m), "warn")
+    assert "title_style" not in failed(run(), "warn")

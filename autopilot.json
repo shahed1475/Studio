@@ -26,7 +26,15 @@
   "max_waiting_shorts": 3,
   "short_slots": [
     {
+      "day": "mon",
+      "time": "12:30"
+    },
+    {
       "day": "tue",
+      "time": "12:30"
+    },
+    {
+      "day": "wed",
       "time": "12:30"
     },
     {

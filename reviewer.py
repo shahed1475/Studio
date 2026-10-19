@@ -60,7 +60,51 @@ def footage_checks(meta: dict) -> list[dict]:
     return out
 
 
-def rule_checks(meta: dict, probe: dict, existing_titles: list[str], thumb_bytes: int | None) -> list[dict]:
+def _norm(s: str) -> str:
+    return re.sub(r"[^a-z0-9 ]", "", s.lower()).strip()
+
+
+def metadata_checks(meta: dict) -> list[dict]:
+    """Things YouTube ignores or frowns on: over 15 hashtags (all are dropped) and shouting titles."""
+    import config
+
+    try:
+        niche_tags = len(config.niche().get("hashtags", []))
+    except (OSError, ValueError):
+        niche_tags = 5
+    n = len(re.findall(r"#\w+", f"{meta.get('title', '')} {meta.get('description', '')}")) + niche_tags
+    out = [_c("hashtags", n <= 15, f"{n} hashtags (YouTube ignores all of them above 15)")]
+    title = meta.get("title", "")
+    letters = [ch for ch in title if ch.isalpha()]
+    shouting = len(letters) > 10 and sum(ch.isupper() for ch in letters) / len(letters) > 0.6
+    if shouting or "!!" in title:
+        out.append(_c("title_style", False, "title shouts (capital letters or !!), which reads as clickbait", "warn"))
+    return out
+
+
+def variety_checks(meta: dict, recent: list[dict]) -> list[dict]:
+    """YouTube's inauthentic-content rule looks at the pattern across recent uploads. Compare with the last few videos of the same kind."""
+    out = []
+    lines = [l["text"] for l in meta.get("lines", []) if l.get("text")]
+    if lines and recent:
+        same = []
+        for r in recent:
+            theirs = [l["text"] for l in r.get("lines", []) if l.get("text")]
+            if not theirs:
+                continue
+            for label, a, b in (("opening", lines[0], theirs[0]), ("ending", lines[-1], theirs[-1])):
+                if difflib.SequenceMatcher(None, _norm(a), _norm(b)).ratio() >= 0.75:
+                    same.append(f"{label} like '{r.get('title', '?')}'")
+        out.append(_c("variety_script", not same, "; ".join(same[:2]) + ". Change the opening or ending so videos do not share a template." if same else "opening and ending are different from recent videos", "human"))
+    head = " ".join(_norm(meta.get("title", "")).split()[:2])
+    if head and recent:
+        n = sum(1 for r in recent[:8] if " ".join(_norm(r.get("title", "")).split()[:2]) == head)
+        if n >= 3:
+            out.append(_c("variety_title", False, f"{n} of the last {min(len(recent), 8)} titles start with '{head}'. Vary the title pattern.", "warn"))
+    return out
+
+
+def rule_checks(meta: dict, probe: dict, existing_titles: list[str], thumb_bytes: int | None, recent: list[dict] | None = None) -> list[dict]:
     kind = "doc" if meta.get("format") == "doc" else "short"
     lim = LIMITS[kind]
     out = []
@@ -106,6 +150,8 @@ def rule_checks(meta: dict, probe: dict, existing_titles: list[str], thumb_bytes
     dupes = len(lines) - len(set(lines))
     out.append(_c("script_loop", dupes <= max(1, len(lines) // 10), f"{dupes} repeated narration lines"))
     claims = unhedged_claims([l["text"] for l in meta.get("lines", [])])
+    out += metadata_checks(meta)
+    out += variety_checks(meta, recent or [])
     out.append(_c("claims", len(claims) < 2, f"{len(claims)} specific claims stated as fact, check them: {'; '.join(claims[:5])}" if claims else "no unhedged specifics", "human"))
     return out
 
@@ -182,7 +228,10 @@ def review(folder: Path, existing_titles: list[str] | None = None, use_llm: bool
     thumb_bytes = thumb.stat().st_size if thumb and thumb.exists() else None
     if existing_titles is None:
         existing_titles = [json.loads(m.read_text()).get("title", "") for m in folder.parent.glob("*/meta.json") if m.parent != folder]
-    checks = rule_checks(meta, probe_video(folder / "video.mp4"), existing_titles, thumb_bytes)
+    kind = "doc" if meta.get("format") == "doc" else "short"
+    others = sorted((m for m in folder.parent.glob("*/meta.json") if m.parent != folder), key=lambda m: m.stat().st_mtime, reverse=True)
+    recent = [d for d in (json.loads(m.read_text()) for m in others[:30]) if ("doc" if d.get("format") == "doc" else "short") == kind][:12]
+    checks = rule_checks(meta, probe_video(folder / "video.mp4"), existing_titles, thumb_bytes, recent)
     if use_llm:
         checks += llm_review(meta)
     result = {"verdict": verdict_from(checks, meta.get("source")), "checks": checks,

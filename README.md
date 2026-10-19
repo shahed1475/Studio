@@ -17,7 +17,7 @@ Everything runs from the dashboard's **Autopilot** page. It is off until you swi
 4. **Shorts** (YouTube's vertical reels) run in their own lane: one a day by default, published at US-Eastern times from the research (Tue/Thu 12:30, Fri 16:00, Sat/Sun 13:00). They need a free Pexels key in Settings, otherwise autopilot pauses Shorts.
 5. You can **Hold** any video before it uploads. Limits: 1 upload a day by default, never more than 5.
 
-CLI: `run.py review NAME`, `run.py autopilot tick|status`, `run.py newswatch`, `run.py newsvideo`. Tests: `.venv/bin/python -m pytest -q`.
+CLI: `run.py review NAME`, `run.py autopilot tick|status`, `run.py newswatch`, `run.py policywatch`, `run.py health`, `run.py safety [--fix]`, `run.py newsvideo`. Pace: at most 2 uploads a day (1 Short + 1 documentary); every published video is re-checked on YouTube and Autopilot pauses itself if one is blocked. Tests: `.venv/bin/python -m pytest -q`.
 
 ## Run it 24 hours a day on a server (Docker)
 The project ships a `Dockerfile` and `docker-compose.yml`: a **dashboard** container and an always-on **worker** container (it replaces the systemd timers: autopilot every 30 minutes, the growth agent at 06:30 UTC, news and trends on Mondays 09:00 UTC, and a daily cache clean-up). Both restart by themselves after a crash or a reboot.

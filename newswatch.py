@@ -23,9 +23,20 @@ FEEDS = {
     "Google Security Blog": "https://security.googleblog.com/feeds/posts/default",
     "Google Safety and Security": "https://blog.google/technology/safety-security/rss/",
 }
+POLICY_PAGES = {  # YouTube's own rule pages: any change here can affect the channel
+    "Monetization policies": "https://support.google.com/youtube/answer/1311392?hl=en",
+    "Channel monetization (YPP) overview": "https://support.google.com/youtube/answer/72851?hl=en",
+    "Spam, deceptive practices and scams": "https://support.google.com/youtube/answer/2801973?hl=en",
+    "Altered or synthetic content": "https://support.google.com/youtube/answer/14328491?hl=en",
+    "Community Guidelines": "https://support.google.com/youtube/answer/9288567?hl=en",
+    "API: upload a video": "https://developers.google.com/youtube/v3/docs/videos/insert?hl=en",
+    "API: revision history": "https://developers.google.com/youtube/v3/revision_history?hl=en",
+    "API: developer policies": "https://developers.google.com/youtube/terms/developer-policies?hl=en",
+}
 RELEVANT = re.compile(r"\b(security|secure|scam|scams|phishing|hijack\w*|account|passkeys?|2-?step|two-step|impersonat\w+|spam|"
                       r"policy|policies|monetization|copyright|ai-generated|synthetic|safety|children|verification|"
-                      r"privacy|fraud|malware|abuse|takedown)\b", re.I)
+                      r"privacy|fraud|malware|abuse|takedown|inauthentic|reused|repetitive|mass-produced|quota|"
+                      r"disclos\w+|labels?|strikes?|demonetiz\w+|guidelines)\b", re.I)
 ATOM = "{http://www.w3.org/2005/Atom}"
 
 
@@ -102,6 +113,62 @@ def summarize(items: list[dict]) -> dict:
         'Return JSON: {"items": [{"title": "", "what_changed": "", "why_it_matters": "", "steps": [], "link": ""}], "video_ideas": []}')
 
 
+def page_sentences(page: str) -> list[str]:
+    """The readable sentences of a policy page (scripts and styles dropped, fragments under 40 characters ignored)."""
+    body = re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>", " ", page)
+    seen, out = set(), []
+    for s in re.split(r"(?<=[.!?])\s+", re.sub(r"\b\d{9,}\b", " ", _clean(body))):  # long numbers are per-request ids, not policy
+        s = s.strip()
+        if 40 <= len(s) <= 700 and re.search(r"[.!?][\"')\]]?$", s) and not re.search(r"\b(true|false) (true|false)\b", s) and s not in seen:
+            seen.add(s)
+            out.append(s)
+    return out
+
+
+def policy_watch(now: dt.datetime | None = None, get=None) -> list[dict]:
+    """Compare YouTube's rule pages with the last copy we saved. The first run is only the baseline. Returns the pages that changed."""
+    import agentlog
+
+    get = get or _get
+    now = now or dt.datetime.now(dt.timezone.utc)
+    store = DATA_DIR / "pages.json"
+    saved = json.loads(store.read_text()) if store.exists() else {}
+    changes = []
+    for name, url in POLICY_PAGES.items():
+        try:
+            now_s = page_sentences(get(url))
+        except Exception:  # a page that cannot be read today is read tomorrow
+            continue
+        if len(now_s) < 5:  # an error page or a consent wall: never replace a good baseline with it
+            continue
+        before = saved.get(name, {}).get("sentences")
+        if before is not None:
+            added = [s for s in now_s if s not in set(before)]
+            removed = [s for s in before if s not in set(now_s)]
+            if added or removed:
+                changes.append({"at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "page": name, "url": url,
+                                "added": [s[:300] for s in added[:8]], "removed": [s[:300] for s in removed[:8]]})
+        saved[name] = {"sentences": now_s, "checked_at": now.strftime("%Y-%m-%dT%H:%M:%SZ")}
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    store.write_text(json.dumps(saved))
+    if changes:
+        log = DATA_DIR / "policy_log.json"
+        old = json.loads(log.read_text()) if log.exists() else []
+        log.write_text(json.dumps((old + changes)[-100:], indent=2))
+        for c in changes:
+            agentlog.event("found", f"YouTube changed its page: {c['page']}",
+                           (c["added"][0] if c["added"] else "Some text was removed") + " Read it before the next upload.", notify=True, now=now)
+    return changes
+
+
+def recent_policy_changes(now: dt.datetime, days: int = 10) -> list[dict]:
+    log = DATA_DIR / "policy_log.json"
+    if not log.exists():
+        return []
+    since = (now - dt.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return [c for c in json.loads(log.read_text()) if c["at"] >= since]
+
+
 def _week(now: dt.datetime) -> str:
     y, w, _ = now.isocalendar()
     return f"{y}-W{w:02d}"
@@ -117,11 +184,18 @@ def run(now: dt.datetime | None = None) -> Path:
             digest = {"items": list(got.get("items", [])), "video_ideas": [str(v) for v in got.get("video_ideas", [])]}
         except Exception as e:
             digest["error"] = f"summary failed: {type(e).__name__}"
+    import safety
+
+    digest["items"] = [{"title": f"Policy page changed: {c['page']}",
+                        "what_changed": c["added"][0] if c["added"] else "Some text on this page was removed.",
+                        "why_it_matters": "This is YouTube's own rule page. Read the change before the next upload.",
+                        "steps": [], "link": c["url"]} for c in recent_policy_changes(now)] + digest["items"]
     week = _week(now)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     path = DATA_DIR / f"{week}.json"
     path.write_text(json.dumps({"week": week, "generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                                "sources_checked": list(FEEDS), "found": len(items), **digest}, indent=2))
+                                "sources_checked": list(FEEDS) + list(POLICY_PAGES), "found": len(items), **digest,
+                                "self_audit": safety.local_audit()}, indent=2))
     topics = json.loads(TOPICS_FILE.read_text()) if TOPICS_FILE.exists() else []
     known = {t["topic"] for t in topics}
     links = [i["link"] for i in digest["items"] if i.get("link")]

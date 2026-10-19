@@ -26,11 +26,12 @@ def _service():
                 raise SystemExit("client_secret.json missing. Follow the YouTube setup steps in README.md.")
             creds = InstalledAppFlow.from_client_secrets_file(str(SECRET), SCOPES).run_local_server(port=0)
         TOKEN.write_text(creds.to_json())
+        TOKEN.chmod(0o600)  # the login lets anyone who copies it upload to the channel
     return build("youtube", "v3", credentials=creds)
 
 
 def uploads_today(out_dir: Path, now: dt.datetime) -> int:
-    """How many videos were uploaded on the current UTC day (the API quota and the 5-a-day policy)."""
+    """How many videos were uploaded on the current UTC day (our own pace cap, config.MAX_UPLOADS_PER_DAY)."""
     day = now.astimezone(dt.timezone.utc).strftime("%Y-%m-%d")
     n = 0
     for m in out_dir.glob("*/meta.json"):

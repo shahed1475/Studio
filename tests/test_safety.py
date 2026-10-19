@@ -75,7 +75,7 @@ def test_check_marks_healthy_video_and_leaves_autopilot_alone(tmp_path, monkeypa
 def test_check_pauses_autopilot_and_reports_when_a_video_is_blocked(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "OUT", tmp_path)
     monkeypatch.setattr(agentlog, "FILE", tmp_path / "events.jsonl")
-    monkeypatch.setattr(agentlog.subprocess, "run", lambda *a, **k: None)
+    monkeypatch.setattr(agentlog, "subprocess", __import__("types").SimpleNamespace(run=lambda *a, **k: None))
     make(tmp_path, "bad", video_id="v2", publish_at=iso(NOW - timedelta(hours=2)), uploaded_at=iso(NOW - timedelta(hours=5)))
     saved = []
     monkeypatch.setattr(autopilot, "load_config", lambda: {"enabled": True, "x": 1})
@@ -99,7 +99,7 @@ def test_check_skips_videos_not_due_and_already_confirmed(tmp_path, monkeypatch)
 def test_check_reports_expired_login(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "OUT", tmp_path)
     monkeypatch.setattr(agentlog, "FILE", tmp_path / "events.jsonl")
-    monkeypatch.setattr(agentlog.subprocess, "run", lambda *a, **k: None)
+    monkeypatch.setattr(agentlog, "subprocess", __import__("types").SimpleNamespace(run=lambda *a, **k: None))
     make(tmp_path, "v", video_id="v1", publish_at=iso(NOW - timedelta(hours=2)))
 
     class RefreshError(Exception):
@@ -128,3 +128,20 @@ def test_audit_flags_wide_scopes_and_missing_refresh_token(tmp_path):
     os.chmod(tmp_path / "token.json", 0o600)
     by = {c["name"]: c for c in safety.local_audit(tmp_path, use_git=False)}
     assert not by["token_scopes"]["ok"] and not by["refresh_token"]["ok"]
+
+
+def test_pace_settings_match_the_research():
+    import dashboard
+    import scheduler
+    import worker
+    assert config.MAX_UPLOADS_PER_DAY == 2
+    assert len({s["day"] for s in scheduler.SHORT_SLOTS_DEFAULT}) == 7  # a Short every day
+    assert {"uploads_per_day": 2} == dashboard.validate_autopilot_config({"uploads_per_day": 2})
+    for bad in ({"uploads_per_day": 3}, {"shorts_per_day": 3}):
+        try:
+            dashboard.validate_autopilot_config(bad)
+        except ValueError:
+            continue
+        raise AssertionError(bad)
+    names = {j["name"] for j in worker.JOBS}
+    assert {"health", "policywatch"} <= names

@@ -10,8 +10,10 @@ SLOTS_DEFAULT = [  # America/New_York: evening, weekend morning, weekday afterno
 ]
 
 
-SHORT_SLOTS_DEFAULT = [  # America/New_York: midday and Friday late afternoon, weekend early afternoon
+SHORT_SLOTS_DEFAULT = [  # America/New_York: one a day, midday on weekdays, Friday late afternoon, weekend early afternoon
+    {"day": "mon", "time": "12:30"},
     {"day": "tue", "time": "12:30"},
+    {"day": "wed", "time": "12:30"},
     {"day": "thu", "time": "12:30"},
     {"day": "fri", "time": "16:00"},
     {"day": "sat", "time": "13:00"},

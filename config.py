@@ -38,7 +38,7 @@ WIDTH, HEIGHT, FPS = 1080, 1920, 30
 DOC_SUBTITLES = os.getenv("YT_DOC_SUBS", "1") == "1"  # burn subtitles into documentaries
 ARCHIVE_VIDEO = os.getenv("YT_ARCHIVE_VIDEO", "1") == "1"  # moving public-domain footage for scenes
 DOC_VIDEO_CLIPS = os.getenv("YT_DOC_VIDEO", "0") == "1"  # also use it in documentaries (slower, off by default)
-MAX_UPLOADS_PER_DAY = 5  # API quota: an upload costs 1600 of the 10,000 daily units
+MAX_UPLOADS_PER_DAY = 2  # growth research: 1 a day is strong, 2 is the ceiling; above ~3 quality drops and YouTube's inauthentic-content check looks at the pattern (the API itself allows 100 uploads a day)
 
 
 def niche() -> dict:

@@ -12,6 +12,9 @@
   python run.py review NAME      reviewer agent checks a finished video
   python run.py autopilot tick|status   one automation pass / show state
   python run.py newswatch        weekly YouTube security/policy news digest
+  python run.py policywatch      daily: has YouTube changed its rule pages?
+  python run.py health           are published videos public and free of claims? (pauses Autopilot if not)
+  python run.py safety [--fix]   check that secret files and the login are protected
   python run.py newsvideo        make the next queued YouTube-news video
   python run.py subtitles NAME [--burn]   subtitles for a finished video (.srt, and burned in with --burn)
   python run.py trends           weekly niche trend research (YouTube API) + original topic ideas
@@ -337,6 +340,27 @@ def main() -> None:
         print(f"{path.name}: {d['found']} relevant items, {len(d['items'])} summarized, {len(d['video_ideas'])} video ideas")
         for i in d["items"]:
             print(f"- {i['title']}\n    {i['what_changed']}")
+    elif a[0] == "policywatch":
+        import newswatch
+
+        ch = newswatch.policy_watch()
+        print(f"{len(ch)} rule pages changed" if ch else "no rule page changed (first run only saves a copy)")
+        for c in ch:
+            print(f"- {c['page']}: {(c['added'] or c['removed'])[0]}")
+    elif a[0] == "health":
+        import safety
+
+        r = safety.check()
+        print(r.get("error") or f"{r['checked']} published videos checked, {len(r['problems'])} problems" + (", Autopilot paused" if r["paused"] else ""))
+        for p in r["problems"]:
+            print(" -", p)
+    elif a[0] == "safety":
+        import safety
+
+        if "--fix" in a:
+            print("made private:", ", ".join(safety.fix_permissions()) or "nothing to change")
+        for c in safety.local_audit():
+            print(("ok   " if c["ok"] else "FAIL ") + f"{c['name']}: {c['detail']}")
     elif a[0] == "newsvideo":
         import newswatch
 

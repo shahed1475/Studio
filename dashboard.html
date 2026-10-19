@@ -557,7 +557,7 @@ async function autopilot(m){
 
   <div class="sec"><h2>Rules</h2><div class="panel pad stack">
     <div class="fld">
-      <div><label for="ap_up">Videos per day</label><input id="ap_up" type="number" min="1" max="5" value="${c.uploads_per_day}" oninput="editing=true"><div class="help">1 to 5. One a day is a safe start.</div></div>
+      <div><label for="ap_up">Videos per day</label><input id="ap_up" type="number" min="1" max="2" value="${c.uploads_per_day}" oninput="editing=true"><div class="help">1 or 2. Together with Shorts, YouTube gets at most 2 uploads a day.</div></div>
       <div><label for="ap_rw">Hours before going public</label><input id="ap_rw" type="number" min="6" max="168" value="${c.review_window_hours}" oninput="editing=true"><div class="help">Your time to stop a video.</div></div>
       <div><label for="ap_q">Topics kept ready</label><input id="ap_q" type="number" min="1" max="20" value="${c.min_queue}" oninput="editing=true"></div>
       <div><label for="ap_w">Finished videos waiting</label><input id="ap_w" type="number" min="1" max="5" value="${c.max_waiting}" oninput="editing=true"></div>
@@ -568,7 +568,7 @@ async function autopilot(m){
     <hr style="border:0;border-top:1px solid var(--line);margin:4px 0">
     <label class="tick"><input type="checkbox" id="ap_sh" ${c.shorts?"checked":""} onchange="editing=true"> Also make YouTube Shorts (vertical videos under a minute)</label>
     <div class="fld">
-      <div><label for="ap_spd">Shorts per day</label><input id="ap_spd" type="number" min="1" max="5" value="${c.shorts_per_day}" oninput="editing=true"><div class="help">Steady beats bursts. One a day is a good start.</div></div>
+      <div><label for="ap_spd">Shorts per day</label><input id="ap_spd" type="number" min="1" max="2" value="${c.shorts_per_day}" oninput="editing=true"><div class="help">Steady beats bursts. One a day is the best pace; 2 is the ceiling.</div></div>
       <div><label for="ap_sw">Finished Shorts waiting</label><input id="ap_sw" type="number" min="1" max="10" value="${c.max_waiting_shorts}" oninput="editing=true"></div>
     </div>
     <div><label>Shorts publish times (US Eastern)</label>${slotEditor("apShort")}</div>
@@ -785,7 +785,7 @@ async function settings(m){
       <div><span class="grow">Script model</span><span class="mono mute">${esc(h.model)}</span></div>
       <div><span class="grow">Free disk space</span><span class="mono mute">${h.disk_free_gb} GB</span></div>
     </div>
-    <p class="help">Rules kept on purpose: every video needs your approval, uploads are labelled as AI-narrated, uploads default to private, at most 5 uploads a day. Change voice or model with the YT_VOICE and YT_MODEL environment variables, and the niche in niche.json.</p></div>`;
+    <p class="help">Rules kept on purpose: every video needs your approval, uploads are labelled as AI-narrated, uploads default to private, at most 2 uploads a day, and every published video is checked on YouTube afterwards. Change voice or model with the YT_VOICE and YT_MODEL environment variables, and the niche in niche.json.</p></div>`;
 }
 async function llmSave(){
   const g=id=>document.getElementById(id),body={free:g("or_free").checked,local_fallback:g("or_local").checked,free_daily_limit:parseInt(g("or_flim").value,10),enabled:g("or_on").checked,daily_budget_usd:parseFloat(g("or_cap").value),max_output_tokens:parseInt(g("or_max").value,10),models:{script:g("or_script").value.trim(),review:g("or_review").value.trim(),cheap:g("or_cheap").value.trim()}};
