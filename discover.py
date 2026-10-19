@@ -16,7 +16,7 @@ SEEDS = ["folklore legends retold", "unsolved mysteries history documentary", "h
          "bedtime stories mythology", "dark history true stories", "ancient legends explained",
          "forgotten history documentary", "lost civilizations mysteries", "medieval legends and true mysteries",
          "myths and folktales from around the world", "strange true history stories", "ancient history explained calmly"]
-MIN_MEDIAN_VIEWS = 5000  # a plain number check that does not depend on the model: a channel whose typical video gets fewer views is not worth studying
+MIN_MEDIAN_VIEWS = 1000  # a plain number check that does not depend on the model: a channel whose typical video gets fewer views is not worth studying
 REJECT_DAYS = 30  # a channel that was inactive or not a fit is not looked at again for this long
 
 
@@ -48,8 +48,9 @@ def score(c: dict) -> float:
 
 def search(yt, seeds: list[str], exclude: set[str]) -> list[dict]:
     ids: list[str] = []
-    for q in seeds[:MAX_SEARCHES]:
-        res = yt.search().list(q=q, part="id", type="channel", maxResults=25, order="viewCount",
+    for n, q in enumerate(seeds[:MAX_SEARCHES]):
+        # lifetime views favour big old channels, so every second search asks for the most relevant ones instead
+        res = yt.search().list(q=q, part="id", type="channel", maxResults=25, order="viewCount" if n % 2 == 0 else "relevance",
                                regionCode="US", relevanceLanguage="en").execute()
         for i in res.get("items", []):
             cid = i["id"]["channelId"]
