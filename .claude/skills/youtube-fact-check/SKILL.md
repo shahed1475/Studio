@@ -1,6 +1,6 @@
 ---
 name: youtube-fact-check
-description: Use before any documentary or Short script is rendered or published, and whenever a video is blocked by the reviewer for facts. Enforces the claim ledger (claims.json), source evidence for every name, year, number and quote, and the rule that nothing unverified is stated as fact.
+description: "Use before any documentary or Short script is rendered or published, and whenever a video is blocked by the reviewer for facts. Enforces the claim ledger (claims.json), source evidence for every name, year, number and quote, and the rule that nothing unverified is stated as fact."
 ---
 
 # YouTube fact-checking and reliability

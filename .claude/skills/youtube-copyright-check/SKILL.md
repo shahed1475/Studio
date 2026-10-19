@@ -1,6 +1,6 @@
 ---
 name: youtube-copyright-check
-description: Use to check the rights behind a finished video: every picture credit's license, Wikipedia text attribution, AI-illustration labels and any music, before approval or upload.
+description: "Use to check the rights behind a finished video: every picture credit's license, Wikipedia text attribution, AI-illustration labels and any music, before approval or upload."
 ---
 
 # Copyright and licensing check

@@ -24,3 +24,7 @@ def _local_fallback_for_old_tests(monkeypatch):
     import freemodels
 
     monkeypatch.setattr(freemodels, "quota", lambda *a, **k: None)  # tests never ask the real OpenRouter
+    import risk
+
+    real = risk.credit_left
+    monkeypatch.setattr(risk, "credit_left", lambda key, get=None, now=None: real(key, get, now) if get else None)  # only an injected fake reaches the code

@@ -1,6 +1,6 @@
 ---
 name: youtube-scriptwriter
-description: Use when writing or revising a documentary or Short script for this channel: grounded in sources, no invented facts or quotations, a strong honest hook, and checked by script rules before voice and rendering.
+description: "Use when writing or revising a documentary or Short script for this channel: grounded in sources, no invented facts or quotations, a strong honest hook, and checked by script rules before voice and rendering."
 ---
 
 # YouTube scriptwriter

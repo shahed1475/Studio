@@ -1,6 +1,6 @@
 ---
 name: youtube-quality-gate
-description: Use as the final check before any video is approved: runs the reviewer, script rules, sources, licenses, ffprobe and caption checks, and optionally the AI review and a frame-based visual review, then reports PASS or FAIL with every row.
+description: "Use as the final check before any video is approved: runs the reviewer, script rules, sources, licenses, ffprobe and caption checks, and optionally the AI review and a frame-based visual review, then reports PASS or FAIL with every row."
 ---
 
 # Quality gate

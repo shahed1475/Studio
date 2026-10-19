@@ -1,6 +1,6 @@
 ---
 name: youtube-video-editor
-description: Use for edit decisions and technical checks of a rendered video: ffprobe facts, a full decode, caption timing and wording against the script, scene pacing, and how to re-render with ffmpeg.
+description: "Use for edit decisions and technical checks of a rendered video: ffprobe facts, a full decode, caption timing and wording against the script, scene pacing, and how to re-render with ffmpeg."
 ---
 
 # Video editor and technical check

@@ -140,11 +140,21 @@ def chapter_title(ch: dict, lines: list[dict]) -> str:
     return " ".join(words[:6]).capitalize() if words else ""
 
 
+def shape_for(topic: str) -> tuple[int, int]:
+    """(chapters, lines per chapter) for this topic: 6 to 9 chapters of 5 to 7 lines, fixed by the topic so a retry keeps it. Videos stop sharing one skeleton,
+    which is part of what YouTube's 'repetitive or mass-produced' rule looks at."""
+    import hashlib
+
+    h = int(hashlib.md5(topic.lower().encode()).hexdigest(), 16)
+    return 6 + h % 4, 5 + (h // 7) % 3
+
+
 def doc_script(topic: str, facts: str | None = None, grounded: str | None = None) -> dict:
     """Outline first, then one request per chapter: small local models undershoot a one-shot long script.
 
     With `facts` (news explainers) or `grounded` (a source article for a story) the script may use ONLY those facts."""
     nc = dict(config.niche())
+    n_chapters, n_lines = shape_for(topic)
     rules = (
         "Retell it in your own original words and never copy sentences from any source. Use only well-documented "
         "facts or public-domain legends; say 'legend says' or 'historians disagree' for anything uncertain. "
@@ -167,20 +177,20 @@ def doc_script(topic: str, facts: str | None = None, grounded: str | None = None
         )
     outline = _script_chat(
         f"Plan a 6 to 8 minute YouTube documentary for a US audience.\nTopic: {topic}\nChannel: {nc['name']}\n"
-        f"Style: {nc['style']}\n{rules}\n\nGive 8 chapters in story order: chapter 1 opens with a hook that raises "
+        f"Style: {nc['style']}\n{rules}\n\nGive {n_chapters} chapters in story order: chapter 1 opens with a hook that raises "
         "the central question, the middle chapters cover background and the main competing theories fairly, the "
         'last has a closing thought. Return JSON: {"title": "under 70 chars", "description": "3 sentences", '
         '"tags": ["..."], "anchors": ["3 to 6 real names of the places, people and things at the heart of this '
         'story, as they appear in archive image titles"], "chapters": [{"title": "...", "summary": "one sentence of what this chapter covers"}]}'
     )
     chapters, lines, told = [], [], ""
-    for n, ch in enumerate(outline["chapters"][:9], 1):
+    for n, ch in enumerate(outline["chapters"][:n_chapters], 1):
         for _ in range(3):
             part = _script_chat(
                 f"You are narrating a documentary titled '{outline['title']}' about: {topic}.\n"
                 f"Style: {nc['style']}\n{rules}\n\nStory so far: {told or '(nothing yet, this is the opening)'}\n\n"
                 f"Write chapter {n}: '{ch.get('title', '')}' - {ch.get('summary', '')}\n"
-                "Write 6 narration lines of 16 to 24 words each. Do not repeat earlier chapters. "
+                f"Write {n_lines} narration lines of 16 to 24 words each. Do not repeat earlier chapters. "
                 "For every line give 'visual': 2 to 4 words to search an archival image for (a real place, person, "
                 "object, map or artwork named in the line; always include the name of the place or subject, for example "
                 "'Hamelin church', never just 'old manuscript'). "

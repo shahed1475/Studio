@@ -1,6 +1,6 @@
 ---
 name: studio-qa-video
-description: Use to look at a finished studio video before approving it. Combines the reviewer's checks with real frames and audio (the watch skill on the local file), and reports caption, picture, pacing and metadata problems with evidence.
+description: "Use to look at a finished studio video before approving it. Combines the reviewer's checks with real frames and audio (the watch skill on the local file), and reports caption, picture, pacing and metadata problems with evidence."
 ---
 
 # QA a finished video

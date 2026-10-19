@@ -306,6 +306,7 @@ function render(force){
   if(!S)return;chrome();
   const m=document.getElementById("main");
   ({home,videos,create,autopilot,growth,activity,youtube,settings})[tab]?.(m);
+  if(tab==="home")loadRisk();
   m.firstElementChild?.classList.add("view");setTheme(document.documentElement.dataset.theme);
 }
 
@@ -330,6 +331,11 @@ function homeVideos(){
   return `<div class="sec"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px"><h2>Latest long videos</h2><button class="btn quiet sm" onclick="go('videos')">See all videos</button></div><div class="lgrid" style="margin-top:12px">${long.map(v=>vcard2(v,n++,false)).join("")||`<p class="mute">No long videos yet.</p>`}</div></div>
   <div class="sec"><h2>Latest Shorts</h2><div class="sgrid" style="margin-top:12px">${shorts.map(v=>vcard2(v,n++,true)).join("")||`<p class="mute">No Shorts yet.</p>`}</div></div>`;
 }
+async function loadRisk(){
+  const box=document.getElementById("riskbox");if(!box)return;
+  try{const R=await api("/api/risk"),order={act:0,watch:1,ok:2},rows=R.rows.slice().sort((a,b)=>order[a.level]-order[b.level]),lv={act:["Act","bad"],watch:["Watch","warn"],ok:["OK","ok"]};
+    box.innerHTML=`<h2>Risks <span class="mute" style="font-weight:500;font-size:14px">${R.summary.act.length} need action, ${R.summary.watch.length} to watch, ${R.summary.ok} fine</span></h2><div class="panel rows">${rows.map(r=>`<div style="display:block"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="ttl grow">${esc(r.name)}</span>${badge(...lv[r.level])}</div><p class="mute" style="margin-top:4px">${esc(r.evidence)}</p>${r.level!=="ok"&&r.owner_decision?`<p class="mute" style="margin-top:4px"><b>For you:</b> ${esc(r.owner_decision)}</p>`:""}<details style="margin-top:4px"><summary class="mute">Controls in place</summary><p class="mute">${esc(r.controls)}</p></details></div>`).join("")}</div>`}catch(e){box.innerHTML=""}
+}
 function home(m){
   const n=nextStep(),c=S.counts,h=S.health,y=S.youtube;
   const check=(ok,label,fix,go_)=>`<div><div class="grow"><span class="ttl">${label}</span></div>${ok?badge("Ready","ok"):`<button class="btn quiet sm" onclick="${go_}">${fix}</button>`}</div>`;
@@ -343,6 +349,8 @@ function home(m){
       <div><div class="n mono">${c.approved}</div><div class="l">Approved, not uploaded</div></div>
       <div><div class="n mono">${c.uploaded}</div><div class="l">On YouTube</div></div>
     </div></div>
+
+  <div class="sec" id="riskbox"></div>
 
   <div class="sec"><h2>Setup check</h2>
     <div class="panel rows">

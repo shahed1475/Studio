@@ -1,6 +1,6 @@
 ---
 name: youtube-publisher
-description: Use when a video is about to be uploaded or has been uploaded: confirms readiness, prevents duplicate uploads, and verifies what YouTube actually stored. Never publishes, deletes or changes channel settings without explicit approval.
+description: "Use when a video is about to be uploaded or has been uploaded: confirms readiness, prevents duplicate uploads, and verifies what YouTube actually stored. Never publishes, deletes or changes channel settings without explicit approval."
 ---
 
 # Publisher

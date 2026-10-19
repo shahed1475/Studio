@@ -27,6 +27,8 @@ def test_there_are_skills():
 def test_skill_follows_the_agent_skills_format(path):
     fm = frontmatter(path)
     assert fm["name"] == path.parent.name and re.fullmatch(r"[a-z0-9-]{1,64}", fm["name"])
+    raw = re.search(r"^description:\s*(.*)$", path.read_text(), re.M).group(1)
+    assert not (": " in raw and not raw.startswith(('"', "'"))), "an unquoted description containing ': ' is invalid YAML (the official validator rejects it)"
     assert 20 <= len(fm["description"]) <= 1024 and "<" not in fm["description"] and ">" not in fm["description"]
     assert len(path.read_text().splitlines()) <= 500  # keep the body short; details go in separate files
 
@@ -65,3 +67,14 @@ def test_skill_scripts_run_and_report_a_missing_video_with_exit_code_2(tmp_path)
             continue
         r = subprocess.run([sys.executable, str(s), "no-such-video-slug"], capture_output=True, text=True, cwd=ROOT)
         assert r.returncode == 2, f"{s.name}: exit {r.returncode}: {r.stderr[-200:]}{r.stdout[-200:]}"
+
+
+def test_vendored_watch_skill_is_byte_for_byte_what_was_reviewed():
+    """Supply-chain control: any change to the third-party skill's files (an update, a tampering) fails here until someone re-reads the diff."""
+    import hashlib
+    import json
+    root = ROOT / ".claude" / "skills" / "watch"
+    pinned = json.loads((root / "VENDORED.sha256.json").read_text())["files"]
+    actual = {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(root.rglob("*"))
+              if p.is_file() and p.name not in ("VENDORED.md", "VENDORED.sha256.json") and "__pycache__" not in p.parts}
+    assert actual == pinned

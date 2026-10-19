@@ -1,6 +1,6 @@
 ---
 name: youtube-research
-description: Use to research a topic or inspect a video before scripting: gathers sources with addresses, passages and dates, measures and samples a video, reads frames with a vision model, and states what was and was not accessed.
+description: "Use to research a topic or inspect a video before scripting: gathers sources with addresses, passages and dates, measures and samples a video, reads frames with a vision model, and states what was and was not accessed."
 ---
 
 # YouTube research and video inspection

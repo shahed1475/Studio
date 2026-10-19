@@ -165,6 +165,9 @@ def visually_ok(slug: str) -> bool:
     except Exception:
         return True
     pics = next((r for r in rows if r["name"] == "pictures_fit_story"), None)
+    p0, m0 = _meta(slug)
+    m0["visual_check"] = {"at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "ok": True, "rows": [r["name"] + ": " + r["detail"][:120] for r in rows if not r["ok"]]}
+    p0.write_text(json.dumps(m0, indent=2))
     caps = next((r for r in rows if r["name"] == "captions_readable"), None)
     n_pics = (pics["detail"].count(" s: ") if pics and not pics["ok"] else 0)
     garbled = bool(caps and not caps["ok"] and re.search(r"garbl|gibberish|stray|nonsens", caps["detail"], re.I))
@@ -174,6 +177,7 @@ def visually_ok(slug: str) -> bool:
         review["checks"].append({"name": "visual_review", "ok": False, "severity": "human", "detail": " | ".join(r["detail"] for r in rows if not r["ok"])[:400]})
         review["verdict"] = "needs_human"
         meta["approved"] = False
+        meta["visual_check"] = {**meta.get("visual_check", {}), "ok": False}
         p.write_text(json.dumps(meta, indent=2))
         return False
     return True

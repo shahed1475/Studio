@@ -1,6 +1,6 @@
 ---
 name: studio-packaging
-description: Use when writing or judging a video's title, description, tags, thumbnail text or opening hook for this channel. Honest high-click packaging rules adapted from the open YouTube marketing skills, matched to the studio's reviewer checks.
+description: "Use when writing or judging a video's title, description, tags, thumbnail text or opening hook for this channel. Honest high-click packaging rules adapted from the open YouTube marketing skills, matched to the studio's reviewer checks."
 ---
 
 # Packaging: title, description, hook, thumbnail

@@ -50,6 +50,9 @@ A studio that researches, writes, voices, illustrates, renders, reviews and sche
 For every task report: 1) what changed; 2) what evidence supports the factual content; 3) which tests actually ran and their results; 4) which claims or outputs remain unverified; 5) copyright, licensing or platform-policy risks; 6) what needs the owner's approval.
 Do not claim the system is hallucination-free. Describe the controls and the remaining limits.
 
+## Risk monitor
+`python risk.py` (and the Risks card on the dashboard home) measures eight standing risks: facts, rights, YouTube's inauthentic-content policy, money, deploys killing renders, third-party skills, access, publishing. Each row shows its level (ok, watch, act), the evidence, the controls in place and what the owner must decide. Read it before any deploy or approval. Scan any third-party skill with `python vetskill.py <folder>` before installing it.
+
 ## Controls that exist (and their limits)
 Source-grounded scripts (up to two Wikipedia articles); claim ledger; claims checked against the source article, then against the web with citations; AI review that sees the source; fixer agent (two tries, then the owner); script, license, video and caption checks; visual review from sampled frames; upload read-back.
 Limits: Wikipedia is a secondary source; the web check is a model with search, not a historian; a vision reading covers only the frames sampled; passing checks are evidence, not proof.

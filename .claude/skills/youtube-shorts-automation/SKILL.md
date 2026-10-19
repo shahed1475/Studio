@@ -1,6 +1,6 @@
 ---
 name: youtube-shorts-automation
-description: Use when making, reviewing or uploading YouTube Shorts with this project's pipeline (ideas, make, approve, upload), or changing the niche, voice or footage settings.
+description: "Use when making, reviewing or uploading YouTube Shorts with this project's pipeline (ideas, make, approve, upload), or changing the niche, voice or footage settings."
 ---
 
 # YouTube Shorts automation

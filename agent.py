@@ -247,6 +247,20 @@ def run(now: dt.datetime | None = None, yt=None, chat=None, force: bool = False)
                        f"Studied {len(study)} channels, found {len(new)} new, added {len(added_channels)} to your list, {len(added)} new ideas, {len(applied)} applied", now=now)
         brief = ""
         try:
+            import risk
+
+            import llm
+
+            left = risk.credit_left(llm.api_key()) if llm.api_key() else None
+            rows = risk.assess(now, left=left)
+            risk.guard(left, now=now)
+            summary = risk.summary(rows)
+            if summary["act"] or summary["watch"]:
+                agentlog.event("error" if summary["act"] else "info", f"Risks: {len(summary['act'])} need action, {len(summary['watch'])} to watch",
+                               "; ".join(summary["act"] + summary["watch"])[:300], now=now)
+        except Exception as e:
+            fail("check the risks", e)
+        try:
             brief = briefing(now, added_channels, removed_channels, added_topics)
         except Exception as e:
             fail("write the daily briefing", e)

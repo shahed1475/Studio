@@ -254,6 +254,19 @@ def timer_installed(unit: str) -> bool:
     return worker.alive() or (Path.home() / ".config/systemd/user" / unit).exists()
 
 
+_RISK = {"at": 0.0, "data": None}
+
+
+def risk_view() -> dict:
+    """The risk monitor's rows and summary, recomputed at most once a minute (it reads files and the OpenRouter balance)."""
+    import risk
+
+    if time.time() - _RISK["at"] > 60 or _RISK["data"] is None:
+        rows = risk.assess()
+        _RISK.update(at=time.time(), data={"rows": rows, "summary": risk.summary(rows)})
+    return _RISK["data"]
+
+
 def agent_view() -> dict:
     import agent
     import agentlog
@@ -460,6 +473,8 @@ class H(BaseHTTPRequestHandler):
                             "timer_installed": timer_installed("story-autopilot.timer"),
                             "proposals": [t for t in (json.loads(newswatch.TOPICS_FILE.read_text()) if newswatch.TOPICS_FILE.exists() else []) if t["status"] == "proposed"],
                             "news_queue": [t for t in (json.loads(newswatch.NEWS_QUEUE.read_text()) if newswatch.NEWS_QUEUE.exists() else []) if t["status"] == "queued"]})
+        elif u.path == "/api/risk":
+            self.send_json(risk_view())
         elif u.path == "/api/agent":
             self.send_json(agent_view())
         elif u.path == "/api/llm":
