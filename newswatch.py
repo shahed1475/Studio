@@ -206,8 +206,12 @@ def run(now: dt.datetime | None = None) -> Path:
     return path
 
 
+WEEK_FILE = re.compile(r"\d{4}-W\d{2}\.json")
+
+
 def latest_digest() -> dict | None:
-    files = sorted(DATA_DIR.glob("*.json")) if DATA_DIR.exists() else []
+    """The newest weekly digest. The policy-page notes (pages.json, policy_log.json) live in the same folder and are not digests."""
+    files = sorted(f for f in DATA_DIR.glob("*.json") if WEEK_FILE.fullmatch(f.name)) if DATA_DIR.exists() else []
     return json.loads(files[-1].read_text()) if files else None
 
 

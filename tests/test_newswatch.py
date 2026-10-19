@@ -164,3 +164,13 @@ def test_page_noise_is_not_a_policy_change():
     a, b = noise(1) + PAGE_A, noise(2) + PAGE_A
     assert newswatch.page_sentences(a) == newswatch.page_sentences(b)
     assert len(newswatch.page_sentences(a)) >= 4  # the sentence the menu text ran into is dropped, the rest stay
+
+
+def test_latest_digest_ignores_the_policy_page_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(newswatch, "DATA_DIR", tmp_path)
+    assert newswatch.latest_digest() is None
+    (tmp_path / "2026-W42.json").write_text(json.dumps({"week": "2026-W42", "items": []}))
+    (tmp_path / "2026-W43.json").write_text(json.dumps({"week": "2026-W43", "items": [{"title": "x"}]}))
+    (tmp_path / "pages.json").write_text(json.dumps({"Monetization policies": "text"}))  # sorts after the digests
+    (tmp_path / "policy_log.json").write_text("[]")
+    assert newswatch.latest_digest()["week"] == "2026-W43"
