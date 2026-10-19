@@ -20,6 +20,7 @@ TS = "%Y-%m-%dT%H:%M:%SZ"
 JOBS = [
     {"name": "autopilot", "every": 1800, "cmds": [["autopilot", "tick"]], "timeout": 7200},
     {"name": "health", "every": 3600, "cmds": [["health"]], "timeout": 600},
+    {"name": "titletest", "at": "08:00", "cmds": [["titletest"]], "timeout": 900},
     {"name": "policywatch", "at": "06:10", "cmds": [["policywatch"]], "timeout": 900},
     {"name": "agent", "at": "06:30", "cmds": [["agent"]], "timeout": 1800},
     {"name": "weekly", "at": "09:00", "weekday": 0, "cmds": [["newswatch"], ["trends"], ["channels"]], "timeout": 3600},

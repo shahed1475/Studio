@@ -13,6 +13,7 @@
   python run.py autopilot tick|status   one automation pass / show state
   python run.py newswatch        weekly YouTube security/policy news digest
   python run.py policywatch      daily: has YouTube changed its rule pages?
+  python run.py titletest        daily: weak title? suggest (or change) one, then check it was better
   python run.py health           are published videos public and free of claims? (pauses Autopilot if not)
   python run.py safety [--fix]   check that secret files and the login are protected
   python run.py newsvideo        make the next queued YouTube-news video
@@ -367,6 +368,12 @@ def main() -> None:
         print(r.get("error") or f"{r['checked']} published videos checked, {len(r['problems'])} problems" + (", Autopilot paused" if r["paused"] else ""))
         for p in r["problems"]:
             print(" -", p)
+    elif a[0] == "titletest":
+        import titletest
+
+        r = titletest.run()
+        print(f"{r['checked']} public videos looked at (mode {titletest.mode()}): {len(r['changed'])} changed, {len(r['weak'])} suggested, "
+              f"{len(r['reverted'])} put back or judged worse, {len(r['kept'])} kept, {r['learning']} too early to judge")
     elif a[0] == "safety":
         import safety
 
