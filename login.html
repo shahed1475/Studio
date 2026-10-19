@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#040c09">
+<title>Sign in · Story Studio</title>
+<style>
+@font-face{font-family:"Geist";src:url(/static/geist.woff2) format("woff2");font-weight:100 900;font-display:swap}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{color:var(--ink)}
+body{font:15px/1.55 "Geist",ui-sans-serif,system-ui,sans-serif;-webkit-font-smoothing:antialiased;display:grid;place-items:center;padding:20px}
+.card{position:relative;z-index:2;width:100%;max-width:400px;padding:34px 28px 28px;border-radius:22px;border:1px solid var(--line);background:var(--surface);-webkit-backdrop-filter:blur(22px) saturate(1.3);backdrop-filter:blur(22px) saturate(1.3);box-shadow:var(--shadow);display:flex;flex-direction:column;gap:18px}
+.brand{font-size:26px;font-weight:700;letter-spacing:-.035em}
+.brand span{color:var(--accent-text)}
+p{margin:0;color:var(--ink2)}
+form{display:flex;flex-direction:column;gap:14px}
+label{font-weight:600;font-size:14px;display:block;margin-bottom:6px}
+input{width:100%;font:inherit;font-size:16px;color:var(--ink);background:var(--sunken);border:1px solid var(--line);border-radius:12px;padding:13px 14px}
+input:focus{outline:2px solid var(--accent);outline-offset:0;border-color:var(--accent)}
+button{font:inherit;font-weight:650;min-height:48px;border-radius:12px;border:1px solid color-mix(in srgb,var(--accent) 70%,#000);color:var(--accent-ink);cursor:pointer;background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 92%,#fff),var(--accent));box-shadow:0 1px 0 rgb(255 255 255 / .25) inset,0 8px 24px rgb(var(--glow) / .3)}
+button:active{transform:translateY(1px)}
+.err{background:var(--bad-bg);color:var(--bad);border-radius:12px;padding:10px 12px;font-size:14px}
+:root{--bad:#b42318;--bad-bg:#fcebe9}
+:root[data-theme="dark"]{--bad:#fb7185;--bad-bg:rgb(251 113 133 / .13)}
+</style>
+<link rel="stylesheet" href="/static/studio.css">
+<script>try{var t=localStorage.getItem("theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");document.documentElement.dataset.theme=t}catch(e){document.documentElement.dataset.theme="dark"}</script>
+</head>
+<body>
+<main class="card">
+  <div class="brand">Story <span>Studio</span></div>
+  <p>Sign in to see your videos, approve them and watch the channel grow.</p>
+  <!--ERROR-->
+  <form method="post" action="/login">
+    <div><label for="e">Email</label><input id="e" name="email" type="email" autocomplete="username" inputmode="email" required autofocus></div>
+    <div><label for="p">Password</label><input id="p" name="password" type="password" autocomplete="current-password" required></div>
+    <button type="submit">Sign in</button>
+  </form>
+</main>
+</body>
+</html>

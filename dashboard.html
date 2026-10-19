@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#040c09">
+<meta name="mobile-web-app-capable" content="yes">
 <title>Story Studio</title>
 <style>
 @font-face{font-family:"Geist";src:url(/static/geist.woff2) format("woff2");font-weight:100 900;font-display:swap}
@@ -229,6 +231,7 @@ button.wd{cursor:pointer}button.wd:hover{transform:translateY(-2px);border-color
 
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
+<link rel="stylesheet" href="/static/studio.css?v=1">
 </head>
 <body>
 <div class="shell">
@@ -242,6 +245,8 @@ button.wd{cursor:pointer}button.wd:hover{transform:translateY(-2px);border-color
   </aside>
   <main id="main"><div class="stack"><div class="skel" style="height:34px;width:40%"></div><div class="skel" style="height:110px"></div><div class="skel" style="height:90px"></div></div></main>
 </div>
+<nav id="tabbar" aria-label="Main"></nav>
+<div id="sheet" aria-hidden="true"><div class="scrim" onclick="sheet(false)"></div><div class="card" id="sheetcard"></div></div>
 <div class="toast" id="toast" role="status"></div>
 
 <script>
@@ -267,10 +272,12 @@ const jobBadge=j=>badge(j.status==="done"?"Finished":j.status==="failed"?"Failed
 const empty=(icon,title,text,btn="")=>`<div class="empty">${ico(icon)}<b>${title}</b><span>${text}</span>${btn}</div>`;
 
 function setTheme(t){safe(()=>localStorage.setItem("theme",t));document.documentElement.dataset.theme=t;const l=document.getElementById("themelbl");if(l)l.textContent=t==="dark"?"Switch to light":"Switch to dark"}
+function sheet(o){const e=document.getElementById("sheet");o=o===undefined?!e.classList.contains("open"):o;e.classList.toggle("open",o);e.setAttribute("aria-hidden",!o)}
+async function logout(){await fetch("/logout",{method:"POST"});location.href="/login"}
 function toggleTheme(){setTheme(document.documentElement.dataset.theme==="dark"?"light":"dark")}
 setTheme(safe(()=>localStorage.getItem("theme"))||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"));
 
-function go(t,opts={}){if(opts.slug!==undefined)openSlug=opts.slug;tab=t;location.hash=t;clearInterval(logTimer);render(true)}
+function go(t,opts={}){sheet(false);if(opts.slug!==undefined)openSlug=opts.slug;tab=t;location.hash=t;clearInterval(logTimer);render(true)}
 async function job(cmd,args=[]){const r=await api("/api/job",{cmd,args});openJob=r.id;toast("Started. It keeps running if you close this page.");await refresh(true);go("activity")}
 
 async function refresh(force){
@@ -286,6 +293,12 @@ function chrome(){
   const c=S.counts["needs review"],r=running();
   document.getElementById("nav").innerHTML=NAV.map(([k,l,i])=>`<button class="${tab===k?"on":""}" onclick="go('${k}',{slug:null})" ${tab===k?'aria-current="page"':""}>${ico(i)}<span class="t">${l}</span>${k==="videos"&&c?`<span class="count">${c}</span>`:""}${k==="autopilot"&&S.autopilot.needs_you?`<span class="count">${S.autopilot.needs_you}</span>`:""}${k==="growth"&&S.agent&&S.agent.unread?`<span class="count">${S.agent.unread}</span>`:""}</button>`).join("");
   document.getElementById("nav2").innerHTML=(([k,l,i])=>`<button class="${tab===k?"on":""}" onclick="go('${k}',{slug:null})" ${tab===k?'aria-current="page"':""}>${ico(i)}<span class="t">${l}</span></button>`)(SET);
+  const au=S.auth&&S.auth.on, bt=(k,l,i,x="")=>`<button class="${tab===k?"on":""}" onclick="go('${k}',{slug:null})">${ico(i)}<span class="t">${l}</span>${x}</button>`;
+  document.getElementById("nav2").innerHTML+=au?`<button class="logout" onclick="logout()">${ico("sign-out")}<span class="t">Sign out</span></button>`:"";
+  const nv=S.autopilot.needs_you,gv=S.agent&&S.agent.unread,more=["growth","activity","youtube","settings"].includes(tab);
+  document.getElementById("tabbar").innerHTML=NAV.slice(0,4).map(([k,l,i])=>bt(k,l,i,k==="videos"&&c?`<span class="count">${c}</span>`:k==="autopilot"&&nv?`<span class="count">${nv}</span>`:"")).join("")+`<button class="${more?"on":""}" onclick="sheet()" aria-haspopup="true">${ico("dots-three")}<span class="t">More</span>${gv?`<span class="count">${gv}</span>`:""}</button>`;
+  document.getElementById("sheetcard").innerHTML=`<div class="state"><b>${r?"Working":"Idle"}</b>${r?esc(r.cmd):"Nothing is running"}</div>`+[...NAV.slice(4),SET].map(([k,l,i])=>bt(k,l,i,k==="growth"&&gv?`<span class="count">${gv}</span>`:"")).join("")+(au?`<button onclick="logout()">${ico("sign-out")}<span class="t">Sign out</span></button>`:"");
+  document.documentElement.classList.toggle("busy",!!r);
   document.getElementById("runbox").className="runbox"+(r?" busy":"");
   document.getElementById("runbox").innerHTML=r?`<b>Working</b>${esc(r.cmd)}`:`<b>Idle</b>Nothing is running`;
 }

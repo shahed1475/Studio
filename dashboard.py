@@ -17,6 +17,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import config
+import webauth
 
 PORT = int(os.getenv("DASH_PORT", "8913"))
 PY = sys.executable
@@ -181,6 +182,7 @@ def state() -> dict:
         "jobs": sorted(({k: v for k, v in j.items() if k != "proc"} for j in JOBS.values()), key=lambda j: -j["started"])[:30],
         "autopilot": {"enabled": autopilot_cfg().get("enabled", False), "needs_you": len(autopilot_view()["needs_you"])},
         "agent": {"unread": __import__("agentlog").unread()},
+        "auth": {"on": webauth.enabled(), "email": webauth.owner_email()},
         "settings": {"pexels_key": mask(load_settings().get("pexels_key", ""))},
     }
 
@@ -343,6 +345,12 @@ def start_job(cmd: str, args: list[str]) -> str:
 
 
 # ---------- http ----------
+def allowed_hosts() -> set[str]:
+    """Names the browser may use. Others (a rebinding page, a stray proxy) are refused. STUDIO_HOSTS adds e.g. the Tailscale address."""
+    extra = {h.strip() for h in os.getenv("STUDIO_HOSTS", "").split(",") if h.strip()}
+    return {f"127.0.0.1:{PORT}", f"localhost:{PORT}", f"studio.localhost:{PORT}"} | {h if ":" in h else f"{h}:{PORT}" for h in extra}
+
+
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -355,7 +363,54 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b)
 
+    def _authed(self) -> bool:
+        return not webauth.enabled() or webauth.check_token(webauth.cookie_from(self.headers.get("Cookie", ""))) is not None
+
+    def _page(self, b, code=200, extra=()):
+        self.send_response(code)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(b)))
+        self.send_header("Cache-Control", "no-store")
+        for k, v in extra:
+            self.send_header(k, v)
+        self.end_headers()
+        self.wfile.write(b)
+
+    def _redirect(self, where, extra=()):
+        self.send_response(303)
+        self.send_header("Location", where)
+        self.send_header("Content-Length", "0")
+        for k, v in extra:
+            self.send_header(k, v)
+        self.end_headers()
+
+    def _login(self):
+        ip = self.client_address[0]
+        n = int(self.headers.get("Content-Length") or 0)
+        form = parse_qs(self.rfile.read(min(n, 4096)).decode(errors="replace"))
+        if webauth.LIMITER.blocked(ip):
+            return self._page(webauth.login_page("Too many wrong attempts. Wait ten minutes and try again."), 429)
+        if webauth.verify(form.get("email", [""])[0], form.get("password", [""])[0]):
+            webauth.LIMITER.clear(ip)
+            secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
+            cookie = f"{webauth.COOKIE}={webauth.make_token(webauth.owner_email())}; HttpOnly; SameSite=Strict; Path=/; Max-Age={webauth.SESSION_DAYS * 86400}{secure}"
+            return self._redirect("/", [("Set-Cookie", cookie)])
+        webauth.LIMITER.fail(ip)
+        time.sleep(0.6)
+        self._page(webauth.login_page("That email or password is not right."), 401)
+
     def do_GET(self):
+        if self.headers.get("Host", "") not in allowed_hosts():
+            return self.send_error(403)
+        u = urlparse(self.path)
+        if u.path == "/healthz":
+            return self.send_bytes(b"ok", "text/plain")
+        if u.path == "/login":
+            return self._redirect("/") if self._authed() else self._page(webauth.login_page())
+        if not u.path.startswith("/static/") and not self._authed():
+            if u.path.startswith("/api/"):
+                return self.send_json({"error": "sign in again"}, 401)
+            return self._redirect("/login")
         try:
             self._get()
         except ValueError:  # a malformed video name is just not found
@@ -426,7 +481,7 @@ class H(BaseHTTPRequestHandler):
         p = (config.ROOT / "static" / name).resolve()
         if not p.is_file() or config.ROOT / "static" not in p.parents:
             return self.send_error(404)
-        kind = {".svg": "image/svg+xml", ".woff2": "font/woff2"}.get(p.suffix, "application/octet-stream")
+        kind = {".svg": "image/svg+xml", ".woff2": "font/woff2", ".css": "text/css"}.get(p.suffix, "application/octet-stream")
         self.send_bytes(p.read_bytes(), kind)
 
     def serve_thumb(self, slug):
@@ -448,7 +503,7 @@ class H(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", kind)
         self.send_header("Content-Length", str(len(b)))
-        self.send_header("Cache-Control", "max-age=3600")
+        self.send_header("Cache-Control", "no-cache" if kind == "text/css" else "max-age=3600")
         self.end_headers()
         self.wfile.write(b)
 
@@ -487,8 +542,15 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         host = self.headers.get("Host", "")
         origin = self.headers.get("Origin", "")
-        if host not in (f"127.0.0.1:{PORT}", f"localhost:{PORT}", f"studio.localhost:{PORT}") or (origin and urlparse(origin).netloc != host):
+        if host not in allowed_hosts() or (origin and urlparse(origin).netloc != host):
             return self.send_json({"error": "forbidden"}, 403)
+        path = urlparse(self.path).path
+        if path == "/login":
+            return self._login()
+        if path == "/logout":
+            return self._redirect("/login", [("Set-Cookie", f"{webauth.COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0")])
+        if not self._authed():
+            return self.send_json({"error": "sign in again"}, 401)
         n = int(self.headers.get("Content-Length") or 0)
         try:
             body = json.loads(self.rfile.read(n) or b"{}")
@@ -649,4 +711,10 @@ class H(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     print(f"Dashboard: http://studio.localhost:{PORT}   (also http://127.0.0.1:{PORT})")
+    bind = os.getenv("STUDIO_BIND", "").strip()
+    if bind and webauth.enabled():  # a second address (the Tailscale one) is opened only when a login exists
+        threading.Thread(target=ThreadingHTTPServer((bind, PORT), H).serve_forever, daemon=True).start()
+        print(f"Also listening on {bind}:{PORT} behind the login")
+    elif bind:
+        print("STUDIO_BIND ignored: set a password first with python set_password.py")
     ThreadingHTTPServer(("127.0.0.1", PORT), H).serve_forever()

@@ -1,0 +1,95 @@
+/* Studio premium layer: emerald palette, a slow green aurora, frosted panels, and a phone layout with a bottom tab bar.
+   Loaded after the page's own styles by dashboard.html and login.html, so it only overrides tokens and adds the new pieces. */
+
+:root{
+  --bg:#eef6f1;--surface:rgb(255 255 255 / .86);--sunken:#e6f1ea;--ink:#0b1f17;--ink2:#4a6458;--line:#d3e4da;
+  --accent:#059669;--accent-ink:#ffffff;--accent-soft:#d8f1e3;--accent-text:#047857;
+  --glow:16 185 129;
+  --shadow:0 1px 2px rgb(6 60 40 / .06),0 10px 28px rgb(6 60 40 / .08);
+  --r:12px;
+}
+:root[data-theme="dark"]{
+  --bg:#040c09;--surface:rgb(12 26 19 / .74);--sunken:rgb(7 18 13 / .8);--ink:#e8f4ee;--ink2:#93ada1;--line:rgb(110 231 183 / .13);
+  --accent:#34d399;--accent-ink:#03150d;--accent-soft:rgb(52 211 153 / .13);--accent-text:#6ee7b7;
+  --ok:#4ade80;--ok-bg:rgb(74 222 128 / .12);--warn:#fbbf24;--warn-bg:rgb(251 191 36 / .12);--bad:#fb7185;--bad-bg:rgb(251 113 133 / .13);
+  --glow:52 211 153;
+  --shadow:0 1px 0 rgb(255 255 255 / .03) inset,0 12px 32px rgb(0 0 0 / .45);
+}
+body{background:var(--bg)}
+
+/* the aurora: three soft green lights drifting behind everything; brighter and quicker while a job runs */
+body::before{
+  content:"";position:fixed;inset:-35%;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(38% 34% at 18% 22%,rgb(var(--glow) / .30),transparent 70%),
+    radial-gradient(34% 38% at 82% 18%,rgb(110 231 183 / .17),transparent 70%),
+    radial-gradient(44% 38% at 62% 88%,rgb(4 120 87 / .30),transparent 70%);
+  animation:drift 32s ease-in-out infinite alternate;will-change:transform;
+}
+:root:not([data-theme="dark"]) body::before{opacity:.55}
+:root.busy body::before{animation-duration:11s;filter:saturate(1.35) brightness(1.15)}
+@keyframes drift{
+  0%{transform:translate3d(-3%,-2%,0) rotate(0) scale(1)}
+  50%{transform:translate3d(4%,3%,0) rotate(7deg) scale(1.09)}
+  100%{transform:translate3d(-2%,5%,0) rotate(-5deg) scale(1.03)}
+}
+.shell,.toast{position:relative;z-index:2}
+.toast{position:fixed}
+
+/* frosted surfaces */
+aside,.panel,.stat,.wd,.chip,.runbox{-webkit-backdrop-filter:blur(14px) saturate(1.25);backdrop-filter:blur(14px) saturate(1.25)}
+aside{background:var(--surface);border-right-color:var(--line)}
+.panel{border-radius:var(--r);border-color:var(--line)}
+:root[data-theme="dark"] .panel{background:linear-gradient(180deg,rgb(18 36 27 / .78),rgb(10 22 16 / .72))}
+.brand{font-size:18px;letter-spacing:-.03em}
+.brand span{background:linear-gradient(100deg,#34d399,#a7f3d0 55%,#34d399);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:sheen 7s linear infinite}
+@keyframes sheen{to{background-position:-200% 0}}
+nav button.on{background:var(--accent-soft);color:var(--accent-text);box-shadow:inset 3px 0 0 var(--accent),0 0 24px rgb(var(--glow) / .12)}
+nav button:hover{background:rgb(var(--glow) / .09)}
+.runbox.busy{border-color:rgb(var(--glow) / .55);background:rgb(var(--glow) / .1);color:var(--ink);animation:breathe 2.4s ease-in-out infinite}
+@keyframes breathe{50%{box-shadow:0 0 0 4px rgb(var(--glow) / .12),0 0 22px rgb(var(--glow) / .25)}}
+.btn{background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 92%,#fff),var(--accent));border-color:color-mix(in srgb,var(--accent) 70%,#000);box-shadow:0 1px 0 rgb(255 255 255 / .25) inset,0 6px 18px rgb(var(--glow) / .22)}
+.btn.quiet,.btn.danger{background:var(--surface);box-shadow:none}
+.btn.quiet:hover{border-color:var(--accent)}
+.bar>i{background:linear-gradient(90deg,#059669,#34d399,#a7f3d0)}
+.poster{box-shadow:var(--shadow)}
+.logout{color:var(--ink2)}
+.logout:hover{color:var(--bad)}
+
+/* phone: bottom tab bar, big tap targets, no zoom-on-focus */
+#tabbar,#sheet{display:none}
+@media(max-width:900px){
+  .shell{display:block}
+  aside{position:sticky;top:0;z-index:20;height:auto;display:flex;flex-direction:row;align-items:center;justify-content:space-between;padding:calc(10px + env(safe-area-inset-top)) 16px 10px;border-right:0;border-bottom:1px solid var(--line);gap:12px}
+  aside nav,aside .side-foot{display:none}
+  main{padding:22px 16px calc(104px + env(safe-area-inset-bottom))}
+  h1{font-size:26px}
+  .head{margin-bottom:20px}
+  #tabbar{display:grid;grid-template-columns:repeat(5,1fr);position:fixed;left:10px;right:10px;bottom:calc(10px + env(safe-area-inset-bottom));z-index:40;padding:6px;border-radius:20px;border:1px solid var(--line);background:var(--surface);-webkit-backdrop-filter:blur(18px) saturate(1.3);backdrop-filter:blur(18px) saturate(1.3);box-shadow:0 12px 36px rgb(0 0 0 / .35)}
+  #tabbar button{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:52px;border:0;background:none;border-radius:14px;color:var(--ink2);font-size:11.5px;font-weight:600;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  #tabbar button .ic{width:22px;height:22px}
+  #tabbar button.on{color:var(--accent-text);background:var(--accent-soft)}
+  #tabbar button.on::after{content:"";position:absolute;top:3px;width:18px;height:3px;border-radius:3px;background:var(--accent);box-shadow:0 0 12px rgb(var(--glow) / .9)}
+  #tabbar .count{position:absolute;top:4px;right:calc(50% - 22px);font-size:10.5px;line-height:16px;min-width:16px;text-align:center;background:var(--warn-bg);color:var(--warn);border-radius:99px;padding:0 4px;font-weight:700}
+  #sheet{display:block;position:fixed;inset:0;z-index:35;visibility:hidden;pointer-events:none}
+  #sheet.open{visibility:visible;pointer-events:auto}
+  #sheet .scrim{position:absolute;inset:0;background:rgb(0 0 0 / .5);opacity:0;transition:opacity .2s}
+  #sheet.open .scrim{opacity:1}
+  #sheet .card{position:absolute;left:10px;right:10px;bottom:calc(86px + env(safe-area-inset-bottom));padding:8px;border-radius:20px;border:1px solid var(--line);background:var(--surface);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);box-shadow:0 18px 50px rgb(0 0 0 / .45);transform:translateY(14px) scale(.98);opacity:0;transition:transform .22s cubic-bezier(.16,1,.3,1),opacity .2s}
+  #sheet.open .card{transform:none;opacity:1}
+  #sheet button{display:flex;align-items:center;gap:14px;width:100%;min-height:52px;padding:0 14px;border:0;background:none;border-radius:14px;color:var(--ink);font-size:16px;font-weight:560;text-align:left;cursor:pointer}
+  #sheet button:active,#sheet button.on{background:var(--accent-soft);color:var(--accent-text)}
+  #sheet .count{margin-left:auto;font-size:12px;background:var(--warn-bg);color:var(--warn);border-radius:99px;padding:0 8px;font-weight:650}
+  #sheet .state{padding:10px 14px 12px;font-size:13px;color:var(--ink2);border-bottom:1px solid var(--line);margin-bottom:4px}
+  #sheet .state b{color:var(--ink);display:block}
+  input,select,textarea{font-size:16px!important}
+  .btn{min-height:44px}.btn.sm{min-height:40px}
+  .chip{min-height:40px}
+  .pipe .n{font-size:28px}
+  .choices,.fld{grid-template-columns:1fr}
+  .rows>*{padding:13px 16px}
+  .toast{bottom:calc(96px + env(safe-area-inset-bottom))}
+  .next{padding:18px}
+}
+@media(max-width:380px){#tabbar button{font-size:10.5px}}
+@media(prefers-reduced-motion:reduce){body::before,.brand span,.runbox.busy{animation:none!important}}

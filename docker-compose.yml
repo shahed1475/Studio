@@ -1,6 +1,6 @@
 # Two containers from one image: the dashboard and the always-on worker.
 # The project folder is mounted at /app, so code, settings, videos and secrets stay on the host and survive rebuilds.
-# Host networking with loopback-only listening: nothing is reachable from the internet (the dashboard has no login).
+# Host networking, loopback-only by default. With STUDIO_BIND set and a password saved, the dashboard also listens on that private address (Tailscale) behind a login.
 # Open it through an SSH tunnel:  deploy/tunnel.sh
 name: studio
 x-studio: &studio
@@ -14,6 +14,8 @@ x-studio: &studio
   security_opt: ["no-new-privileges:true"]
   volumes: [".:/app"]
   environment:
+    STUDIO_BIND: ${STUDIO_BIND:-}    # e.g. the Tailscale address; only opened when a login exists (python set_password.py)
+    STUDIO_HOSTS: ${STUDIO_HOSTS:-}  # names the browser may use, comma separated
     OLLAMA_URL: ${OLLAMA_URL:-http://127.0.0.1:11434}
     YT_MODEL: ${YT_MODEL:-qwen3:8b}
     STUDIO_PRUNE_UPLOADED_DAYS: ${STUDIO_PRUNE_UPLOADED_DAYS:-0}  # 0 = never delete local videos; e.g. 30 removes video files 30 days after upload
@@ -29,7 +31,7 @@ services:
     cpus: 0.5
     mem_limit: 512m
     healthcheck:
-      test: ["CMD", "curl", "-fs", "http://127.0.0.1:8913/api/state"]
+      test: ["CMD", "curl", "-fs", "http://127.0.0.1:8913/healthz"]
       interval: 60s
       timeout: 10s
       retries: 3
