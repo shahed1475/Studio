@@ -138,3 +138,11 @@ def test_seo_drops_tv_show_and_off_topic_suggestions():
         assert seo.OFF_TOPIC.search(bad), bad
     for good in ("oracle of delphi story", "history stories for sleep", "minotaur labyrinth myth"):
         assert not seo.OFF_TOPIC.search(good), good
+
+
+def test_empty_chapter_title_is_filled_from_the_summary_or_first_line():
+    import scriptgen
+    assert scriptgen.chapter_title({"title": "The Temple"}, []) == "The Temple"
+    assert scriptgen.chapter_title({"title": " ", "summary": "How priestesses were chosen. More."}, []) == "How priestesses were chosen"
+    assert scriptgen.chapter_title({"title": ""}, [{"text": "Visitors queued for days to ask a single question."}]) == "Visitors queued for days to ask"
+    assert scriptgen.chapter_title({"title": ""}, []) == ""

@@ -130,6 +130,16 @@ def country_ideas(country: str, signals: list[str], n: int = 4) -> list[str]:
     return [t.strip() for t in data["topics"] if isinstance(t, str) and t.strip()]
 
 
+def chapter_title(ch: dict, lines: list[dict]) -> str:
+    """The model's chapter title, or (when it left it empty) the first words of the chapter's summary or opening line, never a 'Part 3' placeholder."""
+    t = str(ch.get("title", "")).strip()
+    if t:
+        return t
+    src = str(ch.get("summary", "")).strip() or (lines[0]["text"] if lines else "")
+    words = re.sub(r"[^\w' -]", "", src.split(".")[0]).split()
+    return " ".join(words[:6]).capitalize() if words else ""
+
+
 def doc_script(topic: str, facts: str | None = None, grounded: str | None = None) -> dict:
     """Outline first, then one request per chapter: small local models undershoot a one-shot long script.
 
@@ -184,7 +194,7 @@ def doc_script(topic: str, facts: str | None = None, grounded: str | None = None
                 break
         else:
             continue
-        chapters.append({"title": str(ch.get("title", "")).strip(), "start_line": len(lines)})
+        chapters.append({"title": chapter_title(ch, got), "start_line": len(lines)})
         lines += got
         told += f" Chapter {n} ({ch.get('title', '')}): {ch.get('summary', '')}"
     if grounded:
