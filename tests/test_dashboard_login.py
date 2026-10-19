@@ -13,6 +13,7 @@ def server(tmp_path, monkeypatch):
     monkeypatch.setattr(webauth, "DATA", tmp_path)
     monkeypatch.setattr(webauth, "AUTH_FILE", tmp_path / "auth.json")
     monkeypatch.setattr(webauth, "SECRET_FILE", tmp_path / "auth_secret")
+    monkeypatch.setattr(webauth, "SESSIONS_FILE", tmp_path / "sessions.json")
     webauth.LIMITER.fails.clear()
     monkeypatch.setattr("time.sleep", lambda s: None)
     srv = ThreadingHTTPServer(("127.0.0.1", 0), dashboard.H)
@@ -56,6 +57,7 @@ def test_login_cookie_then_logout(server):
     assert call(server, "GET", "/api/state", headers={"Cookie": ck})[0] == 200
     st, h2, _ = call(server, "POST", "/logout", "", {"Cookie": ck})
     assert st == 303 and "Max-Age=0" in h2["Set-Cookie"]
+    assert call(server, "GET", "/api/state", headers={"Cookie": ck})[0] == 401  # the old cookie no longer works
 
 
 def test_wrong_password_and_lockout(server):

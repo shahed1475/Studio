@@ -388,14 +388,13 @@ class H(BaseHTTPRequestHandler):
         ip = self.client_address[0]
         n = int(self.headers.get("Content-Length") or 0)
         form = parse_qs(self.rfile.read(min(n, 4096)).decode(errors="replace"))
-        if webauth.LIMITER.blocked(ip):
+        if not webauth.LIMITER.reserve(ip):  # the slot is taken before the check; a right password gives it back
             return self._page(webauth.login_page("Too many wrong attempts. Wait ten minutes and try again."), 429)
         if webauth.verify(form.get("email", [""])[0], form.get("password", [""])[0]):
             webauth.LIMITER.clear(ip)
             secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
             cookie = f"{webauth.COOKIE}={webauth.make_token(webauth.owner_email())}; HttpOnly; SameSite=Strict; Path=/; Max-Age={webauth.SESSION_DAYS * 86400}{secure}"
             return self._redirect("/", [("Set-Cookie", cookie)])
-        webauth.LIMITER.fail(ip)
         time.sleep(0.6)
         self._page(webauth.login_page("That email or password is not right."), 401)
 
@@ -548,6 +547,7 @@ class H(BaseHTTPRequestHandler):
         if path == "/login":
             return self._login()
         if path == "/logout":
+            webauth.revoke(webauth.cookie_from(self.headers.get("Cookie", "")))
             return self._redirect("/login", [("Set-Cookie", f"{webauth.COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0")])
         if not self._authed():
             return self.send_json({"error": "sign in again"}, 401)

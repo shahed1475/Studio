@@ -18,7 +18,9 @@ DATA = config.ROOT / "data"
 AUTH_FILE = DATA / "auth.json"
 SECRET_FILE = DATA / "auth_secret"
 COOKIE = "studio_session"
-SESSION_DAYS = 30
+SESSION_DAYS = 14
+SESSIONS_FILE = DATA / "sessions.json"
+_SLOCK = threading.Lock()
 MAX_FAILS, WINDOW = 5, 600  # five wrong attempts per ten minutes from one address
 
 
@@ -39,6 +41,7 @@ def set_password(email: str, password: str) -> None:
     AUTH_FILE.write_text(json.dumps({"email": email, "salt": salt.hex(), "hash": _hash(password, salt)}))
     os.chmod(AUTH_FILE, 0o600)
     SECRET_FILE.write_bytes(secrets.token_bytes(32))  # a new password signs everybody out
+    SESSIONS_FILE.unlink(missing_ok=True)
     os.chmod(SECRET_FILE, 0o600)
 
 
@@ -58,24 +61,56 @@ def _key() -> bytes:
     return SECRET_FILE.read_bytes()
 
 
+def _sessions() -> dict:
+    try:
+        return json.loads(SESSIONS_FILE.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_sessions(d: dict) -> None:
+    tmp = SESSIONS_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(d))
+    os.chmod(tmp, 0o600)
+    tmp.replace(SESSIONS_FILE)
+
+
+def _sign(sid: str) -> str:
+    return hmac.new(_key(), sid.encode(), "sha256").hexdigest()
+
+
 def make_token(email: str, now: float | None = None) -> str:
-    exp = int((now or time.time()) + SESSION_DAYS * 86400)
-    body = base64.urlsafe_b64encode(f"{email}|{exp}".encode()).decode()
-    return f"{body}.{hmac.new(_key(), body.encode(), 'sha256').hexdigest()}"
+    """A new server-side session; the cookie holds only its random id and a signature."""
+    now = now or time.time()
+    sid = secrets.token_urlsafe(24)
+    with _SLOCK:
+        live = {k: v for k, v in _sessions().items() if v["exp"] > now}
+        live[sid] = {"email": email, "exp": now + SESSION_DAYS * 86400}
+        _save_sessions(live)
+    return f"{sid}.{_sign(sid)}"
 
 
 def check_token(token: str, now: float | None = None) -> str | None:
-    """The owner's email when the cookie is genuine and not expired, else None."""
+    """The owner's email when the cookie is genuine, still on the server's list and not expired, else None."""
     try:
-        body, sig = token.rsplit(".", 1)
-        if not hmac.compare_digest(hmac.new(_key(), body.encode(), "sha256").hexdigest(), sig):
+        sid, sig = token.rsplit(".", 1)
+        if not hmac.compare_digest(_sign(sid), sig):
             return None
-        email, exp = base64.urlsafe_b64decode(body.encode()).decode().rsplit("|", 1)
-        if float(exp) < (now or time.time()) or email != owner_email():
+        sess = _sessions().get(sid)
+        if not sess or sess["exp"] < (now or time.time()) or sess["email"] != owner_email():
             return None
-        return email
-    except (ValueError, OSError, KeyError):
+        return sess["email"]
+    except (ValueError, OSError, KeyError, TypeError):
         return None
+
+
+def revoke(token: str) -> None:
+    """Sign out: the session is deleted on the server, so a copied cookie stops working too."""
+    sid = token.rsplit(".", 1)[0]
+    with _SLOCK:
+        d = _sessions()
+        if d.pop(sid, None) is not None:
+            _save_sessions(d)
 
 
 def cookie_from(header: str) -> str:
@@ -97,6 +132,18 @@ class Limiter:
             recent = [t for t in self.fails.get(ip, []) if now - t < WINDOW]
             self.fails[ip] = recent
             return len(recent) >= MAX_FAILS
+
+    def reserve(self, ip: str, now: float | None = None) -> bool:
+        """Take an attempt slot before the password is checked, atomically, so parallel guesses cannot all slip past the limit."""
+        now = now or time.time()
+        with self.lock:
+            recent = [t for t in self.fails.get(ip, []) if now - t < WINDOW]
+            if len(recent) >= MAX_FAILS:
+                self.fails[ip] = recent
+                return False
+            recent.append(now)
+            self.fails[ip] = recent
+            return True
 
     def fail(self, ip: str, now: float | None = None) -> None:
         with self.lock:
