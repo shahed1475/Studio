@@ -8,7 +8,7 @@ from pathlib import Path
 import reviewer
 import scriptgen
 
-OFF_TOPIC = re.compile(r"\b(cartoon|disney|movie|film|musical|animated|lyrics|songs?|karaoke|game|roblox|minecraft|19\d\d|20\d\d|trailer|full episode|for kids|read aloud)\b")
+OFF_TOPIC = re.compile(r"\b(cartoon|disney|movie|film|musical|animated|lyrics|songs?|karaoke|game|roblox|minecraft|19\d\d|20\d\d|trailer|full episodes?|for kids|read aloud|seasons?|episodes?|intro|theme|netflix|hbo|hulu|prime|hollywood|tv|series|reddit|wiki|pdf|download|cast|reaction|audiobook|asmr)\b")
 SEEDS = ["history stories for sleep", "legends and folklore", "unsolved mysteries"]  # niche phrases people search
 
 
@@ -40,7 +40,7 @@ def keywords(core: str) -> list[str]:
     found: list[str] = []
     for q in [core, f"{core} story", f"{core} real story", f"{core} history", f"{core} explained", *SEEDS]:
         for s in suggest(q):
-            if s not in found:
+            if s not in found and not OFF_TOPIC.search(s):
                 found.append(s)
     return found
 

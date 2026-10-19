@@ -131,3 +131,10 @@ def test_failed_video_stays_in_needs_you_even_when_approved(tmp_path, monkeypatc
     d.mkdir()
     (d / "meta.json").write_text(json.dumps({"title": "f", "approved": True, "approved_by": "you", "review": {"verdict": "fail", "checks": []}}))
     assert [v["slug"] for v in dashboard.autopilot_view()["needs_you"]] == ["f"]
+
+
+def test_seo_drops_tv_show_and_off_topic_suggestions():
+    for bad in ("unsolved mysteries theme", "unsolved mysteries season 1", "oracle of delphi secret history of hollywood", "history audiobook"):
+        assert seo.OFF_TOPIC.search(bad), bad
+    for good in ("oracle of delphi story", "history stories for sleep", "minotaur labyrinth myth"):
+        assert not seo.OFF_TOPIC.search(good), good
