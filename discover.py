@@ -20,9 +20,23 @@ MIN_MEDIAN_VIEWS = 5000  # a plain number check that does not depend on the mode
 REJECT_DAYS = 30  # a channel that was inactive or not a fit is not looked at again for this long
 
 
-def seeds_for(day: dt.date, n: int = SEARCHES_PER_RUN) -> list[str]:
-    start = (day.toordinal() * n) % len(SEEDS)
+def seeds_for(day: dt.date, n: int = SEARCHES_PER_RUN, shift: int = 0) -> list[str]:
+    """The next n seed phrases. The start moves every day, and by one more step for every extra run in the same day."""
+    start = ((day.toordinal() + shift) * n) % len(SEEDS)
     return [SEEDS[(start + i) % len(SEEDS)] for i in range(n)]
+
+
+def _next_shift(today: dt.date) -> int:
+    """How many searches already ran today (0 for the first run), so a run started by hand looks at new phrases."""
+    f = FILE.with_name("seed_runs.json")
+    try:
+        d = json.loads(f.read_text())
+    except (OSError, ValueError):
+        d = {}
+    n = d.get("n", 0) if d.get("day") == today.isoformat() else 0
+    FILE.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps({"day": today.isoformat(), "n": n + 1}))
+    return n
 
 
 def score(c: dict) -> float:
@@ -98,7 +112,8 @@ def run(yt, own_id: str, refs: list[str], chat=None) -> list[dict]:
     known = load()
     known_ids = {c["id"] for c in known}
     exclude = {own_id} | _ref_ids(yt, refs) | known_ids
-    fresh = fit_niche(search(yt, seeds_for(dt.date.today()), exclude), chat)
+    today = dt.date.today()
+    fresh = fit_niche(search(yt, seeds_for(today, shift=_next_shift(today)), exclude), chat)
     merged = sorted(known + fresh, key=lambda c: -c["score"])[:MAX_FOUND]
     FILE.parent.mkdir(parents=True, exist_ok=True)
     FILE.write_text(json.dumps(merged, indent=2))

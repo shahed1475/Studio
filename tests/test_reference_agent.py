@@ -191,3 +191,10 @@ def test_titles_in_the_niche_prompt_are_plain_data_with_no_line_breaks():
     listing = seen[0].split("<channels>\n")[1].split("\n</channels>")[0]
     assert "\n" not in listing and len(listing) < 120  # one line, cut to a safe length
     assert "untrusted" in seen[0] and "English" in seen[0]
+
+
+def test_a_second_run_the_same_day_looks_at_new_seed_phrases():
+    today = dt.date(2026, 10, 19)
+    first, second = discover.seeds_for(today, shift=discover._next_shift(today)), discover.seeds_for(today, shift=discover._next_shift(today))
+    assert not set(first) & set(second)
+    assert discover._next_shift(today + dt.timedelta(days=1)) == 0  # a new day starts again
