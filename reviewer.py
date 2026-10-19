@@ -51,31 +51,41 @@ def unhedged_claims(lines: list[str], source: str = "", verified=()) -> list[str
     return [c for _, c, _ in claim_lines(lines, source, verified)]
 
 
-def source_title(meta: dict) -> str:
-    """The Wikipedia article a script was built from, read from its source line ("Wikipedia: Delphi (CC BY-SA 4.0), ...")."""
+def source_titles(meta: dict) -> list[str]:
+    """Every Wikipedia article a script was built from, read from its source lines ("Wikipedia: Delphi (CC BY-SA 4.0), retold in our own words")."""
+    out = []
     for s in meta.get("sources") or []:
         m = re.match(r"Wikipedia:\s*(.+?)\s*\(CC", str(s))
-        if m:
-            return m.group(1)
-    return ""
+        if m and m.group(1) not in out:
+            out.append(m.group(1))
+    return out
+
+
+def source_title(meta: dict) -> str:
+    """The main source article (the first one), or an empty string."""
+    return (source_titles(meta) or [""])[0]
 
 
 def source_text(meta: dict) -> str:
-    """The text of the video's source article, cached on disk. Empty for a script with no source."""
-    title = source_title(meta)
-    if not title or meta.get("grounded") is not True:
+    """The text of every source article of the video, cached on disk. Empty for a script with no source."""
+    titles = source_titles(meta)
+    if not titles or meta.get("grounded") is not True:
         return ""
     import config
     import wikipedia
 
-    f = config.CACHE / "wiki" / (re.sub(r"[^A-Za-z0-9]+", "-", title).strip("-")[:60] + ".txt")
-    if f.exists():
-        return f.read_text()
-    text = wikipedia.article_text(title)
-    if text:
-        f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(text)
-    return text
+    parts = []
+    for title in titles:
+        f = config.CACHE / "wiki" / (re.sub(r"[^A-Za-z0-9]+", "-", title).strip("-")[:60] + ".txt")
+        if f.exists():
+            parts.append(f.read_text())
+            continue
+        text = wikipedia.article_text(title)
+        if text:
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(text)
+            parts.append(text)
+    return "\n\n".join(parts)
 
 
 def _chapters(description: str) -> list[tuple[int, str]]:

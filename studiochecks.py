@@ -1,7 +1,7 @@
 """Deterministic checks behind the project's quality skills. Each check returns rows {name, ok, severity, detail} and nothing here
 publishes, approves or changes a video. Run them from the command line:
 
-    .venv/bin/python studiochecks.py <script|sources|licenses|video|gate|publish> <slug> [--llm]
+    .venv/bin/python studiochecks.py <script|sources|licenses|video|gate|publish> <slug> [--llm] [--quick] [--visual]
 
 Exit code 0 means every blocking row passed, 1 means one failed, 2 means the video or a needed file is missing.
 A passing check is evidence about what it measured, not proof that the whole video is good.
@@ -195,7 +195,7 @@ def check_video(folder: Path, meta: dict, quick: bool = False) -> list[dict]:
 
 
 # ---- the gate ----
-def quality_gate(slug: str, use_llm: bool = False, quick: bool = False) -> dict:
+def quality_gate(slug: str, use_llm: bool = False, quick: bool = False, visual: bool = False) -> dict:
     """Everything before approval: the reviewer, the script rules, sources, licenses, and the real file. PASS only when no blocking row failed."""
     folder, meta = load(slug)
     source = reviewer.source_text(meta)
@@ -203,7 +203,8 @@ def quality_gate(slug: str, use_llm: bool = False, quick: bool = False) -> dict:
     folder, meta = load(slug)
     rows = [{**c, "name": "review: " + c["name"]} for c in review["checks"]]
     for name, fn in (("script", lambda: check_script(meta, source)), ("sources", lambda: check_sources(meta, folder, source)),
-                     ("licenses", lambda: check_licenses(meta)), ("video", lambda: check_video(folder, meta, quick))):
+                     ("licenses", lambda: check_licenses(meta)), ("video", lambda: check_video(folder, meta, quick)),
+                     *((("visual", lambda: __import__("videoinspect").visual_review(folder)),) if visual else ())):
         try:
             rows += [{**r, "name": f"{name}: {r['name']}"} for r in fn()]
         except Exception as e:  # a check that cannot run is reported, never skipped silently
@@ -250,7 +251,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         folder, meta = load(slug)
         if which == "gate":
-            result = quality_gate(slug, use_llm="--llm" in argv, quick="--quick" in argv)
+            result = quality_gate(slug, use_llm="--llm" in argv, quick="--quick" in argv, visual="--visual" in argv)
             print_rows(result["rows"])
             print(f"\n{result['verdict']} ({result['blocking']} blocking, AI review {'on' if result['llm_review'] else 'off'})")
             return 0 if result["verdict"] == "PASS" else 1

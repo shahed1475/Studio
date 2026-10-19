@@ -152,13 +152,14 @@ def cmd_doc(topic: str | None = None) -> Path:
     data = None
     import wikipedia
 
-    src = wikipedia.facts_for(topic)
-    print(f"  source article: {src[0] if src else 'none found (script will be flagged for a human check)'}")
+    arts = wikipedia.facts_multi(topic, n=2, chars_each=7000)  # the two best articles: a script drawn from more than one source has fewer unsupported details
+    src = (arts[0]["title"], "\n\n".join(f"[{a['title']}]\n{a['text']}" for a in arts)) if arts else None
+    print(f"  source articles: {', '.join(a['title'] for a in arts) or 'none found (script will be flagged for a human check)'}")
     for attempt in range(4):
         try:
             data = scriptgen.doc_script(topic, grounded=src[1] if src else None)
             if src:
-                data["sources"] = [f"Wikipedia: {src[0]} (CC BY-SA 4.0), retold in our own words", "https://en.wikipedia.org/wiki/" + src[0].replace(" ", "_")]
+                data["sources"] = [f"Wikipedia: {a['title']} (CC BY-SA 4.0), retold in our own words" for a in arts] + [a["url"] for a in arts]
             data["anchors"] = anchor_terms(topic, data.get("anchors", []), src[0] if src else "")
             break
         except Exception as e:
@@ -318,6 +319,10 @@ def main() -> None:
 
         d = json.loads(channelwatch.run().read_text())
         print(d.get("note") or f"{len(d['channels'])} channels studied, {len(d['ideas'])} topic ideas to review")
+    elif a[0] == "inspect":
+        import videoinspect
+
+        raise SystemExit(videoinspect.main(a[1:]))
     elif a[0] == "agent":
         import agent
 
