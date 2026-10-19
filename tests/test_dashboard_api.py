@@ -37,3 +37,17 @@ def test_autopilot_view_lists_scheduled_and_needs_you(tmp_path, monkeypatch):
     assert [v["slug"] for v in view["scheduled"]] == ["ok", "held"]
     assert sorted(v["slug"] for v in view["needs_you"]) == ["bad", "flag"]
     assert view["scheduled"][0]["bd"] == "Sat 24 Oct, 04:00" and view["scheduled"][0]["us"] == "Fri 23 Oct, 18:00"
+
+
+def test_key_save_is_immediate_private_and_never_echoed(tmp_path, monkeypatch):
+    import json, os
+    monkeypatch.setattr(dashboard, "SETTINGS", tmp_path / "settings.json")
+    assert dashboard.H.route(None, "/api/key/save", {"which": "openrouter", "value": " sk-or-v1-abcdefghijkl "}) == {"ok": True}
+    f = tmp_path / "settings.json"
+    assert json.loads(f.read_text())["openrouter_key"] == "sk-or-v1-abcdefghijkl"
+    assert oct(os.stat(f).st_mode)[-3:] == "600"
+    for bad in ({"which": "openrouter", "value": "short"}, {"which": "openrouter", "value": "has space inside key"}, {"which": "nope", "value": "x" * 20}):
+        with pytest.raises(ValueError):
+            dashboard.H.route(None, "/api/key/save", bad)
+    monkeypatch.setattr(dashboard, "pexels_key", lambda: "")
+    assert dashboard.state()["settings"]["pexels_key"] == ""  # state never carries a key

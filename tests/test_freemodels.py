@@ -220,3 +220,41 @@ def test_remaining_trusts_openrouters_own_count_with_a_reserve(tmp_path, monkeyp
     assert freemodels.remaining(NOW, "k", 900) == 10 - freemodels.RESERVE
     monkeypatch.setattr(freemodels, "quota", lambda key: None)
     assert freemodels.remaining(NOW, "k", 900) == 900
+
+
+def _paid(router_cfg):
+    llm.save_config({**llm.load_config(), "enabled": True, "free": True, "daily_budget_usd": 1.0,
+                     "models": {"script": "anthropic/claude-sonnet-5.5", "review": "anthropic/claude-haiku-5.5", "cheap": "anthropic/claude-haiku-5.5"}})
+
+
+def test_paid_claude_runs_first_then_free_models_when_credit_is_gone(router, monkeypatch):
+    _paid(None)
+    seen = []
+
+    def post(payload, key):
+        seen.append(payload["model"])
+        if payload["model"].startswith("anthropic/"):
+            err = requests.HTTPError("402 Payment Required")
+            err.response = type("R", (), {"status_code": 402})()
+            raise err
+        return reply('{"ok": 1}')
+
+    monkeypatch.setattr(llm, "_post", post)
+    got = llm.chat("p", "script", fallback=lambda p: pytest.fail("no local model"), now=NOW)
+    assert got == {"ok": 1}
+    assert seen[0] == "anthropic/claude-sonnet-5.5" and seen[-1].endswith(":free")
+
+
+def test_paid_claude_is_used_while_credit_lasts(router, monkeypatch):
+    _paid(None)
+    monkeypatch.setattr(llm, "_post", lambda payload, key: {**reply('{"paid": 1}'), "usage": {"prompt_tokens": 10, "completion_tokens": 5, "cost": 0.001}})
+    assert llm.chat("p", "script", now=NOW) == {"paid": 1}
+    assert freemodels.requests_today(NOW) == 0  # no free request was spent
+
+
+def test_daily_dollar_cap_sends_the_job_to_free_models(router, monkeypatch):
+    _paid(None)
+    llm.save_config({**llm.load_config(), "daily_budget_usd": 0.05})
+    monkeypatch.setattr(llm, "spent_today", lambda now=None: 0.05)
+    monkeypatch.setattr(llm, "_post", lambda payload, key: reply('{"free": 1}') if payload["model"].endswith(":free") else pytest.fail("cap reached, must not call paid"))
+    assert llm.chat("p", "script", now=NOW) == {"free": 1}

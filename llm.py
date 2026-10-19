@@ -95,10 +95,8 @@ def validate_config(raw: dict) -> dict:
 def api_key() -> str:
     import os
 
-    env = os.getenv("OPENROUTER_API_KEY")
-    if env:
-        return env
-    return json.loads(SETTINGS_FILE.read_text()).get("openrouter_key", "") if SETTINGS_FILE.exists() else ""
+    saved = json.loads(SETTINGS_FILE.read_text()).get("openrouter_key", "") if SETTINGS_FILE.exists() else ""
+    return saved or os.getenv("OPENROUTER_API_KEY", "")  # a key saved in the dashboard wins over the one in .env
 
 
 def anthropic_key() -> str:

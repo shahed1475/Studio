@@ -201,7 +201,7 @@ def state() -> dict:
         "autopilot": {"enabled": autopilot_cfg().get("enabled", False), "needs_you": len(autopilot_view()["needs_you"])},
         "agent": {"unread": __import__("agentlog").unread()},
         "auth": {"on": webauth.enabled(), "email": webauth.owner_email()},
-        "settings": {"pexels_key": mask(load_settings().get("pexels_key", ""))},
+        "settings": {"pexels_key": "saved" if load_settings().get("pexels_key") else ""},
     }
 
 
@@ -704,6 +704,17 @@ class H(BaseHTTPRequestHandler):
 
             reviewer.invalidate(d)
             p.write_text(json.dumps(d, indent=2))
+            return {"ok": True}
+        if path == "/api/key/save":
+            which, value = str(b.get("which", "")), str(b.get("value", "")).strip()
+            field = {"openrouter": "openrouter_key", "pexels": "pexels_key"}.get(which)
+            if not field:
+                raise ValueError("unknown key")
+            if not 10 <= len(value) <= 300 or re.search(r"\s", value):
+                raise ValueError("that does not look like an API key")
+            st = load_settings()
+            st[field] = value
+            save_settings(st)  # owner-only file; the key is never sent back to a browser
             return {"ok": True}
         if path == "/api/settings":
             s = load_settings()

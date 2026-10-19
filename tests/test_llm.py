@@ -126,6 +126,8 @@ def test_api_key_from_env_or_settings(monkeypatch):
     llm.SETTINGS_FILE.write_text(json.dumps({"openrouter_key": "from-file"}))
     assert llm.api_key() == "from-file"
     monkeypatch.setenv("OPENROUTER_API_KEY", "from-env")
+    assert llm.api_key() == "from-file"  # the dashboard's saved key wins
+    llm.SETTINGS_FILE.write_text("{}")
     assert llm.api_key() == "from-env"
 
 
