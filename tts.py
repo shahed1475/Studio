@@ -17,6 +17,17 @@ def _duration(path: Path) -> float:
 
 
 async def _synth_line(text: str, mp3: Path) -> list[tuple[float, float, str]]:
+    """The voice service sometimes returns no audio for a line. Try again with a growing wait before giving up."""
+    for attempt, wait in enumerate((1, 3, 8, 0)):
+        try:
+            return await _synth_once(text, mp3)
+        except Exception:
+            if not wait:
+                raise
+            await asyncio.sleep(wait)
+
+
+async def _synth_once(text: str, mp3: Path) -> list[tuple[float, float, str]]:
     comm = edge_tts.Communicate(text, config.VOICE, rate=config.VOICE_RATE, pitch=config.VOICE_PITCH, boundary="WordBoundary")
     words = []
     with open(mp3, "wb") as f:

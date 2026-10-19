@@ -32,6 +32,7 @@
 - [ ] 2.1 Measure: tokens and seconds per Short and per documentary from `data/llm_usage.json` and real runs.
 - [ ] 2.2 Fix what the audit finds (known: `make_short` failed once with "No audio was received" from edge-tts: add retry and voice fallback; stray `-encoders` file).
 - [ ] 2.3 Cheaper: smaller prompts, one call where two are made, cache, free models first, local model only as fallback.
+- [ ] 2.4 **(owner request)** Local Ollama on the VPS CPU is slow. Research OpenRouter free models (limits per day and per minute, quality for JSON scripts, which are reliable) and make them the first choice with the local model as the backup. Add a model health check so a rate-limited or dead free model falls through to the next one, and the dashboard shows which model wrote each script.
 
 ## Phase 3: Shorts from our own long videos
 - [ ] 3.1 `clipper.py`: from a documentary's lines and chapters pick 1 to 3 self-contained 30 to 50 second windows; new hook line; end line pointing to the full video.

@@ -56,3 +56,44 @@ def test_narrate_uses_pause(tmp_path, monkeypatch):
     assert durations == [1.5, 1.5]
     _, _, durations = tts.narrate(["one"], tmp_path)
     assert durations == [1.12]
+
+
+def test_synth_line_retries_then_succeeds(tmp_path, monkeypatch):
+    import asyncio
+
+    calls = []
+
+    async def once(text, mp3):
+        calls.append(1)
+        if len(calls) < 3:
+            raise RuntimeError("No audio was received")
+        return [(0.0, 0.1, "ok")]
+
+    async def nosleep(s):
+        return None
+
+    monkeypatch.setattr(tts, "_synth_once", once)
+    monkeypatch.setattr(tts.asyncio, "sleep", nosleep)
+    assert asyncio.run(tts._synth_line("hello", tmp_path / "a.mp3")) == [(0.0, 0.1, "ok")]
+    assert len(calls) == 3
+
+
+def test_synth_line_gives_up_after_four_tries(tmp_path, monkeypatch):
+    import asyncio
+
+    calls = []
+
+    async def once(text, mp3):
+        calls.append(1)
+        raise RuntimeError("No audio was received")
+
+    async def nosleep(s):
+        return None
+
+    monkeypatch.setattr(tts, "_synth_once", once)
+    monkeypatch.setattr(tts.asyncio, "sleep", nosleep)
+    import pytest
+
+    with pytest.raises(RuntimeError, match="No audio"):
+        asyncio.run(tts._synth_line("hello", tmp_path / "a.mp3"))
+    assert len(calls) == 4
