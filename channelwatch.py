@@ -103,8 +103,10 @@ def run(now: dt.datetime | None = None, yt=None) -> Path:
     now = now or dt.datetime.now(dt.timezone.utc)
     y, w, _ = now.isocalendar()
     path = DATA_DIR / f"{y}-W{w:02d}.json"
-    if path.exists() and json.loads(path.read_text()).get("generated_at", "")[:10] == now.strftime("%Y-%m-%d"):
-        return path  # once a day at most
+    if path.exists():
+        old = json.loads(path.read_text())
+        if old.get("generated_at", "")[:10] == now.strftime("%Y-%m-%d") and (old.get("channels") or not load_refs()):
+            return path  # once a day at most; an empty digest made before any channel was added is redone
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     digest = {"week": f"{y}-W{w:02d}", "generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "channels": [], "ideas": []}
     refs = load_refs()

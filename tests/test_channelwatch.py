@@ -117,3 +117,15 @@ def test_suggest_channels_from_trends():
                          {"channel": "B", "channel_id": "UCb", "views": 100}, {"channel": "C", "channel_id": "UCc", "views": 1}, {"channel": "C", "channel_id": "UCc", "views": 2}]}
     got = channelwatch.suggest(trends)
     assert [g["channel_id"] for g in got] == ["UCa", "UCc"]  # seen at least twice, most views first
+
+
+def test_empty_digest_from_before_channels_were_added_is_redone_the_same_day(tmp_path, monkeypatch):
+    monkeypatch.setattr(channelwatch, "REF_FILE", tmp_path / "refs.json")
+    monkeypatch.setattr(channelwatch, "DATA_DIR", tmp_path / "ch")
+    monkeypatch.setattr(scriptgen, "_chat", lambda p, *a, **k: {"topics": []})
+    assert json.loads(channelwatch.run(NOW, FakeYT(VIDS)).read_text())["channels"] == []
+    channelwatch.add_ref("@LegendLab")
+    assert json.loads(channelwatch.run(NOW, FakeYT(VIDS)).read_text())["channels"][0]["channel"] == "Legend Lab"
+    calls = FakeYT(VIDS)
+    channelwatch.run(NOW, calls)  # a filled digest is kept: still once a day
+    assert calls.calls == []
