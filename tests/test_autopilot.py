@@ -134,3 +134,47 @@ def test_human_approved_flagged_video_is_scheduled():
 
 def test_reviewer_approval_alone_never_schedules_news():
     assert ("schedule", "n") not in plan(state([vid("n", verdict="pass", source="news", approved=True, approved_by="reviewer-agent")]))
+
+
+def test_clip_short_comes_before_a_fresh_short():
+    got = plan(state(clippable=2, queue_len=5))
+    assert ("make_clip", None) in got and ("make_short", None) not in got
+
+
+def test_clip_works_even_with_an_empty_topic_queue():
+    assert ("make_clip", None) in plan(state(clippable=1, queue_len=0))
+
+
+def test_without_clippable_docs_a_fresh_short_is_made_as_before():
+    got = plan(state(clippable=0, queue_len=5))
+    assert ("make_short", None) in got and ("make_clip", None) not in got
+    assert ("make_short", None) in plan(state(queue_len=5))  # state without the key
+
+
+def test_clips_respect_the_waiting_shorts_limit_and_the_shorts_switch():
+    waiting = [vid(f"s{i}", format="short", verdict="pass") for i in range(CFG["max_waiting_shorts"])]
+    assert ("make_clip", None) not in plan(state(waiting, clippable=2))
+    assert ("make_clip", None) not in plan(state(clippable=2), {**CFG, "shorts": False})
+
+
+def test_build_state_counts_clippable_docs(tmp_path, monkeypatch):
+    import clipper
+    import config
+
+    monkeypatch.setattr(config, "OUT", tmp_path)
+    monkeypatch.setattr(clipper, "clippable", lambda: 3)
+    monkeypatch.setattr(config, "TOPICS_FILE", tmp_path / "t.json")
+    assert autopilot.build_state(NOW, CFG)["clippable"] == 3
+
+
+def test_make_clip_executor_finishes_the_short(monkeypatch):
+    import clipper
+
+    calls = []
+    monkeypatch.setattr(clipper, "make_next", lambda: "folder")
+    monkeypatch.setattr(autopilot, "finish_video", lambda f: calls.append(f))
+    autopilot.do_make_clip(None, CFG, NOW)
+    assert calls == ["folder"]
+    monkeypatch.setattr(clipper, "make_next", lambda: None)
+    autopilot.do_make_clip(None, CFG, NOW)
+    assert calls == ["folder"]  # nothing made, nothing finished

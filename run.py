@@ -103,6 +103,11 @@ def cmd_make(topic: str | None = None) -> Path:
             print(f"  script attempt {attempt + 1} failed: {e}")
     if not data:
         raise SystemExit("could not generate a script")
+    return _produce_short(data, topic)
+
+
+def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int = 6, min_unique: int = 4) -> Path:
+    """Voice, footage, render and metadata for a finished Short script. requeue: put the topic back in the queue if footage is missing."""
     slug = re.sub(r"[^a-z0-9]+", "-", data["title"].lower()).strip("-")[:50]
     folder = unique_folder(config.OUT / slug)
     work = folder / "work"
@@ -115,14 +120,15 @@ def cmd_make(topic: str | None = None) -> Path:
         clips = [footage.clip_for(l["visual"]) for l in data["lines"]]
         credits = footage.collect_credits(clips)
     else:  # archive pictures: only ones that name the subject
-        clips, credits, stats = footage.scene_images(data["lines"], topic, data.get("anchors") or [], pool_size=6, judge=_image_judge(topic))
+        clips, credits, stats = footage.scene_images(data["lines"], topic, data.get("anchors") or [], pool_size=pool_size, judge=_image_judge(topic))
         data["footage"] = stats
-        if stats["missing"] or stats["unique"] < 4:
+        if stats["missing"] or stats["unique"] < min_unique:
             clips = [None] * len(clips)
     if not footage.enough_footage(clips):
-        _save_queue([topic] + _queue())  # keep the topic for a later try
+        if requeue:
+            _save_queue([topic] + _queue())  # keep the topic for a later try
         shutil.rmtree(folder, ignore_errors=True)
-        raise SystemExit("not enough footage found for this Short; topic put back in the queue")
+        raise SystemExit("not enough footage found for this Short" + ("; topic put back in the queue" if requeue else ""))
     print("Rendering...")
     render.render(clips, durations, narration, ass, work, folder / "video.mp4", loudness=prof["target_lufs"])
     shutil.copy(work / "words.json", folder / "words.json")

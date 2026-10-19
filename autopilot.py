@@ -102,8 +102,11 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime) -> list[dict]:
     if not state["busy"]:
         if state["queue_len"] < cfg["min_queue"]:
             acts.append({"do": "ideas", "slug": None})
-        if cfg["shorts"] and waiting["short"] < cfg["max_waiting_shorts"] and state["queue_len"] > 0:
-            acts.append({"do": "make_short", "slug": None})
+        if cfg["shorts"] and waiting["short"] < cfg["max_waiting_shorts"]:
+            if state.get("clippable", 0) > 0:  # cut from our own documentaries first: no script to write, cheapest
+                acts.append({"do": "make_clip", "slug": None})
+            elif state["queue_len"] > 0:
+                acts.append({"do": "make_short", "slug": None})
         if waiting["doc"] < cfg["max_waiting"]:
             if cfg["news_videos"] and state["news_pending"] > 0:
                 acts.append({"do": "make_news", "slug": None})
@@ -136,6 +139,7 @@ def build_state(now: dt.datetime, cfg: dict) -> dict:
         "queue_len": len(queue), "connected": upload.SECRET.exists() and upload.TOKEN.exists(), "busy": dashboard_busy(),
         "uploads_today": upload.uploads_today(config.OUT, now), "uploads_by_format": by_fmt,
         "news_pending": sum(1 for n in news if n.get("status") == "queued"), "videos": videos,
+        "clippable": __import__("clipper").clippable(),
     }
 
 
@@ -210,6 +214,14 @@ def do_make_short(slug, cfg, now):
     finish_video(run.cmd_make())
 
 
+def do_make_clip(slug, cfg, now):
+    import clipper
+
+    folder = clipper.make_next()
+    if folder:
+        finish_video(folder)
+
+
 def do_make_news(slug, cfg, now):
     import newswatch
 
@@ -217,7 +229,7 @@ def do_make_news(slug, cfg, now):
 
 
 EXECUTORS = {"review": do_review, "schedule": do_schedule, "upload": do_upload,
-             "ideas": do_ideas, "make": do_make, "make_short": do_make_short, "make_news": do_make_news}
+             "ideas": do_ideas, "make": do_make, "make_short": do_make_short, "make_clip": do_make_clip, "make_news": do_make_news}
 
 
 def _log(msg: str) -> None:

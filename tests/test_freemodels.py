@@ -102,7 +102,8 @@ def reply(text):
     return {"choices": [{"message": {"content": text}}], "usage": {"prompt_tokens": 5, "completion_tokens": 7}}
 
 
-def test_free_default_is_off_and_validated():
+def test_free_default_is_off_and_validated(tmp_path, monkeypatch):
+    monkeypatch.setattr(llm, "CONFIG_FILE", tmp_path / "none.json")
     assert llm.load_config()["free"] is False and llm.load_config()["free_daily_limit"] == 45
     assert llm.validate_config({"free": True, "free_daily_limit": 900}) == {"free": True, "free_daily_limit": 900}
     for bad in ({"free": "yes"}, {"free_daily_limit": 0}, {"free_daily_limit": 5000}):
