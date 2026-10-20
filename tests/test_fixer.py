@@ -199,3 +199,39 @@ def test_when_every_candidate_is_rejected_a_plain_honest_title_is_used(tmp_path,
     monkeypatch.setattr(reviewer, "title_ok", lambda meta, title: ("Legend" not in title and "Why" not in title, "x"))
     fixer.fix("doc-6", chat=lambda p: {"titles": ["Why Tuckaho Moved a Railroad", "The Legend of Tuckaho Explained"]}, rerender=world["rerender"])
     assert json.loads((d / "meta.json").read_text())["title"] == "Tuckaho: What the Records Actually Say"
+
+
+def test_a_short_whose_ending_repeats_gets_a_different_closing_line_and_is_made_again(tmp_path, world):
+    video(tmp_path, "other-short", format="short", lines=[{"text": "Another opening line here."}, {"text": "The full story is on our channel."}])
+    d = video(tmp_path, "short-2", format="short", topic="The Bell Witch", source_doc="doc-x",
+              lines=[{"text": "A different opening about a farm."}, {"text": "The full story is on our channel."}],
+              review=result("needs_human", ("variety_script", "human", "ending like 'Other'. Change the opening or ending so videos do not share a template.")))
+    world["results"] = [result("pass")]
+    out = fixer.fix("short-2", chat=lambda p: {}, rerender=world["rerender"])
+    meta = json.loads((d / "meta.json").read_text())
+    assert meta["lines"][-1]["text"] != "The full story is on our channel." and "Bell Witch" in meta["lines"][-1]["text"]
+    assert world["rerenders"] == ["short-2"] and any("template" in f for f in out["fixed"])
+
+
+def test_closing_lines_never_repeat_a_recent_ending():
+    import clipper
+
+    recent = []
+    for _ in range(6):
+        line = clipper.outro_for("The Bell Witch", recent)
+        assert line not in recent
+        recent.append(line)
+    assert "Bell Witch" in recent[0] and len({*recent}) == 6
+
+
+def test_rerender_picks_the_short_or_documentary_path(tmp_path, world, monkeypatch):
+    import run
+
+    called = []
+    monkeypatch.setattr(run, "cmd_redo", lambda s: called.append(("doc", s)))
+    monkeypatch.setattr(run, "cmd_redo_short", lambda s: called.append(("short", s)))
+    video(tmp_path, "a-doc")
+    video(tmp_path, "a-short", format="short")
+    fixer._rerender("a-doc")
+    fixer._rerender("a-short")
+    assert called == [("doc", "a-doc"), ("short", "a-short")]

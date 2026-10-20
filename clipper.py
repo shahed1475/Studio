@@ -16,7 +16,43 @@ LO, HI = 25.0, 50.0  # seconds of story; with hook and closing line a Short stay
 WORDS_PER_SEC = 2.3
 PAUSE = 0.12
 OUTRO = "The full story is on our channel."
+CLOSINGS = ["The full story of {s} is on our channel.", "Want the sources? The whole {s} film is on our channel.",
+            "There is much more to {s}, and it is all in our full video.", "Watch the complete {s} documentary on our channel.",
+            "We tell the rest of the {s} story in our full documentary.", "The long version of {s} is waiting on our channel."]
+GENERIC_CLOSINGS = ["More quiet stories from history are on our channel.", "If this was new to you, there is a lot more like it on our channel.",
+                    "We tell old stories like {s} every week on this channel.", "That is what the records say about {s}. More on our channel.",
+                    "Stay a while: our channel is full of stories like {s}.", "There are many more stories like {s} on our channel."]
 CONTRAST = re.compile(r"\b(but|however|yet|until|secret|hidden|never|only|nobody|vanished|disappeared|mystery)\b", re.I)
+
+
+def _plain(t: str) -> str:
+    return re.sub(r"[^a-z0-9 ]", "", t.lower()).strip()
+
+
+def outro_for(topic: str, recent: list[str], doc: bool = True) -> str:
+    """A closing line that is not like any recent Short's: the template least like the recent endings (a Short that points to a full film, or a generic one)."""
+    import difflib
+
+    subject = " ".join(re.sub(r"^(the )?(legend|mystery|story) of (the )?", "", (topic or "").strip(), flags=re.I).strip(" ?.").split()[:5]) or "this story"
+    options = [t.format(s=subject) for t in (CLOSINGS if doc else GENERIC_CLOSINGS)]
+    worst = lambda t: max((difflib.SequenceMatcher(None, _plain(t), _plain(r)).ratio() for r in recent), default=0.0)
+    return min(options, key=worst)
+
+
+def recent_endings(exclude: str = "") -> list[str]:
+    """Last narration line of the newest Shorts, so a new Short can avoid them."""
+    metas = sorted((m for m in config.OUT.glob("*/meta.json") if m.parent.name != exclude), key=lambda m: m.stat().st_mtime, reverse=True)
+    out = []
+    for m in metas[:40]:
+        try:
+            d = json.loads(m.read_text())
+        except ValueError:
+            continue
+        if d.get("format", "short") != "doc" and d.get("lines"):
+            out.append(d["lines"][-1]["text"])
+        if len(out) >= 12:
+            break
+    return out
 
 
 def line_seconds(words: list[dict], texts: list[str]) -> list[float]:
@@ -82,10 +118,10 @@ def hook(meta: dict, w: dict, chat=None) -> dict:
     return {"hook": _trim(question or f"What really happened: {title}?", 12), "title": title[:70]}
 
 
-def build_short(meta: dict, w: dict, h: dict, doc_slug: str) -> dict:
+def build_short(meta: dict, w: dict, h: dict, doc_slug: str, outro: str = OUTRO) -> dict:
     first = w["lines"][0].get("visual", "")
     lines = [{"text": h["hook"], "visual": first}, *[{"text": l["text"], "visual": l.get("visual", "")} for l in w["lines"]],
-             {"text": OUTRO, "visual": first}]
+             {"text": outro, "visual": first}]
     desc = f"{meta.get('description', '').split(chr(10) + chr(10) + 'Chapters:')[0].strip()}"
     if meta.get("video_id"):
         desc += f"\n\nFull video: https://youtu.be/{meta['video_id']}"
@@ -135,7 +171,7 @@ def make_next(produce=None, chat=None):
             words = []
         ws = windows(d["lines"], d["chapters"], line_seconds(words, texts))
         for w in pick(ws, MAX_TRIES, used=[*d.get("clips", []), *d.get("clips_failed", [])]):
-            data = build_short(d, w, hook(d, w, chat), m.parent.name)
+            data = build_short(d, w, hook(d, w, chat), m.parent.name, outro_for(d["topic"], recent_endings()))
             try:
                 folder = produce(data, d["topic"], requeue=False, pool_size=10, min_unique=3)
             except (Exception, SystemExit):  # missing footage, a voice failure: skip this chapter for good, try the next

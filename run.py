@@ -98,10 +98,12 @@ def cmd_make(topic: str | None = None) -> Path:
     return _produce_short(data, topic)
 
 
-def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int = 6, min_unique: int = 4) -> Path:
-    """Voice, footage, render and metadata for a finished Short script. requeue: put the topic back in the queue if footage is missing."""
+def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int = 6, min_unique: int = 4, folder: Path | None = None) -> Path:
+    """Voice, footage, render and metadata for a finished Short script. requeue: put the topic back in the queue if footage is missing.
+    folder: re-render inside this existing folder (it is never removed if the footage is missing)."""
     slug = re.sub(r"[^a-z0-9]+", "-", data["title"].lower()).strip("-")[:50]
-    folder = unique_folder(config.OUT / slug)
+    in_place = folder is not None
+    folder = folder or unique_folder(config.OUT / slug)
     work = folder / "work"
     folder.mkdir(parents=True, exist_ok=True)
     print("Voice + captions...")
@@ -123,7 +125,8 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
     if not footage.enough_footage(clips):
         if requeue:
             kept = topicqueue.requeue_failed(topic)  # to the back of the queue, so the next run tries another topic; dropped after two failures
-        shutil.rmtree(folder, ignore_errors=True)
+        if not in_place:
+            shutil.rmtree(folder, ignore_errors=True)
         raise SystemExit("not enough footage found for this Short" + (("; topic moved to the back of the queue" if kept else "; topic dropped after two failed tries") if requeue else ""))
     print("Rendering...")
     render.render(clips, durations, narration, ass, work, folder / "video.mp4", loudness=prof["target_lufs"], shots=prof["motion"] >= 1,
@@ -245,6 +248,12 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
     print(f"\nDone: {folder / 'video.mp4'}\nTitle: {data['title']}\nWatch it, then: python run.py approve {folder.name}")
     return folder
 
+
+
+def cmd_redo_short(name: str) -> None:
+    """Re-render an existing Short in its own folder from its saved script (new voice, pictures and video)."""
+    data = reset_for_rerender(json.loads((config.OUT / name / "meta.json").read_text()))
+    _produce_short(data, data["topic"], requeue=False, folder=config.OUT / name)
 
 
 def cmd_redo(name: str) -> None:

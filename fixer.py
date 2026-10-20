@@ -92,6 +92,39 @@ def pick_title(meta: dict, others: list[str], chat=None, misleading: str = "", c
     return plain if plain and (misleading or not got) and check(meta, plain)[0] else None
 
 
+def vary_script(meta: dict, folder: Path, detail: str, chat=None) -> int:
+    """The reviewer found an opening or ending like a recent video's. A new closing line comes from a rotating set (Shorts) and a new opening from the
+    writer; the voice is made again afterwards. Returns how many lines changed."""
+    import clipper
+
+    chat = chat or scriptgen._chat
+    lines, changed = meta["lines"], 0
+    if "ending like" in detail:
+        theirs = clipper.recent_endings(folder.name)
+        new = clipper.outro_for(meta.get("topic", ""), theirs, doc=bool(meta.get("source_doc")))
+        if meta.get("format") == "doc":  # a documentary ends on its own story: the writer reworks the last line
+            try:
+                got = chat("Rewrite this last narration line of a documentary so it ends differently from these other endings, same meaning, 14 to 24 words: "
+                           f"{json.dumps(theirs[:8])}\nLine: {lines[-1]['text']}\nReturn JSON {{\"text\": \"...\"}}")
+                new = str(got.get("text", "")).strip() or lines[-1]["text"]
+            except Exception:
+                new = lines[-1]["text"]
+        if new != lines[-1]["text"]:
+            lines[-1]["text"], changed = new, changed + 1
+    if "opening like" in detail:
+        others = [l[0]["text"] for l in (json.loads(m.read_text()).get("lines") or [None] for m in folder.parent.glob("*/meta.json") if m.parent != folder) if l]
+        try:
+            got = chat("Rewrite the first narration line of this YouTube video so it opens differently from these other openings, same meaning, "
+                       f"under 18 words, a question or a surprising true statement: {json.dumps(others[:10])}\nLine: {lines[0]['text']}\n"
+                       'Return JSON {"text": "..."}')
+            text = str(got.get("text", "")).strip()
+        except Exception:
+            text = ""
+        if text and text != lines[0]["text"] and not _too_similar(text, others):
+            lines[0]["text"], changed = text, changed + 1
+    return changed
+
+
 def clean_tags(meta: dict) -> list[str]:
     tags = seo.relevant_tags(list(meta.get("tags", [])), seo.corpus_of(meta))
     for generic in ("history stories for sleep", "legends and folklore"):  # the channel's own niche tags
@@ -183,6 +216,7 @@ def fix(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) -> 
     is_doc = meta.get("format") == "doc"
     fixed: list[str] = []
     archive_reason = None
+    rewrite = False
 
     if "duplicate_title" in failing or "title_matches" in failing or not any(ch.isupper() for ch in meta.get("title", "")):
         t = pick_title(meta, other_titles(folder), chat, failing["title_matches"]["detail"] if "title_matches" in failing else "",
@@ -190,6 +224,11 @@ def fix(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) -> 
         if t:
             meta["title"] = t
             fixed.append(f"new title: {t}")
+    if "variety_script" in failing and meta.get("lines"):
+        n = vary_script(meta, folder, failing["variety_script"]["detail"], chat)
+        if n:
+            fixed.append(f"changed {n} line{'s' if n != 1 else ''} so the script does not share a template with recent videos")
+            rewrite = True
     tags = clean_tags(meta)
     if tags != meta.get("tags"):
         meta["tags"] = tags
@@ -201,7 +240,6 @@ def fix(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) -> 
         meta = {**json.loads((folder / "meta.json").read_text()), "title": meta["title"], "tags": meta["tags"]}
         fixed.append("made the thumbnail")
 
-    rewrite = False
     if {"claims", "invented_facts", "policy_risk"} & set(failing):
         source = reviewer.source_text(meta)
         problems = [c["detail"] for n, c in failing.items() if n in ("claims", "invented_facts", "policy_risk")]
@@ -254,4 +292,5 @@ def fix(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) -> 
 def _rerender(slug: str) -> None:
     import run
 
-    run.cmd_redo(slug)
+    meta = json.loads((config.OUT / slug / "meta.json").read_text())
+    (run.cmd_redo if meta.get("format") == "doc" else run.cmd_redo_short)(slug)
