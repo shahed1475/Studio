@@ -77,6 +77,15 @@ WRONG_PICTURES = 2  # sampled frames showing the wrong place, person or period t
 MAX_STUCK = 3  # stop making a kind of video while this many of it sit failed or waiting for a human
 
 
+CHEAP_CHECKS = {"title_matches", "duplicate_title", "title", "title_length"}
+
+
+def cheap_fix(meta: dict) -> bool:
+    """A repair that is only words (a new title): no voice, no pictures, no render, so it need not wait for the heavy slot."""
+    failing = {c["name"] for c in (meta.get("review") or {}).get("checks", []) if not c["ok"] and c["severity"] in ("block", "human")}
+    return bool(failing) and failing <= CHEAP_CHECKS
+
+
 def plan_actions(state: dict, cfg: dict, now: dt.datetime) -> list[dict]:
     if not cfg["enabled"] or state["busy"]:
         return []
@@ -100,7 +109,7 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime) -> list[dict]:
             acts.append({"do": "review", "slug": v["slug"]})
         elif v["verdict"] in ("fail", "needs_human") and not eligible and not by_you and v["source"] != "news" \
                 and v.get("fix_attempts", 0) < 2 and not v.get("gave_up"):
-            acts.append({"do": "fix", "slug": v["slug"]})  # the fixer agent repairs what it can, then the reviewer decides again
+            acts.append({"do": "fix", "slug": v["slug"], "cheap": bool(v.get("cheap_fix"))})  # the fixer agent repairs what it can, then the reviewer decides again
         elif eligible:
             if cfg["auto_approve"] and not v["approved"] and v["verdict"] == "pass":
                 acts.append({"do": "approve", "slug": v["slug"]})  # reviewed earlier (by hand or by the fixer): the reviewer's pass counts
@@ -140,6 +149,7 @@ def build_state(now: dt.datetime, cfg: dict) -> dict:
             "verdict": (d.get("review") or {}).get("verdict"), "hold": bool(d.get("hold")),
             "approved_by": d.get("approved_by"), "fix_attempts": d.get("fix_attempts", 0), "gave_up": bool(d.get("fix_gave_up")),
             "video_id": d.get("video_id"), "publish_at": d.get("publish_at"), "fails": d.get("autopilot_fails", 0),
+            "cheap_fix": cheap_fix(d),
         })
     by_fmt: dict = {}
     day = now.astimezone(dt.timezone.utc).strftime("%Y-%m-%d")
@@ -317,7 +327,7 @@ def tick(now: dt.datetime | None = None) -> dict:
         cfg = load_config()
         actions, errors, heavy = [], [], False
         for a in plan_actions(build_state(now, cfg), cfg, now):
-            if a["do"] in ("make", "make_news", "fix"):
+            if a["do"] in ("make", "make_news") or (a["do"] == "fix" and not a.get("cheap")):
                 if heavy:
                     continue
                 heavy = True

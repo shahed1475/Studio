@@ -242,3 +242,23 @@ def test_make_videos_off_plans_repairs_and_uploads_but_no_new_video_or_research(
     assert "fix" in acts and "review" in acts
     assert not {"ideas", "make", "make_short", "make_clip", "make_news"} & set(acts)
     assert "ideas" in [d for d, _ in plan(st)]
+
+
+def test_title_only_repairs_do_not_wait_for_the_heavy_slot(tmp_path, monkeypatch):
+    import config
+    monkeypatch.setattr(config, "OUT", tmp_path)
+    for name, checks in (("t1", ["title_matches"]), ("t2", ["duplicate_title"]), ("v1", ["visual_review"]), ("v2", ["visual_review"])):
+        d = tmp_path / name
+        d.mkdir()
+        (d / "meta.json").write_text(json.dumps({"format": "doc", "review": {"verdict": "fail", "checks": [{"name": c, "ok": False, "severity": "block", "detail": "x"} for c in checks]}}))
+    assert autopilot.cheap_fix(json.loads((tmp_path / "t1" / "meta.json").read_text())) and not autopilot.cheap_fix(json.loads((tmp_path / "v1" / "meta.json").read_text()))
+    st = state([vid("t1", verdict="fail", cheap_fix=True), vid("t2", verdict="fail", cheap_fix=True), vid("v1", verdict="fail"), vid("v2", verdict="fail")])
+    ran = []
+    monkeypatch.setattr(autopilot, "load_config", lambda: {**CFG})
+    monkeypatch.setattr(autopilot, "build_state", lambda now, cfg: st)
+    monkeypatch.setattr(autopilot, "LOCK_FILE", tmp_path / "lock")
+    monkeypatch.setattr(autopilot, "STATE_FILE", tmp_path / "state.json")
+    monkeypatch.setattr(autopilot, "LOG", tmp_path / "log")
+    monkeypatch.setattr(autopilot, "EXECUTORS", {k: (lambda slug, cfg, now, k=k: ran.append((k, slug))) for k in autopilot.EXECUTORS})
+    autopilot.tick(NOW)
+    assert [r for r in ran if r[0] == "fix"] == [("fix", "t1"), ("fix", "t2"), ("fix", "v1")]  # both cheap ones and one heavy one; v2 waits for the next tick
