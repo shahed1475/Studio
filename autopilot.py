@@ -36,6 +36,7 @@ DEFAULTS = {
     "short_slots": scheduler.SHORT_SLOTS_DEFAULT,
 }
 MAX_FAILS = 3
+POLISH_MIN_LEAD = dt.timedelta(hours=30)  # a video this close to its slot is not edited: there is no time to make it again and check it
 
 
 def load_config() -> dict:
@@ -101,6 +102,7 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict
     by_fmt = dict(state.get("uploads_by_format") or {"doc": state["uploads_today"]})
     lead = dt.timedelta(hours=cfg["upload_lead_hours"])
     stuck = {"doc": 0, "short": 0}  # reviewed, repaired as far as the fixer can, and still not good enough: they wait for the owner
+    polishable = []                 # passed videos with a facts warning, edited before they are approved: only the soonest is worked on per tick
     fixable = []                    # broken videos that still have repair tries left: one of them is worked on at a time, and nothing new is made meanwhile
     for v in state["videos"]:
         if v["video_id"] or v["hold"] or v["fails"] >= MAX_FAILS:
@@ -117,9 +119,12 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict
         elif repairable:
             fixable.append(v)
         elif eligible:
+            pub = _parse(v["publish_at"]) if v["publish_at"] else None
+            if v.get("polish_wanted") and state.get("spend_ok", True) and (pub is None or pub - now > POLISH_MIN_LEAD):
+                polishable.append((pub or now + dt.timedelta(days=3650), v["slug"]))
+                continue  # edited first: approving or scheduling it now would be undone by the edit
             if cfg["auto_approve"] and not v["approved"] and v["verdict"] == "pass":
                 acts.append({"do": "approve", "slug": v["slug"]})  # reviewed earlier (by hand or by the fixer): the reviewer's pass counts
-            pub = _parse(v["publish_at"]) if v["publish_at"] else None
             cap = cfg["shorts_per_day"] if fmt == "short" else cfg["uploads_per_day"]
             if pub is None or pub <= now + dt.timedelta(minutes=10):
                 acts.append({"do": "schedule", "slug": v["slug"]})
@@ -130,6 +135,8 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict
                 acts.append({"do": "upload", "slug": v["slug"]})
                 by_fmt[fmt] = by_fmt.get(fmt, 0) + 1
                 total += 1
+    if polishable:
+        acts.append({"do": "polish", "slug": min(polishable)[1]})
     targets = planner.repair_targets(cfg, state["videos"], now)  # only drafts that take a slot which is due are worked on; the rest stay parked
     fixable = [v for v in fixable if v["slug"] in targets]
     todo = [v for v in fixable if v["slug"] not in skip]
@@ -153,7 +160,14 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict
 
 
 def build_state(now: dt.datetime, cfg: dict) -> dict:
+    import fixer
+    import llm
     import upload
+
+    try:
+        spend_ok = llm.spent_today(now) < cfg.get("daily_budget_usd", llm.load_config()["daily_budget_usd"])
+    except Exception:
+        spend_ok = True
 
     videos = []
     for m in sorted(config.OUT.glob("*/meta.json")):
@@ -165,6 +179,7 @@ def build_state(now: dt.datetime, cfg: dict) -> dict:
             "approved_by": d.get("approved_by"), "fix_attempts": d.get("fix_attempts", 0), "gave_up": bool(d.get("fix_gave_up")),
             "video_id": d.get("video_id"), "publish_at": d.get("publish_at"), "fails": d.get("autopilot_fails", 0),
             "prelaunch_ok": bool((d.get("prelaunch") or {}).get("ok")),
+            "polish_wanted": not d.get("polish_done") and d.get("approved_by") != "you" and bool(fixer.watch_problems((d.get("review") or {}).get("checks", []))),
             "blocking": len(failing_names(d)), "problems": failing_names(d), "title": d.get("title", ""),
         })
     by_fmt: dict = {}
@@ -179,7 +194,7 @@ def build_state(now: dt.datetime, cfg: dict) -> dict:
         "queue_len": len(queue), "connected": upload.SECRET.exists() and upload.TOKEN.exists(), "busy": dashboard_busy(),
         "uploads_today": upload.uploads_today(config.OUT, now), "uploads_by_format": by_fmt,
         "news_pending": sum(1 for n in news if n.get("status") == "queued"), "videos": videos,
-        "clippable": __import__("clipper").clippable(),
+        "clippable": __import__("clipper").clippable(), "spend_ok": spend_ok,
     }
 
 
@@ -231,6 +246,23 @@ def do_review(slug, cfg, now):
     result = reviewer.review(config.OUT / slug)
     if result["verdict"] == "pass" and cfg["auto_approve"]:
         _approve(slug)
+
+
+def do_polish(slug, cfg, now):
+    """Repair the invented-facts warning of a passed video once, then let the normal flow approve and schedule it. A failure is recorded on the video
+    (so it is never tried again and never held up) and not raised."""
+    import fixer
+
+    try:
+        out = fixer.polish(slug, now=now)
+    except (Exception, SystemExit) as e:
+        p, meta = _meta(slug)
+        meta["polish_done"] = {"at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "result": f"stopped by an error: {e}"[:300]}
+        p.write_text(json.dumps(meta, indent=2))
+        return {"skipped": "error"}
+    if out.get("verdict") == "pass" and cfg["auto_approve"]:
+        _approve(slug)
+    return out
 
 
 def do_approve(slug, cfg, now):
@@ -348,7 +380,7 @@ def do_make_news(slug, cfg, now):
     newswatch.make_next_news_video()
 
 
-EXECUTORS = {"prelaunch": do_prelaunch, "review": do_review, "approve": do_approve, "fix": do_fix, "schedule": do_schedule, "upload": do_upload,
+EXECUTORS = {"prelaunch": do_prelaunch, "review": do_review, "approve": do_approve, "fix": do_fix, "polish": do_polish, "schedule": do_schedule, "upload": do_upload,
              "ideas": do_ideas, "make": do_make, "make_short": do_make_short, "make_clip": do_make_clip, "make_news": do_make_news}
 
 
@@ -382,7 +414,7 @@ def tick(now: dt.datetime | None = None) -> dict:
                     res = EXECUTORS[a["do"]](a["slug"], cfg, now)
                     actions.append(a)
                     _log(f"ok {a['do']} {a['slug'] or ''}")
-                    if a["do"] == "fix":
+                    if a["do"] in ("fix", "polish"):
                         worked.add(a["slug"])
                         stop = stop or bool(isinstance(res, dict) and res.get("rerendered"))
                     elif a["do"] in ("make", "make_news", "make_short", "make_clip"):
@@ -390,7 +422,7 @@ def tick(now: dt.datetime | None = None) -> dict:
                 except (Exception, SystemExit) as e:  # one failing step must not stop the rest
                     errors.append(f"{a['do']} {a['slug'] or ''}: {e}".strip())
                     _log(f"FAIL {errors[-1]}")
-                    if a["do"] == "fix":
+                    if a["do"] in ("fix", "polish"):
                         worked.add(a["slug"])
                     if a["slug"] and counts_as_failure(e):
                         p, meta = _meta(a["slug"])

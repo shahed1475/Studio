@@ -379,3 +379,68 @@ def test_a_picture_re_reading_that_still_finds_wrong_pictures_names_the_scenes_t
     meta = json.loads((d / "meta.json").read_text())
     assert meta["redraw_lines"] == [LINES[1]["text"], LINES[3]["text"]] and "art_first" not in meta and world["rerenders"] == ["doc-14"]
     assert out["verdict"] == "pass"
+
+
+WATCH_REVIEW = {"verdict": "pass", "at": "x", "checks": [
+    {"name": "invented_facts", "ok": True, "severity": "block", "detail": "risk 4/10. The narration says historians debate it.", "issues": ["The narration says historians debate it, which the article never says."]},
+    {"name": "invented_facts_watch", "ok": False, "severity": "warn", "detail": "moderate risk 4/10", "issues": ["The narration says historians debate it, which the article never says."]},
+    {"name": "duration", "ok": True, "severity": "block", "detail": "ok"}]}
+
+
+def polish_chat(edits=None, intro=None):
+    def chat(prompt):
+        if "Narration lines" in prompt:
+            return {"edits": edits or []}
+        return {"intro": intro or ""}
+    return chat
+
+
+def test_polish_rewrites_the_named_lines_backs_up_the_script_and_reviews_again(tmp_path, world):
+    d = video(tmp_path, "doc-p1", review=WATCH_REVIEW, publish_at="2026-10-25T10:00:00Z")
+    world["results"] = [result("pass")]
+    out = fixer.polish("doc-p1", chat=polish_chat(edits=[{"index": 2, "text": "The oracle was consulted on important decisions across the classical world by many visitors."}]), rerender=world["rerender"])
+    meta = json.loads((d / "meta.json").read_text())
+    assert meta["lines"][2]["text"].startswith("The oracle was consulted") and meta["polish_done"]["lines"] == 1
+    assert json.loads((d / "script_before_polish.json").read_text())["lines"][2]["text"] == LINES[2]["text"]
+    assert world["rerenders"] == ["doc-p1"] and out["rerendered"] is True and out["verdict"] == "pass" and out["changed"]
+    assert "publish_at" not in meta and meta["approved"] is False  # an edited video is reviewed, approved and scheduled again
+    assert fixer.polish("doc-p1", chat=polish_chat(), rerender=world["rerender"]) == {"skipped": "already polished"}
+
+
+def test_polish_corrects_a_description_the_issues_name_without_a_re_render(tmp_path, world):
+    review = json.loads(json.dumps(WATCH_REVIEW))
+    for c in review["checks"]:
+        if c["name"].startswith("invented"):
+            c["issues"] = ["The description calls the source a 13th-century inscription, but the article says a 1440 manuscript."]
+    d = video(tmp_path, "doc-p2", review=review)
+    world["results"] = [result("pass")]
+    intro = "The Pied Piper story is recorded in a manuscript from about 1440 and in later house inscriptions. It tells of children who vanished from Hamelin."
+    out = fixer.polish("doc-p2", chat=polish_chat(intro=intro), rerender=world["rerender"])
+    assert json.loads((d / "meta.json").read_text())["description"].startswith("The Pied Piper story is recorded")
+    assert world["rerenders"] == [] and out["rerendered"] is False and out["verdict"] == "pass"
+
+
+def test_polish_changes_nothing_and_says_so_when_there_is_no_source_or_no_usable_edit(tmp_path, world, monkeypatch):
+    d = video(tmp_path, "doc-p3", review=WATCH_REVIEW)
+    out = fixer.polish("doc-p3", chat=polish_chat(edits=[]), rerender=world["rerender"])
+    meta = json.loads((d / "meta.json").read_text())
+    assert out == {"skipped": "nothing to change"} and meta["lines"] == [dict(l) for l in LINES] and meta["polish_done"]["result"] and world["reviews"] == 0 and world["rerenders"] == []
+    d2 = video(tmp_path, "doc-p4", review=WATCH_REVIEW)
+    monkeypatch.setattr(reviewer, "source_text", lambda meta: "")
+    assert fixer.polish("doc-p4", chat=polish_chat(edits=[{"index": 0, "text": "x " * 10}]), rerender=world["rerender"]) == {"skipped": "no source"}
+    assert json.loads((d2 / "meta.json").read_text())["polish_done"]["result"]
+
+
+def test_polish_never_touches_a_video_you_approved_or_one_without_a_facts_warning(tmp_path, world):
+    d = video(tmp_path, "doc-p5", review=WATCH_REVIEW, approved_by="you")
+    assert fixer.polish("doc-p5", chat=polish_chat(), rerender=world["rerender"]) == {"skipped": "not touched"}
+    assert "polish_done" not in json.loads((d / "meta.json").read_text())
+    video(tmp_path, "doc-p6", review=result("pass"))
+    assert fixer.polish("doc-p6", chat=polish_chat(), rerender=world["rerender"]) == {"skipped": "no facts warning"}
+
+
+def test_watch_problems_use_the_issues_or_fall_back_to_the_detail_text():
+    assert fixer.watch_problems(WATCH_REVIEW["checks"]) == ["The narration says historians debate it, which the article never says."]
+    old = [{"name": "invented_facts", "ok": True, "severity": "block", "detail": "risk 4/10. Old stored note."}, {"name": "invented_facts_watch", "ok": False, "severity": "warn", "detail": "moderate risk 4/10"}]
+    assert fixer.watch_problems(old) == ["Old stored note."]
+    assert fixer.watch_problems([c for c in old if c["name"] != "invented_facts_watch"]) == []

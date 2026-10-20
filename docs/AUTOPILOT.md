@@ -20,6 +20,13 @@ Autopilot finishes the video it works on (repair, review, approve, schedule) bef
 ## The final check, a day before the slot
 When a scheduled video's 24-hour review window opens (27 hours before its slot), Autopilot checks the real file and the written rules again: duration, size, audio, black frames, captions against the script, sources, licenses, claims. No upload happens without a passed final check. If a video the reviewer approved fails, it goes back to being a draft (no approval, no slot) and the fixer repairs it while there is still time. A video you approved yourself is never pulled back: you are told and decide.
 
+## Polish before approval (the invented-facts warning)
+A video the reviewer passes can still carry a moderate invented-facts warning (risk 4 to 6 of 10), with the specific details the reviewer named (a debate the source never mentions, a description that misdates the evidence). Before such a video is approved or scheduled, Autopilot does one polish:
+- Only the narration lines and the description the reviewer named are rewritten, from the source article only (no new numbers). The old script is saved as `script_before_polish.json` in the video's folder.
+- The video is made again only if narration changed; then the reviewer decides again (it may still warn: one try only, then it goes on as it was).
+- Never a video you approved, held or that is already on YouTube; never inside the last 30 hours before its slot; not when the day's money cap is spent (the video is not held up by that); at most one polish per 30-minute tick, soonest slot first.
+- The outcome (what changed, or why nothing did) is kept in `meta.json` under `polish_done` and shown in the activity feed.
+
 ## Quality and safety
 - Every video is reviewed by Claude (never a free model); if Claude cannot answer, the video is "not reviewed yet" and asked again, never failed and never passed.
 - A video is approved only after the reviewer passes it and a vision check of its pictures passes. Your own approval always wins, and a video you hold is never touched.

@@ -248,10 +248,11 @@ def llm_review(meta: dict, source: str = "") -> list[dict]:
             'Return JSON: {"invented_facts_risk": 0, "policy_risk": 0, "misleading_title": false, "title_reason": "", "covers": "", "better_titles": [], '
             '"issues": []}. Put a real, specific issue in issues, or leave it empty.')
         facts, policy = int(r["invented_facts_risk"]), int(r["policy_risk"])
-        note = "; ".join(str(i) for i in r.get("issues", [])[:3])
+        issues = [str(i) for i in r.get("issues", [])[:3]]
+        note = "; ".join(issues)
     except Exception as e:  # cannot verify, so never auto-pass
         return [_c("llm_review", False, f"review unavailable: {type(e).__name__}")]
-    out = [_c("invented_facts", facts < 7, f"risk {facts}/10. {note}"),
+    out = [{**_c("invented_facts", facts < 7, f"risk {facts}/10. {note}"), "issues": issues},
            _c("policy_risk", policy < 6, f"risk {policy}/10. {note}"),
            _c("title_matches", not r.get("misleading_title"), "title matches the story" if not r.get("misleading_title") else
               ("title may mislead: " + str(r.get("title_reason") or "")[:260]).strip(": "))]
@@ -259,7 +260,7 @@ def llm_review(meta: dict, source: str = "") -> list[dict]:
         out[-1]["covers"] = str(r.get("covers") or "")[:300]
         out[-1]["better_titles"] = [str(t)[:90] for t in (r.get("better_titles") or [])[:3] if isinstance(t, str)]
     if 4 <= facts < 7:
-        out.append(_c("invented_facts_watch", False, f"moderate risk {facts}/10", "warn"))
+        out.append({**_c("invented_facts_watch", False, f"moderate risk {facts}/10", "warn"), "issues": issues})
     if 4 <= policy < 6:
         out.append(_c("policy_watch", False, f"moderate risk {policy}/10", "warn"))
     return out

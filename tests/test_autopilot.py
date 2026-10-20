@@ -364,3 +364,65 @@ def test_a_failed_final_check_pulls_a_reviewer_approved_video_back_but_never_one
     m = json.loads((tmp_path / "mine" / "meta.json").read_text())
     assert m["approved"] is True and m["publish_at"] and m["review"]["verdict"] == "pass" and m["prelaunch"]["ok"] is False  # told, not withdrawn
     assert {e["title"][:6] for e in agentlog.recent()} >= {"Pulled", "Final "}
+
+
+def test_a_passed_video_with_a_facts_warning_is_polished_before_it_is_approved_or_scheduled():
+    acts = plan(state([vid(verdict="pass", polish_wanted=True)]))
+    assert ("polish", "v") in acts and ("approve", "v") not in acts and ("schedule", "v") not in acts
+    acts = plan(state([vid(verdict="pass", approved=True, polish_wanted=True, publish_at=iso(NOW + timedelta(hours=60)))]))
+    assert ("polish", "v") in acts and ("schedule", "v") not in acts
+
+
+def test_only_one_polish_per_tick_the_soonest_slot_first():
+    soon = vid("soon", verdict="pass", approved=True, polish_wanted=True, publish_at=iso(NOW + timedelta(hours=40)))
+    later = vid("later", verdict="pass", approved=True, polish_wanted=True, publish_at=iso(NOW + timedelta(hours=90)))
+    unslotted = vid("none", verdict="pass", polish_wanted=True)
+    assert [a for a in plan(state([unslotted, later, soon])) if a[0] == "polish"] == [("polish", "soon")]
+
+
+def test_no_polish_close_to_the_slot_without_a_warning_or_when_the_daily_cap_is_spent():
+    close = vid(verdict="pass", approved=True, polish_wanted=True, prelaunch_ok=False, publish_at=iso(NOW + timedelta(hours=20)))
+    assert not [a for a in plan(state([close])) if a[0] == "polish"]
+    assert not [a for a in plan(state([vid(verdict="pass", polish_wanted=False)])) if a[0] == "polish"]
+    assert not [a for a in plan(state([vid(verdict="pass", polish_wanted=True)], spend_ok=False)) if a[0] == "polish"]
+    assert ("schedule", "v") in plan(state([vid(verdict="pass", approved=True, polish_wanted=True)], spend_ok=False))  # the video is not held up by a spent cap
+
+
+def test_build_state_marks_only_passed_unpolished_videos_with_a_facts_warning(tmp_path, monkeypatch):
+    import clipper
+    import config
+    import llm
+
+    warn = [{"name": "invented_facts", "ok": True, "severity": "block", "detail": "risk 4/10. x", "issues": ["x"]}, {"name": "invented_facts_watch", "ok": False, "severity": "warn", "detail": "moderate"}]
+    metas = {"warned": {"review": {"verdict": "pass", "checks": warn}}, "yours": {"approved_by": "you", "review": {"verdict": "pass", "checks": warn}},
+             "done": {"polish_done": {"result": "x"}, "review": {"verdict": "pass", "checks": warn}}, "clean": {"review": {"verdict": "pass", "checks": []}}}
+    for name, m in metas.items():
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "meta.json").write_text(json.dumps({"format": "doc", **m}))
+    monkeypatch.setattr(config, "OUT", tmp_path)
+    monkeypatch.setattr(config, "TOPICS_FILE", tmp_path / "t.json")
+    monkeypatch.setattr(clipper, "clippable", lambda: 0)
+    monkeypatch.setattr(llm, "spent_today", lambda now: 0.2)
+    st = autopilot.build_state(NOW, {**CFG, "daily_budget_usd": 1.5})
+    assert {v["slug"]: v["polish_wanted"] for v in st["videos"]} == {"warned": True, "yours": False, "done": False, "clean": False}
+    monkeypatch.setattr(llm, "spent_today", lambda now: 9.0)
+    assert autopilot.build_state(NOW, CFG)["spend_ok"] is False
+
+
+def test_do_polish_approves_a_pass_and_never_raises(tmp_path, monkeypatch):
+    import config
+    import fixer
+
+    (tmp_path / "v").mkdir()
+    (tmp_path / "v" / "meta.json").write_text("{}")
+    monkeypatch.setattr(config, "OUT", tmp_path)
+    approved = []
+    monkeypatch.setattr(autopilot, "_approve", lambda slug: approved.append(slug))
+    monkeypatch.setattr(fixer, "polish", lambda slug, now=None: {"verdict": "pass", "rerendered": True})
+    assert autopilot.do_polish("v", {**CFG, "auto_approve": True}, NOW)["rerendered"] is True and approved == ["v"]
+    monkeypatch.setattr(fixer, "polish", lambda slug, now=None: {"verdict": "fail", "rerendered": True})
+    autopilot.do_polish("v", {**CFG, "auto_approve": True}, NOW)
+    assert approved == ["v"]
+    monkeypatch.setattr(fixer, "polish", lambda slug, now=None: (_ for _ in ()).throw(RuntimeError("render broke")))
+    assert autopilot.do_polish("v", CFG, NOW) == {"skipped": "error"}
+    assert "render broke" in json.loads((tmp_path / "v" / "meta.json").read_text())["polish_done"]["result"]

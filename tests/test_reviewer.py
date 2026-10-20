@@ -254,3 +254,10 @@ def test_a_misleading_title_verdict_carries_the_reason_what_the_video_covers_and
     tm = next(c for c in checks if c["name"] == "title_matches")
     assert not tm["ok"] and "promises a debate" in tm["detail"] and tm["covers"] == "the site, its dig and temples" and tm["better_titles"] == ["Delphi: Ruins and Dig", "Delphi Explained"]
     assert "better_titles" in seen[0] and "title_reason" in seen[0]  # the model is actually asked for them
+
+
+def test_the_facts_checks_keep_the_issues_the_model_named(monkeypatch):
+    reply = {"invented_facts_risk": 5, "policy_risk": 0, "misleading_title": False, "issues": ["the description misdates the evidence", "no trace remains is not in the article"]}
+    monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p: reply)
+    checks = {c["name"]: c for c in reviewer.llm_review({"title": "t", "description": "d", "lines": [{"text": "a line"}]})}
+    assert checks["invented_facts"]["issues"] == reply["issues"] and checks["invented_facts_watch"]["issues"] == reply["issues"]
