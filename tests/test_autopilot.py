@@ -225,3 +225,12 @@ def test_a_clearly_bad_picture_set_is_not_auto_approved_but_a_few_warnings_are(t
     assert autopilot.visually_ok("ok") is True
     monkeypatch.setattr(videoinspect, "visual_review", lambda folder: (_ for _ in ()).throw(RuntimeError("no model")))
     assert autopilot.visually_ok("ok") is True  # a reading that cannot run never blocks
+
+
+def test_no_new_videos_while_three_of_that_kind_are_stuck_failed():
+    st = state([vid(f"s{i}", format="short", verdict="fail", fix_attempts=2) for i in range(3)], queue_len=5)
+    assert "make_short" not in [d for d, _ in plan(st)]
+    st["videos"] = st["videos"][:2]
+    assert "make_short" in [d for d, _ in plan(st)]
+    docs = state([vid(f"d{i}", format="doc", verdict="needs_human") for i in range(3)], queue_len=5)
+    assert "make" not in [d for d, _ in plan(docs)]

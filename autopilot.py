@@ -72,6 +72,9 @@ def dashboard_busy(job_file: Path = JOB_FILE) -> bool:
         return True
 
 
+MAX_STUCK = 3  # stop making a kind of video while this many of it sit failed or waiting for a human
+
+
 def plan_actions(state: dict, cfg: dict, now: dt.datetime) -> list[dict]:
     if not cfg["enabled"] or state["busy"]:
         return []
@@ -80,12 +83,15 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime) -> list[dict]:
     by_fmt = dict(state.get("uploads_by_format") or {"doc": state["uploads_today"]})
     lead = dt.timedelta(hours=cfg["upload_lead_hours"])
     waiting = {"doc": 0, "short": 0}
+    stuck = {"doc": 0, "short": 0}  # reviewed and not good enough: they wait for a fix or for the owner, and new ones must not pile on top
     for v in state["videos"]:
         if v["video_id"] or v["hold"] or v["fails"] >= MAX_FAILS:
             continue
         fmt = v.get("format") or "doc"
         by_you = v["approved"] and v.get("approved_by") == "you"
         eligible = (v["verdict"] == "pass" and v["source"] != "news") or (v["verdict"] == "needs_human" and by_you)
+        if v["verdict"] in ("fail", "needs_human") and not eligible and not by_you:
+            stuck[fmt] += 1
         if v["verdict"] in (None, "pass") or eligible:
             waiting[fmt] += 1
         if v["verdict"] is None:
@@ -108,12 +114,12 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime) -> list[dict]:
     if not state["busy"]:
         if state["queue_len"] < cfg["min_queue"]:
             acts.append({"do": "ideas", "slug": None})
-        if cfg["shorts"] and waiting["short"] < cfg["max_waiting_shorts"]:
+        if cfg["shorts"] and waiting["short"] < cfg["max_waiting_shorts"] and stuck["short"] < MAX_STUCK:
             if state.get("clippable", 0) > 0:  # cut from our own documentaries first: no script to write, cheapest
                 acts.append({"do": "make_clip", "slug": None})
             elif state["queue_len"] > 0:
                 acts.append({"do": "make_short", "slug": None})
-        if waiting["doc"] < cfg["max_waiting"]:
+        if waiting["doc"] < cfg["max_waiting"] and stuck["doc"] < MAX_STUCK:
             if cfg["news_videos"] and state["news_pending"] > 0:
                 acts.append({"do": "make_news", "slug": None})
             elif state["queue_len"] > 0:
