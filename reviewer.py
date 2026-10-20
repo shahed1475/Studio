@@ -6,6 +6,7 @@ import re
 import subprocess
 from pathlib import Path
 
+import compliance
 import scriptgen
 
 LIMITS = {"doc": {"duration": (180, 900), "size": (1920, 1080), "words": 400},
@@ -211,6 +212,7 @@ def rule_checks(meta: dict, probe: dict, existing_titles: list[str], thumb_bytes
     out.append(_c("script_loop", dupes <= max(1, len(lines) // 10), f"{dupes} repeated narration lines"))
     claims = unhedged_claims([l["text"] for l in meta.get("lines", [])], source, meta.get("verified_claims", []))
     out += metadata_checks(meta)
+    out += compliance.checks(meta, source)  # YouTube's documented limits, copied wording and kid-directed wording
     out += variety_checks(meta, recent or [])
     out.append(_c("claims", len(claims) < 2, f"{len(claims)} specific claims stated as fact{' and not found in the source article' if source else ''}, check them: {'; '.join(claims[:5])}" if claims else ("every specific name and year is in the source article" if source else "no unhedged specifics"), "human"))
     return out

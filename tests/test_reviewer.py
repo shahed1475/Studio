@@ -277,3 +277,10 @@ def test_a_rules_only_read_never_replaces_the_stored_ai_review(tmp_path, monkeyp
     assert out["verdict"] == "fail"  # the read still says what it found
     meta = json.loads((d / "meta.json").read_text())
     assert meta["review"] == stored and meta["approved"] is True and meta["approved_by"] == "reviewer-agent"
+
+
+def test_the_compliance_rules_run_with_every_review():
+    meta = copy.deepcopy(GOOD_META)
+    meta["title"] = "Delphi <b>Oracle</b> story"
+    assert "metadata_valid" in failed(run(meta=meta), "block")
+    assert {"metadata_valid", "originality", "kids_signals"} <= {c["name"] for c in run(meta=copy.deepcopy(GOOD_META))}

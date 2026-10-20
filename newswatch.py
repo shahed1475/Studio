@@ -28,6 +28,7 @@ POLICY_PAGES = {  # YouTube's own rule pages: any change here can affect the cha
     "Channel monetization (YPP) overview": "https://support.google.com/youtube/answer/72851?hl=en",
     "Spam, deceptive practices and scams": "https://support.google.com/youtube/answer/2801973?hl=en",
     "Altered or synthetic content": "https://support.google.com/youtube/answer/14328491?hl=en",
+    "Made for kids": "https://support.google.com/youtube/answer/9527654?hl=en",
     "Community Guidelines": "https://support.google.com/youtube/answer/9288567?hl=en",
     "API: upload a video": "https://developers.google.com/youtube/v3/docs/videos/insert?hl=en",
     "API: revision history": "https://developers.google.com/youtube/v3/revision_history?hl=en",
