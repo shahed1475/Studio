@@ -33,11 +33,12 @@ def test_autopilot_view_lists_scheduled_and_needs_you(tmp_path, monkeypatch):
     add("flag", review={"verdict": "needs_human", "checks": [{"name": "claims", "ok": False, "severity": "human", "detail": "d"}]}, fix_attempts=2)
     add("bad", review={"verdict": "fail", "checks": []}, fix_gave_up=True)
     add("fixable", review={"verdict": "fail", "checks": []})  # Autopilot can still repair it: not yours yet
+    add("onhold", review={"verdict": "fail", "checks": []}, hold=True)  # held by you: Autopilot never touches it, so it is yours to decide
     add("stale", review={"verdict": "fail", "checks": [{"name": "llm_review", "ok": False, "severity": "block", "detail": "review unavailable"}]}, fix_attempts=2)
     add("held", review={"verdict": "pass", "checks": []}, publish_at="2026-10-30T22:00:00Z", hold=True)
     view = dashboard.autopilot_view()
     assert [v["slug"] for v in view["scheduled"]] == ["ok", "held"]
-    assert sorted(v["slug"] for v in view["needs_you"]) == ["bad", "flag"]
+    assert sorted(v["slug"] for v in view["needs_you"]) == ["bad", "flag", "onhold"]
     assert sorted(v["slug"] for v in view["repairing"]) == ["fixable", "stale"]
     assert view["scheduled"][0]["bd"] == "Sat 24 Oct, 04:00" and view["scheduled"][0]["us"] == "Fri 23 Oct, 18:00"
 

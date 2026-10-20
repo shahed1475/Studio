@@ -339,7 +339,7 @@ def autopilot_view() -> dict:
         if rv.get("verdict") in ("needs_human", "fail") and not d.get("video_id") and not you_ok:
             item = {**base, "why": [c["detail"] for c in rv.get("checks", []) if not c["ok"] and c["severity"] in ("block", "human")][:3]}
             stale = any(c["name"] == "llm_review" and not c["ok"] for c in rv.get("checks", []))  # the AI part never ran: it is simply not reviewed yet
-            still_fixable = not (d.get("fix_gave_up") or d.get("fix_attempts", 0) >= 2 or d.get("source") == "news")
+            still_fixable = not (d.get("fix_gave_up") or d.get("fix_attempts", 0) >= 2 or d.get("source") == "news" or d.get("hold"))  # a held video is waiting for your decision
             (repairing if (still_fixable or stale) and d.get("source") != "news" else needs).append(item)  # only what Autopilot cannot repair waits for you
         if d.get("publish_at"):
             when = dt.datetime.fromisoformat(d["publish_at"].replace("Z", "+00:00"))
