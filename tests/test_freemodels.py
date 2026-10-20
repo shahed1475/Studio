@@ -161,19 +161,11 @@ def test_all_free_models_failing_falls_back_to_local(router, monkeypatch):
     assert llm.chat("p", "cheap", fallback=lambda p: {"local": 3}, now=NOW) == {"local": 3}
 
 
-def test_review_uses_a_different_free_model_than_the_writer(router, monkeypatch):
-    used = {}
-
-    def post(payload, key):
-        used.setdefault(post.role, payload["model"])
-        return reply("{}")
-
-    monkeypatch.setattr(llm, "_post", post)
-    post.role = "script"
-    llm.chat("p", "script", fallback=None, now=NOW)
-    post.role = "review"
-    llm.chat("p", "review", fallback=None, now=NOW)
-    assert used["script"] != used["review"]
+def test_free_models_never_judge_a_video(router, monkeypatch):
+    monkeypatch.setattr(llm, "_post", lambda payload, key: reply("{}"))
+    assert llm.chat("p", "script", fallback=None, now=NOW) == {}
+    with pytest.raises(llm.ModelUnavailable):
+        llm.chat("p", "review", fallback=None, now=NOW)  # the reviewer waits for Claude instead of asking a free model
 
 
 def test_dashboard_view_shows_free_status(tmp_path, monkeypatch):
@@ -258,3 +250,16 @@ def test_daily_dollar_cap_sends_the_job_to_free_models(router, monkeypatch):
     monkeypatch.setattr(llm, "spent_today", lambda now=None: 0.05)
     monkeypatch.setattr(llm, "_post", lambda payload, key: reply('{"free": 1}') if payload["model"].endswith(":free") else pytest.fail("cap reached, must not call paid"))
     assert llm.chat("p", "script", now=NOW) == {"free": 1}
+
+
+def test_the_review_may_spend_a_little_past_the_daily_cap_but_other_jobs_may_not(router, monkeypatch):
+    calls = []
+    monkeypatch.setattr(llm, "load_config", lambda: {**llm.DEFAULTS, "enabled": True, "models": {"script": "m/s", "review": "m/r", "cheap": "m/c"}, "daily_budget_usd": 1.0, "free": False})
+    monkeypatch.setattr(llm, "api_key", lambda: "k")
+    monkeypatch.setattr(llm, "spent_today", lambda now=None: 1.2)
+    monkeypatch.setattr(llm, "_post", lambda payload, key: calls.append(payload["model"]) or reply("{}"))
+    monkeypatch.setattr(llm, "_account", lambda *a, **k: None)
+    llm.chat("p", "review", now=NOW)
+    with pytest.raises(llm.ModelUnavailable):
+        llm.chat("p", "script", now=NOW)
+    assert calls == ["m/r"]

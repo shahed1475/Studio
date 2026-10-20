@@ -256,10 +256,10 @@ def title_ok(meta: dict, title: str) -> tuple[bool, str]:
     """Would the reviewer accept this title for this narration? One cheap question. (True, "") when the model cannot be asked: the full review decides later."""
     text = " ".join(l["text"] for l in meta.get("lines", []))[:6000]
     try:
-        r = scriptgen._review_chat(
+        r = scriptgen._chat(
             f"A YouTube video's narration:\n{text}\n\nProposed title: {title}\n\nDoes the title promise something the narration does not deliver (a Why or How "
             "question it never answers, a legend or event it says did not happen)? Be strict. "
-            'Return JSON {"misleading_title": false, "reason": ""}.')
+            'Return JSON {"misleading_title": false, "reason": ""}.', "cheap")
         return (not r.get("misleading_title"), str(r.get("reason") or "")[:200])
     except Exception:
         return True, ""

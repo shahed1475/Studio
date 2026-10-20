@@ -82,7 +82,5 @@ def test_small_jobs_stop_at_their_share_but_script_can_use_the_rest(router):
     assert freemodels.requests_today(NOW, "cheap") == 4
 
 
-def test_review_counts_with_the_big_jobs(router):
-    for _ in range(4):
-        llm.chat("p", "cheap", fallback=lambda p: {}, now=NOW)
-    assert llm.chat("p", "review", fallback=lambda p: {"local": 1}, now=NOW) == {}
+def test_review_is_never_answered_by_a_free_model(router):
+    assert llm.chat("p", "review", fallback=lambda p: {"local": 1}, now=NOW) == {"local": 1}  # only the (off by default) local fallback may stand in

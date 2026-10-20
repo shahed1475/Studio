@@ -248,6 +248,9 @@ CHEAP_SHARE = 0.4  # small jobs (titles, tags, picture checks) may use at most t
 _last_free: dict[str, str] = {}  # the free model that last answered each role (the reviewer must differ from the writer)
 
 
+REVIEW_RESERVE_USD = 0.50  # the quality gate may spend this much past the daily cap, so a reached cap never leaves videos unreviewed
+
+
 ROUNDS = 3  # passes over the free models; a busy provider (429) usually frees up within a minute or two
 
 
@@ -299,7 +302,7 @@ def chat(prompt: str, role: str = "cheap", fallback=None, now: dt.datetime | Non
     if model and is_claude(model):
         key = anthropic_key()
     if cfg["enabled"] and key and model:
-        if spent_today(now) >= cfg["daily_budget_usd"]:
+        if spent_today(now) >= cfg["daily_budget_usd"] + (REVIEW_RESERVE_USD if role == "review" else 0.0):
             _note(now, f"{role}: the daily cap was reached, used the local model")
         else:
             for _ in range(2):
@@ -315,7 +318,7 @@ def chat(prompt: str, role: str = "cheap", fallback=None, now: dt.datetime | Non
                     continue
             else:
                 _note(now, f"{role}: invalid JSON from {model}, used the local model")
-    if cfg["free"] and api_key():
+    if cfg["free"] and api_key() and role != "review":  # free models never judge a video: their answers are too unreliable to pass or fail one
         key = api_key()
         got = _free_chat(prompt, role, cfg, key, now)
         if got is not None:
