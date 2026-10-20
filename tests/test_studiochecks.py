@@ -86,7 +86,7 @@ def test_the_gate_fails_on_any_blocking_row_and_reports_a_check_that_cannot_run(
     d = tmp_path / "v"
     d.mkdir()
     (d / "meta.json").write_text(json.dumps(short()))
-    monkeypatch.setattr(reviewer, "review", lambda folder, use_llm=True: {"verdict": "pass", "checks": [{"name": "duration", "ok": True, "severity": "block", "detail": "ok"}]})
+    monkeypatch.setattr(reviewer, "review", lambda folder, use_llm=True, persist=True: {"verdict": "pass", "checks": [{"name": "duration", "ok": True, "severity": "block", "detail": "ok"}]})
     monkeypatch.setattr(reviewer, "source_text", lambda meta: SOURCE)
     result = sc.quality_gate("v", quick=True)  # video.mp4 does not exist: that check cannot run and must say so
     assert result["verdict"] == "FAIL" and any(r["name"] == "video: could not run" and not r["ok"] for r in result["rows"])

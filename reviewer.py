@@ -315,7 +315,8 @@ def invalidate(meta: dict) -> None:
         meta.pop("publish_at", None)
 
 
-def review(folder: Path, existing_titles: list[str] | None = None, use_llm: bool = True) -> dict:
+def review(folder: Path, existing_titles: list[str] | None = None, use_llm: bool = True, persist: bool = True) -> dict:
+    """persist=False only reads: the verdict is returned and nothing about the video is changed (a rules-only read must not replace a stored AI review)."""
     meta_path = folder / "meta.json"
     meta = json.loads(meta_path.read_text())
     thumb = folder / meta["thumbnail"] if meta.get("thumbnail") else None
@@ -331,6 +332,8 @@ def review(folder: Path, existing_titles: list[str] | None = None, use_llm: bool
         checks += llm_review(meta, source)
     result = {"verdict": verdict_from(checks, meta.get("source")), "checks": checks,
               "at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+    if not persist:
+        return result
     apply_verdict(meta, result)
     if result["verdict"] == "unreviewed":
         meta.pop("review", None)  # no stored verdict means Autopilot reviews it again on its next look

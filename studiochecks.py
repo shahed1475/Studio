@@ -199,7 +199,7 @@ def quality_gate(slug: str, use_llm: bool = False, quick: bool = False, visual: 
     """Everything before approval: the reviewer, the script rules, sources, licenses, and the real file. PASS only when no blocking row failed."""
     folder, meta = load(slug)
     source = reviewer.source_text(meta)
-    review = reviewer.review(folder, use_llm=use_llm)  # also writes claims.json
+    review = reviewer.review(folder, use_llm=use_llm, persist=use_llm)  # only a full review (with the AI part) is stored; a rules-only read changes nothing
     folder, meta = load(slug)
     rows = [{**c, "name": "review: " + c["name"]} for c in review["checks"]]
     for name, fn in (("script", lambda: check_script(meta, source)), ("sources", lambda: check_sources(meta, folder, source)),

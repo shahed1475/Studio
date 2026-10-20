@@ -261,3 +261,19 @@ def test_the_facts_checks_keep_the_issues_the_model_named(monkeypatch):
     monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p: reply)
     checks = {c["name"]: c for c in reviewer.llm_review({"title": "t", "description": "d", "lines": [{"text": "a line"}]})}
     assert checks["invented_facts"]["issues"] == reply["issues"] and checks["invented_facts_watch"]["issues"] == reply["issues"]
+
+
+def test_a_rules_only_read_never_replaces_the_stored_ai_review(tmp_path, monkeypatch):
+    import json
+    d = tmp_path / "out" / "v"
+    d.mkdir(parents=True)
+    (d / "video.mp4").write_bytes(b"x")
+    stored = {"verdict": "pass", "checks": [{"name": "invented_facts_watch", "ok": False, "severity": "warn", "detail": "moderate risk 4/10"}], "at": "then"}
+    (d / "meta.json").write_text(json.dumps({"title": "A title here", "format": "doc", "lines": [{"text": "a line"}], "review": stored, "approved": True, "approved_by": "reviewer-agent"}))
+    monkeypatch.setattr(reviewer, "probe_video", lambda p: {"duration": 400, "width": 1920, "height": 1080, "has_audio": True, "mean_db": -16, "black_ratio": 0})
+    monkeypatch.setattr(reviewer, "source_text", lambda meta: "")
+    monkeypatch.setattr(reviewer, "rule_checks", lambda *a, **k: [{"name": "duration", "ok": False, "severity": "block", "detail": "too short"}])
+    out = reviewer.review(d, use_llm=False, persist=False)
+    assert out["verdict"] == "fail"  # the read still says what it found
+    meta = json.loads((d / "meta.json").read_text())
+    assert meta["review"] == stored and meta["approved"] is True and meta["approved_by"] == "reviewer-agent"
