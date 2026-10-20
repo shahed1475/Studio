@@ -109,3 +109,39 @@ def test_a_mismatch_between_what_was_sent_and_what_youtube_stored_is_recorded_an
 
 def test_verify_upload_reports_a_video_the_api_does_not_return():
     assert upload.verify_upload(FakeYT(stored=None), "X", {"title": "t", "privacy": "private"})["ok"] is False
+
+
+class RefusedThumbs(FakeYT):
+    def thumbnails(self):
+        def refuse(s, **k):
+            raise RuntimeError("403 The authenticated user doesn't have permissions to upload and set custom video thumbnails")
+        return type("T", (), {"set": refuse})()
+
+
+def test_a_refused_thumbnail_is_recorded_and_the_owner_is_told_but_the_upload_stands(vid, monkeypatch, tmp_path):
+    import agentlog
+
+    monkeypatch.setattr(agentlog, "FILE", tmp_path / "events.jsonl")
+    monkeypatch.setattr(agentlog.subprocess, "run", lambda *a, **k: None)
+    meta = json.loads((vid / "meta.json").read_text())
+    meta["thumbnail"] = "thumbs/thumb-1.jpg"
+    (vid / "thumbs").mkdir()
+    (vid / "thumbs" / "thumb-1.jpg").write_bytes(b"x")
+    (vid / "meta.json").write_text(json.dumps(meta))
+    pub = when()
+    monkeypatch.setattr(upload, "_service", lambda: RefusedThumbs(stored={"title": "The Title", "privacy": "private", "publish_at": pub}))
+    assert upload.upload(vid, "private", pub) == "NEWID"
+    saved = json.loads((vid / "meta.json").read_text())
+    assert "custom video thumbnails" in saved["thumbnail_error"] and not saved.get("thumbnail_uploaded")
+    assert any(e["title"].startswith("Thumbnail was not set") for e in agentlog.recent())
+
+
+def test_metadata_youtube_would_reject_is_never_sent(vid, monkeypatch):
+    meta = json.loads((vid / "meta.json").read_text())
+    meta["title"] = "A title with <b>tags</b>"
+    (vid / "meta.json").write_text(json.dumps(meta))
+    yt = FakeYT()
+    monkeypatch.setattr(upload, "_service", lambda: yt)
+    with pytest.raises(SystemExit, match="title contains"):
+        upload.upload(vid, "private", when())
+    assert yt.inserted == [] and "upload_started" not in json.loads((vid / "meta.json").read_text())

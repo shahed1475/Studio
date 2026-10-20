@@ -9,6 +9,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
+import compliance
 import config
 
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.readonly"]  # same as dashboard.py
@@ -85,13 +86,13 @@ def upload(folder: Path, privacy: str = "private", publish_at: str | None = None
         raise SystemExit("the publish time must be in the future (at least 5 minutes away)")
     if meta.get("video_id"):
         raise SystemExit(f"already uploaded: https://youtube.com/shorts/{meta['video_id']}")
-    is_doc = meta.get("format") == "doc"
-    tags = " ".join(h for h in config.niche()["hashtags"] if not (is_doc and h == "#Shorts"))
-    credits = "\n\nFootage and image credits:\n" + "\n".join(meta["credits"]) if meta.get("credits") else ""
+    problems = compliance.metadata_problems(meta)  # YouTube would answer 400: do not send it, and do not count a failed attempt
+    if problems:
+        raise SystemExit("not sent, YouTube would reject it: " + "; ".join(problems))
     body = {
         "snippet": {
             "title": meta["title"],
-            "description": f"{meta['description']}{credits}\n\n{tags}\n\nNarration is AI-generated.",
+            "description": compliance.final_description(meta),
             "tags": meta["tags"],
             "categoryId": "27",  # Education
             "defaultAudioLanguage": "en",
@@ -129,7 +130,12 @@ def upload(folder: Path, privacy: str = "private", publish_at: str | None = None
             yt.thumbnails().set(videoId=resp["id"], media_body=MediaFileUpload(str(thumb), mimetype="image/jpeg")).execute()
             meta["thumbnail_uploaded"] = True
         except Exception as e:  # usually: channel not phone-verified yet. The video is already up.
+            meta["thumbnail_error"] = str(e)[:300]
             print(f"Thumbnail not set ({e}). Verify the channel at youtube.com/verify, then add it in YouTube Studio.")
+            import agentlog
+
+            agentlog.event("error", f"Thumbnail was not set: {meta.get('title', folder.name)}",
+                           "YouTube refused the custom thumbnail (often a channel that is not phone-verified: youtube.com/verify). The video is uploaded; add the thumbnail in YouTube Studio.", notify=True)
     try:
         meta["upload_check"] = verify_upload(yt, resp["id"], {"title": meta["title"], "privacy": body["status"]["privacyStatus"], "publish_at": publish_at})
         if not meta["upload_check"]["ok"]:

@@ -44,7 +44,8 @@ def judge(video: dict | None, published: bool) -> list[str]:
         why = st.get("rejectionReason") or st.get("failureReason") or ""
         out.append(f"YouTube {st['uploadStatus']} the upload" + (f" because of {REASONS.get(why, why)}" if why else ""))
     if published and st.get("privacyStatus") == "private":
-        out.append("it is still private after its publish time (check YouTube Studio: a block, a Studio setting or an account limit)")
+        out.append("it is still private after its publish time (check YouTube Studio: a block, a Studio setting or an account limit; it may also be that uploads from this API project "
+                   "stay private until the project is audited: sources disagree, see developers.google.com/youtube/v3/docs/videos)")
     blocked = (video.get("contentDetails", {}).get("regionRestriction") or {}).get("blocked")
     if blocked:
         out.append(f"it is blocked in {len(blocked)} countr{'y' if len(blocked) == 1 else 'ies'}, often because of a claim")

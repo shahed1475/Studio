@@ -145,3 +145,8 @@ def test_pace_settings_match_the_research():
         raise AssertionError(bad)
     names = {j["name"] for j in worker.JOBS}
     assert {"health", "policywatch"} <= names
+
+
+def test_a_video_still_private_after_its_slot_names_the_api_project_possibility_without_claiming_it():
+    msg = " ".join(safety.judge(item("a", privacy="private"), published=True))
+    assert "API project" in msg and "sources disagree" in msg and "developers.google.com/youtube/v3/docs/videos" in msg

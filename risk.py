@@ -293,6 +293,29 @@ def supply(now: dt.datetime | None = None) -> dict:
                "Check the Autopilot page: it should be working on this now. If money is the reason, top up OpenRouter." if urgent else "")
 
 
+def rules(vs, now: dt.datetime | None = None) -> dict:
+    """The compliance catalog (compliance.RULES): which rules are enforced, which source pages changed after a rule was last verified, and which waiting videos fail one."""
+    import compliance
+    import newswatch
+
+    now = now or dt.datetime.now(dt.timezone.utc)
+    by_status = {s: sum(1 for r in compliance.RULES if r["status"] == s) for s in ("VERIFIED", "CONFLICTING", "UNVERIFIED")}
+    changed = {}
+    for c in newswatch.recent_policy_changes(now, days=3650):
+        for r in compliance.RULES:
+            if r["page"] == c["page"] and c["at"][:10] > r["verified"]:
+                changed.setdefault(c["page"], []).append(r["id"])
+    names = {r["id"] for r in compliance.RULES}
+    failing = [f"{f.name} ({n})" for f, m in vs if not m.get("video_id") for n in sorted({c["name"] for c in (m.get("review") or {}).get("checks", []) if not c["ok"] and c["name"] in names})]
+    level = "watch" if changed or failing else "ok"
+    ev = (f"{by_status['VERIFIED']} rules checked on every video (sources read 20 Oct 2026, status VERIFIED); {by_status['CONFLICTING']} conflicting and {by_status['UNVERIFIED']} unverified are watched, not enforced. "
+          + (f"YouTube changed a page after a rule was verified: {'; '.join(f'{p} (rules: {sorted(set(ids))})' for p, ids in changed.items())}. " if changed else "")
+          + (f"Waiting videos failing a rule: {', '.join(failing)}. " if failing else ""))
+    return ind("rules", "YouTube rules checked on every video", level, ev.strip(),
+               "documented metadata limits, copied-wording check, kid-directed wording, thumbnail and title judged against the narration, the fixer repairs what it can; daily policy-page watch; post-publish safety check",
+               "When a page changes: read it (the Activity feed links it), then tell me to re-verify the rule. Conflicting items (the API private-upload rule) are settled by the first public video.")
+
+
 def assess(now: dt.datetime | None = None, out: Path | None = None, left: float | None = -1.0, running: list[str] | None = None) -> list[dict]:
     """All indicators. left=-1 means: read the balance live."""
     import llm
@@ -303,7 +326,7 @@ def assess(now: dt.datetime | None = None, out: Path | None = None, left: float 
         key = llm.api_key()
         left = credit_left(key) if key else None
     run = running_jobs() if running is None else running
-    rows = [facts(vs), rights(vs), pattern(vs, now), money(left, daily_spend()), process(run, worker_starts(now)), skills(), access(), publishing(vs, now), supply(now)]
+    rows = [facts(vs), rights(vs), pattern(vs, now), money(left, daily_spend()), process(run, worker_starts(now)), skills(), access(), publishing(vs, now), supply(now), rules(vs, now)]
     return rows
 
 

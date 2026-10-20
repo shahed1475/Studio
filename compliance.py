@@ -6,6 +6,8 @@ depends on changed after the rule was last verified. Docs: docs/COMPLIANCE.md.
 """
 import re
 
+import config
+
 TITLE_MAX, DESCRIPTION_MAX_BYTES, TAGS_MAX = 100, 5000, 500  # developers.google.com/youtube/v3/docs/videos, snippet properties
 COPY_WARN, COPY_BLOCK = 0.06, 0.15  # share of the narration's 8-word runs found in the source article; our videos measured 0 to 4.1% on 20 Oct 2026
 GRAM = 8
@@ -42,8 +44,16 @@ def tags_length(tags: list[str]) -> int:
     return sum(len(t) + (2 if " " in t else 0) for t in tags) + max(0, len(tags) - 1)
 
 
+def final_description(meta: dict) -> str:
+    """The description exactly as it is sent to YouTube: ours, the image credits, the channel's hashtags and the AI narration note."""
+    is_doc = meta.get("format") == "doc"
+    tags = " ".join(h for h in config.niche()["hashtags"] if not (is_doc and h == "#Shorts"))
+    credits = "\n\nFootage and image credits:\n" + "\n".join(meta["credits"]) if meta.get("credits") else ""
+    return f"{meta.get('description', '')}{credits}\n\n{tags}\n\nNarration is AI-generated."
+
+
 def metadata_problems(meta: dict) -> list[str]:
-    title, desc, tags = str(meta.get("title", "")), str(meta.get("description", "")), [str(t) for t in meta.get("tags", [])]
+    title, desc, tags = str(meta.get("title", "")), final_description(meta), [str(t) for t in meta.get("tags", [])]
     out = []
     if not title.strip():
         out.append("the title is empty")
@@ -82,14 +92,15 @@ def sanitize(meta: dict) -> list[str]:
         meta["tags"] = tags
         changes.append("dropped the last tags that did not fit")
     desc = meta.get("description", "")
-    if len(desc.encode()) > DESCRIPTION_MAX_BYTES:
+    room = DESCRIPTION_MAX_BYTES - (len(final_description(meta).encode()) - len(desc.encode()))  # what is added around ours when it is sent
+    if len(desc.encode()) > room:
         head, sep, chapters = desc.partition("\n\nChapters:\n")
         lines = chapters.split("\n") if sep else []
-        while len(lines) > 3 and len(("\n".join([head, "", "Chapters:"] + lines)).encode()) > DESCRIPTION_MAX_BYTES:
+        while len(lines) > 3 and len(("\n".join([head, "", "Chapters:"] + lines)).encode()) > room:
             lines.pop()
         desc = head + (sep + "\n".join(lines) if sep else "")
-        if len(desc.encode()) > DESCRIPTION_MAX_BYTES:
-            desc = desc.encode()[:DESCRIPTION_MAX_BYTES - 3].decode("utf-8", "ignore").rstrip() + "..."
+        if len(desc.encode()) > room:
+            desc = desc.encode()[:room - 3].decode("utf-8", "ignore").rstrip() + "..."
         meta["description"] = desc
         changes.append("shortened the description")
     return changes

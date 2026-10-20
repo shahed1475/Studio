@@ -129,9 +129,9 @@ def test_publishing_risk_names_unchecked_videos_going_public_soon_and_failed_rea
     assert risk.publishing(risk.videos(), NOW)["level"] == "act"
 
 
-def test_assess_returns_all_nine_and_summary_counts():
+def test_assess_returns_all_ten_and_summary_counts():
     rows = risk.assess(NOW, left=10.0, running=[])
-    assert [r["id"] for r in rows] == ["facts", "rights", "platform", "money", "process", "skills", "access", "publishing", "supply"]
+    assert [r["id"] for r in rows] == ["facts", "rights", "platform", "money", "process", "skills", "access", "publishing", "supply", "rules"]
     assert set(risk.summary(rows)) == {"act", "watch", "ok"} and all(r["controls"] for r in rows)
 
 
@@ -180,3 +180,17 @@ def test_next_documentary_row_follows_the_just_in_time_plan(monkeypatch):
     assert risk.supply(far - dt.timedelta(hours=20))["level"] == "act"  # under 30 hours away and still nothing: look now
     monkeypatch.setattr(autopilot, "plan_view", lambda now: {"rows": []})
     assert risk.supply(NOW)["level"] == "watch"
+
+
+def test_the_rules_row_counts_the_catalog_and_watches_pages_that_changed_after_a_rule_was_verified(world, monkeypatch):
+    import newswatch
+
+    monkeypatch.setattr(newswatch, "DATA_DIR", world / "data" / "newswatch")
+    row = risk.rules(risk.videos(), NOW)
+    assert row["id"] == "rules" and row["level"] == "ok" and "VERIFIED" in row["evidence"] and "conflicting" in row["evidence"].lower() and row["controls"]
+    (world / "data" / "newswatch").mkdir(parents=True)
+    (world / "data" / "newswatch" / "policy_log.json").write_text(json.dumps([{"at": "2026-10-25T06:10:00Z", "page": "Spam, deceptive practices and scams", "url": "u", "added": ["x"], "removed": []},
+                                                                           {"at": "2026-10-01T06:10:00Z", "page": "Monetization policies", "url": "u", "added": ["old"], "removed": []}]))
+    vid(world / "output", "p", review={"verdict": "fail", "checks": [{"name": "thumbnail_matches", "ok": False, "severity": "block", "detail": "x"}]})
+    row = risk.rules(risk.videos(), dt.datetime(2026, 10, 26, tzinfo=dt.timezone.utc))
+    assert row["level"] == "watch" and "thumbnail_matches" in row["evidence"] and "Spam, deceptive practices and scams" in row["evidence"] and "Monetization policies" not in row["evidence"]
