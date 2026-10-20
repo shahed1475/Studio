@@ -268,6 +268,27 @@ def publishing(vs, now: dt.datetime | None = None) -> dict:
                "Use Hold on the Autopilot page for any video you do not want to go out; look at the first public video yourself.")
 
 
+# ---- R9 daily supply ----
+def supply(vs) -> dict:
+    """A long video a day needs passing videos waiting ahead of it: ready ones (reviewed and approved), ones being repaired, ones stuck with the owner."""
+    ready = repair = stuck = 0
+    for folder, m in vs:
+        if m.get("video_id") or m.get("hold") or m.get("format") != "doc":
+            continue
+        verdict = (m.get("review") or {}).get("verdict")
+        if m.get("approved") and verdict == "pass":
+            ready += 1
+        elif verdict in ("fail", "needs_human") and not m.get("fix_gave_up") and m.get("fix_attempts", 0) < 2:
+            repair += 1
+        elif verdict in ("fail", "needs_human"):
+            stuck += 1
+    level = "act" if ready == 0 and repair == 0 else "watch" if ready < 2 else "ok"
+    return ind("supply", "No long video ready for tomorrow", level,
+               f"{ready} long video{'s' if ready != 1 else ''} ready ({ready} day{'s' if ready != 1 else ''} of cover), {repair} being repaired, {stuck} waiting for you",
+               "the fixer repairs titles, repeated endings, wrong pictures and unsupported facts; Autopilot makes new videos only while fewer than 3 of a kind are stuck",
+               "Decide on the videos marked waiting for you (Autopilot page); keep 'Make new videos' on so the queue refills." if stuck else "")
+
+
 def assess(now: dt.datetime | None = None, out: Path | None = None, left: float | None = -1.0, running: list[str] | None = None) -> list[dict]:
     """All indicators. left=-1 means: read the balance live."""
     import llm
@@ -278,7 +299,7 @@ def assess(now: dt.datetime | None = None, out: Path | None = None, left: float 
         key = llm.api_key()
         left = credit_left(key) if key else None
     run = running_jobs() if running is None else running
-    rows = [facts(vs), rights(vs), pattern(vs, now), money(left, daily_spend()), process(run, worker_starts(now)), skills(), access(), publishing(vs, now)]
+    rows = [facts(vs), rights(vs), pattern(vs, now), money(left, daily_spend()), process(run, worker_starts(now)), skills(), access(), publishing(vs, now), supply(vs)]
     return rows
 
 

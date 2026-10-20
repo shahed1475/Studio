@@ -129,9 +129,9 @@ def test_publishing_risk_names_unchecked_videos_going_public_soon_and_failed_rea
     assert risk.publishing(risk.videos(), NOW)["level"] == "act"
 
 
-def test_assess_returns_all_eight_and_summary_counts():
+def test_assess_returns_all_nine_and_summary_counts():
     rows = risk.assess(NOW, left=10.0, running=[])
-    assert [r["id"] for r in rows] == ["facts", "rights", "platform", "money", "process", "skills", "access", "publishing"]
+    assert [r["id"] for r in rows] == ["facts", "rights", "platform", "money", "process", "skills", "access", "publishing", "supply"]
     assert set(risk.summary(rows)) == {"act", "watch", "ok"} and all(r["controls"] for r in rows)
 
 
@@ -164,3 +164,18 @@ def test_the_documentary_prompt_uses_the_topic_shape(monkeypatch):
         pass
     c, n = scriptgen.shape_for("The Pied Piper")
     assert f"Give {c} chapters" in prompts[0] and any(f"Write {n} narration lines" in p for p in prompts[1:])
+
+
+def test_supply_counts_ready_repairing_and_stuck_long_videos(world):
+    out = world / "output"
+    assert risk.supply(risk.videos())["level"] == "act"
+    vid(out, "fixing", format="doc", review={"verdict": "fail"}, fix_attempts=1)
+    assert risk.supply(risk.videos())["level"] == "watch"
+    vid(out, "ready1", format="doc", approved=True, review={"verdict": "pass"})
+    assert risk.supply(risk.videos())["level"] == "watch" and "1 long video ready" in risk.supply(risk.videos())["evidence"]
+    vid(out, "ready2", format="doc", approved=True, review={"verdict": "pass"})
+    vid(out, "stuck", format="doc", review={"verdict": "needs_human"}, fix_gave_up=True)
+    r = risk.supply(risk.videos())
+    assert r["level"] == "ok" and "1 waiting for you" in r["evidence"] and "2 long videos ready" in r["evidence"]
+    vid(out, "uploaded", format="doc", approved=True, review={"verdict": "pass"}, video_id="X")
+    assert "2 long videos ready" in risk.supply(risk.videos())["evidence"]
