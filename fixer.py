@@ -113,7 +113,7 @@ def pick_title(meta: dict, others: list[str], chat=None, misleading: str = "", c
     return plain if plain and (misleading or not got) and check(meta, plain)[0] else None
 
 
-def visual_recheck(folder: Path) -> bool:
+def visual_recheck(folder: Path, meta: dict | None = None) -> bool:
     """The picture check that flagged this video may have used an older, stricter rule (or been a different reading). Read the frames again: True when
     fewer than WRONG_PICTURES are wrong and no caption is garbled, which makes a re-render unnecessary. A reading that cannot run says False."""
     import autopilot
@@ -128,6 +128,9 @@ def visual_recheck(folder: Path) -> bool:
     if pics is None or any(r["name"] == "visual_review" for r in rows):
         return False
     wrong = pics["detail"].count(" s: ") if not pics["ok"] else 0
+    if meta is not None:  # keep the fresh reading: the seconds of the wrong pictures say which scenes to redraw
+        meta["visual_check"] = {**(meta.get("visual_check") or {}), "at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                                "wrong_at": pics.get("times", []) if not pics["ok"] else []}
     garbled = bool(caps and not caps["ok"] and re.search(r"garbl|gibberish|stray|nonsens", caps["detail"], re.I))
     return wrong < autopilot.WRONG_PICTURES and not garbled
 
@@ -294,7 +297,7 @@ def fix(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) -> 
         rewrite = True
         fixed.append("made the video again after the final check found a problem")
     redrawn = meta.get("redraw_lines") or []
-    if "visual_review" in failing and not (meta.get("art_first") or redrawn) and visual_recheck(folder):
+    if "visual_review" in failing and not (meta.get("art_first") or redrawn) and visual_recheck(folder, meta):
         fixed.append("looked at the pictures again with the current rules: they are acceptable")
     elif "visual_review" in failing:
         new = [t for t in lines_at(meta, folder, (meta.get("visual_check") or {}).get("wrong_at") or []) if t not in redrawn]

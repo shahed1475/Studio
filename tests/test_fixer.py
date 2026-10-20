@@ -238,7 +238,7 @@ def test_rerender_picks_the_short_or_documentary_path(tmp_path, world, monkeypat
 
 
 def test_a_failed_picture_check_makes_the_pictures_again_with_illustrations_once(tmp_path, world, monkeypatch):
-    monkeypatch.setattr(fixer, "visual_recheck", lambda folder: False)
+    monkeypatch.setattr(fixer, "visual_recheck", lambda folder, meta=None: False)
     d = video(tmp_path, "doc-7", review=result("needs_human", ("visual_review", "human", "9.5 s: map of the wrong region")))
     world["results"] = [result("pass")]
     out = fixer.fix("doc-7", chat=lambda p: {}, rerender=world["rerender"])
@@ -322,7 +322,7 @@ def _timed(d, starts):
 
 
 def test_wrong_pictures_are_redrawn_at_the_flagged_scenes_not_everywhere(tmp_path, world, monkeypatch):
-    monkeypatch.setattr(fixer, "visual_recheck", lambda folder: False)
+    monkeypatch.setattr(fixer, "visual_recheck", lambda folder, meta=None: False)
     d = video(tmp_path, "doc-12", art_first=True, visual_check={"ok": False, "wrong_at": [12.0, 40.5], "rows": []},
               review=result("needs_human", ("visual_review", "human", "12.0 s: Roman photo; 40.5 s: blurry object")))
     _timed(d, [0.1, 5.0, 10.0, 20.0, 38.0, 50.0, 60.0, 70.0])
@@ -340,7 +340,7 @@ def test_wrong_pictures_are_redrawn_at_the_flagged_scenes_not_everywhere(tmp_pat
 
 
 def test_a_first_repair_with_known_wrong_pictures_redraws_only_those_before_any_blanket_redraw(tmp_path, world, monkeypatch):
-    monkeypatch.setattr(fixer, "visual_recheck", lambda folder: False)
+    monkeypatch.setattr(fixer, "visual_recheck", lambda folder, meta=None: False)
     d = video(tmp_path, "doc-13", visual_check={"ok": False, "wrong_at": [6.0]}, review=result("needs_human", ("visual_review", "human", "6 s: wrong")))
     _timed(d, [0.1, 5.0, 10.0, 20.0, 38.0, 50.0, 60.0, 70.0])
     world["results"] = [result("pass")]
@@ -365,3 +365,17 @@ def test_a_re_render_forgets_the_old_picture_reading_so_its_seconds_are_never_ap
 
     out = run.reset_for_rerender({"title": "t", "visual_check": {"wrong_at": [12.0]}, "redraw_lines": ["kept so the redrawn scenes stay drawn"]})
     assert "visual_check" not in out and out["redraw_lines"] == ["kept so the redrawn scenes stay drawn"]
+
+
+def test_a_picture_re_reading_that_still_finds_wrong_pictures_names_the_scenes_to_redraw(tmp_path, world, monkeypatch):
+    import videoinspect
+
+    d = video(tmp_path, "doc-14", review=result("needs_human", ("visual_review", "human", "an old reading")))
+    _timed(d, [0.1, 5.0, 10.0, 20.0, 38.0, 50.0, 60.0, 70.0])
+    rows = [{"name": "pictures_fit_story", "ok": False, "detail": "6.0 s: a; 21.0 s: b", "times": [6.0, 21.0]}, {"name": "captions_readable", "ok": True, "detail": "fine"}]
+    monkeypatch.setattr(videoinspect, "visual_review", lambda folder: rows)
+    world["results"] = [result("pass")]
+    out = fixer.fix("doc-14", chat=lambda p: {}, rerender=world["rerender"])
+    meta = json.loads((d / "meta.json").read_text())
+    assert meta["redraw_lines"] == [LINES[1]["text"], LINES[3]["text"]] and "art_first" not in meta and world["rerenders"] == ["doc-14"]
+    assert out["verdict"] == "pass"
