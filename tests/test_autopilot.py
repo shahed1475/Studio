@@ -234,3 +234,11 @@ def test_no_new_videos_while_three_of_that_kind_are_stuck_failed():
     assert "make_short" in [d for d, _ in plan(st)]
     docs = state([vid(f"d{i}", format="doc", verdict="needs_human") for i in range(3)], queue_len=5)
     assert "make" not in [d for d, _ in plan(docs)]
+
+
+def test_make_videos_off_plans_repairs_and_uploads_but_no_new_video_or_research():
+    st = state([vid("a", verdict="fail", fix_attempts=0), vid("b")], queue_len=0)
+    acts = [d for d, _ in plan(st, {**CFG, "make_videos": False})]
+    assert "fix" in acts and "review" in acts
+    assert not {"ideas", "make", "make_short", "make_clip", "make_news"} & set(acts)
+    assert "ideas" in [d for d, _ in plan(st)]

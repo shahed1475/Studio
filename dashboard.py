@@ -232,7 +232,7 @@ def validate_autopilot_config(raw: dict) -> dict:
             lo, hi = rules[k]
             if isinstance(v, bool) or not isinstance(v, int) or not lo <= v <= hi:
                 raise ValueError(f"{k} must be a whole number from {lo} to {hi}")
-        elif k in ("enabled", "auto_approve", "news_videos", "shorts"):
+        elif k in ("enabled", "auto_approve", "news_videos", "shorts", "make_videos"):
             if not isinstance(v, bool):
                 raise ValueError(f"{k} must be on or off")
         elif k in ("slots", "short_slots"):

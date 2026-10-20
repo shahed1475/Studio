@@ -25,6 +25,7 @@ DEFAULTS = {
     "min_queue": 3,
     "max_waiting": 2,            # finished videos not yet uploaded
     "slots": scheduler.SLOTS_DEFAULT,
+    "make_videos": True,         # off = repair, review and upload what exists, but start no new video (and no new research)
     "news_videos": True,         # build drafts from the weekly YouTube news digest (always need a human)
     "shorts": True,              # also make YouTube Shorts (vertical, under a minute)
     "shorts_per_day": 1,
@@ -111,7 +112,7 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime) -> list[dict]:
                 acts.append({"do": "upload", "slug": v["slug"]})
                 by_fmt[fmt] = by_fmt.get(fmt, 0) + 1
                 total += 1
-    if not state["busy"]:
+    if not state["busy"] and cfg["make_videos"]:
         if state["queue_len"] < cfg["min_queue"]:
             acts.append({"do": "ideas", "slug": None})
         if cfg["shorts"] and waiting["short"] < cfg["max_waiting_shorts"] and stuck["short"] < MAX_STUCK:
