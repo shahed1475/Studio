@@ -51,6 +51,15 @@ def pop_first() -> str | None:
         return cur[0]
 
 
+def remove_topic(topic: str) -> bool:
+    with filelock.locked(config.TOPICS_FILE):
+        cur = _read()
+        if topic not in cur:
+            return False
+        _write([t for t in cur if t != topic])
+        return True
+
+
 def push_front(topic: str) -> None:
     with filelock.locked(config.TOPICS_FILE):
         _write([topic] + [t for t in _read() if t != topic])

@@ -71,12 +71,23 @@ def cmd_research(n: int = 3) -> None:
     print("\n".join(f"+ {t}" for t in new) or "nothing new")
 
 
+def _best_topic(fmt: str) -> str | None:
+    """The queued topic the research and growth data like best that can be made well; the first in the queue if that ranking cannot run."""
+    import topicrank
+
+    try:
+        return topicrank.pop_best(fmt)
+    except Exception as e:
+        print(f"  topic ranking unavailable ({type(e).__name__}); taking the first topic")
+        return topicqueue.pop_first()
+
+
 def cmd_make(topic: str | None = None) -> Path:
     if not topic:
-        topic = topicqueue.pop_first()
+        topic = _best_topic("short")
         if not topic:
             cmd_ideas(10)
-            topic = topicqueue.pop_first()
+            topic = _best_topic("short")
         if not topic:
             raise SystemExit("no topics: could not make any ideas")
     print(f"Topic: {topic}")
@@ -146,10 +157,10 @@ def cmd_doc(topic: str | None = None) -> Path:
     import random
 
     if not topic:
-        topic = topicqueue.pop_first()
+        topic = _best_topic("doc")
         if not topic:
             cmd_research(3)
-            topic = topicqueue.pop_first()
+            topic = _best_topic("doc")
         if not topic:
             raise SystemExit("no topics: could not make any ideas")
     print(f"Documentary: {topic}")
