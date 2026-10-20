@@ -9,7 +9,8 @@ import dashboard
 import run
 
 NOW = datetime(2026, 10, 19, 12, 0, tzinfo=timezone.utc)
-CFG = {**autopilot.DEFAULTS, "enabled": True}
+CFG = {**autopilot.DEFAULTS, "enabled": True, "prepare_hours": 72,  # four documentary slots are due at the fixed test time
+       "slots": [{"day": d, "time": "18:00"} for d in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")]}
 
 
 def iso(dt):

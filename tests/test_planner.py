@@ -6,7 +6,7 @@ import planner
 NOW = dt.datetime(2026, 10, 20, 14, 0, tzinfo=dt.timezone.utc)  # Tuesday
 CFG = {"slots": [{"day": d, "time": "18:00"} for d in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")],
        "short_slots": [{"day": d, "time": "12:30"} for d in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")],
-       "review_window_hours": 24, "plan_ahead": 3}
+       "review_window_hours": 24, "prepare_hours": 12}
 
 
 def vid(slug, fmt="doc", **kw):
@@ -18,27 +18,30 @@ def test_slot_times_are_in_the_audience_time_zone_and_in_order():
     assert [a.strftime("%a %H:%M") for a in s] == ["Tue 22:00", "Wed 22:00", "Thu 22:00"]  # 18:00 in New York in October is 22:00 UTC
 
 
-def test_rows_show_what_fills_each_slot_and_a_slot_too_close_to_fill_says_so():
+def test_rows_say_what_fills_each_slot_and_only_due_slots_take_drafts():
     vs = [vid("up", video_id="X", publish_at="2026-10-21T22:00:00Z", verdict="pass", approved=True),
           vid("ready", verdict="pass", approved=True), vid("fixing", verdict="fail", fix_attempts=1)]
     docs = [r for r in planner.rows(CFG, vs, NOW) if r["format"] == "doc"][:5]
-    assert [r["status"] for r in docs] == ["too_soon", "uploaded", "ready", "repairing", "empty"]
-    assert docs[1]["slug"] == "up" and docs[2]["slug"] == "ready" and docs[3]["slug"] == "fixing"
-    assert "Wed" in docs[1]["us"] and "Thu" in docs[2]["us"]
+    # now is Tue 14:00 UTC: Tue's slot is under 24 h away, Wed's is due (inside 36 h), everything after is later
+    assert [r["status"] for r in docs] == ["too_soon", "uploaded", "ready", "later", "later"]
+    assert docs[2]["slug"] == "ready" and docs[3]["slug"] is None and "Thu" in docs[2]["us"]
+    assert docs[3]["starts_us"].startswith("Thu") and docs[4]["starts_us"].startswith("Fri")  # Autopilot starts on Friday's slot on Thursday evening (36 h before)
 
 
-def test_needs_counts_only_the_slots_nothing_covers():
-    assert planner.needs(CFG, [], NOW) == {"doc": 3, "short": 3}
-    vs = [vid("a", verdict="pass", approved=True), vid("b", verdict="fail", fix_attempts=1), vid("s1", "short", verdict="pass", approved=True)]
-    assert planner.needs(CFG, vs, NOW) == {"doc": 1, "short": 2}
-    vs.append(vid("gave", verdict="fail", fix_attempts=2, gave_up=True))  # a video the fixer gave up on covers nothing
-    assert planner.needs(CFG, vs, NOW) == {"doc": 1, "short": 2}
-    assert planner.needs({**CFG, "plan_ahead": 1}, vs, NOW) == {"doc": 0, "short": 0}
+def test_a_due_slot_takes_the_best_draft_else_a_new_video_and_ready_videos_take_it_first():
+    assert planner.needs(CFG, [], NOW) == {"doc": 1, "short": 1}
+    draft = [vid("d", verdict="fail", fix_attempts=1), vid("s", "short", verdict="needs_human")]
+    assert planner.needs(CFG, draft, NOW) == {"doc": 0, "short": 0} and planner.repair_targets(CFG, draft, NOW) == {"d", "s"}
+    ready = [vid("r", verdict="pass", approved=True), vid("d", verdict="fail")]
+    assert planner.needs(CFG, ready, NOW)["doc"] == 0 and planner.repair_targets(CFG, ready, NOW) == set()  # the ready one took Wednesday; the draft is parked
+    assert planner.needs({**CFG, "prepare_hours": 60}, [], NOW)["doc"] == 3  # a longer head start makes more slots due
 
 
-def test_a_held_news_or_uploaded_video_covers_no_future_slot():
-    vs = [vid("h", verdict="pass", hold=True), vid("n", verdict="needs_human", source="news"), vid("u", verdict="pass", video_id="X", publish_at="2026-10-19T22:00:00Z")]
-    assert planner.needs(CFG, vs, NOW)["doc"] == 3
+def test_parked_drafts_and_unfixable_ones_cover_nothing_that_is_not_due():
+    vs = [vid("gave", verdict="fail", fix_attempts=2, gave_up=True), vid("h", verdict="pass", hold=True), vid("n", verdict="needs_human", source="news")]
+    assert planner.needs(CFG, vs, NOW)["doc"] == 1  # none of them covers the due slot
+    vs2 = [vid(f"d{i}", verdict="fail") for i in range(5)]
+    assert planner.repair_targets(CFG, vs2, NOW) == {"d0"}  # five drafts, one due slot: the best one only, the rest stay parked
 
 
 def test_ready_folder_links_are_named_by_post_time_and_stale_links_go(tmp_path, monkeypatch):
@@ -62,5 +65,5 @@ def test_plan_view_lists_the_next_videos_and_what_is_still_to_make(monkeypatch):
     monkeypatch.setattr(autopilot, "load_config", lambda: cfg)
     monkeypatch.setattr(autopilot, "build_state", lambda now, c: st)
     v = autopilot.plan_view(NOW)
-    assert v["needs"] == {"doc": 2, "short": 3} and v["plan_ahead"] == 3 and v["per_day"] == {"doc": 1, "short": 1}
-    assert {r["status"] for r in v["rows"]} >= {"ready", "empty", "too_soon"} and all(r["at"] <= "2026-10-29T14:00:00Z" for r in v["rows"])
+    assert v["needs"] == {"doc": 0, "short": 1} and v["prepare_hours"] == 12 and v["per_day"] == {"doc": 1, "short": 1}
+    assert {r["status"] for r in v["rows"]} >= {"ready", "empty", "too_soon", "later"} and all(r["at"] <= "2026-10-29T14:00:00Z" for r in v["rows"])

@@ -1,8 +1,8 @@
 """The daily plan: which publish slots are coming, what fills each one, and how many videos Autopilot still has to make.
 
-Autopilot keeps the next `plan_ahead` slots of each kind (documentary, Short) covered. A slot is covered when a video is scheduled for it, or a video
-that will be (reviewed, being repaired, passed and waiting for its slot) is on its way. Only the slots nothing covers need a new video, so nothing is
-made for a day that is already taken, and a day is never left empty without a video being prepared for it.
+A video is made just in time: finished and approved a full review window (24 h) before its slot, started `prepare_hours` before that window opens. Slots
+inside that horizon are due. A due slot is filled by a passed video, else the best unfinished draft is repaired, else a new video is made; slots beyond
+the horizon cost nothing. See docs/AUTOPILOT.md.
 """
 import datetime as dt
 import os
@@ -52,10 +52,21 @@ def coming(v: dict) -> bool:
     return by_you or (verdict in ("fail", "needs_human") and v.get("fix_attempts", 0) < 2 and not v.get("gave_up"))
 
 
+def horizon(cfg: dict, now: dt.datetime) -> dt.datetime:
+    """Slots up to here are due: their video is made now so it is finished a full review window (24 h) before the slot."""
+    return now + dt.timedelta(hours=cfg["review_window_hours"] + cfg["prepare_hours"])
+
+
+def _draft_key(v: dict) -> tuple:
+    return (0 if v.get("verdict") is None else 1, 0 if v.get("fix_attempts", 0) > 0 else 1, v.get("blocking", 9), v.get("slug", ""))
+
+
 def rows(cfg: dict, videos: list[dict], now: dt.datetime, per_format: int | None = None) -> list[dict]:
-    """The coming slots with what fills each: uploaded, scheduled, a video on its way (ready or being repaired), or empty (to make).
-    A slot closer than the review window cannot be filled by a new video any more and says so."""
+    """The coming slots and what fills each: uploaded, scheduled, ready (passed, its time is set next), a draft being repaired or checked, empty (a new
+    video is made now), later (not due: nothing is made or repaired until `starts`), or too soon (less than the review window away, cannot take a new video).
+    Passed videos take the earliest empty slots; drafts and new videos are only for slots that are due."""
     earliest = now + dt.timedelta(hours=cfg["review_window_hours"])
+    due_until = horizon(cfg, now)
     out = []
     for fmt in ("doc", "short"):
         slots = slot_times(slots_for(cfg, fmt), now)
@@ -69,33 +80,41 @@ def rows(cfg: dict, videos: list[dict], now: dt.datetime, per_format: int | None
                 best = min(slots, key=lambda s: abs(s - at), default=None)
                 if best is not None and abs(best - at) <= MATCH and best not in taken:
                     taken[best] = v
-        pipeline = [v for v in mine if coming(v)]
-        pipeline.sort(key=lambda v: (0 if v.get("verdict") == "pass" else 1, v.get("slug", "")))
+        ready = sorted((v for v in mine if coming(v) and v.get("verdict") == "pass"), key=lambda v: v.get("slug", ""))
+        drafts = sorted((v for v in mine if coming(v) and v.get("verdict") != "pass"), key=_draft_key)
         for at in slots:
+            starts = at - dt.timedelta(hours=cfg["review_window_hours"] + cfg["prepare_hours"])
             row = {"format": fmt, "at": scheduler.to_rfc3339(at), "us": scheduler.fmt_local(at, TZ_AUDIENCE), "bd": scheduler.fmt_local(at, TZ_OWNER),
-                   "slug": None, "title": "", "status": "empty"}
+                   "slug": None, "title": "", "status": "empty", "starts_us": scheduler.fmt_local(starts, TZ_AUDIENCE), "starts_bd": scheduler.fmt_local(starts, TZ_OWNER)}
             if at in taken:
                 v = taken[at]
                 row.update(slug=v["slug"], title=v.get("title", ""), status="uploaded" if v.get("video_id") else "scheduled")
             elif at < earliest:
                 row["status"] = "too_soon"
-            elif pipeline:
-                v = pipeline.pop(0)
-                row.update(slug=v["slug"], title=v.get("title", ""), status="ready" if v.get("verdict") == "pass" else "repairing" if v.get("verdict") else "checking")
+            elif ready:
+                v = ready.pop(0)
+                row.update(slug=v["slug"], title=v.get("title", ""), status="ready")
+            elif at > due_until:
+                row["status"] = "later"
+            elif drafts:
+                v = drafts.pop(0)
+                row.update(slug=v["slug"], title=v.get("title", ""), status="repairing" if v.get("verdict") else "checking")
             out.append(row)
     return sorted(out, key=lambda r: (r["at"], r["format"]))
 
 
 def needs(cfg: dict, videos: list[dict], now: dt.datetime) -> dict:
-    """How many new videos of each kind are still missing for the next `plan_ahead` fillable slots."""
-    earliest = now + dt.timedelta(hours=cfg["review_window_hours"])
-    out = {}
-    for fmt in ("doc", "short"):
-        fillable = [at for at in slot_times(slots_for(cfg, fmt), now) if at >= earliest][: cfg["plan_ahead"]]
-        keep = {scheduler.to_rfc3339(a) for a in fillable}
-        empty = [r for r in rows(cfg, videos, now) if r["format"] == fmt and r["at"] in keep and r["status"] == "empty"]
-        out[fmt] = len(empty)
+    """How many new videos of each kind are missing for the slots that are due."""
+    out = {"doc": 0, "short": 0}
+    for r in rows(cfg, videos, now):
+        if r["status"] == "empty":
+            out[r["format"]] += 1
     return out
+
+
+def repair_targets(cfg: dict, videos: list[dict], now: dt.datetime) -> set[str]:
+    """The drafts worth working on now: the ones that take a slot which is due. Every other draft stays parked."""
+    return {r["slug"] for r in rows(cfg, videos, now) if r["status"] in ("repairing", "checking") and r["slug"]}
 
 
 def sync_ready_folder(videos: list[dict], root: Path | None = None) -> list[str]:

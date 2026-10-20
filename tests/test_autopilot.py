@@ -4,7 +4,8 @@ from datetime import datetime, timedelta, timezone
 import autopilot
 
 NOW = datetime(2026, 10, 19, 12, 0, tzinfo=timezone.utc)
-CFG = {**autopilot.DEFAULTS, "enabled": True}
+CFG = {**autopilot.DEFAULTS, "enabled": True, "prepare_hours": 72,  # four documentary slots are due at the fixed test time
+       "slots": [{"day": d, "time": "18:00"} for d in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")]}
 
 
 def vid(slug="v", **kw):
@@ -316,3 +317,18 @@ def test_the_tick_ends_with_a_finishing_pass_so_a_repaired_video_is_scheduled_at
     monkeypatch.setattr(autopilot, "EXECUTORS", {**{k: (lambda slug, cfg, now, k=k: ran.append((k, slug))) for k in autopilot.EXECUTORS}, "fix": fix})
     autopilot.tick(NOW)
     assert ran == [("fix", "f"), ("schedule", "f")]
+
+
+def test_nothing_is_made_or_repaired_for_slots_that_are_not_due_yet():
+    cfg = {**CFG, "prepare_hours": 0}  # only slots inside the 24 hour window plus zero hours: none is due at the fixed test time
+    draft = state([vid("d", format="doc", verdict="fail")], queue_len=5)
+    acts = [d for d, _ in plan(draft, cfg)]
+    assert "fix" not in acts and "make" not in acts and "make_short" not in acts  # the draft is parked, nothing new is started
+    later = [d for d, _ in plan(draft, {**cfg, "prepare_hours": 40})]
+    assert "fix" in later  # the same draft is worked on once its slot is due
+
+
+def test_a_due_slot_with_no_draft_gets_a_new_video_but_a_ready_video_is_used_first():
+    cfg = {**CFG, "prepare_hours": 10}
+    assert ("make", None) in plan(state([], queue_len=5), cfg)
+    assert ("make", None) not in plan(state([vid("r", format="doc", verdict="pass", approved=True)], queue_len=5), cfg)

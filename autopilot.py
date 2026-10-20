@@ -23,7 +23,7 @@ DEFAULTS = {
     "uploads_per_day": 1,
     "review_window_hours": 24,   # time between a pass and the public slot, for the human veto
     "upload_lead_hours": 2,      # upload this long before the slot (private, publishAt set)
-    "plan_ahead": 3,             # publish slots of each kind that are kept covered by a ready or coming video (3 with one slot a day = three days ahead)
+    "prepare_hours": 12,         # a video is started this many hours before its 24-hour review window opens (36 hours before the slot), never earlier
     "min_queue": 3,
     "max_waiting": 2,            # finished videos not yet uploaded
     "slots": scheduler.SLOTS_DEFAULT,
@@ -127,6 +127,8 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict
                 acts.append({"do": "upload", "slug": v["slug"]})
                 by_fmt[fmt] = by_fmt.get(fmt, 0) + 1
                 total += 1
+    targets = planner.repair_targets(cfg, state["videos"], now)  # only drafts that take a slot which is due are worked on; the rest stay parked
+    fixable = [v for v in fixable if v["slug"] in targets]
     todo = [v for v in fixable if v["slug"] not in skip]
     if todo:  # the fixer agent repairs what it can, then the reviewer decides again: one video at a time
         acts.append({"do": "fix", "slug": min(todo, key=focus_rank)["slug"]})
@@ -419,9 +421,9 @@ def plan_view(now: dt.datetime | None = None) -> dict:
         cfg = load_config()
         videos = build_state(now, cfg)["videos"]
         return {"rows": [r for r in planner.rows(cfg, videos, now) if r["at"] <= (now + dt.timedelta(days=9)).strftime("%Y-%m-%dT%H:%M:%SZ")],
-                "needs": planner.needs(cfg, videos, now), "plan_ahead": cfg["plan_ahead"], "per_day": {"doc": cfg["uploads_per_day"], "short": cfg["shorts_per_day"]}}
+                "needs": planner.needs(cfg, videos, now), "prepare_hours": cfg["prepare_hours"], "review_hours": cfg["review_window_hours"], "per_day": {"doc": cfg["uploads_per_day"], "short": cfg["shorts_per_day"]}}
     except Exception:
-        return {"rows": [], "needs": {"doc": 0, "short": 0}, "plan_ahead": 0, "per_day": {}}
+        return {"rows": [], "needs": {"doc": 0, "short": 0}, "prepare_hours": 0, "review_hours": 0, "per_day": {}}
 
 
 def status() -> dict:
