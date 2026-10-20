@@ -546,6 +546,7 @@ async function makeTopic(i,cmd){const t=S.queue[i];await api("/api/queue/remove"
 const DAYS=[["mon","Monday"],["tue","Tuesday"],["wed","Wednesday"],["thu","Thursday"],["fri","Friday"],["sat","Saturday"],["sun","Sunday"]];
 let AP=null,apSlots=null,apShort=null;Object.defineProperty(window,'apSlots',{get:()=>apSlots});Object.defineProperty(window,'apShort',{get:()=>apShort});
 async function apRefresh(){AP=await api("/api/autopilot");apSlots=null;apShort=null}
+const PROBLEM_WORDS={title_matches:"the title promises too much",duplicate_title:"the title is too like another",visual_review:"some pictures do not fit",variety_script:"the opening or ending is like another video",invented_facts:"facts the source does not support",claims:"claims to check",grounded:"no source article"};
 async function autopilot(m){
   if(!editing||!AP){try{await apRefresh()}catch(e){return}}
   const A=AP,c=A.config,last=A.status.last_tick,busy=!!running()||A.status.running;
@@ -558,6 +559,8 @@ async function autopilot(m){
     <button class="btn quiet" ${busy?"disabled":""} onclick="job('autopilot',['tick'])">${ico("arrow-clockwise")}Run one pass now</button></div>
   ${warn.length?`<div class="err" style="margin-top:12px">${warn.map(esc).join("<br>")}</div>`:""}
   <p class="help" style="margin-top:10px">${last?`Last pass ${ago(Date.parse(last.at)/1000)}. ${Object.keys(did).length?"Did: "+Object.entries(did).map(([k,n])=>n+" "+k.replace("_"," ")).join(", ")+".":"Nothing to do."}`:"No pass has run yet."}${last&&last.errors.length?` <span style="color:var(--bad)">Problems: ${esc(last.errors.join(" | "))}</span>`:""}${busy?" <b>A pass is running right now.</b> It can take a while when it makes a video, and the button comes back when it ends.":""}</p>
+
+  <div class="sec"><h2>Working on now</h2><div class="panel pad">${(f=>f?`<div class="ttl">${esc(f.title)}</div><div class="mute">One video at a time, documentaries first. Still open: ${esc(f.problems.map(n=>PROBLEM_WORDS[n]||n.replace(/_/g," ")).join(", ")||"a re-check")}. Repair try ${Math.min(f.tries+1,2)} of 2.</div>`:`<div class="mute">No video is being repaired. ${c.make_videos===false?"New videos are switched off.":"New videos start when the queue needs them."}</div>`)(A.status.focus)}</div></div>
 
   <div class="sec"><h2>Needs you (${A.needs_you.length})</h2><div class="panel">${A.needs_you.length?`<div class="rows">${A.needs_you.map(v=>`<div><div class="grow"><div class="ttl">${esc(v.title)}</div><div class="mute">${v.why.length?esc(v.why.join(" ")):"Reviewer flagged this video."}</div></div>${verdictBadge(v.verdict)}<button class="btn quiet sm" onclick="go('videos',{slug:'${v.slug}'})">Open</button></div>`).join("")}</div>`:empty("check-circle","Nothing needs you","Videos the reviewer is unsure about, and every news video, show up here.")}</div></div>
 

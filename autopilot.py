@@ -381,6 +381,19 @@ def is_running() -> bool:
             return True
 
 
+def focus_view(now: dt.datetime | None = None) -> dict | None:
+    """The one broken video Autopilot is working on (or will take next): what it is and what is still wrong with it."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    try:
+        cfg = load_config()
+        state = build_state(now, cfg)
+        slug = next((a["slug"] for a in plan_actions({**state, "busy": False}, {**cfg, "enabled": True}, now) if a["do"] == "fix"), None)
+        v = next((x for x in state["videos"] if x["slug"] == slug), None)
+        return {"slug": slug, "title": v["title"] or slug, "problems": v["problems"], "tries": v["fix_attempts"]} if v else None
+    except Exception:
+        return None
+
+
 def status() -> dict:
     last = json.loads(STATE_FILE.read_text()) if STATE_FILE.exists() else None
-    return {"config": load_config(), "last_tick": last, "running": is_running()}
+    return {"config": load_config(), "last_tick": last, "running": is_running(), "focus": focus_view()}

@@ -282,3 +282,12 @@ def test_a_tick_finishes_quick_repairs_then_stops_after_a_re_render(tmp_path, mo
     monkeypatch.setattr(autopilot, "EXECUTORS", {**{k: (lambda slug, cfg, now: None) for k in autopilot.EXECUTORS}, "fix": fix})
     autopilot.tick(NOW)
     assert ran == ["t1", "t2", "v1"]  # the two quick ones, then the re-render ends the tick; v2 waits for the next one
+
+
+def test_status_names_the_video_autopilot_is_working_on(monkeypatch):
+    st = state([vid("d1", format="doc", verdict="fail", blocking=2, problems=["title_matches", "visual_review"], title="The Pied Piper", fix_attempts=1), vid("ok", verdict="pass")])
+    monkeypatch.setattr(autopilot, "build_state", lambda now, cfg: st)
+    monkeypatch.setattr(autopilot, "load_config", lambda: {**CFG})
+    assert autopilot.focus_view(NOW) == {"slug": "d1", "title": "The Pied Piper", "problems": ["title_matches", "visual_review"], "tries": 1}
+    st["videos"] = [vid("ok", verdict="pass")]
+    assert autopilot.focus_view(NOW) is None

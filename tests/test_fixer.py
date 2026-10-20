@@ -237,7 +237,8 @@ def test_rerender_picks_the_short_or_documentary_path(tmp_path, world, monkeypat
     assert called == [("doc", "a-doc"), ("short", "a-short")]
 
 
-def test_a_failed_picture_check_makes_the_pictures_again_with_illustrations_once(tmp_path, world):
+def test_a_failed_picture_check_makes_the_pictures_again_with_illustrations_once(tmp_path, world, monkeypatch):
+    monkeypatch.setattr(fixer, "visual_recheck", lambda folder: False)
     d = video(tmp_path, "doc-7", review=result("needs_human", ("visual_review", "human", "9.5 s: map of the wrong region")))
     world["results"] = [result("pass")]
     out = fixer.fix("doc-7", chat=lambda p: {}, rerender=world["rerender"])
@@ -270,3 +271,16 @@ def test_when_the_reviewer_model_cannot_answer_the_fix_try_is_not_used_up(tmp_pa
     out = fixer.fix("doc-8", chat=lambda p: {"titles": ["A Quite Different Name for It"]}, rerender=world["rerender"])
     meta = json.loads((d / "meta.json").read_text())
     assert out["verdict"] == "unreviewed" and meta["fix_attempts"] == 0 and not meta.get("fix_gave_up")
+
+
+def test_flagged_pictures_that_read_acceptable_now_are_not_re_rendered(tmp_path, world, monkeypatch):
+    import videoinspect
+    d = video(tmp_path, "doc-9", review=result("needs_human", ("visual_review", "human", "113 s: burning town does not match")))
+    world["results"] = [result("pass")]
+    rows = [{"name": "pictures_fit_story", "ok": True, "detail": "none"}, {"name": "captions_readable", "ok": True, "detail": "fine"}]
+    monkeypatch.setattr(videoinspect, "visual_review", lambda folder: rows)
+    out = fixer.fix("doc-9", chat=lambda p: {}, rerender=world["rerender"])
+    assert world["rerenders"] == [] and "art_first" not in json.loads((d / "meta.json").read_text()) and out["verdict"] == "pass"
+    assert fixer.visual_recheck(d) is True
+    monkeypatch.setattr(videoinspect, "visual_review", lambda folder: [{"name": "pictures_fit_story", "ok": False, "detail": "9 s: x; 20 s: y"}, rows[1]])
+    assert fixer.visual_recheck(d) is False

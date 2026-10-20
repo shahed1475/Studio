@@ -92,6 +92,25 @@ def pick_title(meta: dict, others: list[str], chat=None, misleading: str = "", c
     return plain if plain and (misleading or not got) and check(meta, plain)[0] else None
 
 
+def visual_recheck(folder: Path) -> bool:
+    """The picture check that flagged this video may have used an older, stricter rule (or been a different reading). Read the frames again: True when
+    fewer than WRONG_PICTURES are wrong and no caption is garbled, which makes a re-render unnecessary. A reading that cannot run says False."""
+    import autopilot
+    import videoinspect
+
+    try:
+        rows = videoinspect.visual_review(folder)
+    except Exception:
+        return False
+    pics = next((r for r in rows if r["name"] == "pictures_fit_story"), None)
+    caps = next((r for r in rows if r["name"] == "captions_readable"), None)
+    if pics is None or any(r["name"] == "visual_review" for r in rows):
+        return False
+    wrong = pics["detail"].count(" s: ") if not pics["ok"] else 0
+    garbled = bool(caps and not caps["ok"] and re.search(r"garbl|gibberish|stray|nonsens", caps["detail"], re.I))
+    return wrong < autopilot.WRONG_PICTURES and not garbled
+
+
 def vary_script(meta: dict, folder: Path, detail: str, chat=None) -> int:
     """The reviewer found an opening or ending like a recent video's. A new closing line comes from a rotating set (Shorts) and a new opening from the
     writer; the voice is made again afterwards. Returns how many lines changed."""
@@ -229,7 +248,9 @@ def fix(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) -> 
         if n:
             fixed.append(f"changed {n} line{'s' if n != 1 else ''} so the script does not share a template with recent videos")
             rewrite = True
-    if "visual_review" in failing and not meta.get("art_first"):
+    if "visual_review" in failing and not meta.get("art_first") and visual_recheck(folder):
+        fixed.append("looked at the pictures again with the current rules: they are acceptable")
+    elif "visual_review" in failing and not meta.get("art_first"):
         meta["art_first"] = True  # the generic reserve pictures are the usual wrong ones: draw labelled illustrations for those scenes instead
         rewrite = True
         fixed.append("made the pictures again, drawing illustrations instead of using generic archive pictures")
