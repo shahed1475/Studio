@@ -328,7 +328,7 @@ def autopilot_view() -> dict:
 
     import scheduler
 
-    scheduled, needs = [], []
+    scheduled, needs, repairing = [], [], []
     for m in sorted(config.OUT.glob("*/meta.json")):
         d = json.loads(m.read_text())
         rv = d.get("review") or {}
@@ -337,13 +337,16 @@ def autopilot_view() -> dict:
                 "fails": d.get("autopilot_fails", 0)}
         you_ok = d.get("approved") and d.get("approved_by") == "you" and rv.get("verdict") != "fail"
         if rv.get("verdict") in ("needs_human", "fail") and not d.get("video_id") and not you_ok:
-            needs.append({**base, "why": [c["detail"] for c in rv.get("checks", []) if not c["ok"] and c["severity"] in ("block", "human")][:3]})
+            item = {**base, "why": [c["detail"] for c in rv.get("checks", []) if not c["ok"] and c["severity"] in ("block", "human")][:3]}
+            stale = any(c["name"] == "llm_review" and not c["ok"] for c in rv.get("checks", []))  # the AI part never ran: it is simply not reviewed yet
+            still_fixable = not (d.get("fix_gave_up") or d.get("fix_attempts", 0) >= 2 or d.get("source") == "news")
+            (repairing if (still_fixable or stale) and d.get("source") != "news" else needs).append(item)  # only what Autopilot cannot repair waits for you
         if d.get("publish_at"):
             when = dt.datetime.fromisoformat(d["publish_at"].replace("Z", "+00:00"))
             scheduled.append({**base, "publish_at": d["publish_at"], "uploaded": bool(d.get("video_id")),
                               "bd": scheduler.fmt_local(when, "Asia/Dhaka"), "us": scheduler.fmt_local(when, "America/New_York")})
     scheduled.sort(key=lambda x: x["publish_at"])
-    return {"scheduled": scheduled, "needs_you": needs}
+    return {"scheduled": scheduled, "needs_you": needs, "repairing": repairing}
 
 
 # ---------- jobs ----------

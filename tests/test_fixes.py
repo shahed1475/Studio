@@ -129,7 +129,7 @@ def test_failed_video_stays_in_needs_you_even_when_approved(tmp_path, monkeypatc
     monkeypatch.setattr(config, "OUT", tmp_path)
     d = tmp_path / "f"
     d.mkdir()
-    (d / "meta.json").write_text(json.dumps({"title": "f", "approved": True, "approved_by": "you", "review": {"verdict": "fail", "checks": []}}))
+    (d / "meta.json").write_text(json.dumps({"title": "f", "approved": True, "approved_by": "you", "review": {"verdict": "fail", "checks": []}, "fix_gave_up": True}))
     assert [v["slug"] for v in dashboard.autopilot_view()["needs_you"]] == ["f"]
 
 

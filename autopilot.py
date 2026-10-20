@@ -155,7 +155,8 @@ def build_state(now: dt.datetime, cfg: dict) -> dict:
         d = json.loads(m.read_text())
         videos.append({
             "slug": m.parent.name, "format": d.get("format", "short"), "source": d.get("source"), "approved": bool(d.get("approved")),
-            "verdict": (d.get("review") or {}).get("verdict"), "hold": bool(d.get("hold")),
+            "verdict": None if any(c["name"] == "llm_review" and not c["ok"] for c in (d.get("review") or {}).get("checks", [])) else (d.get("review") or {}).get("verdict"),
+            "hold": bool(d.get("hold")),
             "approved_by": d.get("approved_by"), "fix_attempts": d.get("fix_attempts", 0), "gave_up": bool(d.get("fix_gave_up")),
             "video_id": d.get("video_id"), "publish_at": d.get("publish_at"), "fails": d.get("autopilot_fails", 0),
             "blocking": len(failing_names(d)), "problems": failing_names(d), "title": d.get("title", ""),

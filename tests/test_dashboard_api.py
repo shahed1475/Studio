@@ -30,12 +30,15 @@ def test_autopilot_view_lists_scheduled_and_needs_you(tmp_path, monkeypatch):
     def add(name, **m):
         d = tmp_path / name; d.mkdir(); (d / "meta.json").write_text(json.dumps({"title": name, **m})); (d / "video.mp4").write_bytes(b"x")
     add("ok", review={"verdict": "pass", "checks": []}, publish_at="2026-10-23T22:00:00Z", approved=True)
-    add("flag", review={"verdict": "needs_human", "checks": [{"name": "claims", "ok": False, "severity": "human", "detail": "d"}]})
-    add("bad", review={"verdict": "fail", "checks": []})
+    add("flag", review={"verdict": "needs_human", "checks": [{"name": "claims", "ok": False, "severity": "human", "detail": "d"}]}, fix_attempts=2)
+    add("bad", review={"verdict": "fail", "checks": []}, fix_gave_up=True)
+    add("fixable", review={"verdict": "fail", "checks": []})  # Autopilot can still repair it: not yours yet
+    add("stale", review={"verdict": "fail", "checks": [{"name": "llm_review", "ok": False, "severity": "block", "detail": "review unavailable"}]}, fix_attempts=2)
     add("held", review={"verdict": "pass", "checks": []}, publish_at="2026-10-30T22:00:00Z", hold=True)
     view = dashboard.autopilot_view()
     assert [v["slug"] for v in view["scheduled"]] == ["ok", "held"]
     assert sorted(v["slug"] for v in view["needs_you"]) == ["bad", "flag"]
+    assert sorted(v["slug"] for v in view["repairing"]) == ["fixable", "stale"]
     assert view["scheduled"][0]["bd"] == "Sat 24 Oct, 04:00" and view["scheduled"][0]["us"] == "Fri 23 Oct, 18:00"
 
 
