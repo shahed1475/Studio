@@ -123,6 +123,8 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict
             if v.get("polish_wanted") and state.get("spend_ok", True) and (pub is None or pub - now > POLISH_MIN_LEAD):
                 polishable.append((pub or now + dt.timedelta(days=3650), v["slug"]))
                 continue  # edited first: approving or scheduling it now would be undone by the edit
+            if v.get("facts_open", v.get("polish_wanted")):
+                continue  # the owner wants nothing with an open invented-facts warning approved, scheduled or uploaded: it waits for a polish, or for the owner
             if cfg["auto_approve"] and not v["approved"] and v["verdict"] == "pass":
                 acts.append({"do": "approve", "slug": v["slug"]})  # reviewed earlier (by hand or by the fixer): the reviewer's pass counts
             cap = cfg["shorts_per_day"] if fmt == "short" else cfg["uploads_per_day"]
@@ -179,6 +181,7 @@ def build_state(now: dt.datetime, cfg: dict) -> dict:
             "approved_by": d.get("approved_by"), "fix_attempts": d.get("fix_attempts", 0), "gave_up": bool(d.get("fix_gave_up")),
             "video_id": d.get("video_id"), "publish_at": d.get("publish_at"), "fails": d.get("autopilot_fails", 0),
             "prelaunch_ok": bool((d.get("prelaunch") or {}).get("ok")),
+            "facts_open": d.get("approved_by") != "you" and bool(fixer.watch_problems((d.get("review") or {}).get("checks", []))),
             "polish_wanted": not d.get("polish_done") and d.get("approved_by") != "you" and bool(fixer.watch_problems((d.get("review") or {}).get("checks", []))),
             "blocking": len(failing_names(d)), "problems": failing_names(d), "title": d.get("title", ""),
         })

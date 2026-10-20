@@ -371,7 +371,10 @@ def polish(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) 
         (rerender or _rerender)(slug)  # the voice and pictures are made again from the corrected script
     result = reviewer.review(folder)
     agentlog.event("applied", f"Polished: {meta.get('title', slug)}", "; ".join(changed) + f". The reviewer now says {result['verdict']}.", now=now)
-    return {"changed": changed, "rerendered": bool(n), "verdict": result["verdict"]}
+    left = watch_problems(result.get("checks", []))
+    if left:  # the gate holds it: nothing with an open invented-facts warning is approved, scheduled or uploaded
+        agentlog.event("error", f"Held, facts warning remains: {meta.get('title', slug)}", "After the polish the reviewer still names: " + "; ".join(left)[:300] + ". It is not scheduled or uploaded until you decide.", notify=True, now=now)
+    return {"changed": changed, "rerendered": bool(n), "verdict": result["verdict"], "held": bool(left)}
 
 
 def archive(folder: Path) -> Path:

@@ -385,7 +385,16 @@ def test_no_polish_close_to_the_slot_without_a_warning_or_when_the_daily_cap_is_
     assert not [a for a in plan(state([close])) if a[0] == "polish"]
     assert not [a for a in plan(state([vid(verdict="pass", polish_wanted=False)])) if a[0] == "polish"]
     assert not [a for a in plan(state([vid(verdict="pass", polish_wanted=True)], spend_ok=False)) if a[0] == "polish"]
-    assert ("schedule", "v") in plan(state([vid(verdict="pass", approved=True, polish_wanted=True)], spend_ok=False))  # the video is not held up by a spent cap
+    assert ("schedule", "v") not in plan(state([vid(verdict="pass", approved=True, polish_wanted=True)], spend_ok=False))  # nothing with an open facts warning is scheduled, even when the cap is spent
+
+
+def test_a_video_with_an_open_facts_warning_is_never_approved_scheduled_prechecked_or_uploaded():
+    for pub in (None, iso(NOW + timedelta(hours=20)), iso(NOW + timedelta(hours=10))):
+        acts = plan(state([vid(verdict="pass", approved=True, polish_wanted=False, facts_open=True, prelaunch_ok=True, publish_at=pub)]))  # already polished, still warned
+        assert not [a for a in acts if a[0] in ("approve", "schedule", "prelaunch", "upload", "polish")]
+    assert ("approve", "v") in plan(state([vid(verdict="pass", approved=False, facts_open=False)]))  # a clean pass goes on as before
+
+
 
 
 def test_build_state_marks_only_passed_unpolished_videos_with_a_facts_warning(tmp_path, monkeypatch):
@@ -405,6 +414,7 @@ def test_build_state_marks_only_passed_unpolished_videos_with_a_facts_warning(tm
     monkeypatch.setattr(llm, "spent_today", lambda now: 0.2)
     st = autopilot.build_state(NOW, {**CFG, "daily_budget_usd": 1.5})
     assert {v["slug"]: v["polish_wanted"] for v in st["videos"]} == {"warned": True, "yours": False, "done": False, "clean": False}
+    assert {v["slug"]: v["facts_open"] for v in st["videos"]} == {"warned": True, "yours": False, "done": True, "clean": False}  # a warning that survived its polish still holds the video
     monkeypatch.setattr(llm, "spent_today", lambda now: 9.0)
     assert autopilot.build_state(NOW, CFG)["spend_ok"] is False
 

@@ -544,3 +544,10 @@ def test_remake_never_touches_a_video_that_is_on_youtube(tmp_path, world, monkey
     with pytest.raises(SystemExit, match="on YouTube"):
         fixer.remake("doc-19")
     assert (tmp_path / "output" / "doc-19").exists()
+
+
+def test_polish_reports_a_video_held_when_the_facts_warning_survives_it(tmp_path, world):
+    video(tmp_path, "doc-p8", review=WATCH_REVIEW, publish_at="2026-10-25T10:00:00Z")
+    world["results"] = [result("pass", ("invented_facts", "warn", "risk 5/10. invented guide"), ("invented_facts_watch", "warn", "moderate risk 5/10"))]
+    out = fixer.polish("doc-p8", chat=polish_chat(edits=[{"index": 2, "text": "The oracle was consulted on important decisions across the classical world by many visitors."}]), rerender=world["rerender"])
+    assert out["held"] is True
