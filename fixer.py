@@ -47,7 +47,7 @@ def realign_description(meta: dict, covers: str, chat=None) -> bool:
     outline = "; ".join(c.get("title", "") for c in meta.get("chapters", []) if c.get("title"))[:500]
     try:
         got = chat("Write the first two sentences of a YouTube description for a calm history video. Say only what the video really covers"
-                   + (f": {covers[:300]}" if covers else "") + f". Chapters: {outline}. Title: {meta.get('title', '')}. "
+                   + (f": {covers[:300]}" if covers else "") + f". Chapters: {outline}. Topic: {meta.get('topic', '')}. "
                    "Do not ask a question the video does not answer and do not promise a debate, a reveal or a verdict it lacks. Plain words, no emojis. "
                    'Return JSON {"intro": "..."}')
         intro = re.sub(r"[—–]", "-", str(got.get("intro", "")).strip())
@@ -259,14 +259,14 @@ def fix(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) -> 
     rewrite = False
 
     if "duplicate_title" in failing or "title_matches" in failing or not any(ch.isupper() for ch in meta.get("title", "")):
+        if "title_matches" in failing and realign_description(meta, failing["title_matches"].get("covers", ""), chat):  # first, so the title is judged against an honest description
+            fixed.append("rewrote the description to match what the video covers")
         t = pick_title(meta, other_titles(folder), chat, failing["title_matches"]["detail"] if "title_matches" in failing else "",
                        failing["title_matches"].get("covers", "") if "title_matches" in failing else "", None,
                        failing["title_matches"].get("better_titles") if "title_matches" in failing else None)
         if t:
             meta["title"] = t
             fixed.append(f"new title: {t}")
-            if "title_matches" in failing and realign_description(meta, failing["title_matches"].get("covers", ""), chat):
-                fixed.append("rewrote the description to match what the video covers")
     if "variety_script" in failing and meta.get("lines"):
         n = vary_script(meta, folder, failing["variety_script"]["detail"], chat)
         if n:

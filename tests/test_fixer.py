@@ -130,7 +130,7 @@ def test_a_title_the_reviewer_called_misleading_is_replaced_by_an_honest_one_fro
     chat = lambda p: seen.append(p) or {"titles": ["The Pied Piper of Hamelin: What the Records Actually Say"]}
     fixer.fix("doc-4", chat=chat, rerender=world["rerender"])
     assert json.loads((d / "meta.json").read_text())["title"] == "The Pied Piper of Hamelin: What the Records Actually Say"
-    assert "definite answer" in seen[0]  # the writer is told what was wrong
+    assert any("definite answer" in p for p in seen)  # the writer is told what was wrong
 
 
 def test_the_ai_review_is_given_the_source_article_so_supported_details_are_not_called_invented(monkeypatch):
@@ -189,7 +189,7 @@ def test_a_candidate_title_the_reviewer_would_reject_is_skipped_and_the_reason_r
     chat = lambda p: seen.append(p) or {"titles": ["Why Is the Voynich Book Unread Today?", "The Voynich Manuscript: What We Know So Far"]}
     fixer.fix("doc-5", chat=chat, rerender=world["rerender"])
     assert json.loads((d / "meta.json").read_text())["title"] == "The Voynich Manuscript: What We Know So Far"
-    assert "no 'Why' or 'How did' question" in seen[0]
+    assert any("no 'Why' or 'How did' question" in p for p in seen)
 
 
 def test_when_every_candidate_is_rejected_a_plain_honest_title_is_used(tmp_path, world, monkeypatch):
