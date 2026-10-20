@@ -41,6 +41,24 @@ def other_titles(folder: Path) -> list[str]:
     return [json.loads(m.read_text()).get("title", "") for m in folder.parent.glob("*/meta.json") if m.parent != folder]
 
 
+def realign_description(meta: dict, covers: str, chat=None) -> bool:
+    """The description's first two sentences promised something the narration does not deliver: write them again from what the video really covers."""
+    chat = chat or scriptgen._chat
+    outline = "; ".join(c.get("title", "") for c in meta.get("chapters", []) if c.get("title"))[:500]
+    try:
+        got = chat("Write the first two sentences of a YouTube description for a calm history video. Say only what the video really covers"
+                   + (f": {covers[:300]}" if covers else "") + f". Chapters: {outline}. Title: {meta.get('title', '')}. "
+                   "Do not ask a question the video does not answer and do not promise a debate, a reveal or a verdict it lacks. Plain words, no emojis. "
+                   'Return JSON {"intro": "..."}')
+        intro = re.sub(r"[—–]", "-", str(got.get("intro", "")).strip())
+    except Exception:
+        return False
+    if not 40 <= len(intro) <= 400:
+        return False
+    meta["description"] = seo.rebuild_description(meta.get("description", ""), intro)
+    return True
+
+
 def plain_title(meta: dict, others: list[str]) -> str | None:
     """The last resort: the subject and an honest promise, which no narration can contradict."""
     core = re.sub(r"^(the )?(legend|mystery|story) of (the )?", "", (meta.get("topic") or "").strip(), flags=re.I).strip(" ?.")
@@ -51,7 +69,7 @@ def plain_title(meta: dict, others: list[str]) -> str | None:
     return None
 
 
-def pick_title(meta: dict, others: list[str], chat=None, misleading: str = "", covers: str = "", check=None) -> str | None:
+def pick_title(meta: dict, others: list[str], chat=None, misleading: str = "", covers: str = "", check=None, suggestions: list[str] | None = None) -> str | None:
     """A title that is not like any other video's and that the reviewer's own question accepts: the search-based options first, then new ones
     from the writer, then a plain honest one. When the reviewer said the title promises more than the story delivers, the writer goes first
     and is told why and what the video really covers."""
@@ -68,6 +86,9 @@ def pick_title(meta: dict, others: list[str], chat=None, misleading: str = "", c
         return check(meta, t)[0]
 
     options = [seo.polish_title(t) for t in (meta.get("seo") or {}).get("titles", [])]
+    for t in (seo.polish_title(x) for x in (suggestions or [])):  # the reviewer's own honest suggestions come first, and still have to pass the question
+        if good(t):
+            return t
     for t in ([] if misleading else options):
         if good(t):
             return t
@@ -239,10 +260,13 @@ def fix(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) -> 
 
     if "duplicate_title" in failing or "title_matches" in failing or not any(ch.isupper() for ch in meta.get("title", "")):
         t = pick_title(meta, other_titles(folder), chat, failing["title_matches"]["detail"] if "title_matches" in failing else "",
-                       failing["title_matches"].get("covers", "") if "title_matches" in failing else "")
+                       failing["title_matches"].get("covers", "") if "title_matches" in failing else "", None,
+                       failing["title_matches"].get("better_titles") if "title_matches" in failing else None)
         if t:
             meta["title"] = t
             fixed.append(f"new title: {t}")
+            if "title_matches" in failing and realign_description(meta, failing["title_matches"].get("covers", ""), chat):
+                fixed.append("rewrote the description to match what the video covers")
     if "variety_script" in failing and meta.get("lines"):
         n = vary_script(meta, folder, failing["variety_script"]["detail"], chat)
         if n:

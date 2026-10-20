@@ -233,8 +233,11 @@ def llm_review(meta: dict, source: str = "") -> list[dict]:
             "Score 0 to 10: invented_facts_risk (specific names, dates, numbers or quotes that look made up or are "
             "stated as certain when the history is uncertain), policy_risk (hateful, graphic, dangerous, medical or "
             "financial advice, or anything advertisers or YouTube policy would reject). misleading_title is true when "
-            'the title promises something the narration does not deliver. Return JSON: {"invented_facts_risk": 0, '
-            '"policy_risk": 0, "misleading_title": false, "issues": []}. Put a real, specific issue in issues, or leave it empty.')
+            'the title or description promises something the narration does not deliver (a "Why" or "How" question it never answers, a debate it only mentions in '
+            'passing, a legend it says does not exist). When misleading_title is true also give title_reason (the promise and what the narration says instead), '
+            'covers (one sentence on what the narration really covers) and better_titles (three honest titles under 65 characters that promise only what it covers). '
+            'Return JSON: {"invented_facts_risk": 0, "policy_risk": 0, "misleading_title": false, "title_reason": "", "covers": "", "better_titles": [], '
+            '"issues": []}. Put a real, specific issue in issues, or leave it empty.')
         facts, policy = int(r["invented_facts_risk"]), int(r["policy_risk"])
         note = "; ".join(str(i) for i in r.get("issues", [])[:3])
     except Exception as e:  # cannot verify, so never auto-pass
@@ -245,6 +248,7 @@ def llm_review(meta: dict, source: str = "") -> list[dict]:
               ("title may mislead: " + str(r.get("title_reason") or "")[:260]).strip(": "))]
     if r.get("misleading_title"):
         out[-1]["covers"] = str(r.get("covers") or "")[:300]
+        out[-1]["better_titles"] = [str(t)[:90] for t in (r.get("better_titles") or [])[:3] if isinstance(t, str)]
     if 4 <= facts < 7:
         out.append(_c("invented_facts_watch", False, f"moderate risk {facts}/10", "warn"))
     if 4 <= policy < 6:
@@ -253,13 +257,15 @@ def llm_review(meta: dict, source: str = "") -> list[dict]:
 
 
 def title_ok(meta: dict, title: str) -> tuple[bool, str]:
-    """Would the reviewer accept this title for this narration? One cheap question. (True, "") when the model cannot be asked: the full review decides later."""
-    text = " ".join(l["text"] for l in meta.get("lines", []))[:6000]
+    """Would the full review accept this title for this narration and description? Asked of the same Claude model that does the review, with the same
+    strictness. (True, "") when the model cannot be asked: the full review decides later."""
+    text = " ".join(l["text"] for l in meta.get("lines", []))[:7000]
     try:
-        r = scriptgen._chat(
-            f"A YouTube video's narration:\n{text}\n\nProposed title: {title}\n\nDoes the title promise something the narration does not deliver (a Why or How "
-            "question it never answers, a legend or event it says did not happen)? Be strict. "
-            'Return JSON {"misleading_title": false, "reason": ""}.', "cheap")
+        r = scriptgen._review_chat(
+            f"A YouTube video's narration:\n{text}\n\nProposed title: {title}\nDescription: {meta.get('description', '')[:600]}\n\n"
+            "Does the title (or the description) promise something the narration does not deliver (a Why or How question it never answers, a debate it only "
+            "mentions in passing, a legend or event it says did not happen)? Be strict. "
+            'Return JSON {"misleading_title": false, "reason": ""}.')
         return (not r.get("misleading_title"), str(r.get("reason") or "")[:200])
     except Exception:
         return True, ""

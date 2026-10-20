@@ -284,3 +284,17 @@ def test_flagged_pictures_that_read_acceptable_now_are_not_re_rendered(tmp_path,
     assert fixer.visual_recheck(d) is True
     monkeypatch.setattr(videoinspect, "visual_review", lambda folder: [{"name": "pictures_fit_story", "ok": False, "detail": "9 s: x; 20 s: y"}, rows[1]])
     assert fixer.visual_recheck(d) is False
+
+
+def test_the_reviewers_better_titles_are_tried_first_and_the_description_is_rewritten_to_match(tmp_path, world):
+    d = video(tmp_path, "doc-10", title="Delphi: What Historians Debate", description="Old promise of a debate.\n\nSources:\nWikipedia\n\nChapters:\n0:00 One",
+              review=result("fail", ("title_matches", "block", "title may mislead: promises a debate")))
+    meta = json.loads((d / "meta.json").read_text())
+    meta["review"]["checks"][0].update(covers="the site and its temples", better_titles=["Delphi: Ruins, Dig and Temples"])
+    (d / "meta.json").write_text(json.dumps(meta))
+    world["results"] = [result("pass")]
+    chat = lambda p: {"intro": "A walk through the sanctuary of Delphi, its excavation and its temples of Apollo."} if "first two sentences" in p else {"titles": ["x" * 30]}
+    out = fixer.fix("doc-10", chat=chat, rerender=world["rerender"])
+    meta = json.loads((d / "meta.json").read_text())
+    assert meta["title"] == "Delphi: Ruins, Dig and Temples" and meta["description"].startswith("A walk through the sanctuary")
+    assert "Chapters:\n0:00 One" in meta["description"] and any("description" in f for f in out["fixed"])

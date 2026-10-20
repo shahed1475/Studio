@@ -243,3 +243,14 @@ def test_the_owner_is_told_once_when_the_ai_review_keeps_failing(tmp_path, monke
     meta = json.loads((d / "meta.json").read_text())
     assert meta["unreviewed_tries"] == reviewer.UNREVIEWED_ALERT + 2 and "review" not in meta
     assert sum("keeps failing" in e["title"] for e in agentlog.recent()) == 1
+
+
+def test_a_misleading_title_verdict_carries_the_reason_what_the_video_covers_and_better_titles(monkeypatch):
+    reply = {"invented_facts_risk": 1, "policy_risk": 0, "misleading_title": True, "title_reason": "promises a debate it only mentions",
+             "covers": "the site, its dig and temples", "better_titles": ["Delphi: Ruins and Dig", "Delphi Explained"], "issues": []}
+    seen = []
+    monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p: seen.append(p) or reply)
+    checks = reviewer.llm_review({"title": "t", "description": "d", "lines": [{"text": "a line"}]})
+    tm = next(c for c in checks if c["name"] == "title_matches")
+    assert not tm["ok"] and "promises a debate" in tm["detail"] and tm["covers"] == "the site, its dig and temples" and tm["better_titles"] == ["Delphi: Ruins and Dig", "Delphi Explained"]
+    assert "better_titles" in seen[0] and "title_reason" in seen[0]  # the model is actually asked for them

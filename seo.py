@@ -98,7 +98,9 @@ def make(folder: Path) -> dict:
     core = core_phrase(meta)
     kws = keywords(core)
     print(f"core phrase: {core}\nkeywords found: {len(kws)}")
-    story = " ".join(l["text"] for l in meta["lines"][:10])
+    starts = [c["start_line"] for c in meta.get("chapters", [])]  # the whole video in brief: each chapter's title and first sentence, not only the opening
+    outline = " ".join(f"[{c.get('title', '')}] {meta['lines'][c['start_line']]['text']}" for c in meta.get("chapters", []) if c["start_line"] < len(meta["lines"]))
+    story = (outline if starts and len(outline) > 200 else " ".join(l["text"] for l in meta["lines"][:10]))[:2200]
     data = scriptgen._chat(
         f"You write YouTube metadata for a calm storytelling channel (history, legends, mysteries) for US viewers.\n"
         f"Video topic: {meta['topic']}\nMain search phrase: {core}\nStory so far: {story}\n\n"
@@ -106,7 +108,8 @@ def make(folder: Path) -> dict:
         "Rules:\n"
         "- Give 5 title options, each under 65 characters, with the main search phrase in the first 40 characters, honest about what the video covers, "
         "no ALL CAPS words, no em-dashes, no emojis. Vary the style: a question, a plain statement, a curiosity hook.\n"
-        "- description_intro: 2 sentences that hook the viewer and use the main phrase once, naturally. Only facts the story supports.\n"
+        "- description_intro: 2 sentences that hook the viewer and use the main phrase once, naturally. Only facts the story supports, and promise only what the video covers: "
+        "no question it does not answer, no debate, reveal or verdict it lacks.\n"
         "- tags: 12 search phrases people would type, taken from or close to the suggestions above, each under 30 characters.\n"
         'Return JSON: {"titles": ["..."], "description_intro": "...", "tags": ["..."]}')
     titles = [polish_title(t) for t in data["titles"] if 8 < len(str(t)) <= 70][:5]
