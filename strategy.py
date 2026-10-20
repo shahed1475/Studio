@@ -88,7 +88,9 @@ def apply(sid: str) -> dict:
         if row["kind"] == "edit":
             editprofile.update(row["profile"])
         else:
-            topicqueue.append_unique(row["text"])
+            subject = topicqueue.subject_of(row["text"])  # advice such as "focus on mysteries" guides the research; only a named story is queued
+            if subject:
+                topicqueue.append_unique(subject)
         row["status"], row["applied_at"] = "applied", _now()
         _save(rows)
         return row

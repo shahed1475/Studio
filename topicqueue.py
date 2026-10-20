@@ -1,5 +1,6 @@
 """The topic queue (topics.json): every writer goes through here, so the dashboard, autopilot and the growth agent cannot lose each other's changes."""
 import json
+import re
 
 import config
 import filelock
@@ -84,3 +85,48 @@ def requeue_failed(topic: str) -> bool:
         rest = [t for t in _read() if t != topic]
         _write(rest + [topic] if keep else rest)
         return keep
+
+
+INSTRUCTION = re.compile(r"^\s*(create|focus|make|build|produce|write|use|retell|tell|develop|craft|prepare|publish|post|try|consider|add|explore|highlight|continue)\b", re.I)
+
+
+def looks_like_topic(text: str) -> bool:
+    """A subject to make a video about, not an instruction or advice. 'The Jersey Devil' is one; 'Create content around unsolved mysteries' is not."""
+    t = (text or "").strip()
+    return 6 <= len(t) <= 110 and not INSTRUCTION.match(t) and not t.endswith(".") and " videos that" not in t.lower() and "content around" not in t.lower()
+
+
+def subject_of(raw: str, chat=None) -> str | None:
+    """The queue takes subjects only. An instruction that names one story ('Create a retelling of the legend of the Jersey Devil...') is cut down to
+    that subject ('The Jersey Devil'); advice that names none is turned away."""
+    if looks_like_topic(raw):
+        return raw.strip()
+    import scriptgen
+
+    chat = chat or scriptgen._chat
+    try:
+        got = chat("Below is an instruction or advice for a YouTube history and legends channel. If it names ONE specific story, person, place, event or object "
+                   "(for example the Jersey Devil, the Mary Celeste, Roanoke), give that as a short topic of 2 to 8 words, like 'The Jersey Devil'. "
+                   'If it only gives general advice, return an empty topic. Return JSON {"topic": ""}.\n' + (raw or "")[:400])
+        t = str(got.get("topic", "")).strip(" .")
+    except Exception:
+        return None
+    return t if looks_like_topic(t) and 2 <= len(t.split()) <= 9 else None
+
+
+def clean_queue(chat=None, similar=None) -> tuple[list[str], list[str]]:
+    """One-time and on demand: turn the queued items into subjects, drop advice and near-duplicates. Returns (removed, kept)."""
+    import difflib
+
+    similar = similar or (lambda a, b: difflib.SequenceMatcher(None, re.sub(r"[^a-z0-9 ]", "", a.lower()), re.sub(r"[^a-z0-9 ]", "", b.lower())).ratio() >= 0.75)
+    with filelock.locked(config.TOPICS_FILE):
+        cur = _read()
+        kept, removed = [], []
+        for raw in cur:
+            t = subject_of(raw, chat)
+            if t and not any(similar(t, k) for k in kept):
+                kept.append(t)
+            else:
+                removed.append(raw)
+        _write(kept)
+        return removed, kept

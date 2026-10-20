@@ -99,6 +99,9 @@ def queue_ideas(cfg: dict, now: dt.datetime | None = None) -> list[str]:
     for t in ideas:
         if len(added) >= room:
             break
+        t = topicqueue.subject_of(t)  # the queue takes subjects, not instructions
+        if not t:
+            continue
         if any(_similar(t, k) for k in known + added):
             continue
         added.append(t.strip())
