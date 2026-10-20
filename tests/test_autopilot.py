@@ -182,7 +182,7 @@ def test_make_clip_executor_finishes_the_short(monkeypatch):
 
 def test_blocked_or_human_check_videos_go_to_the_fixer_first():
     fixable = vid("a", verdict="fail") , vid("b", verdict="needs_human")
-    assert [p for p in plan(state(fixable)) if p[0] == "fix"] == [("fix", "a"), ("fix", "b")]
+    assert [p for p in plan(state(fixable)) if p[0] == "fix"] == [("fix", "a")]  # one video at a time
 
 
 def test_the_fixer_leaves_alone_what_it_already_tried_twice_news_drafts_and_videos_you_approved():
@@ -241,24 +241,44 @@ def test_make_videos_off_plans_repairs_and_uploads_but_no_new_video_or_research(
     acts = [d for d, _ in plan(st, {**CFG, "make_videos": False})]
     assert "fix" in acts and "review" in acts
     assert not {"ideas", "make", "make_short", "make_clip", "make_news"} & set(acts)
-    assert "ideas" in [d for d, _ in plan(st)]
+    assert "ideas" in [d for d, _ in plan(state([vid("b")], queue_len=0))]
 
 
-def test_title_only_repairs_do_not_wait_for_the_heavy_slot(tmp_path, monkeypatch):
+def test_the_next_video_to_repair_is_a_documentary_then_one_already_in_progress_then_the_closest_to_passing():
+    st = state([vid("s1", format="short", verdict="fail", blocking=1), vid("d9", format="doc", verdict="fail", blocking=3),
+                vid("d2", format="doc", verdict="fail", blocking=1), vid("d5", format="doc", verdict="fail", blocking=4, fix_attempts=1)])
+    assert [p for p in plan(st) if p[0] == "fix"] == [("fix", "d5")]
+    st["videos"] = [v for v in st["videos"] if v["slug"] != "d5"]
+    assert [p for p in plan(st) if p[0] == "fix"] == [("fix", "d2")]
+    st["videos"] = [v for v in st["videos"] if v["slug"].startswith("s")]
+    assert [p for p in plan(st) if p[0] == "fix"] == [("fix", "s1")]
+
+
+def test_nothing_new_is_made_while_a_broken_video_can_still_be_repaired_but_it_is_once_none_can():
+    broken = state([vid("d", format="doc", verdict="fail")], queue_len=5)
+    assert not {"make", "make_short", "make_clip", "make_news", "ideas"} & {d for d, _ in plan(broken)}
+    done = state([vid("d", format="doc", verdict="fail", fix_attempts=2)], queue_len=5)
+    assert "make" in [d for d, _ in plan(done)]
+
+
+def test_a_tick_finishes_quick_repairs_then_stops_after_a_re_render(tmp_path, monkeypatch):
     import config
+    for name in ("t1", "t2", "v1", "v2"):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "meta.json").write_text("{}")
     monkeypatch.setattr(config, "OUT", tmp_path)
-    for name, checks in (("t1", ["title_matches"]), ("t2", ["duplicate_title"]), ("v1", ["visual_review"]), ("v2", ["visual_review"])):
-        d = tmp_path / name
-        d.mkdir()
-        (d / "meta.json").write_text(json.dumps({"format": "doc", "review": {"verdict": "fail", "checks": [{"name": c, "ok": False, "severity": "block", "detail": "x"} for c in checks]}}))
-    assert autopilot.cheap_fix(json.loads((tmp_path / "t1" / "meta.json").read_text())) and not autopilot.cheap_fix(json.loads((tmp_path / "v1" / "meta.json").read_text()))
-    st = state([vid("t1", verdict="fail", cheap_fix=True), vid("t2", verdict="fail", cheap_fix=True), vid("v1", verdict="fail"), vid("v2", verdict="fail")])
+    videos = {n: vid(n, format="doc", verdict="fail") for n in ("t1", "t2", "v1", "v2")}
     ran = []
+
+    def fix(slug, cfg, now):
+        ran.append(slug)
+        videos[slug]["verdict"] = "pass"  # repaired
+        return {"rerendered": slug.startswith("v")}
     monkeypatch.setattr(autopilot, "load_config", lambda: {**CFG})
-    monkeypatch.setattr(autopilot, "build_state", lambda now, cfg: st)
+    monkeypatch.setattr(autopilot, "build_state", lambda now, cfg: state(list(videos.values())))
     monkeypatch.setattr(autopilot, "LOCK_FILE", tmp_path / "lock")
     monkeypatch.setattr(autopilot, "STATE_FILE", tmp_path / "state.json")
     monkeypatch.setattr(autopilot, "LOG", tmp_path / "log")
-    monkeypatch.setattr(autopilot, "EXECUTORS", {k: (lambda slug, cfg, now, k=k: ran.append((k, slug))) for k in autopilot.EXECUTORS})
+    monkeypatch.setattr(autopilot, "EXECUTORS", {**{k: (lambda slug, cfg, now: None) for k in autopilot.EXECUTORS}, "fix": fix})
     autopilot.tick(NOW)
-    assert [r for r in ran if r[0] == "fix"] == [("fix", "t1"), ("fix", "t2"), ("fix", "v1")]  # both cheap ones and one heavy one; v2 waits for the next tick
+    assert ran == ["t1", "t2", "v1"]  # the two quick ones, then the re-render ends the tick; v2 waits for the next one

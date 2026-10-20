@@ -74,19 +74,22 @@ def dashboard_busy(job_file: Path = JOB_FILE) -> bool:
 
 
 WRONG_PICTURES = 2  # sampled frames showing the wrong place, person or period that hold a video back
+MAX_ROUNDS = 8  # videos looked at in one tick, when each repair is quick
 MAX_STUCK = 3  # stop making a kind of video while this many of it sit failed or waiting for a human
 
 
-CHEAP_CHECKS = {"title_matches", "duplicate_title", "title", "title_length"}
+def failing_names(meta: dict) -> list[str]:
+    return [c["name"] for c in (meta.get("review") or {}).get("checks", []) if not c["ok"] and c["severity"] in ("block", "human")]
 
 
-def cheap_fix(meta: dict) -> bool:
-    """A repair that is only words (a new title): no voice, no pictures, no render, so it need not wait for the heavy slot."""
-    failing = {c["name"] for c in (meta.get("review") or {}).get("checks", []) if not c["ok"] and c["severity"] in ("block", "human")}
-    return bool(failing) and failing <= CHEAP_CHECKS
+def focus_rank(v: dict) -> tuple:
+    """Which broken video to work on next: documentaries before Shorts, one already being repaired before an untouched one, then the one with
+    the fewest open problems, then by name so the choice never flips between ticks."""
+    return (0 if (v.get("format") or "doc") == "doc" else 1, 0 if v.get("fix_attempts", 0) > 0 else 1, v.get("blocking", 9), v["slug"])
 
 
-def plan_actions(state: dict, cfg: dict, now: dt.datetime) -> list[dict]:
+def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict]:
+    """skip: videos already worked on in this tick."""
     if not cfg["enabled"] or state["busy"]:
         return []
     acts = []
@@ -94,22 +97,24 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime) -> list[dict]:
     by_fmt = dict(state.get("uploads_by_format") or {"doc": state["uploads_today"]})
     lead = dt.timedelta(hours=cfg["upload_lead_hours"])
     waiting = {"doc": 0, "short": 0}
-    stuck = {"doc": 0, "short": 0}  # reviewed and not good enough: they wait for a fix or for the owner, and new ones must not pile on top
+    stuck = {"doc": 0, "short": 0}  # reviewed, repaired as far as the fixer can, and still not good enough: they wait for the owner
+    fixable = []                    # broken videos that still have repair tries left: one of them is worked on at a time, and nothing new is made meanwhile
     for v in state["videos"]:
         if v["video_id"] or v["hold"] or v["fails"] >= MAX_FAILS:
             continue
         fmt = v.get("format") or "doc"
         by_you = v["approved"] and v.get("approved_by") == "you"
         eligible = (v["verdict"] == "pass" and v["source"] != "news") or (v["verdict"] == "needs_human" and by_you)
-        if v["verdict"] in ("fail", "needs_human") and not eligible and not by_you:
+        repairable = v["verdict"] in ("fail", "needs_human") and not eligible and not by_you and v["source"] != "news" \
+            and v.get("fix_attempts", 0) < 2 and not v.get("gave_up")
+        if v["verdict"] in ("fail", "needs_human") and not eligible and not by_you and not repairable:
             stuck[fmt] += 1
         if v["verdict"] in (None, "pass") or eligible:
             waiting[fmt] += 1
         if v["verdict"] is None:
             acts.append({"do": "review", "slug": v["slug"]})
-        elif v["verdict"] in ("fail", "needs_human") and not eligible and not by_you and v["source"] != "news" \
-                and v.get("fix_attempts", 0) < 2 and not v.get("gave_up"):
-            acts.append({"do": "fix", "slug": v["slug"], "cheap": bool(v.get("cheap_fix"))})  # the fixer agent repairs what it can, then the reviewer decides again
+        elif repairable:
+            fixable.append(v)
         elif eligible:
             if cfg["auto_approve"] and not v["approved"] and v["verdict"] == "pass":
                 acts.append({"do": "approve", "slug": v["slug"]})  # reviewed earlier (by hand or by the fixer): the reviewer's pass counts
@@ -122,7 +127,10 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime) -> list[dict]:
                 acts.append({"do": "upload", "slug": v["slug"]})
                 by_fmt[fmt] = by_fmt.get(fmt, 0) + 1
                 total += 1
-    if not state["busy"] and cfg["make_videos"]:
+    todo = [v for v in fixable if v["slug"] not in skip]
+    if todo:  # the fixer agent repairs what it can, then the reviewer decides again: one video at a time
+        acts.append({"do": "fix", "slug": min(todo, key=focus_rank)["slug"]})
+    if not state["busy"] and cfg["make_videos"] and not fixable:
         if state["queue_len"] < cfg["min_queue"]:
             acts.append({"do": "ideas", "slug": None})
         if cfg["shorts"] and waiting["short"] < cfg["max_waiting_shorts"] and stuck["short"] < MAX_STUCK:
@@ -149,7 +157,7 @@ def build_state(now: dt.datetime, cfg: dict) -> dict:
             "verdict": (d.get("review") or {}).get("verdict"), "hold": bool(d.get("hold")),
             "approved_by": d.get("approved_by"), "fix_attempts": d.get("fix_attempts", 0), "gave_up": bool(d.get("fix_gave_up")),
             "video_id": d.get("video_id"), "publish_at": d.get("publish_at"), "fails": d.get("autopilot_fails", 0),
-            "cheap_fix": cheap_fix(d),
+            "blocking": len(failing_names(d)), "problems": failing_names(d), "title": d.get("title", ""),
         })
     by_fmt: dict = {}
     day = now.astimezone(dt.timezone.utc).strftime("%Y-%m-%d")
@@ -226,6 +234,7 @@ def do_fix(slug, cfg, now):
     out = fixer.fix(slug, now=now)
     if out.get("verdict") == "pass" and cfg["auto_approve"]:
         _approve(slug)
+    return out
 
 
 def do_schedule(slug, cfg, now):
@@ -325,23 +334,35 @@ def tick(now: dt.datetime | None = None) -> dict:
         return {"skipped": "locked"}
     try:
         cfg = load_config()
-        actions, errors, heavy = [], [], False
-        for a in plan_actions(build_state(now, cfg), cfg, now):
-            if a["do"] in ("make", "make_news") or (a["do"] == "fix" and not a.get("cheap")):
-                if heavy:
+        actions, errors, seen, worked = [], [], set(), set()
+        for _ in range(MAX_ROUNDS):  # a quick repair (a new title, a set-aside) lets the next video start in the same tick; a re-render ends the tick
+            stop, progressed = False, False
+            for a in plan_actions(build_state(now, cfg), cfg, now, skip=worked):
+                key = (a["do"], a["slug"])
+                if key in seen:
                     continue
-                heavy = True
-            try:
-                EXECUTORS[a["do"]](a["slug"], cfg, now)
-                actions.append(a)
-                _log(f"ok {a['do']} {a['slug'] or ''}")
-            except (Exception, SystemExit) as e:  # one failing step must not stop the rest
-                errors.append(f"{a['do']} {a['slug'] or ''}: {e}".strip())
-                _log(f"FAIL {errors[-1]}")
-                if a["slug"] and counts_as_failure(e):
-                    p, meta = _meta(a["slug"])
-                    meta["autopilot_fails"] = meta.get("autopilot_fails", 0) + 1
-                    p.write_text(json.dumps(meta, indent=2))
+                seen.add(key)
+                progressed = True
+                try:
+                    res = EXECUTORS[a["do"]](a["slug"], cfg, now)
+                    actions.append(a)
+                    _log(f"ok {a['do']} {a['slug'] or ''}")
+                    if a["do"] == "fix":
+                        worked.add(a["slug"])
+                        stop = stop or bool(isinstance(res, dict) and res.get("rerendered"))
+                    elif a["do"] in ("make", "make_news", "make_short", "make_clip"):
+                        stop = True
+                except (Exception, SystemExit) as e:  # one failing step must not stop the rest
+                    errors.append(f"{a['do']} {a['slug'] or ''}: {e}".strip())
+                    _log(f"FAIL {errors[-1]}")
+                    if a["do"] == "fix":
+                        worked.add(a["slug"])
+                    if a["slug"] and counts_as_failure(e):
+                        p, meta = _meta(a["slug"])
+                        meta["autopilot_fails"] = meta.get("autopilot_fails", 0) + 1
+                        p.write_text(json.dumps(meta, indent=2))
+            if stop or not progressed:
+                break
         result = {"at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "enabled": cfg["enabled"], "actions": actions, "errors": errors}
         STATE_FILE.write_text(json.dumps(result, indent=2))
         return result
