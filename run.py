@@ -41,7 +41,7 @@ import scriptgen
 import topicqueue
 import tts
 
-STALE = {"approved", "approved_by", "review", "publish_at", "autopilot_fails", "prelaunch"}
+STALE = {"approved", "approved_by", "review", "publish_at", "autopilot_fails", "prelaunch", "visual_check"}
 
 
 def reset_for_rerender(data: dict) -> dict:
@@ -227,7 +227,8 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
 
     art = lambda l: aiart.generate(l["text"], l.get("visual", ""), data["topic"])
     clips, credits, stats = footage.scene_images(data["lines"], data["topic"], anchors, judge=_image_judge(data["topic"]),
-                                                 art=art, art_limit=aiart.MAX_PER_VIDEO["doc"], art_first=bool(data.get("art_first")))
+                                                 art=art, art_limit=aiart.MAX_PER_VIDEO["doc"], art_first=bool(data.get("art_first")),
+                                                 force_art=set(data.get("redraw_lines") or []))
     if stats["missing"] or stats["unique"] < 6:
         shutil.rmtree(folder, ignore_errors=True)
         raise SystemExit(f"only {stats['unique']} on-topic images found ({stats['missing']} scenes without one); "

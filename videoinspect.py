@@ -380,7 +380,7 @@ def visual_review(folder: Path, frames: int = 10, post=None) -> list[dict]:
     wrong = [i for i in issues if i.get("kind") != "mood"]  # a picture with no kind counts as wrong: only a stated "mood" is let through
     mood = [i for i in issues if i.get("kind") == "mood"]
     rows = [{"name": "captions_readable", "ok": not a.get("caption_issues"), "severity": "warn", "detail": "; ".join(f"{i.get('t')} s: {i.get('issue')}" for i in a.get("caption_issues", [])[:3]) or "no caption problem seen in the sampled frames"},
-            {"name": "pictures_fit_story", "ok": not wrong, "severity": "warn", "detail": "; ".join(f"{i.get('t')} s: {i.get('issue')}" for i in wrong[:3]) or "no mismatch seen in the sampled frames"},
+            {"name": "pictures_fit_story", "ok": not wrong, "severity": "warn", "times": [i["t"] for i in wrong if isinstance(i.get("t"), (int, float))], "detail": "; ".join(f"{i.get('t')} s: {i.get('issue')}" for i in wrong[:3]) or "no mismatch seen in the sampled frames"},
             {"name": "no_repeated_pictures", "ok": not a.get("repeated_visuals"), "severity": "warn", "detail": "the same picture shows up repeatedly" if a.get("repeated_visuals") else "no repetition seen in the sampled frames"}]
     if mood:
         rows.append({"name": "pictures_mood", "ok": True, "severity": "info", "detail": f"{len(mood)} atmospheric pictures that are plausible but not literal: " + "; ".join(f"{i.get('t')} s" for i in mood[:5])})

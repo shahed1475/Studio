@@ -107,15 +107,52 @@ def support_filter(lines: list[dict], chapters: list[dict], sources: str) -> tup
         return lines, chapters
     if not bad or len(bad) > len(lines) * 0.25:
         return lines, chapters
+    return _drop_lines(lines, chapters, bad)
+
+
+_NUMBER = r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)"
+LABEL = re.compile(rf"^\s*(?:chapter|part|section)\s+{_NUMBER}\b\s*([:.)\u2013\u2014-]?)\s*", re.I)
+MIN_STRIPPED_WORDS = 6  # what is left after a "Chapter 5:" prefix must still be a real sentence, else the line was only a heading
+
+
+def _drop_lines(lines: list[dict], chapters: list[dict], bad: set[int]) -> tuple[list[dict], list[dict]]:
+    """Remove the lines at these indexes; each chapter starts on its first kept line, and a chapter left with no line is left out."""
     keep = [i for i in range(len(lines)) if i not in bad]
     new_index = {old: new for new, old in enumerate(keep)}
     fixed, seen = [], set()
-    for c in chapters:
-        start = next((new_index[i] for i in range(c["start_line"], len(lines)) if i in new_index), None)
+    for k, c in enumerate(chapters):
+        end = chapters[k + 1]["start_line"] if k + 1 < len(chapters) else len(lines)
+        start = next((new_index[i] for i in range(c["start_line"], end) if i in new_index), None)  # only lines of this chapter, never the next one's
         if start is not None and start not in seen:
             seen.add(start)
             fixed.append({**c, "start_line": start})
     return [lines[i] for i in keep], fixed
+
+
+def label_of(text: str) -> str | None:
+    """The 'Chapter 5' style label a narration line starts with, or None."""
+    m = LABEL.match(text)
+    return m.group(0).strip(" :.)-\u2013\u2014") if m else None
+
+
+def strip_labels(lines: list[dict], chapters: list[dict]) -> tuple[list[dict], list[dict], int]:
+    """The writer sometimes narrates its own outline ('Chapter 5: The Temples of Apollo', 'Chapter 6 examines ...'). A 'Chapter N:' prefix on a real
+    sentence is cut off; a line that is only a heading, or that talks about the chapter instead of the story, is dropped. Returns (lines, chapters, lines changed)."""
+    out, bad, changed = [], set(), 0
+    for i, l in enumerate(lines):
+        m = LABEL.match(l["text"])
+        if not m:
+            out.append(l)
+            continue
+        rest = l["text"][m.end():].strip()
+        if m.group(1) and len(rest.split()) >= MIN_STRIPPED_WORDS:
+            out.append({**l, "text": rest[:1].upper() + rest[1:]})
+        else:
+            out.append(l)
+            bad.add(i)
+        changed += 1
+    kept, fixed = _drop_lines(out, chapters, bad)
+    return kept, fixed, changed
 
 
 def country_ideas(country: str, signals: list[str], n: int = 4) -> list[str]:
@@ -191,6 +228,7 @@ def doc_script(topic: str, facts: str | None = None, grounded: str | None = None
                 f"Style: {nc['style']}\n{rules}\n\nStory so far: {told or '(nothing yet, this is the opening)'}\n\n"
                 f"Write chapter {n}: '{ch.get('title', '')}' - {ch.get('summary', '')}\n"
                 f"Write {n_lines} narration lines of 16 to 24 words each. Do not repeat earlier chapters. "
+                "Never write chapter numbers, headings or phrases like 'this chapter' in a line: every line is story the listener hears. "
                 "For every line give 'visual': 2 to 4 words to search an archival image for (a real place, person, "
                 "object, map or artwork named in the line; always include the name of the place or subject, for example "
                 "'Hamelin church', never just 'old manuscript'). "
@@ -207,6 +245,7 @@ def doc_script(topic: str, facts: str | None = None, grounded: str | None = None
         chapters.append({"title": chapter_title(ch, got), "start_line": len(lines)})
         lines += got
         told += f" Chapter {n} ({ch.get('title', '')}): {ch.get('summary', '')}"
+    lines, chapters, _ = strip_labels(lines, chapters)  # the writer must not narrate its own outline
     if grounded:
         lines, chapters = support_filter(lines, chapters, grounded)
     words = sum(len(l["text"].split()) for l in lines)

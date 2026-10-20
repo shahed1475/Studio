@@ -298,3 +298,70 @@ def test_the_reviewers_better_titles_are_tried_first_and_the_description_is_rewr
     meta = json.loads((d / "meta.json").read_text())
     assert meta["title"] == "Delphi: Ruins, Dig and Temples" and meta["description"].startswith("A walk through the sanctuary")
     assert "Chapters:\n0:00 One" in meta["description"] and any("description" in f for f in out["fixed"])
+
+
+def test_label_lines_are_cut_out_of_the_script_and_the_video_is_made_again(tmp_path, world):
+    lines = [{"text": "The sanctuary stood on the slope of Mount Parnassus above the valley.", "visual": "a"},
+             {"text": "Chapter 5: The Temples of Apollo", "visual": "b"},
+             {"text": "Mythical temples once stood on the site, starting with one built of olive branches.", "visual": "c"},
+             {"text": "Chapter 6 examines the artifacts in the museum, such as the Charioteer of Delphi.", "visual": "d"},
+             {"text": "The Pythia was the priestess of Apollo at the oracle of Delphi.", "visual": "e"}]
+    chapters = [{"title": "One", "start_line": 0}, {"title": "Two", "start_line": 1}, {"title": "Three", "start_line": 3}]
+    d = video(tmp_path, "doc-11", lines=lines, chapters=chapters, review=result("fail", ("script_labels", "block", "2 narration lines read the outline aloud")))
+    world["results"] = [result("pass")]
+    out = fixer.fix("doc-11", chat=lambda p: {}, rerender=world["rerender"])
+    meta = json.loads((d / "meta.json").read_text())
+    assert [l["text"][:9] for l in meta["lines"]] == ["The sanct", "Mythical ", "The Pythi"]
+    assert [c["start_line"] for c in meta["chapters"]] == [0, 1, 2] and world["rerenders"] == ["doc-11"]
+    assert any("outline" in f for f in out["fixed"]) and out["verdict"] == "pass"
+
+
+def _timed(d, starts):
+    """words.json as the voice writes it: one word per narration line is enough to place the lines in time."""
+    (d / "words.json").write_text(json.dumps([{"s": s, "e": s + 0.3, "w": "x", "i": i} for i, s in enumerate(starts)]))
+
+
+def test_wrong_pictures_are_redrawn_at_the_flagged_scenes_not_everywhere(tmp_path, world, monkeypatch):
+    monkeypatch.setattr(fixer, "visual_recheck", lambda folder: False)
+    d = video(tmp_path, "doc-12", art_first=True, visual_check={"ok": False, "wrong_at": [12.0, 40.5], "rows": []},
+              review=result("needs_human", ("visual_review", "human", "12.0 s: Roman photo; 40.5 s: blurry object")))
+    _timed(d, [0.1, 5.0, 10.0, 20.0, 38.0, 50.0, 60.0, 70.0])
+    world["results"] = [result("pass")]
+    out = fixer.fix("doc-12", chat=lambda p: {}, rerender=world["rerender"])
+    meta = json.loads((d / "meta.json").read_text())
+    assert meta["redraw_lines"] == [LINES[2]["text"], LINES[4]["text"]] and world["rerenders"] == ["doc-12"]
+    assert any("2 pictures" in f for f in out["fixed"])
+    world["rerenders"].clear()  # the same readings again: those scenes are already redrawn, nothing new to try
+    meta["review"] = result("needs_human", ("visual_review", "human", "again")); meta["fix_attempts"] = 0
+    (d / "meta.json").write_text(json.dumps(meta))
+    world["results"] = [result("needs_human", ("visual_review", "human", "again"))]
+    fixer.fix("doc-12", chat=lambda p: {}, rerender=world["rerender"])
+    assert world["rerenders"] == []
+
+
+def test_a_first_repair_with_known_wrong_pictures_redraws_only_those_before_any_blanket_redraw(tmp_path, world, monkeypatch):
+    monkeypatch.setattr(fixer, "visual_recheck", lambda folder: False)
+    d = video(tmp_path, "doc-13", visual_check={"ok": False, "wrong_at": [6.0]}, review=result("needs_human", ("visual_review", "human", "6 s: wrong")))
+    _timed(d, [0.1, 5.0, 10.0, 20.0, 38.0, 50.0, 60.0, 70.0])
+    world["results"] = [result("pass")]
+    fixer.fix("doc-13", chat=lambda p: {}, rerender=world["rerender"])
+    meta = json.loads((d / "meta.json").read_text())
+    assert meta["redraw_lines"] == [LINES[1]["text"]] and "art_first" not in meta
+
+
+def test_scene_images_draws_the_forced_scenes_even_when_a_picture_is_found_and_the_art_cap_is_spent(monkeypatch):
+    import footage
+    from pathlib import Path
+
+    monkeypatch.setattr(footage, "images_for", lambda q, anchors, n, skip=(), judge=None: [(Path(f"{q}.jpg"), "credit")] if q in ("one", "two") else [])
+    art = lambda l: (Path("drawn.jpg"), "AI-generated")
+    lines = [{"text": "first", "visual": "one"}, {"text": "second", "visual": "two"}]
+    clips, _, stats = footage.scene_images(lines, "topic", [], art=art, art_limit=0, force_art={"second"})
+    assert [str(c) for c in clips] == ["one.jpg", "drawn.jpg"] and stats["drawn"] == 1
+
+
+def test_a_re_render_forgets_the_old_picture_reading_so_its_seconds_are_never_applied_to_the_new_timings():
+    import run
+
+    out = run.reset_for_rerender({"title": "t", "visual_check": {"wrong_at": [12.0]}, "redraw_lines": ["kept so the redrawn scenes stay drawn"]})
+    assert "visual_check" not in out and out["redraw_lines"] == ["kept so the redrawn scenes stay drawn"]

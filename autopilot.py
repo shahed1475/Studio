@@ -200,7 +200,8 @@ def visually_ok(slug: str) -> bool:
         return True
     pics = next((r for r in rows if r["name"] == "pictures_fit_story"), None)
     p0, m0 = _meta(slug)
-    m0["visual_check"] = {"at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "ok": True, "rows": [r["name"] + ": " + r["detail"][:120] for r in rows if not r["ok"]]}
+    m0["visual_check"] = {"at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "ok": True, "rows": [r["name"] + ": " + r["detail"][:120] for r in rows if not r["ok"]],
+                         "wrong_at": (pics or {}).get("times", []) if pics and not pics["ok"] else []}
     p0.write_text(json.dumps(m0, indent=2))
     caps = next((r for r in rows if r["name"] == "captions_readable"), None)
     n_pics = (pics["detail"].count(" s: ") if pics and not pics["ok"] else 0)

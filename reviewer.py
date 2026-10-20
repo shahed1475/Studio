@@ -111,6 +111,14 @@ def footage_checks(meta: dict) -> list[dict]:
     return out
 
 
+def label_check(meta: dict) -> dict:
+    """The voice must never read the writer's outline ('Chapter 5: The Temples of Apollo')."""
+    import scriptgen
+
+    bad = [l["text"][:50] for l in meta.get("lines", []) if scriptgen.label_of(l["text"])]
+    return _c("script_labels", not bad, f"{len(bad)} narration lines read the outline aloud: " + "; ".join(bad[:3]) if bad else "no chapter labels in the narration")
+
+
 def _norm(s: str) -> str:
     return re.sub(r"[^a-z0-9 ]", "", s.lower()).strip()
 
@@ -199,6 +207,7 @@ def rule_checks(meta: dict, probe: dict, existing_titles: list[str], thumb_bytes
     words = sum(len(l.split()) for l in lines)
     out.append(_c("script_length", words >= lim["words"], f"{words} words (need {lim['words']})"))
     dupes = len(lines) - len(set(lines))
+    out.append(label_check(meta))
     out.append(_c("script_loop", dupes <= max(1, len(lines) // 10), f"{dupes} repeated narration lines"))
     claims = unhedged_claims([l["text"] for l in meta.get("lines", [])], source, meta.get("verified_claims", []))
     out += metadata_checks(meta)

@@ -179,13 +179,14 @@ def image_for(query: str, anchors: list[str] | None = None) -> tuple[Path, str] 
     return hits[0] if hits else None
 
 
-def scene_images(lines: list[dict], topic: str, anchors: list[str], pool_size: int = 10, judge=None, art=None, art_limit: int = 0, art_first: bool = False) -> tuple[list, list[str], dict]:
+def scene_images(lines: list[dict], topic: str, anchors: list[str], pool_size: int = 10, judge=None, art=None, art_limit: int = 0, art_first: bool = False, force_art: set[str] | None = None) -> tuple[list, list[str], dict]:
     """One relevant image per scene: a specific search first, then unused images about the subject, then reuse.
     When no real picture is left, art(line) may draw one illustration (up to art_limit per video) instead of repeating a picture.
     art_first: skip the generic reserve of subject pictures (the usual source of a ruin or map that is not quite the place) and draw instead.
+    force_art: narration lines whose picture was judged wrong: they are drawn whatever a search finds, outside the art cap (the cache makes a repeat free).
     A scene only goes blank when nothing about the subject can be found at all."""
     used: list[Path] = []
-    drawn = 0
+    drawn = forced = 0
     credit: dict[Path, str] = {}
     pool: list[tuple[Path, str]] = []
     for q in dict.fromkeys([topic, *anchors]):  # the subject itself: a reserve of on-topic images
@@ -193,7 +194,10 @@ def scene_images(lines: list[dict], topic: str, anchors: list[str], pool_size: i
     clips: list[Path | None] = []
     for l in lines:
         hit = None
-        if l.get("visual"):
+        if art and l.get("text") in (force_art or ()):
+            hit = art(l)
+            forced += bool(hit)
+        if not hit and l.get("visual"):
             hits = images_for(l["visual"], anchors, 1, skip=used, judge=judge)
             hit = hits[0] if hits else None
         if not hit and art_first and art and drawn < art_limit:
@@ -213,5 +217,5 @@ def scene_images(lines: list[dict], topic: str, anchors: list[str], pool_size: i
             clips.append(used[len([c for c in clips if c]) % len(used)])
         else:
             clips.append(None)
-    stats = {"scenes": len(lines), "unique": len(used), "missing": sum(c is None for c in clips), "drawn": drawn}
+    stats = {"scenes": len(lines), "unique": len(used), "missing": sum(c is None for c in clips), "drawn": drawn + forced}
     return clips, list(dict.fromkeys(credit[p] for p in used)), stats

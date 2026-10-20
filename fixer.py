@@ -132,6 +132,24 @@ def visual_recheck(folder: Path) -> bool:
     return wrong < autopilot.WRONG_PICTURES and not garbled
 
 
+def lines_at(meta: dict, folder: Path, times: list) -> list[str]:
+    """The narration lines being spoken at these seconds of the finished video (the voice's word timings say when each line starts)."""
+    try:
+        words = json.loads((folder / "words.json").read_text())
+    except (OSError, ValueError):
+        return []
+    start: dict[int, float] = {}
+    for w in words:
+        start[w["i"]] = min(start.get(w["i"], w["s"]), w["s"])
+    texts = [l["text"] for l in meta.get("lines", [])]
+    out: list[str] = []
+    for t in times:
+        spoken = [i for i, st in start.items() if st <= float(t) and i < len(texts)]
+        if spoken and texts[max(spoken)] not in out:
+            out.append(texts[max(spoken)])
+    return out
+
+
 def vary_script(meta: dict, folder: Path, detail: str, chat=None) -> int:
     """The reviewer found an opening or ending like a recent video's. A new closing line comes from a rotating set (Shorts) and a new opening from the
     writer; the voice is made again afterwards. Returns how many lines changed."""
@@ -275,12 +293,24 @@ def fix(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) -> 
     if "prelaunch" in failing:  # the real file or the written rules failed the final check: the video is made again from its saved script
         rewrite = True
         fixed.append("made the video again after the final check found a problem")
-    if "visual_review" in failing and not meta.get("art_first") and visual_recheck(folder):
+    redrawn = meta.get("redraw_lines") or []
+    if "visual_review" in failing and not (meta.get("art_first") or redrawn) and visual_recheck(folder):
         fixed.append("looked at the pictures again with the current rules: they are acceptable")
-    elif "visual_review" in failing and not meta.get("art_first"):
-        meta["art_first"] = True  # the generic reserve pictures are the usual wrong ones: draw labelled illustrations for those scenes instead
-        rewrite = True
-        fixed.append("made the pictures again, drawing illustrations instead of using generic archive pictures")
+    elif "visual_review" in failing:
+        new = [t for t in lines_at(meta, folder, (meta.get("visual_check") or {}).get("wrong_at") or []) if t not in redrawn]
+        if new:  # the vision reading named the seconds of the wrong pictures: draw illustrations for exactly those scenes (cheap, and a search cannot bring the same photo back)
+            meta["redraw_lines"] = redrawn + new
+            rewrite = True
+            fixed.append(f"redrew {len(new)} pictures the picture check found wrong, the rest kept")
+        elif not meta.get("art_first"):
+            meta["art_first"] = True  # no scene is named: the generic reserve pictures are the usual wrong ones, draw labelled illustrations instead
+            rewrite = True
+            fixed.append("made the pictures again, drawing illustrations instead of using generic archive pictures")
+    if "script_labels" in failing and meta.get("lines"):
+        meta["lines"], meta["chapters"], n = scriptgen.strip_labels(meta["lines"], meta.get("chapters", []))
+        if n:
+            rewrite = True
+            fixed.append(f"cut {n} lines that read the script's outline aloud ('Chapter 5: ...') and made the voice again")
     tags = clean_tags(meta)
     if tags != meta.get("tags"):
         meta["tags"] = tags
