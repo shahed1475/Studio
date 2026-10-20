@@ -453,3 +453,9 @@ def test_a_video_you_approved_gets_a_picture_reading_at_the_final_check_and_you_
     assert bad["visual_check"]["ok"] is False and bad["visual_check"]["wrong_at"] == [4.0, 9.0] and bad["prelaunch"]["ok"] is True
     assert json.loads((tmp_path / "fine" / "meta.json").read_text())["visual_check"]["ok"] is True
     assert [e["title"] for e in agentlog.recent() if e["title"].startswith("Pictures")] == ["Pictures may not fit: bad"]
+
+
+def test_a_repair_waits_for_the_daily_cap_because_a_videos_two_tries_are_not_spent_on_weak_free_models():
+    broken = vid("b", format="doc", verdict="fail", fix_attempts=1, publish_at=iso(NOW + timedelta(hours=10)))
+    assert ("fix", "b") in plan(state([broken]))
+    assert ("fix", "b") not in plan(state([broken], spend_ok=False))

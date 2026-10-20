@@ -140,7 +140,7 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict
     targets = planner.repair_targets(cfg, state["videos"], now)  # only drafts that take a slot which is due are worked on; the rest stay parked
     fixable = [v for v in fixable if v["slug"] in targets]
     todo = [v for v in fixable if v["slug"] not in skip]
-    if todo:  # the fixer agent repairs what it can, then the reviewer decides again: one video at a time
+    if todo and state.get("spend_ok", True):  # the fixer agent repairs what it can, then the reviewer decides again: one video at a time. Not when the day's cap is spent: a video's two tries are not used on weak free models
         acts.append({"do": "fix", "slug": min(todo, key=focus_rank)["slug"]})
     if not state["busy"] and cfg["make_videos"] and not fixable:
         need = planner.needs(cfg, state["videos"], now)  # only the slots no video covers need a new one

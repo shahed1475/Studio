@@ -299,3 +299,10 @@ def test_the_ai_review_judges_the_thumbnail_text_against_the_narration(monkeypat
     assert {c["name"]: c for c in reviewer.llm_review(meta)}["thumbnail_matches"]["ok"] is True
     no_hook = {k: v for k, v in meta.items() if k != "thumb_hook"}
     assert "thumbnail_matches" not in {c["name"] for c in reviewer.llm_review(no_hook)}  # Shorts have no thumbnail text
+
+
+def test_the_ai_review_sees_the_chapter_titles_that_appear_in_the_public_description(monkeypatch):
+    seen = []
+    monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p: seen.append(p) or {"invented_facts_risk": 1, "policy_risk": 0, "misleading_title": False, "issues": []})
+    reviewer.llm_review({"title": "t", "description": "d", "chapters": [{"title": "Prophecy or Political Theater?", "start_line": 0}], "lines": [{"text": "a line"}]})
+    assert "Prophecy or Political Theater?" in seen[0]

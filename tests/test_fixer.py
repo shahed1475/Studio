@@ -498,3 +498,28 @@ def test_wording_copied_from_the_source_is_reworded_line_by_line_and_the_video_m
     meta = json.loads((d / "meta.json").read_text())
     assert meta["lines"][0]["text"].startswith("Travellers climbed") and meta["lines"][1]["text"].startswith("A completely different")
     assert "word for word" in seen[0] and "[0]" in seen[0] and world["rerenders"] == ["doc-17"] and any("reworded" in f for f in out["fixed"])
+
+
+def test_a_chapter_whose_lines_were_rewritten_gets_a_title_that_matches_them_in_the_list_and_the_description(tmp_path, world):
+    lines = [{"text": f"Narration line number {i} about the sanctuary of Delphi and its priestess."} for i in range(6)]
+    chapters = [{"title": "The Central Mystery", "start_line": 0}, {"title": "Prophecy or Political Theater?", "start_line": 2}, {"title": "Legacy", "start_line": 4}]
+    desc = "Intro.\n\nSources:\nWikipedia\n\nChapters:\n0:00 The Central Mystery\n1:00 Prophecy or Political Theater?\n2:00 Legacy"
+    meta = {"lines": lines, "chapters": chapters, "description": desc}
+    asked = []
+    n = fixer.retitle_chapters(meta, {3}, chat=lambda p: asked.append(p) or {"title": "Delphi's Lasting Influence"})
+    assert n == 1 and [c["title"] for c in meta["chapters"]] == ["The Central Mystery", "Delphi's Lasting Influence", "Legacy"] and len(asked) == 1
+    assert "1:00 Delphi's Lasting Influence" in meta["description"] and "0:00 The Central Mystery" in meta["description"] and "Prophecy" not in meta["description"]
+    assert fixer.retitle_chapters(meta, {3}, chat=lambda p: {"title": ""}) == 0  # an unusable answer keeps the title
+
+
+def test_polish_retitles_the_chapters_it_rewrote_before_the_video_is_made_again(tmp_path, world):
+    chapters = [{"title": "Opening", "start_line": 0}, {"title": "Prophecy or Political Theater?", "start_line": 2}]
+    d = video(tmp_path, "doc-p7", review=WATCH_REVIEW, chapters=chapters)
+    world["results"] = [result("pass")]
+
+    def chat(prompt):
+        if "Narration lines" in prompt:
+            return {"edits": [{"index": 3, "text": "The oracle was consulted on important decisions across the classical world by many visitors."}]}
+        return {"title": "Consulting the Oracle"}
+    fixer.polish("doc-p7", chat=chat, rerender=world["rerender"])
+    assert [c["title"] for c in json.loads((d / "meta.json").read_text())["chapters"]] == ["Opening", "Consulting the Oracle"]

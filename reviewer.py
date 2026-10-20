@@ -241,11 +241,12 @@ def llm_review(meta: dict, source: str = "") -> list[dict]:
         r = scriptgen._review_chat(
             "You check a YouTube video script before it is published. Be strict.\n"
             f"{grounding}Title: {meta.get('title')}\nDescription: {meta.get('description', '')[:600]}\n"
+            + (f"Chapter titles (shown in the description): {'; '.join(c.get('title', '') for c in meta['chapters'])[:500]}\n" if meta.get("chapters") else "")
             + (f"Thumbnail text: {meta['thumb_hook']}\n" if meta.get("thumb_hook") else "") + f"Narration: {text}\n\n"
             "Score 0 to 10: invented_facts_risk (specific names, dates, numbers or quotes that look made up or are "
             "stated as certain when the history is uncertain), policy_risk (hateful, graphic, dangerous, medical or "
             "financial advice, or anything advertisers or YouTube policy would reject). misleading_title is true when "
-            'the title or description promises something the narration does not deliver (a "Why" or "How" question it never answers, a debate it only mentions in '
+            'the title, description or a chapter title promises something the narration does not deliver (a "Why" or "How" question it never answers, a debate it only mentions in '
             'passing, a legend it says does not exist). When misleading_title is true also give title_reason (the promise and what the narration says instead), '
             'covers (one sentence on what the narration really covers) and better_titles (three honest titles under 65 characters that promise only what it covers). '
             'Return JSON: {"invented_facts_risk": 0, "policy_risk": 0, "misleading_title": false, "title_reason": "", "covers": "", "better_titles": [], "misleading_thumbnail": false, "thumbnail_reason": "", '

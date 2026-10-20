@@ -226,6 +226,55 @@ def rewrite_lines(meta: dict, source: str, problems: list[str], chat=None) -> in
     return changed
 
 
+def apply_chapter_titles(meta: dict) -> None:
+    """The 'Chapters:' list in the description follows the titles in meta['chapters'], in order, keeping each time stamp."""
+    head, sep, tail = meta.get("description", "").partition("Chapters:\n")
+    if not sep:
+        return
+    titles, out, k = [c.get("title", "") for c in meta.get("chapters", [])], [], 0
+    for row in tail.split("\n"):
+        m = re.match(r"^(\d+:\d\d)\s+(.*)$", row)
+        if m and k < len(titles):
+            out.append(f"{m.group(1)} {titles[k] or m.group(2)}")
+            k += 1
+        else:
+            out.append(row)
+    meta["description"] = head + sep + "\n".join(out)
+
+
+def retitle_chapters(meta: dict, changed: set[int], chat=None) -> int:
+    """After narration lines were rewritten, a chapter title may promise what its lines no longer say (a question that is not asked any more): each
+    chapter that holds a rewritten line gets a title written from its current lines. Returns how many titles changed."""
+    chat = chat or scriptgen._chat
+    chapters, lines, n = meta.get("chapters", []), meta.get("lines", []), 0
+    for k, c in enumerate(chapters):
+        end = chapters[k + 1]["start_line"] if k + 1 < len(chapters) else len(lines)
+        if not any(c["start_line"] <= i < end for i in changed):
+            continue
+        body = " ".join(l["text"] for l in lines[c["start_line"]:end])[:1200]
+        try:
+            got = chat("Write a short, honest chapter title (2 to 6 words) for these narration lines of a calm history video. Promise only what the lines say; "
+                       f"no question unless the lines raise and answer it.\n{body}\nReturn JSON " + '{"title": "..."}')
+            title = re.sub(r"[<>]", "", str(got.get("title", "")).strip()).strip(" .")
+        except Exception:
+            continue
+        if 3 <= len(title) <= 60 and title != c.get("title"):
+            c["title"] = title
+            n += 1
+    if n:
+        apply_chapter_titles(meta)
+    return n
+
+
+def rewrite_and_retitle(meta: dict, source: str, problems: list[str], chat=None) -> int:
+    """rewrite_lines, then new titles for the chapters whose lines changed. Returns how many lines were rewritten."""
+    before = [l["text"] for l in meta.get("lines", [])]
+    n = rewrite_lines(meta, source, problems, chat)
+    if n:
+        retitle_chapters(meta, {i for i, (a, b) in enumerate(zip(before, [l["text"] for l in meta["lines"]])) if a != b}, chat)
+    return n
+
+
 def verify_claims(meta: dict, source: str, now: dt.datetime | None = None) -> dict:
     """Check, one by one, the specific claims the source article does not contain (at most six, about a cent each) against the web.
     Supported ones are remembered in meta (so the reviewer stops counting them) and their pages are added to the sources.
@@ -308,7 +357,7 @@ def polish(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) 
     backup = folder / "script_before_polish.json"
     if not backup.exists():
         backup.write_text(json.dumps({"lines": meta.get("lines", []), "description": meta.get("description", "")}, indent=1))
-    n = rewrite_lines(meta, source, problems, chat)
+    n = rewrite_and_retitle(meta, source, problems, chat)
     desc = bool(re.search(r"description", " ".join(problems), re.I)) and correct_description(meta, source, problems, chat)
     if not n and not desc:
         meta["polish_done"] = {**stamp, "result": "no supported rewrite found, nothing changed"}
@@ -415,7 +464,7 @@ def fix(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) -> 
     if "originality" in failing and meta.get("lines"):  # too much of the narration is the source article's own wording
         source = reviewer.source_text(meta)
         copied = compliance.copied_lines(meta, source) if source else []
-        if copied and (rewrite_lines(meta, source, [f"These lines [{', '.join(map(str, copied[:30]))}] copy the source article's wording word for word. "
+        if copied and (rewrite_and_retitle(meta, source, [f"These lines [{', '.join(map(str, copied[:30]))}] copy the source article's wording word for word. "
                                                      "Reword each one completely in your own words, keeping the same facts."], chat)):
             rewrite = True
             fixed.append(f"reworded {len(copied)} lines that copied the source article")
@@ -431,7 +480,7 @@ def fix(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) -> 
             pass  # every flagged claim is now verified: the reviewer decides again below
         elif is_doc and source:
             problems += checked["wrong"] + [f"not verified: {l}" for l in checked["unsure"]]
-            n = rewrite_lines(meta, source, problems, chat)
+            n = rewrite_and_retitle(meta, source, problems, chat)
             if n:
                 fixed.append(f"rewrote {n} narration lines from the source")
                 rewrite = True
