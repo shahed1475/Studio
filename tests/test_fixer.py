@@ -51,6 +51,7 @@ def world(tmp_path, monkeypatch):
         return r
 
     monkeypatch.setattr(reviewer, "review", fake_review)
+    monkeypatch.setattr(reviewer, "title_ok", lambda meta, title: (True, ""))
     monkeypatch.setattr(reviewer, "source_text", lambda meta: "Delphi was called Pytho. Excavated by the French from 1893.")
     state["rerender"] = lambda slug: state["rerenders"].append(slug)
     state["web"] = {}
@@ -177,3 +178,24 @@ def test_a_short_whose_claims_the_web_cannot_settle_is_still_set_aside(tmp_path,
     d = video(tmp_path, "short-9", format="short", review=result("needs_human", ("claims", "human", "3 claims")))
     out = fixer.fix("short-9", chat=lambda p: {}, rerender=world["rerender"])
     assert out["archived"] and not d.exists()
+
+
+def test_a_candidate_title_the_reviewer_would_reject_is_skipped_and_the_reason_reaches_the_writer(tmp_path, world, monkeypatch):
+    d = video(tmp_path, "doc-5", title="Why Has No One Read It?", topic="The Voynich Manuscript", seo={"titles": []},
+              review=result("fail", ("title_matches", "block", "title may mislead: asks why, never answers")))
+    world["results"] = [result("pass")]
+    monkeypatch.setattr(reviewer, "title_ok", lambda meta, title: ("Why" not in title, "never answers why"))
+    seen = []
+    chat = lambda p: seen.append(p) or {"titles": ["Why Is the Voynich Book Unread Today?", "The Voynich Manuscript: What We Know So Far"]}
+    fixer.fix("doc-5", chat=chat, rerender=world["rerender"])
+    assert json.loads((d / "meta.json").read_text())["title"] == "The Voynich Manuscript: What We Know So Far"
+    assert "no 'Why' or 'How did' question" in seen[0]
+
+
+def test_when_every_candidate_is_rejected_a_plain_honest_title_is_used(tmp_path, world, monkeypatch):
+    d = video(tmp_path, "doc-6", title="Legend of Tuckaho: Why?", topic="The Legend of Tuckaho", seo={"titles": []},
+              review=result("fail", ("title_matches", "block", "title may mislead: no legend")))
+    world["results"] = [result("pass")]
+    monkeypatch.setattr(reviewer, "title_ok", lambda meta, title: ("Legend" not in title and "Why" not in title, "x"))
+    fixer.fix("doc-6", chat=lambda p: {"titles": ["Why Tuckaho Moved a Railroad", "The Legend of Tuckaho Explained"]}, rerender=world["rerender"])
+    assert json.loads((d / "meta.json").read_text())["title"] == "Tuckaho: What the Records Actually Say"
