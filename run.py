@@ -41,7 +41,7 @@ import scriptgen
 import topicqueue
 import tts
 
-STALE = {"approved", "approved_by", "review", "publish_at", "autopilot_fails"}
+STALE = {"approved", "approved_by", "review", "publish_at", "autopilot_fails", "prelaunch"}
 
 
 def reset_for_rerender(data: dict) -> dict:

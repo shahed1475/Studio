@@ -19,7 +19,7 @@ def iso(dt):
 
 def vid(slug="v", fmt="short", **kw):
     base = {"slug": slug, "format": fmt, "source": None, "approved": True, "approved_by": "reviewer-agent", "verdict": "pass",
-            "hold": False, "video_id": None, "publish_at": None, "fails": 0}
+            "hold": False, "video_id": None, "publish_at": None, "fails": 0, "prelaunch_ok": True}
     return {**base, **kw}
 
 

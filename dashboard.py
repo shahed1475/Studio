@@ -356,7 +356,7 @@ def autopilot_view() -> dict:
             (repairing if (still_fixable or stale) and d.get("source") != "news" else needs).append(item)  # only what Autopilot cannot repair waits for you
         if d.get("publish_at"):
             when = dt.datetime.fromisoformat(d["publish_at"].replace("Z", "+00:00"))
-            scheduled.append({**base, "publish_at": d["publish_at"], "uploaded": bool(d.get("video_id")),
+            scheduled.append({**base, "publish_at": d["publish_at"], "uploaded": bool(d.get("video_id")), "final_check": ("passed" if (d.get("prelaunch") or {}).get("ok") else "failed" if d.get("prelaunch") else "pending"),
                               "bd": scheduler.fmt_local(when, "Asia/Dhaka"), "us": scheduler.fmt_local(when, "America/New_York")})
     scheduled.sort(key=lambda x: x["publish_at"])
     return {"scheduled": scheduled, "needs_you": needs, "repairing": repairing}

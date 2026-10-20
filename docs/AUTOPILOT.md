@@ -17,6 +17,9 @@ Drafts whose slot is not due yet stay parked and cost nothing.
 ## One video at a time
 Autopilot finishes the video it works on (repair, review, approve, schedule) before it starts the next. Nothing new is made while a due draft can still be repaired. A video gets two repair tries; after that it waits for you (Needs you) and Autopilot moves on.
 
+## The final check, a day before the slot
+When a scheduled video's 24-hour review window opens (27 hours before its slot), Autopilot checks the real file and the written rules again: duration, size, audio, black frames, captions against the script, sources, licenses, claims. No upload happens without a passed final check. If a video the reviewer approved fails, it goes back to being a draft (no approval, no slot) and the fixer repairs it while there is still time. A video you approved yourself is never pulled back: you are told and decide.
+
 ## Quality and safety
 - Every video is reviewed by Claude (never a free model); if Claude cannot answer, the video is "not reviewed yet" and asked again, never failed and never passed.
 - A video is approved only after the reviewer passes it and a vision check of its pictures passes. Your own approval always wins, and a video you hold is never touched.

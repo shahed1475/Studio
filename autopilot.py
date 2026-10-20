@@ -8,6 +8,7 @@ from pathlib import Path
 
 import config
 import planner
+import prelaunch
 import scheduler
 
 CONFIG_FILE = config.ROOT / "autopilot.json"
@@ -76,7 +77,7 @@ def dashboard_busy(job_file: Path = JOB_FILE) -> bool:
 
 
 WRONG_PICTURES = 2  # sampled frames showing the wrong place, person or period that hold a video back
-FINISHING = ("review", "approve", "schedule", "upload")
+FINISHING = ("review", "approve", "prelaunch", "schedule", "upload")
 MAX_ROUNDS = 8  # videos looked at in one tick, when each repair is quick
 MAX_STUCK = 3  # stop making a kind of video while this many of it sit failed or waiting for a human
 
@@ -122,7 +123,9 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict
             cap = cfg["shorts_per_day"] if fmt == "short" else cfg["uploads_per_day"]
             if pub is None or pub <= now + dt.timedelta(minutes=10):
                 acts.append({"do": "schedule", "slug": v["slug"]})
-            elif (v["approved"] and state["connected"] and by_fmt.get(fmt, 0) < cap
+            elif v["approved"] and not v.get("prelaunch_ok") and pub - now <= dt.timedelta(hours=cfg["review_window_hours"] + prelaunch.WINDOW_EXTRA_HOURS):
+                acts.append({"do": "prelaunch", "slug": v["slug"]})  # the final check, when the review window opens; the upload waits for it
+            elif (v["approved"] and state["connected"] and by_fmt.get(fmt, 0) < cap and v.get("prelaunch_ok")
                   and total < config.MAX_UPLOADS_PER_DAY and pub - lead <= now):
                 acts.append({"do": "upload", "slug": v["slug"]})
                 by_fmt[fmt] = by_fmt.get(fmt, 0) + 1
@@ -161,6 +164,7 @@ def build_state(now: dt.datetime, cfg: dict) -> dict:
             "hold": bool(d.get("hold")),
             "approved_by": d.get("approved_by"), "fix_attempts": d.get("fix_attempts", 0), "gave_up": bool(d.get("fix_gave_up")),
             "video_id": d.get("video_id"), "publish_at": d.get("publish_at"), "fails": d.get("autopilot_fails", 0),
+            "prelaunch_ok": bool((d.get("prelaunch") or {}).get("ok")),
             "blocking": len(failing_names(d)), "problems": failing_names(d), "title": d.get("title", ""),
         })
     by_fmt: dict = {}
@@ -241,6 +245,32 @@ def do_fix(slug, cfg, now):
     return out
 
 
+def do_prelaunch(slug, cfg, now):
+    """The final check a day before the slot. A video the reviewer approved that fails is pulled back to a draft so the fixer can repair it while there is time."""
+    import agentlog
+    import prelaunch
+
+    res = prelaunch.check(slug, now)
+    p, meta = _meta(slug)
+    meta["prelaunch"] = {"at": res["at"], "ok": res["ok"], "problems": res["problems"]}
+    if not res["ok"]:
+        title = meta.get("title", slug)
+        if meta.get("approved_by") == "you":  # your approval is never withdrawn by the agent
+            agentlog.event("error", f"Final check found a problem: {title}", "; ".join(res["problems"][:2]) + " You approved it, so it stays scheduled until you decide.", notify=True, now=now)
+        else:
+            review = meta.setdefault("review", {"checks": []})
+            review["checks"] = [c for c in review.get("checks", []) if c["name"] != "prelaunch"] + [
+                {"name": "prelaunch", "ok": False, "severity": "block", "detail": "; ".join(res["problems"])[:400]}]
+            review["verdict"] = "fail"
+            meta["approved"] = False
+            meta.pop("approved_by", None)
+            meta.pop("publish_at", None)
+            meta["fix_attempts"] = 0
+            meta.pop("fix_gave_up", None)
+            agentlog.event("error", f"Pulled back for repair: {title}", "The final check found: " + "; ".join(res["problems"][:2]) + ". Autopilot repairs it before its slot.", notify=True, now=now)
+    p.write_text(json.dumps(meta, indent=2))
+
+
 def do_schedule(slug, cfg, now):
     p, meta = _meta(slug)
     fmt = meta.get("format", "short")
@@ -317,7 +347,7 @@ def do_make_news(slug, cfg, now):
     newswatch.make_next_news_video()
 
 
-EXECUTORS = {"review": do_review, "approve": do_approve, "fix": do_fix, "schedule": do_schedule, "upload": do_upload,
+EXECUTORS = {"prelaunch": do_prelaunch, "review": do_review, "approve": do_approve, "fix": do_fix, "schedule": do_schedule, "upload": do_upload,
              "ideas": do_ideas, "make": do_make, "make_short": do_make_short, "make_clip": do_make_clip, "make_news": do_make_news}
 
 

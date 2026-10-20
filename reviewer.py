@@ -298,6 +298,7 @@ def apply_verdict(meta: dict, result: dict) -> None:
 def invalidate(meta: dict) -> None:
     """After any edit the old review means nothing: drop it, the reviewer's approval and the slot."""
     meta.pop("review", None)
+    meta.pop("prelaunch", None)  # an edited video is checked again before it posts
     if meta.get("approved_by") != "you":
         meta["approved"] = False
         meta.pop("approved_by", None)

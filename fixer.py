@@ -272,6 +272,9 @@ def fix(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) -> 
         if n:
             fixed.append(f"changed {n} line{'s' if n != 1 else ''} so the script does not share a template with recent videos")
             rewrite = True
+    if "prelaunch" in failing:  # the real file or the written rules failed the final check: the video is made again from its saved script
+        rewrite = True
+        fixed.append("made the video again after the final check found a problem")
     if "visual_review" in failing and not meta.get("art_first") and visual_recheck(folder):
         fixed.append("looked at the pictures again with the current rules: they are acceptable")
     elif "visual_review" in failing and not meta.get("art_first"):

@@ -10,7 +10,7 @@ CFG = {**autopilot.DEFAULTS, "enabled": True, "prepare_hours": 72,  # four docum
 
 def vid(slug="v", **kw):
     base = {"slug": slug, "source": None, "approved": False, "approved_by": None, "verdict": None, "hold": False,
-            "video_id": None, "publish_at": None, "fails": 0}
+            "video_id": None, "publish_at": None, "fails": 0, "prelaunch_ok": True}
     return {**base, **kw}
 
 
@@ -332,3 +332,35 @@ def test_a_due_slot_with_no_draft_gets_a_new_video_but_a_ready_video_is_used_fir
     cfg = {**CFG, "prepare_hours": 10}
     assert ("make", None) in plan(state([], queue_len=5), cfg)
     assert ("make", None) not in plan(state([vid("r", format="doc", verdict="pass", approved=True)], queue_len=5), cfg)
+
+
+def test_a_scheduled_video_gets_its_final_check_when_the_review_window_opens_and_only_then_uploads():
+    near = iso(NOW + timedelta(hours=26))
+    far = iso(NOW + timedelta(days=4))
+    due = vid("due", verdict="pass", approved=True, approved_by="reviewer-agent", publish_at=near, prelaunch_ok=False)
+    later = vid("later", verdict="pass", approved=True, approved_by="reviewer-agent", publish_at=far, prelaunch_ok=False)
+    acts = plan(state([due, later]))
+    assert ("prelaunch", "due") in acts and ("prelaunch", "later") not in acts and ("upload", "due") not in acts
+    checked = {**due, "prelaunch_ok": True, "publish_at": iso(NOW + timedelta(hours=1))}
+    assert ("upload", "due") in plan(state([checked])) and ("prelaunch", "due") not in plan(state([checked]))
+    soon_unchecked = {**due, "publish_at": iso(NOW + timedelta(hours=1))}
+    acts = plan(state([soon_unchecked]))
+    assert ("prelaunch", "due") in acts and ("upload", "due") not in acts  # no upload without a passed final check
+
+
+def test_a_failed_final_check_pulls_a_reviewer_approved_video_back_but_never_one_you_approved(tmp_path, monkeypatch):
+    import agentlog, config, prelaunch
+    monkeypatch.setattr(config, "OUT", tmp_path)
+    monkeypatch.setattr(agentlog, "FILE", tmp_path / "events.jsonl")
+    monkeypatch.setattr(agentlog.subprocess, "run", lambda *a, **k: None)
+    monkeypatch.setattr(prelaunch, "check", lambda slug, now=None: {"at": "2026-10-20T00:00:00Z", "ok": False, "problems": ["video: audio: no audio stream"]})
+    for name, by in (("agent", "reviewer-agent"), ("mine", "you")):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "meta.json").write_text(json.dumps({"title": name, "approved": True, "approved_by": by, "publish_at": "2026-10-21T16:30:00Z", "fix_attempts": 2, "review": {"verdict": "pass", "checks": []}}))
+        autopilot.do_prelaunch(name, CFG, NOW)
+    a = json.loads((tmp_path / "agent" / "meta.json").read_text())
+    assert a["approved"] is False and "publish_at" not in a and a["review"]["verdict"] == "fail" and a["fix_attempts"] == 0
+    assert a["review"]["checks"][-1]["name"] == "prelaunch" and a["prelaunch"]["ok"] is False
+    m = json.loads((tmp_path / "mine" / "meta.json").read_text())
+    assert m["approved"] is True and m["publish_at"] and m["review"]["verdict"] == "pass" and m["prelaunch"]["ok"] is False  # told, not withdrawn
+    assert {e["title"][:6] for e in agentlog.recent()} >= {"Pulled", "Final "}
