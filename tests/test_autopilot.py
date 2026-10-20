@@ -74,8 +74,10 @@ def test_refill_ideas_when_queue_low():
 def test_make_when_few_waiting_and_not_when_busy_or_enough():
     assert ("make", None) in plan(state([]))
     assert ("make", None) not in plan(state([], busy=True))
-    two = [vid("a", verdict="pass", approved=True, publish_at=iso(NOW + timedelta(days=2))), vid("b")]
-    assert ("make", None) not in plan(state(two))
+    two = [vid("a", verdict="pass", approved=True), vid("b")]
+    assert ("make", None) in plan(state(two))  # three slots are kept covered and only two videos are on their way
+    three = [*two, vid("c", verdict="fail", fix_attempts=1)]
+    assert ("make", None) not in plan(state(three))
 
 
 def test_news_video_made_when_pending_and_enabled():

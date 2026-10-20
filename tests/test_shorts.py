@@ -44,7 +44,7 @@ def test_short_made_when_enabled_and_few_waiting():
 
 
 def test_short_waiting_limit_is_separate_from_doc_limit():
-    three = [vid(f"s{i}", publish_at=iso(NOW + timedelta(days=2 + i))) for i in range(3)]
+    three = [vid(f"s{i}", verdict="pass", approved=True) for i in range(3)]  # three ready Shorts cover the next three Short slots
     assert ("make_short", None) not in plan(state(three))
     assert ("make", None) in plan(state(three))  # shorts waiting do not block documentaries
 

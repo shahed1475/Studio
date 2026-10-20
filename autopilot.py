@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 
 import config
+import planner
 import scheduler
 
 CONFIG_FILE = config.ROOT / "autopilot.json"
@@ -22,6 +23,7 @@ DEFAULTS = {
     "uploads_per_day": 1,
     "review_window_hours": 24,   # time between a pass and the public slot, for the human veto
     "upload_lead_hours": 2,      # upload this long before the slot (private, publishAt set)
+    "plan_ahead": 3,             # publish slots of each kind that are kept covered by a ready or coming video (3 with one slot a day = three days ahead)
     "min_queue": 3,
     "max_waiting": 2,            # finished videos not yet uploaded
     "slots": scheduler.SLOTS_DEFAULT,
@@ -97,7 +99,6 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict
     total = state["uploads_today"]
     by_fmt = dict(state.get("uploads_by_format") or {"doc": state["uploads_today"]})
     lead = dt.timedelta(hours=cfg["upload_lead_hours"])
-    waiting = {"doc": 0, "short": 0}
     stuck = {"doc": 0, "short": 0}  # reviewed, repaired as far as the fixer can, and still not good enough: they wait for the owner
     fixable = []                    # broken videos that still have repair tries left: one of them is worked on at a time, and nothing new is made meanwhile
     for v in state["videos"]:
@@ -110,8 +111,6 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict
             and v.get("fix_attempts", 0) < 2 and not v.get("gave_up")
         if v["verdict"] in ("fail", "needs_human") and not eligible and not by_you and not repairable:
             stuck[fmt] += 1
-        if v["verdict"] in (None, "pass") or eligible:
-            waiting[fmt] += 1
         if v["verdict"] is None:
             acts.append({"do": "review", "slug": v["slug"]})
         elif repairable:
@@ -132,14 +131,15 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict
     if todo:  # the fixer agent repairs what it can, then the reviewer decides again: one video at a time
         acts.append({"do": "fix", "slug": min(todo, key=focus_rank)["slug"]})
     if not state["busy"] and cfg["make_videos"] and not fixable:
+        need = planner.needs(cfg, state["videos"], now)  # only the slots no video covers need a new one
         if state["queue_len"] < cfg["min_queue"]:
             acts.append({"do": "ideas", "slug": None})
-        if cfg["shorts"] and waiting["short"] < cfg["max_waiting_shorts"] and stuck["short"] < MAX_STUCK:
+        if cfg["shorts"] and need["short"] > 0 and stuck["short"] < MAX_STUCK:
             if state.get("clippable", 0) > 0:  # cut from our own documentaries first: no script to write, cheapest
                 acts.append({"do": "make_clip", "slug": None})
             elif state["queue_len"] > 0:
                 acts.append({"do": "make_short", "slug": None})
-        if waiting["doc"] < cfg["max_waiting"] and stuck["doc"] < MAX_STUCK:
+        if need["doc"] > 0 and stuck["doc"] < MAX_STUCK:
             if cfg["news_videos"] and state["news_pending"] > 0:
                 acts.append({"do": "make_news", "slug": None})
             elif state["queue_len"] > 0:
@@ -376,6 +376,10 @@ def tick(now: dt.datetime | None = None) -> dict:
             except (Exception, SystemExit) as e:
                 errors.append(f"{a['do']} {a['slug'] or ''}: {e}".strip())
                 _log(f"FAIL {errors[-1]}")
+        try:
+            planner.sync_ready_folder(build_state(now, cfg)["videos"])  # ready/ lists what is going out, named by post time
+        except OSError:
+            pass
         result = {"at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "enabled": cfg["enabled"], "actions": actions, "errors": errors}
         STATE_FILE.write_text(json.dumps(result, indent=2))
         return result
@@ -407,6 +411,18 @@ def focus_view(now: dt.datetime | None = None) -> dict | None:
         return None
 
 
+def plan_view(now: dt.datetime | None = None) -> dict:
+    """The next videos with their post times, and how many Autopilot still has to prepare."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    try:
+        cfg = load_config()
+        videos = build_state(now, cfg)["videos"]
+        return {"rows": [r for r in planner.rows(cfg, videos, now) if r["at"] <= (now + dt.timedelta(days=9)).strftime("%Y-%m-%dT%H:%M:%SZ")],
+                "needs": planner.needs(cfg, videos, now), "plan_ahead": cfg["plan_ahead"], "per_day": {"doc": cfg["uploads_per_day"], "short": cfg["shorts_per_day"]}}
+    except Exception:
+        return {"rows": [], "needs": {"doc": 0, "short": 0}, "plan_ahead": 0, "per_day": {}}
+
+
 def status() -> dict:
     last = json.loads(STATE_FILE.read_text()) if STATE_FILE.exists() else None
-    return {"config": load_config(), "last_tick": last, "running": is_running(), "focus": focus_view()}
+    return {"config": load_config(), "last_tick": last, "running": is_running(), "focus": focus_view(), "plan": plan_view()}
