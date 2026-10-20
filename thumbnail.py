@@ -24,21 +24,34 @@ def _font(size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.load_default(size)
 
 
-def hook_for(meta: dict) -> str:
-    """2 to 4 words that make someone curious; local model first, title words as fallback."""
-    try:
-        import scriptgen
+def hook_for(meta: dict, avoid=(), chat=None) -> str:
+    """2 to 4 words that make someone curious and that the narration actually delivers: the writer sees what the narration covers and may not promise a
+    question or debate it never raises; a candidate the narration does not support, or one used before, is skipped; the title's own words are the fallback."""
+    import compliance
 
-        out = scriptgen._chat(
-            f"Write the text for a YouTube thumbnail about: {meta['title']}.\n"
-            "Rules: 2 to 4 words, ALL CAPS, creates curiosity, no clickbait lies, no punctuation except ? or !.\n"
-            'Return JSON: {"hook": "..."}'
+    lines = [l["text"] for l in meta.get("lines", [])]
+    outline = "; ".join(c["title"] for c in meta.get("chapters", []) if c.get("title"))
+    used = {a.strip().upper() for a in avoid}
+    try:
+        if chat is None:
+            import scriptgen
+
+            chat = scriptgen._chat
+        out = chat(
+            f"Write 3 different texts for a YouTube thumbnail about: {meta['title']}.\n"
+            f"What the narration really covers: {outline[:500]}. It opens: {' '.join(lines[:2])[:300]}\n"
+            "Rules: 2 to 4 words, ALL CAPS, creates curiosity, promises only something the narration says or shows: no question it does not answer, no debate it does "
+            "not describe, no clickbait lies, no punctuation except ? or !. "
+            + (f"Not these (already used): {sorted(used)}. " if used else "") + 'Return JSON: {"hooks": ["..."]}'
         )
-        hook = re.sub(r"[^A-Za-z0-9?! ']", "", str(out["hook"])).strip().upper()
-        if 1 <= len(hook.split()) <= 5:
-            return hook
+        candidates = out.get("hooks") or ([out["hook"]] if out.get("hook") else [])
     except Exception:
-        pass
+        candidates = []
+    support = " ".join([meta["title"], outline, *lines])
+    for raw in candidates:
+        hook = re.sub(r"[^A-Za-z0-9?! ']", "", str(raw)).strip().upper()
+        if 1 <= len(hook.split()) <= 5 and hook not in used and compliance.hook_supported(hook, support):
+            return hook
     words = re.sub(r"[^A-Za-z0-9 ']", "", meta["title"]).upper().split()
     skip = {"THE", "OF", "A", "AN", "AND", "IN", "ON"}
     return " ".join([w for w in words if w not in skip][:3]) or "UNSOLVED"

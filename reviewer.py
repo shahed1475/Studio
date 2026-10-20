@@ -240,14 +240,15 @@ def llm_review(meta: dict, source: str = "") -> list[dict]:
     try:
         r = scriptgen._review_chat(
             "You check a YouTube video script before it is published. Be strict.\n"
-            f"{grounding}Title: {meta.get('title')}\nDescription: {meta.get('description', '')[:600]}\nNarration: {text}\n\n"
+            f"{grounding}Title: {meta.get('title')}\nDescription: {meta.get('description', '')[:600]}\n"
+            + (f"Thumbnail text: {meta['thumb_hook']}\n" if meta.get("thumb_hook") else "") + f"Narration: {text}\n\n"
             "Score 0 to 10: invented_facts_risk (specific names, dates, numbers or quotes that look made up or are "
             "stated as certain when the history is uncertain), policy_risk (hateful, graphic, dangerous, medical or "
             "financial advice, or anything advertisers or YouTube policy would reject). misleading_title is true when "
             'the title or description promises something the narration does not deliver (a "Why" or "How" question it never answers, a debate it only mentions in '
             'passing, a legend it says does not exist). When misleading_title is true also give title_reason (the promise and what the narration says instead), '
             'covers (one sentence on what the narration really covers) and better_titles (three honest titles under 65 characters that promise only what it covers). '
-            'Return JSON: {"invented_facts_risk": 0, "policy_risk": 0, "misleading_title": false, "title_reason": "", "covers": "", "better_titles": [], '
+            'Return JSON: {"invented_facts_risk": 0, "policy_risk": 0, "misleading_title": false, "title_reason": "", "covers": "", "better_titles": [], "misleading_thumbnail": false, "thumbnail_reason": "", '
             '"issues": []}. Put a real, specific issue in issues, or leave it empty.')
         facts, policy = int(r["invented_facts_risk"]), int(r["policy_risk"])
         issues = [str(i) for i in r.get("issues", [])[:3]]
@@ -258,9 +259,12 @@ def llm_review(meta: dict, source: str = "") -> list[dict]:
            _c("policy_risk", policy < 6, f"risk {policy}/10. {note}"),
            _c("title_matches", not r.get("misleading_title"), "title matches the story" if not r.get("misleading_title") else
               ("title may mislead: " + str(r.get("title_reason") or "")[:260]).strip(": "))]
+    if meta.get("thumb_hook"):
+        out.append(_c("thumbnail_matches", not r.get("misleading_thumbnail"), "thumbnail text matches the story" if not r.get("misleading_thumbnail")
+                      else ("thumbnail text may mislead: " + str(r.get("thumbnail_reason") or "")[:260]).strip(": ")))
     if r.get("misleading_title"):
-        out[-1]["covers"] = str(r.get("covers") or "")[:300]
-        out[-1]["better_titles"] = [str(t)[:90] for t in (r.get("better_titles") or [])[:3] if isinstance(t, str)]
+        out[2]["covers"] = str(r.get("covers") or "")[:300]
+        out[2]["better_titles"] = [str(t)[:90] for t in (r.get("better_titles") or [])[:3] if isinstance(t, str)]
     if 4 <= facts < 7:
         out.append({**_c("invented_facts_watch", False, f"moderate risk {facts}/10", "warn"), "issues": issues})
     if 4 <= policy < 6:

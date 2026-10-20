@@ -284,3 +284,18 @@ def test_the_compliance_rules_run_with_every_review():
     meta["title"] = "Delphi <b>Oracle</b> story"
     assert "metadata_valid" in failed(run(meta=meta), "block")
     assert {"metadata_valid", "originality", "kids_signals"} <= {c["name"] for c in run(meta=copy.deepcopy(GOOD_META))}
+
+
+def test_the_ai_review_judges_the_thumbnail_text_against_the_narration(monkeypatch):
+    seen = []
+    reply = {"invented_facts_risk": 1, "policy_risk": 0, "misleading_title": False, "misleading_thumbnail": True,
+             "thumbnail_reason": "it asks prophecy or performance but the narration never raises that question", "issues": []}
+    monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p: seen.append(p) or reply)
+    meta = {"title": "Delphi: Myth and Ruins", "description": "d", "thumb_hook": "PROPHECY OR PERFORMANCE?", "lines": [{"text": "a line"}]}
+    checks = {c["name"]: c for c in reviewer.llm_review(meta)}
+    assert "PROPHECY OR PERFORMANCE?" in seen[0]
+    assert checks["thumbnail_matches"]["ok"] is False and checks["thumbnail_matches"]["severity"] == "block" and "never raises" in checks["thumbnail_matches"]["detail"]
+    reply["misleading_thumbnail"] = False
+    assert {c["name"]: c for c in reviewer.llm_review(meta)}["thumbnail_matches"]["ok"] is True
+    no_hook = {k: v for k, v in meta.items() if k != "thumb_hook"}
+    assert "thumbnail_matches" not in {c["name"] for c in reviewer.llm_review(no_hook)}  # Shorts have no thumbnail text

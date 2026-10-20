@@ -4,6 +4,8 @@ It never approves, schedules or uploads anything. What it can do:
 - a title too close to another video, or a lower-case one: a distinct, properly written title
 - tags that belong to other things (a game, a novel series): removed
 - a missing thumbnail: made
+- a thumbnail text the narration does not deliver: a new one from the narration; metadata YouTube would reject: repaired; narration copied from the
+  source article: reworded
 - names, years or invented details the source article does not support: those narration lines are rewritten from the source,
   and the documentary is re-rendered
 - a script with no source, a Short with unsupported claims, or pictures that do not match: the video is moved to output_old
@@ -18,6 +20,7 @@ import shutil
 from pathlib import Path
 
 import agentlog
+import compliance
 import config
 import reviewer
 import scriptgen
@@ -391,12 +394,31 @@ def fix(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) -> 
     if tags != meta.get("tags"):
         meta["tags"] = tags
         fixed.append("cleaned the tags")
-    if "thumbnail" in failing and is_doc:
+    if "thumbnail_matches" in failing and is_doc:  # the thumbnail text promises something the narration does not say: a new hook, from the narration
         import thumbnail
 
+        _save(folder, meta)  # thumbnail.make reads the file: keep every edit made so far in this pass
+        thumbnail.make(folder, thumbnail.hook_for(meta, avoid=[meta.get("thumb_hook", "")]))
+        meta = json.loads((folder / "meta.json").read_text())
+        fixed.append(f"made a new thumbnail text from the narration: {meta.get('thumb_hook', '')}")
+    elif "thumbnail" in failing and is_doc:
+        import thumbnail
+
+        _save(folder, meta)
         thumbnail.make(folder)
-        meta = {**json.loads((folder / "meta.json").read_text()), "title": meta["title"], "tags": meta["tags"]}
+        meta = json.loads((folder / "meta.json").read_text())
         fixed.append("made the thumbnail")
+    if "metadata_valid" in failing:
+        changes = compliance.sanitize(meta)
+        if changes:
+            fixed.append("; ".join(changes))
+    if "originality" in failing and meta.get("lines"):  # too much of the narration is the source article's own wording
+        source = reviewer.source_text(meta)
+        copied = compliance.copied_lines(meta, source) if source else []
+        if copied and (rewrite_lines(meta, source, [f"These lines [{', '.join(map(str, copied[:30]))}] copy the source article's wording word for word. "
+                                                     "Reword each one completely in your own words, keeping the same facts."], chat)):
+            rewrite = True
+            fixed.append(f"reworded {len(copied)} lines that copied the source article")
 
     if {"claims", "invented_facts", "policy_risk"} & set(failing):
         source = reviewer.source_text(meta)

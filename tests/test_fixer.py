@@ -444,3 +444,57 @@ def test_watch_problems_use_the_issues_or_fall_back_to_the_detail_text():
     old = [{"name": "invented_facts", "ok": True, "severity": "block", "detail": "risk 4/10. Old stored note."}, {"name": "invented_facts_watch", "ok": False, "severity": "warn", "detail": "moderate risk 4/10"}]
     assert fixer.watch_problems(old) == ["Old stored note."]
     assert fixer.watch_problems([c for c in old if c["name"] != "invented_facts_watch"]) == []
+
+
+def fake_thumbnail_make(monkeypatch, made):
+    import thumbnail
+
+    def make(folder, hook=None):
+        meta = json.loads((folder / "meta.json").read_text())
+        made.append(hook)
+        meta["thumb_hook"] = hook
+        reviewer.invalidate(meta)
+        (folder / "meta.json").write_text(json.dumps(meta))
+    monkeypatch.setattr(thumbnail, "make", make)
+
+
+def test_a_thumbnail_that_promises_what_the_narration_does_not_say_gets_a_new_hook_and_new_thumbnails(tmp_path, world, monkeypatch):
+    import thumbnail
+
+    made = []
+    fake_thumbnail_make(monkeypatch, made)
+    asked = {}
+    monkeypatch.setattr(thumbnail, "hook_for", lambda meta, avoid=(), chat=None: asked.update(avoid=list(avoid)) or "CENTER OF THE WORLD?")
+    d = video(tmp_path, "doc-15", thumb_hook="PROPHECY OR PERFORMANCE?", description="An honest description that was rewritten earlier in this very repair pass.",
+              review=result("fail", ("thumbnail_matches", "block", "thumbnail text may mislead: asks prophecy or performance")))
+    world["results"] = [result("pass")]
+    out = fixer.fix("doc-15", chat=lambda p: {}, rerender=world["rerender"])
+    meta = json.loads((d / "meta.json").read_text())
+    assert made == ["CENTER OF THE WORLD?"] and asked["avoid"] == ["PROPHECY OR PERFORMANCE?"] and meta["thumb_hook"] == "CENTER OF THE WORLD?"
+    assert meta["description"].startswith("An honest description") and world["rerenders"] == [] and out["verdict"] == "pass"
+    assert any("thumbnail" in f for f in out["fixed"])
+
+
+def test_unusable_metadata_is_repaired_without_a_re_render(tmp_path, world):
+    d = video(tmp_path, "doc-16", title="Delphi <b>Oracle</b>: What the Records Say", review=result("fail", ("metadata_valid", "block", "the title contains < or >")))
+    world["results"] = [result("pass")]
+    out = fixer.fix("doc-16", chat=lambda p: {}, rerender=world["rerender"])
+    meta = json.loads((d / "meta.json").read_text())
+    assert "<" not in meta["title"] and world["rerenders"] == [] and any("title" in f for f in out["fixed"])
+
+
+def test_wording_copied_from_the_source_is_reworded_line_by_line_and_the_video_made_again(tmp_path, world, monkeypatch):
+    copied = "Delphi was an ancient sanctuary on the slope of Mount Parnassus where the Pythia gave answers to those who came to ask."
+    monkeypatch.setattr(reviewer, "source_text", lambda meta: copied + " The French began the Great Excavation in 1893.")
+    lines = [{"text": copied}, {"text": "A completely different sentence about the museum and the bronze charioteer that visitors admire."}]
+    d = video(tmp_path, "doc-17", lines=lines, review=result("fail", ("originality", "block", "40% of the narration's 8-word runs are copied")))
+    world["results"] = [result("pass")]
+    seen = []
+
+    def chat(prompt):
+        seen.append(prompt)
+        return {"edits": [{"index": 0, "text": "Travellers climbed Mount Parnassus to put a single question to the priestess of Apollo at the sanctuary."}]}
+    out = fixer.fix("doc-17", chat=chat, rerender=world["rerender"])
+    meta = json.loads((d / "meta.json").read_text())
+    assert meta["lines"][0]["text"].startswith("Travellers climbed") and meta["lines"][1]["text"].startswith("A completely different")
+    assert "word for word" in seen[0] and "[0]" in seen[0] and world["rerenders"] == ["doc-17"] and any("reworded" in f for f in out["fixed"])
