@@ -268,25 +268,29 @@ def publishing(vs, now: dt.datetime | None = None) -> dict:
                "Use Hold on the Autopilot page for any video you do not want to go out; look at the first public video yourself.")
 
 
-# ---- R9 daily supply ----
-def supply(vs) -> dict:
-    """A long video a day needs passing videos waiting ahead of it: ready ones (reviewed and approved), ones being repaired, ones stuck with the owner."""
-    ready = repair = stuck = 0
-    for folder, m in vs:
-        if m.get("video_id") or m.get("hold") or m.get("format") != "doc":
-            continue
-        verdict = (m.get("review") or {}).get("verdict")
-        if m.get("approved") and verdict == "pass":
-            ready += 1
-        elif verdict in ("fail", "needs_human") and not m.get("fix_gave_up") and m.get("fix_attempts", 0) < 2:
-            repair += 1
-        elif verdict in ("fail", "needs_human"):
-            stuck += 1
-    level = "act" if ready == 0 and repair == 0 else "watch" if ready < 2 else "ok"
-    return ind("supply", "No long video ready for tomorrow", level,
-               f"{ready} long video{'s' if ready != 1 else ''} ready ({ready} day{'s' if ready != 1 else ''} of cover), {repair} being repaired, {stuck} waiting for you",
-               "the fixer repairs titles, repeated endings, wrong pictures and unsupported facts; Autopilot makes new videos only while fewer than 3 of a kind are stuck",
-               "Decide on the videos marked waiting for you (Autopilot page); keep 'Make new videos' on so the queue refills." if stuck else "")
+# ---- R9 next documentary ----
+def supply(now: dt.datetime | None = None) -> dict:
+    """Is the next documentary slot covered, or when does Autopilot start on it? Videos are made just in time (docs/AUTOPILOT.md), so 'nothing ready yet'
+    is normal until the slot is due; the row only turns to action when a due slot is still uncovered close to its deadline."""
+    import autopilot
+
+    now = now or dt.datetime.now(dt.timezone.utc)
+    view = autopilot.plan_view(now)
+    docs = [r for r in view["rows"] if r["format"] == "doc" and r["status"] != "too_soon"]
+    controls = "Autopilot prepares each video 36 hours before it posts, repairs the best draft first, makes a new one only when none is usable, and works on one at a time"
+    if not docs:
+        return ind("supply", "Next documentary", "watch", "no documentary slot is set for the coming days", controls, "Add documentary publish times under Rules on the Autopilot page.")
+    nxt = docs[0]
+    what = f"Next documentary slot {nxt['us']} (US Eastern)"
+    if nxt["status"] in ("uploaded", "scheduled", "ready"):
+        return ind("supply", "Next documentary", "ok", f"{what}: {nxt['title'] or 'a video'} is {'on YouTube' if nxt['status'] == 'uploaded' else nxt['status']}", controls)
+    if nxt["status"] == "later":
+        return ind("supply", "Next documentary", "ok", f"{what}: Autopilot starts on it {nxt['starts_us']}", controls)
+    at = dt.datetime.fromisoformat(nxt["at"].replace("Z", "+00:00"))
+    urgent = at - now < dt.timedelta(hours=24 + 6) and nxt["status"] == "empty"
+    how = {"repairing": "a draft is being repaired", "checking": "a draft is being checked", "empty": "nothing is ready, a new documentary is being made"}[nxt["status"]]
+    return ind("supply", "Next documentary", "act" if urgent else "watch", f"{what}: {how}", controls,
+               "Check the Autopilot page: it should be working on this now. If money is the reason, top up OpenRouter." if urgent else "")
 
 
 def assess(now: dt.datetime | None = None, out: Path | None = None, left: float | None = -1.0, running: list[str] | None = None) -> list[dict]:
@@ -299,7 +303,7 @@ def assess(now: dt.datetime | None = None, out: Path | None = None, left: float 
         key = llm.api_key()
         left = credit_left(key) if key else None
     run = running_jobs() if running is None else running
-    rows = [facts(vs), rights(vs), pattern(vs, now), money(left, daily_spend()), process(run, worker_starts(now)), skills(), access(), publishing(vs, now), supply(vs)]
+    rows = [facts(vs), rights(vs), pattern(vs, now), money(left, daily_spend()), process(run, worker_starts(now)), skills(), access(), publishing(vs, now), supply(now)]
     return rows
 
 

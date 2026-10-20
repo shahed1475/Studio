@@ -303,7 +303,7 @@ def chat(prompt: str, role: str = "cheap", fallback=None, now: dt.datetime | Non
         key = anthropic_key()
     if cfg["enabled"] and key and model:
         if spent_today(now) >= cfg["daily_budget_usd"] + (REVIEW_RESERVE_USD if role == "review" else 0.0):
-            _note(now, f"{role}: the daily cap was reached, used the local model")
+            _note(now, f"{role}: the daily cap was reached, so this job waits for free models or tomorrow")
         else:
             for _ in range(2):
                 try:

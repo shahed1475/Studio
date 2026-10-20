@@ -41,7 +41,7 @@ button,input,textarea{font:inherit;color:inherit}
 .ic.lg{width:22px;height:22px}
 
 /* shell */
-.shell{display:grid;grid-template-columns:var(--sidebar) 1fr;min-height:100dvh}
+.shell{display:grid;grid-template-columns:var(--sidebar) minmax(0,1fr);min-height:100dvh}
 aside{background:var(--surface);border-right:1px solid var(--line);padding:22px 14px;position:sticky;top:0;height:100dvh;display:flex;flex-direction:column;gap:22px}
 .brand{font-weight:700;font-size:17px;letter-spacing:-.02em;padding:0 10px}
 .brand span{color:var(--accent-text)}
@@ -55,7 +55,7 @@ nav .count{margin-left:auto;font-size:12px;background:var(--warn-bg);color:var(-
 .runbox b{display:block;font-weight:620}
 .runbox.busy{border-color:var(--warn);background:var(--warn-bg)}
 .theme{background:none;border:0;color:var(--ink2);cursor:pointer;display:flex;align-items:center;gap:8px;padding:4px;font-size:13px}
-main{padding:36px clamp(16px,4vw,48px) 90px;max-width:1240px;width:100%}
+main{padding:36px clamp(16px,4vw,48px) 90px;max-width:1240px;width:100%;min-width:0}
 .view{animation:in .18s ease-out}
 @keyframes in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 .head{display:flex;flex-direction:column;gap:6px;margin-bottom:26px}
@@ -155,7 +155,7 @@ pre.log{background:#0c0d0f;color:#d4d4d8;padding:16px;border-radius:var(--r);ove
 .toast.show{opacity:1;transform:translate(-50%,0)}
 
 @media(max-width:900px){
-  .shell{grid-template-columns:1fr}
+  .shell{grid-template-columns:minmax(0,1fr)}
   aside{position:static;height:auto;display:grid;grid-template-columns:1fr auto;padding:12px 12px 8px;gap:8px 10px;border-right:0;border-bottom:1px solid var(--line)}
   .brand{padding:0 4px}
   nav{grid-column:1/-1;grid-row:2;flex-direction:row;overflow-x:auto;gap:4px;padding-bottom:4px}
@@ -792,7 +792,7 @@ async function settings(m){
   const aiPanel=L?`<div class="panel pad stack" style="margin-bottom:16px"><h2>AI models</h2>
     <p class="sub">${cfg.enabled&&(L.key_set||L.anthropic_key_set)?`Paid models are on. Spent today: <b class="mono">${usd(L.spent_today)}</b> of the <b class="mono">${usd(cfg.daily_budget_usd)}</b> daily cap (${L.calls_today} calls). At the cap, jobs wait for free models or the next day.`:(cfg.free&&L.key_set?`Free OpenRouter models write the scripts and check the facts. ${L.free.openrouter?`OpenRouter reports <b class="mono">${L.free.openrouter.used}</b> of <b class="mono">${L.free.openrouter.limit}</b> free requests used today.`:""} Nothing is spent.`:"No model is set up yet. Save an OpenRouter key and turn on the free models below.")}</p>
     <div><label for="or_key">OpenRouter key</label><div style="display:flex;gap:10px;flex-wrap:wrap"><div class="grow"><input id="or_key" type="password" autocomplete="new-password" spellcheck="false" placeholder="${L.key_set?"Saved and hidden. Paste a new key to replace it":"Paste your key here, never into a chat"}" oninput="editing=true"></div><button class="btn" onclick="saveKey('openrouter','or_key')">Save key</button></div><div class="help">One key runs the whole studio, free and paid models, Claude included. It is saved the moment you press Save key, kept in a file only this server can read, and never shown again.${L.key_set?` <button class="btn danger sm" onclick="llmClearKey()">Remove key</button>`:""}</div></div>
-    <label class="tick"><input type="checkbox" id="or_free" ${cfg.free?"checked":""} onchange="editing=true"> Try free OpenRouter models first (costs nothing)</label>
+    <label class="tick"><input type="checkbox" id="or_free" ${cfg.free?"checked":""} onchange="editing=true"> Use free OpenRouter models when the paid ones run out or fail (never for reviews, which stay on Claude)</label>
     <label class="tick"><input type="checkbox" id="or_local" ${cfg.local_fallback?"checked":""} onchange="editing=true"> If no cloud model answers, use the slow local model instead of waiting (needs Ollama)</label>
     <label class="tick"><input type="checkbox" id="or_art" ${cfg.ai_art?"checked":""} onchange="editing=true"> Draw AI storybook illustrations when real pictures run out (about 3 cents each, up to 16 per documentary and 6 per Short; needs $1 or more of OpenRouter credit; shown as AI-generated in the credits)</label>
     <div class="fld"><div><label for="or_flim">Free requests per day</label><input id="or_flim" type="number" min="1" max="1000" value="${cfg.free_daily_limit}" oninput="editing=true"><div class="help">OpenRouter allows 20 requests a minute on free models, and 1,000 a day once credit has been bought (50 before). The studio counted <b class="mono">${L.free.requests_today}</b> today. ${L.free.on?`Free models in line: ${L.free.chain.length?L.free.chain.map(esc).join(", "):"none found yet, the list loads on the first request"}. When all of them are busy the job waits and tries again; nothing falls back to the slow local model unless you tick the box above.`:"Off: nothing writes unless you turn on paid models below."}</div></div></div>
