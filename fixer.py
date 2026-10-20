@@ -271,7 +271,7 @@ def fix(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) -> 
         dest = archive(folder)
         kept = topicqueue.requeue_failed(meta.get("topic", "")) if meta.get("topic") else False
         agentlog.event("info", f"Set aside and remade: {meta.get('title', slug)}", f"{archive_reason}. {'The topic is back in the queue.' if kept else 'The topic was dropped after two tries.'} Saved in {dest.parent.name}.", now=now)
-        return {"fixed": fixed, "archived": archive_reason, "verdict": None}
+        return {"fixed": fixed, "archived": archive_reason, "verdict": None, "rerendered": False}
 
     reviewer.invalidate(meta)
     meta["fix_attempts"] = attempts + 1
@@ -283,6 +283,10 @@ def fix(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) -> 
         _save(folder, meta)
     result = reviewer.review(folder)
     meta = json.loads((folder / "meta.json").read_text())
+    if result["verdict"] == "unreviewed":  # the reviewer model could not answer: that is not this video's failure, so the try is not used up
+        meta["fix_attempts"] = attempts
+        _save(folder, meta)
+        return {"fixed": fixed, "archived": None, "verdict": "unreviewed", "rerendered": rewrite}
     if result["verdict"] != "pass" and attempts + 1 >= MAX_ATTEMPTS:
         meta["fix_gave_up"] = True
         _save(folder, meta)
@@ -290,7 +294,7 @@ def fix(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) -> 
         agentlog.event("error", f"Needs your eyes: {meta.get('title', slug)}", f"I tried twice and the reviewer still says {result['verdict']}: {why}", notify=True, now=now)
     elif fixed:
         agentlog.event("applied", f"Fixed: {meta.get('title', slug)}", "; ".join(fixed) + f". The reviewer now says {result['verdict']}.", now=now)
-    return {"fixed": fixed, "archived": None, "verdict": result["verdict"]}
+    return {"fixed": fixed, "archived": None, "verdict": result["verdict"], "rerendered": rewrite}
 
 
 def _rerender(slug: str) -> None:

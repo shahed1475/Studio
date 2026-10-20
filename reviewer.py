@@ -208,6 +208,8 @@ def rule_checks(meta: dict, probe: dict, existing_titles: list[str], thumb_bytes
 
 
 def verdict_from(checks: list[dict], source: str | None) -> str:
+    if any(c["name"] == "llm_review" and not c["ok"] for c in checks):
+        return "unreviewed"  # the AI part could not run (model down, cap, a malformed reply): not a pass and not a fail, ask again later
     if any(not c["ok"] and c["severity"] == "block" for c in checks):
         return "fail"
     human = any(not c["ok"] and c["severity"] == "human" for c in checks)
@@ -310,6 +312,8 @@ def review(folder: Path, existing_titles: list[str] | None = None, use_llm: bool
     result = {"verdict": verdict_from(checks, meta.get("source")), "checks": checks,
               "at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
     apply_verdict(meta, result)
+    if result["verdict"] == "unreviewed":
+        meta.pop("review", None)  # no stored verdict means Autopilot reviews it again on its next look
     meta_path.write_text(json.dumps(meta, indent=2))
     try:
         import ledger

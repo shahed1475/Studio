@@ -262,3 +262,11 @@ def test_art_first_draws_before_it_uses_the_generic_reserve(monkeypatch):
     assert str(clips[0]) == "drawn.jpg" and stats["drawn"] == 1
     clips, _, stats = footage.scene_images(lines, "topic", [], art=art, art_limit=1)
     assert str(clips[0]) == "generic.jpg" and stats["drawn"] == 0
+
+
+def test_when_the_reviewer_model_cannot_answer_the_fix_try_is_not_used_up(tmp_path, world):
+    d = video(tmp_path, "doc-8", review=result("fail", ("title_matches", "block", "title may mislead")))
+    world["results"] = [{"verdict": "unreviewed", "checks": [chk("llm_review", False, "block", "review unavailable: KeyError")], "at": "x"}]
+    out = fixer.fix("doc-8", chat=lambda p: {"titles": ["A Quite Different Name for It"]}, rerender=world["rerender"])
+    meta = json.loads((d / "meta.json").read_text())
+    assert out["verdict"] == "unreviewed" and meta["fix_attempts"] == 0 and not meta.get("fix_gave_up")

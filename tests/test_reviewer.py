@@ -208,3 +208,10 @@ def test_shouting_title_warns():
     m["title"] = "YOU WON'T BELIEVE WHAT HAPPENED IN HAMELIN!!!"
     assert "title_style" in failed(run(meta=m), "warn")
     assert "title_style" not in failed(run(), "warn")
+
+
+def test_an_unusable_ai_reply_means_unreviewed_not_failed(monkeypatch):
+    monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p: {"policy_risk": 1})  # a free model that forgot a key
+    checks = reviewer.llm_review({"title": "t", "lines": [{"text": "a line"}]})
+    assert checks[0]["name"] == "llm_review" and not checks[0]["ok"]
+    assert reviewer.verdict_from(checks + [{"name": "x", "ok": False, "severity": "block"}], None) == "unreviewed"
