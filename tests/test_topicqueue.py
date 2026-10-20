@@ -29,3 +29,26 @@ def test_clean_queue_keeps_subjects_once(tmp_path, monkeypatch):
     removed, kept = topicqueue.clean_queue(chat)
     assert kept == ["The Mary Celeste", "The Jersey Devil", "The Talking Drum"] and len(removed) == 2
     assert json.loads(config.TOPICS_FILE.read_text()) == kept
+
+
+def test_a_pinned_topic_is_taken_before_any_queued_one_once_and_per_format(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "TOPICS_FILE", tmp_path / "topics.json")
+    topicqueue._write(["The Jersey Devil", "The Oracle of Delphi: Myth, Sanctuary and Excavation"])
+    topicqueue.pin("The Oracle of Delphi: Myth, Sanctuary and Excavation", "doc")
+    topicqueue.pin("A Short Topic", "short")
+    topicqueue.pin("The Oracle of Delphi: Myth, Sanctuary and Excavation", "doc")  # pinning twice changes nothing
+    assert topicqueue.pop_pinned("doc") == "The Oracle of Delphi: Myth, Sanctuary and Excavation"
+    assert topicqueue.pop_pinned("doc") is None and topicqueue.pop_pinned("short") == "A Short Topic" and topicqueue.pop_pinned("short") is None
+    assert topicqueue.items() == ["The Jersey Devil"]  # the pinned one left the queue too, so it is not made twice
+
+
+def test_run_takes_a_pinned_topic_before_the_ranking(tmp_path, monkeypatch):
+    import run
+    import topicrank
+
+    monkeypatch.setattr(config, "TOPICS_FILE", tmp_path / "topics.json")
+    topicqueue._write(["A", "B"])
+    monkeypatch.setattr(topicrank, "pop_best", lambda fmt: "A")
+    assert run._best_topic("doc") == "A"
+    topicqueue.pin("B", "doc")
+    assert run._best_topic("doc") == "B" and run._best_topic("doc") == "A"

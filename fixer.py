@@ -385,6 +385,26 @@ def archive(folder: Path) -> Path:
     return dest
 
 
+def remake(slug: str, topic: str | None = None, now: dt.datetime | None = None) -> dict:
+    """Set a video aside (moved to output_old, never deleted) and give its topic, or a better one, to Autopilot: the next video of its kind is made from it, first.
+    Never a video that is on YouTube."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    folder = config.OUT / slug
+    meta = json.loads((folder / "meta.json").read_text())
+    if meta.get("video_id"):
+        raise SystemExit(f"{slug} is on YouTube; it is not set aside")
+    fmt = meta.get("format") or "short"
+    topic = (topic or meta.get("topic") or "").strip()
+    if not topic:
+        raise SystemExit("no topic to make it again from: pass --topic")
+    meta["remade_as"] = topic
+    _save(folder, meta)
+    dest = archive(folder)
+    topicqueue.pin(topic, fmt)
+    agentlog.event("info", f"Set aside to be remade: {meta.get('title', slug)}", f"Autopilot makes the next {fmt} from '{topic}' when a slot needs it. The old video is saved in {dest.parent.name}.", now=now)
+    return {"archived": str(dest), "format": fmt, "topic": topic}
+
+
 def _save(folder: Path, meta: dict) -> None:
     (folder / "meta.json").write_text(json.dumps(meta, indent=2))
 

@@ -28,7 +28,7 @@ The project ships a `Dockerfile` and `docker-compose.yml`: a **dashboard** conta
 4. Open the dashboard from your computer: `STUDIO_VPS=user@your.host deploy/tunnel.sh`, then http://127.0.0.1:8913.
 5. Autopilot stays **off** until you switch it on in the dashboard (it publishes to your channel).
 
-Secrets (`.env`, `client_secret.json`, `token.json`, `settings.json`) are listed in `.gitignore` and `.dockerignore`: they never go to GitHub and never into the image. Set your Google OAuth consent screen to "In production" or the YouTube login expires after 7 days.
+Secrets (`.env`, `client_secret.json`, `token.json`, `settings.json`) are listed in `.gitignore` and `.dockerignore`: they never go to GitHub and never into the image. Set your Google OAuth consent screen to "In production" or the YouTube login expires after 7 days (steps and what to expect: docs/GOOGLE_PRODUCTION.md).
 
 ## Subtitles
 - New documentaries get subtitles burned in (white text, black outline, two lines at most). Shorts already have big word-by-word captions. Turn the documentary subtitles off with `YT_DOC_SUBS=0`.

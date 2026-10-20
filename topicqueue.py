@@ -65,6 +65,34 @@ def push_front(topic: str) -> None:
         _write([topic] + [t for t in _read() if t != topic])
 
 
+def _pins() -> list[dict]:
+    try:
+        data = json.loads(config.TOPICS_FILE.with_name("pinned_topics.json").read_text())
+    except (OSError, ValueError):
+        return []
+    return [p for p in data if isinstance(p, dict) and p.get("topic") and p.get("format")] if isinstance(data, list) else []
+
+
+def pin(topic: str, fmt: str) -> None:
+    """A topic the next video of this format must be made from, ahead of the ranking (a video set aside to be made again). Pinning twice changes nothing."""
+    with filelock.locked(config.TOPICS_FILE):
+        pins = _pins()
+        if not any(p["topic"] == topic and p["format"] == fmt for p in pins):
+            filelock.write_atomic(config.TOPICS_FILE.with_name("pinned_topics.json"), json.dumps(pins + [{"topic": topic, "format": fmt}], indent=2))
+
+
+def pop_pinned(fmt: str) -> str | None:
+    """The oldest pinned topic of this format, removed from the pins and from the queue so it is made once."""
+    with filelock.locked(config.TOPICS_FILE):
+        pins = _pins()
+        hit = next((p for p in pins if p["format"] == fmt), None)
+        if hit is None:
+            return None
+        filelock.write_atomic(config.TOPICS_FILE.with_name("pinned_topics.json"), json.dumps([p for p in pins if p is not hit], indent=2))
+        _write([t for t in _read() if t != hit["topic"]])
+        return hit["topic"]
+
+
 def remove(index: int) -> bool:
     with filelock.locked(config.TOPICS_FILE):
         cur = _read()

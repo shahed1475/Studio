@@ -7,7 +7,7 @@ Story Studio is a personal tool that makes and schedules videos for one YouTube 
 ## What it accesses
 When the owner connects the channel, Google asks for two permissions:
 - **Upload videos to YouTube** (`youtube.upload`), to upload and schedule the owner's own videos.
-- **Read YouTube channel data** (`youtube.readonly`), to read the channel's public numbers such as subscribers, views and video list, so the tool can show progress.
+- **Read YouTube channel data** (`youtube.readonly`), to read the channel's own numbers such as subscribers, views and video list so the tool can show progress, to confirm after each upload that YouTube stored the title, privacy setting and scheduled time that were sent, and to check after the publish time that the video became public and has no claim or block. It is never used to change anything.
 
 ## How the data is used and stored
 - The Google sign-in token is stored in a private file on the owner's own server. It is used only to upload videos and read channel numbers for that channel.

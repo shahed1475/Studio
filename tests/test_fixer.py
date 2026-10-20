@@ -523,3 +523,24 @@ def test_polish_retitles_the_chapters_it_rewrote_before_the_video_is_made_again(
         return {"title": "Consulting the Oracle"}
     fixer.polish("doc-p7", chat=chat, rerender=world["rerender"])
     assert [c["title"] for c in json.loads((d / "meta.json").read_text())["chapters"]] == ["Opening", "Consulting the Oracle"]
+
+
+def test_remake_sets_a_video_aside_and_gives_its_topic_to_autopilot_first(tmp_path, world, monkeypatch):
+    import topicqueue
+
+    pinned = []
+    monkeypatch.setattr(topicqueue, "pin", lambda topic, fmt: pinned.append((topic, fmt)))
+    d = video(tmp_path, "doc-18", title="Delphi: Old Cut")
+    out = fixer.remake("doc-18", topic="The Oracle of Delphi: Myth, Sanctuary and Excavation")
+    assert not d.exists() and (tmp_path / "output_old" / "doc-18" / "video.mp4").parent.exists()  # moved, never deleted
+    assert pinned == [("The Oracle of Delphi: Myth, Sanctuary and Excavation", "doc")] and out["archived"].endswith("doc-18")
+    assert any(e["title"].startswith("Set aside to be remade") for e in agentlog.recent())
+    moved = json.loads((tmp_path / "output_old" / "doc-18" / "meta.json").read_text())
+    assert moved["remade_as"] == "The Oracle of Delphi: Myth, Sanctuary and Excavation"
+
+
+def test_remake_never_touches_a_video_that_is_on_youtube(tmp_path, world, monkeypatch):
+    video(tmp_path, "doc-19", video_id="abc")
+    with pytest.raises(SystemExit, match="on YouTube"):
+        fixer.remake("doc-19")
+    assert (tmp_path / "output" / "doc-19").exists()

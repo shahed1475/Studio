@@ -316,6 +316,21 @@ def rules(vs, now: dt.datetime | None = None) -> dict:
                "When a page changes: read it (the Activity feed links it), then tell me to re-verify the rule. Conflicting items (the API private-upload rule) are settled by the first public video.")
 
 
+def login(now: dt.datetime | None = None) -> dict:
+    """The YouTube login: a failed refresh is an act; in Testing mode Google ends it 7 days after consent (ytlogin)."""
+    import ytlogin
+
+    now = now or dt.datetime.now(dt.timezone.utc)
+    s = ytlogin.status(now)
+    last = s.get("last_check")
+    failed = bool(last) and not last.get("ok")
+    level = "act" if failed else s["level"]
+    ev = s["detail"] + (f". The last check ({last['at']}) {'failed: ' + last['error'] if failed else 'got a fresh token from Google'}." if last else ". No refresh check has run yet.")
+    return ind("login", "YouTube login stays valid", level, ev,
+               "a refresh check every hour (a failure is reported at once with the steps), the consent date stamped on every connect, uploads are marked before they are sent",
+               "Reconnect before it runs out (steps in the alert). To stop the 7-day limit: Google Cloud Console, Audience, Publish app, reconnect once, then python run.py youtube-login production. docs/GOOGLE_PRODUCTION.md")
+
+
 def assess(now: dt.datetime | None = None, out: Path | None = None, left: float | None = -1.0, running: list[str] | None = None) -> list[dict]:
     """All indicators. left=-1 means: read the balance live."""
     import llm
@@ -326,7 +341,7 @@ def assess(now: dt.datetime | None = None, out: Path | None = None, left: float 
         key = llm.api_key()
         left = credit_left(key) if key else None
     run = running_jobs() if running is None else running
-    rows = [facts(vs), rights(vs), pattern(vs, now), money(left, daily_spend()), process(run, worker_starts(now)), skills(), access(), publishing(vs, now), supply(now), rules(vs, now)]
+    rows = [facts(vs), rights(vs), pattern(vs, now), money(left, daily_spend()), process(run, worker_starts(now)), skills(), access(), publishing(vs, now), supply(now), rules(vs, now), login(now)]
     return rows
 
 

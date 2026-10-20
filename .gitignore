@@ -37,3 +37,4 @@ __pycache__/
 autopilot.json
 job.pid
 reference_meta.json
+pinned_topics.json

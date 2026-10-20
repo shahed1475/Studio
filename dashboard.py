@@ -148,6 +148,11 @@ def yt_connect() -> None:
         creds = InstalledAppFlow.from_client_secrets_file(str(SECRET), SCOPES).run_local_server(port=0, timeout_seconds=300)
         TOKEN.write_text(creds.to_json())
         TOKEN.chmod(0o600)
+        import datetime as dt
+
+        import ytlogin
+
+        ytlogin.stamp(dt.datetime.now(dt.timezone.utc))  # the 7-day clock of a Testing-mode login starts here
     except Exception as e:
         YT_STATE["error"] = f"{type(e).__name__}: {e}"[:300]
     finally:

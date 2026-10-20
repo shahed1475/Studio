@@ -14,6 +14,8 @@
   python run.py newswatch        weekly YouTube security/policy news digest
   python run.py policywatch      daily: has YouTube changed its rule pages?
   python run.py titletest        daily: weak title? suggest (or change) one, then check it was better
+  python run.py remake <name> [--topic "..."]  set a video aside (never deleted) and make it again from the topic, first
+  python run.py youtube-login [production|testing]  show the YouTube login's age and mode, or set the mode
   python run.py health           are published videos public and free of claims? (pauses Autopilot if not)
   python run.py safety [--fix]   check that secret files and the login are protected
   python run.py newsvideo        make the next queued YouTube-news video
@@ -75,6 +77,9 @@ def _best_topic(fmt: str) -> str | None:
     """The queued topic the research and growth data like best that can be made well; the first in the queue if that ranking cannot run."""
     import topicrank
 
+    pinned = topicqueue.pop_pinned(fmt)  # a video set aside to be made again comes first
+    if pinned:
+        return pinned
     try:
         return topicrank.pop_best(fmt)
     except Exception as e:
@@ -382,9 +387,29 @@ def main() -> None:
         print(f"{len(ch)} rule pages changed" if ch else "no rule page changed (first run only saves a copy)")
         for c in ch:
             print(f"- {c['page']}: {(c['added'] or c['removed'])[0]}")
+    elif a[0] == "remake" and len(a) > 1:
+        import fixer
+
+        r = fixer.remake(a[1], a[a.index("--topic") + 1] if "--topic" in a else None)
+        print(f"set aside in {r['archived']}; the next {r['format']} will be made from: {r['topic']}")
+    elif a[0] == "youtube-login":
+        import datetime as dt
+
+        import ytlogin
+
+        now = dt.datetime.now(dt.timezone.utc)
+        if len(a) > 1 and a[1] in ("production", "testing"):
+            ytlogin.stamp(dt.datetime.strptime(ytlogin.status(now)["consented_at"], ytlogin.TS).replace(tzinfo=dt.timezone.utc) if ytlogin.status(now)["consented_at"] else now, mode=a[1])
+        s = ytlogin.status(now)
+        print(f"mode: {s['mode']}; {s['detail']}; last check: {s['last_check']}")
     elif a[0] == "health":
         import safety
+        import ytlogin
 
+        import datetime as dt
+
+        lg = ytlogin.check(dt.datetime.now(dt.timezone.utc))
+        print("YouTube login: " + ("works" if lg["ok"] else f"NOT working ({lg['error']})"))
         r = safety.check()
         print(r.get("error") or f"{r['checked']} published videos checked, {len(r['problems'])} problems" + (", Autopilot paused" if r["paused"] else ""))
         for p in r["problems"]:
