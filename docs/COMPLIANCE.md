@@ -13,6 +13,12 @@ Every video is checked against a catalog of YouTube rules before it is approved,
 | `api_private_lock` CONFLICTING | `safety.check` reports a video still private after its slot and names the possibility | Autopilot pauses and tells you; the first public video settles it |
 | `phone_verification` UNVERIFIED | the upload survives a refused thumbnail, records `thumbnail_error` and tells you | add the thumbnail in YouTube Studio |
 
+## Thumbnails and chapter titles
+- The hook is written from the narration (`thumbnail.hook_for`): a candidate the narration does not support, or one used before, is skipped.
+- Frames for the three layouts are cut above or below the burned-in caption band, and one vision reading prefers frames that show the story's own subject (a frame showing another place is left for last). A reading that cannot run changes nothing.
+- Chapter titles are read by the AI review (they are in the public description), and a chapter whose lines were rewritten gets a new title from its current lines, in the list and in the description.
+- Repairs wait for the day's money cap: a video's two tries are not spent on weak free models.
+
 ## Keeping it current
 `newswatch.policy_watch` reads the official pages every morning. When a page a rule depends on changes after the rule's `verified` date, the Risks card row "YouTube rules checked on every video" turns to watch and names the rules. Read the page, then re-verify the rule and update its `verified` date.
 
