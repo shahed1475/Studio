@@ -53,6 +53,9 @@ Do not claim the system is hallucination-free. Describe the controls and the rem
 ## Risk monitor
 `python risk.py` (and the Risks card on the dashboard home) measures nine standing risks: facts, rights, YouTube's inauthentic-content policy, money, deploys killing renders, third-party skills, access, publishing, and whether a long video is ready for tomorrow. Each row shows its level (ok, watch, act), the evidence, the controls in place and what the owner must decide. Read it before any deploy or approval. Scan any third-party skill with `python vetskill.py <folder>` before installing it.
 
+## How Autopilot decides (2026-10-20)
+One broken video at a time (`autopilot.focus_rank`: documentaries first, one already in repair first); nothing new is made while any can still be repaired. `planner.py` keeps the next `plan_ahead` publish slots of each kind covered and makes only what no ready or coming video covers; `ready/` holds links named by post time. Topics come from `topicrank.pop_best` (research and growth signals, source article must exist); the queue takes subjects only (`topicqueue.subject_of`). Reviews use Claude only, a model failure is `unreviewed`, never a fail. The Autopilot page shows Next videos and Working on now.
+
 ## Controls that exist (and their limits)
 Source-grounded scripts (up to two Wikipedia articles); claim ledger; claims checked against the source article, then against the web with citations; AI review that sees the source; fixer agent (two tries, then the owner); script, license, video and caption checks; visual review from sampled frames; upload read-back.
 Limits: Wikipedia is a secondary source; the web check is a model with search, not a historian; a vision reading covers only the frames sampled; passing checks are evidence, not proof.
