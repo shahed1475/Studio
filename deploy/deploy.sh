@@ -22,7 +22,7 @@ git pull -q --ff-only
 NEW=$(git rev-parse HEAD)
 changed=$(git diff --name-only "$OLD" "$NEW" || true)
 export STUDIO_UID=$(id -u) STUDIO_GID=$(id -g)
-renders=$(docker exec studio-worker sh -c 'for p in /proc/[0-9]*/cmdline; do tr "\0" " " < "$p" 2>/dev/null; echo; done' 2>/dev/null | grep -E 'run\.py (doc|make|redo|clip|newsvideo|batch)' | head -3 || true)
+renders=$(docker exec studio-worker sh -c 'for p in /proc/[0-9]*/cmdline; do tr "\0" " " < "$p" 2>/dev/null; echo; done' 2>/dev/null | grep -E 'run\.py (doc|make|redo|clip|newsvideo|batch|autopilot)' | head -3 || true)
 if [[ "$OLD" == "$NEW" ]]; then echo "Already up to date ($NEW)."; fi
 if echo "$changed" | grep -qE '^(Dockerfile|requirements.*\.txt|docker-compose\.yml)$'; then
   if [[ -n "$renders" && "${FORCE:-0}" != "1" ]]; then
