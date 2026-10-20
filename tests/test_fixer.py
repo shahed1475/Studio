@@ -235,3 +235,30 @@ def test_rerender_picks_the_short_or_documentary_path(tmp_path, world, monkeypat
     fixer._rerender("a-doc")
     fixer._rerender("a-short")
     assert called == [("doc", "a-doc"), ("short", "a-short")]
+
+
+def test_a_failed_picture_check_makes_the_pictures_again_with_illustrations_once(tmp_path, world):
+    d = video(tmp_path, "doc-7", review=result("needs_human", ("visual_review", "human", "9.5 s: map of the wrong region")))
+    world["results"] = [result("pass")]
+    out = fixer.fix("doc-7", chat=lambda p: {}, rerender=world["rerender"])
+    assert json.loads((d / "meta.json").read_text())["art_first"] is True and world["rerenders"] == ["doc-7"]
+    assert any("illustrations" in f for f in out["fixed"])
+    world["rerenders"].clear()
+    meta = json.loads((d / "meta.json").read_text())
+    meta["review"] = result("needs_human", ("visual_review", "human", "still wrong")); meta["fix_attempts"] = 0
+    (d / "meta.json").write_text(json.dumps(meta))
+    world["results"] = [result("needs_human", ("visual_review", "human", "still wrong"))]
+    fixer.fix("doc-7", chat=lambda p: {}, rerender=world["rerender"])
+    assert world["rerenders"] == []  # already tried: the owner decides
+
+
+def test_art_first_draws_before_it_uses_the_generic_reserve(monkeypatch):
+    import footage
+
+    monkeypatch.setattr(footage, "images_for", lambda q, anchors, n, skip=(), judge=None: [] if q != "topic" else [(__import__("pathlib").Path("generic.jpg"), "credit")])
+    art = lambda l: (__import__("pathlib").Path("drawn.jpg"), "AI-generated")
+    lines = [{"text": "a", "visual": ""}]
+    clips, _, stats = footage.scene_images(lines, "topic", [], art=art, art_limit=1, art_first=True)
+    assert str(clips[0]) == "drawn.jpg" and stats["drawn"] == 1
+    clips, _, stats = footage.scene_images(lines, "topic", [], art=art, art_limit=1)
+    assert str(clips[0]) == "generic.jpg" and stats["drawn"] == 0

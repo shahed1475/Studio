@@ -145,3 +145,15 @@ def test_a_reply_cut_off_at_the_token_limit_is_an_error_not_a_half_analysis(worl
     cut["choices"][0]["finish_reason"] = "length"
     report = vi.inspect_source("v4", frames=3, post=lambda p, k: cut)
     assert "analysis" not in report and any("cut off" in e["error"] for e in report["errors"])
+
+
+def test_mood_pictures_are_noted_but_only_wrong_ones_fail_the_row(world):
+    d = world / "output" / "v4"
+    make_video(d)
+    issues = [{"t": 3, "kind": "mood", "issue": "atmospheric fire"}, {"t": 9, "kind": "wrong", "issue": "map of India for Sumatra"}, {"t": 12, "issue": "no kind given"}]
+    rows = vi.visual_review(d, 4, post=lambda p, k: reply(picture_issues=issues))
+    fit = next(r for r in rows if r["name"] == "pictures_fit_story")
+    assert not fit["ok"] and fit["detail"].count(" s: ") == 2 and "fire" not in fit["detail"]  # an issue with no kind counts as wrong
+    assert "1 atmospheric" in next(r for r in rows if r["name"] == "pictures_mood")["detail"]
+    only_mood = vi.visual_review(d, 4, post=lambda p, k: reply(picture_issues=issues[:1]))
+    assert next(r for r in only_mood if r["name"] == "pictures_fit_story")["ok"]

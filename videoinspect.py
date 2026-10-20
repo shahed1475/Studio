@@ -197,7 +197,7 @@ def own_transcript(path: Path) -> tuple[str | None, str]:
 # ---- the vision reading ----
 SCHEMA = ('{"hook": "what the opening frames and words do", "structure": ["sections in order"], "pacing": "how fast the picture changes, using the cut statistics given", '
           '"editing_patterns": ["..."], "visual_storytelling": "how pictures support the story", "caption_issues": [{"t": 0, "issue": "ONLY real defects: cut off, unreadable, wrong words; [] when there are none"}], '
-          '"picture_issues": [{"t": 0, "issue": "ONLY real defects: pictures that do not fit the narration, plain colour screens, watermarks, artefacts; [] when there are none"}], "repeated_visuals": false, '
+          '"picture_issues": [{"t": 0, "kind": "wrong or mood", "issue": "ONLY real defects; [] when there are none. kind wrong = the picture shows a different place, person, period or subject than the narration names (a map of the wrong region, a modern building for an ancient site), illegible or garbled text, a plain colour screen, a watermark or an artefact. kind mood = a decorative or atmospheric picture that is plausible for the story but not literal"}], "repeated_visuals": false, '
           '"strengths": ["..."], "problems": ["..."], "cannot_tell": ["things the frames do not show"]}')
 
 
@@ -376,9 +376,14 @@ def visual_review(folder: Path, frames: int = 10, post=None) -> list[dict]:
     a = report.get("analysis")
     if not a:
         return [{"name": "visual_review", "ok": False, "severity": "warn", "detail": "could not run: " + "; ".join(e["error"] for e in report["errors"])[:200]}]
+    issues = [i for i in a.get("picture_issues", []) if isinstance(i, dict)]
+    wrong = [i for i in issues if i.get("kind") != "mood"]  # a picture with no kind counts as wrong: only a stated "mood" is let through
+    mood = [i for i in issues if i.get("kind") == "mood"]
     rows = [{"name": "captions_readable", "ok": not a.get("caption_issues"), "severity": "warn", "detail": "; ".join(f"{i.get('t')} s: {i.get('issue')}" for i in a.get("caption_issues", [])[:3]) or "no caption problem seen in the sampled frames"},
-            {"name": "pictures_fit_story", "ok": not a.get("picture_issues"), "severity": "warn", "detail": "; ".join(f"{i.get('t')} s: {i.get('issue')}" for i in a.get("picture_issues", [])[:3]) or "no mismatch seen in the sampled frames"},
+            {"name": "pictures_fit_story", "ok": not wrong, "severity": "warn", "detail": "; ".join(f"{i.get('t')} s: {i.get('issue')}" for i in wrong[:3]) or "no mismatch seen in the sampled frames"},
             {"name": "no_repeated_pictures", "ok": not a.get("repeated_visuals"), "severity": "warn", "detail": "the same picture shows up repeatedly" if a.get("repeated_visuals") else "no repetition seen in the sampled frames"}]
+    if mood:
+        rows.append({"name": "pictures_mood", "ok": True, "severity": "info", "detail": f"{len(mood)} atmospheric pictures that are plausible but not literal: " + "; ".join(f"{i.get('t')} s" for i in mood[:5])})
     rows.append({"name": "visual_coverage", "ok": True, "severity": "info", "detail": report["coverage"].get("statement", "")})
     return rows
 

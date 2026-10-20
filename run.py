@@ -118,7 +118,7 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
 
         art = lambda l: aiart.generate(l["text"], l.get("visual", ""), topic, vertical=True)
         clips, credits, stats = footage.scene_images(data["lines"], topic, data.get("anchors") or [], pool_size=pool_size, judge=_image_judge(topic),
-                                                     art=art, art_limit=aiart.MAX_PER_VIDEO["short"])
+                                                     art=art, art_limit=aiart.MAX_PER_VIDEO["short"], art_first=bool(data.get("art_first")))
         data["footage"] = stats
         if stats["missing"] or stats["unique"] < min_unique:
             clips = [None] * len(clips)
@@ -216,7 +216,7 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
 
     art = lambda l: aiart.generate(l["text"], l.get("visual", ""), data["topic"])
     clips, credits, stats = footage.scene_images(data["lines"], data["topic"], anchors, judge=_image_judge(data["topic"]),
-                                                 art=art, art_limit=aiart.MAX_PER_VIDEO["doc"])
+                                                 art=art, art_limit=aiart.MAX_PER_VIDEO["doc"], art_first=bool(data.get("art_first")))
     if stats["missing"] or stats["unique"] < 6:
         shutil.rmtree(folder, ignore_errors=True)
         raise SystemExit(f"only {stats['unique']} on-topic images found ({stats['missing']} scenes without one); "

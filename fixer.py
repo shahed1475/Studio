@@ -229,6 +229,10 @@ def fix(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) -> 
         if n:
             fixed.append(f"changed {n} line{'s' if n != 1 else ''} so the script does not share a template with recent videos")
             rewrite = True
+    if "visual_review" in failing and not meta.get("art_first"):
+        meta["art_first"] = True  # the generic reserve pictures are the usual wrong ones: draw labelled illustrations for those scenes instead
+        rewrite = True
+        fixed.append("made the pictures again, drawing illustrations instead of using generic archive pictures")
     tags = clean_tags(meta)
     if tags != meta.get("tags"):
         meta["tags"] = tags

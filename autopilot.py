@@ -73,6 +73,7 @@ def dashboard_busy(job_file: Path = JOB_FILE) -> bool:
         return True
 
 
+WRONG_PICTURES = 2  # sampled frames showing the wrong place, person or period that hold a video back
 MAX_STUCK = 3  # stop making a kind of video while this many of it sit failed or waiting for a human
 
 
@@ -163,8 +164,8 @@ def _meta(slug: str) -> tuple[Path, dict]:
 
 
 def visually_ok(slug: str) -> bool:
-    """Before the reviewer's pass becomes an approval, a vision model reads sampled frames. A clearly bad picture set (three or more pictures that do not fit,
-    or a garbled caption) sends the video to the owner instead. A reading that cannot run never blocks: the rule checks already passed."""
+    """Before the reviewer's pass becomes an approval, a vision model reads sampled frames. A clearly bad picture set (two or more WRONG pictures: another place,
+    person or period than the narration names; atmospheric pictures do not count) or a garbled caption sends the video to the fixer, then to the owner. A reading that cannot run never blocks: the rule checks already passed."""
     import videoinspect
 
     try:
@@ -178,7 +179,7 @@ def visually_ok(slug: str) -> bool:
     caps = next((r for r in rows if r["name"] == "captions_readable"), None)
     n_pics = (pics["detail"].count(" s: ") if pics and not pics["ok"] else 0)
     garbled = bool(caps and not caps["ok"] and re.search(r"garbl|gibberish|stray|nonsens", caps["detail"], re.I))
-    if n_pics >= 3 or garbled:
+    if n_pics >= WRONG_PICTURES or garbled:
         p, meta = _meta(slug)
         review = meta.setdefault("review", {"checks": []})
         review["checks"].append({"name": "visual_review", "ok": False, "severity": "human", "detail": " | ".join(r["detail"] for r in rows if not r["ok"])[:400]})

@@ -179,9 +179,10 @@ def image_for(query: str, anchors: list[str] | None = None) -> tuple[Path, str] 
     return hits[0] if hits else None
 
 
-def scene_images(lines: list[dict], topic: str, anchors: list[str], pool_size: int = 10, judge=None, art=None, art_limit: int = 0) -> tuple[list, list[str], dict]:
+def scene_images(lines: list[dict], topic: str, anchors: list[str], pool_size: int = 10, judge=None, art=None, art_limit: int = 0, art_first: bool = False) -> tuple[list, list[str], dict]:
     """One relevant image per scene: a specific search first, then unused images about the subject, then reuse.
     When no real picture is left, art(line) may draw one illustration (up to art_limit per video) instead of repeating a picture.
+    art_first: skip the generic reserve of subject pictures (the usual source of a ruin or map that is not quite the place) and draw instead.
     A scene only goes blank when nothing about the subject can be found at all."""
     used: list[Path] = []
     drawn = 0
@@ -195,6 +196,9 @@ def scene_images(lines: list[dict], topic: str, anchors: list[str], pool_size: i
         if l.get("visual"):
             hits = images_for(l["visual"], anchors, 1, skip=used, judge=judge)
             hit = hits[0] if hits else None
+        if not hit and art_first and art and drawn < art_limit:
+            hit = art(l)
+            drawn += bool(hit)
         if not hit:
             hit = next((h for h in pool if h[0] not in used), None)
         if not hit and art and drawn < art_limit:
