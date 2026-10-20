@@ -291,3 +291,26 @@ def test_status_names_the_video_autopilot_is_working_on(monkeypatch):
     assert autopilot.focus_view(NOW) == {"slug": "d1", "title": "The Pied Piper", "problems": ["title_matches", "visual_review"], "tries": 1}
     st["videos"] = [vid("ok", verdict="pass")]
     assert autopilot.focus_view(NOW) is None
+
+
+def test_the_tick_ends_with_a_finishing_pass_so_a_repaired_video_is_scheduled_at_once(tmp_path, monkeypatch):
+    import config
+    (tmp_path / "f").mkdir()
+    (tmp_path / "f" / "meta.json").write_text("{}")
+    monkeypatch.setattr(config, "OUT", tmp_path)
+    videos = {"f": vid("f", format="doc", verdict="fail")}
+    ran = []
+
+    def fix(slug, cfg, now):
+        ran.append(("fix", slug))
+        videos["f"].update(verdict="pass", approved=True, approved_by="reviewer-agent")  # the repair passed and approved it
+        return {"rerendered": True}
+    monkeypatch.setattr(autopilot, "MAX_ROUNDS", 1)
+    monkeypatch.setattr(autopilot, "load_config", lambda: {**CFG})
+    monkeypatch.setattr(autopilot, "build_state", lambda now, cfg: state(list(videos.values())))
+    monkeypatch.setattr(autopilot, "LOCK_FILE", tmp_path / "lock")
+    monkeypatch.setattr(autopilot, "STATE_FILE", tmp_path / "state.json")
+    monkeypatch.setattr(autopilot, "LOG", tmp_path / "log")
+    monkeypatch.setattr(autopilot, "EXECUTORS", {**{k: (lambda slug, cfg, now, k=k: ran.append((k, slug))) for k in autopilot.EXECUTORS}, "fix": fix})
+    autopilot.tick(NOW)
+    assert ran == [("fix", "f"), ("schedule", "f")]

@@ -74,6 +74,7 @@ def dashboard_busy(job_file: Path = JOB_FILE) -> bool:
 
 
 WRONG_PICTURES = 2  # sampled frames showing the wrong place, person or period that hold a video back
+FINISHING = ("review", "approve", "schedule", "upload")
 MAX_ROUNDS = 8  # videos looked at in one tick, when each repair is quick
 MAX_STUCK = 3  # stop making a kind of video while this many of it sit failed or waiting for a human
 
@@ -363,6 +364,18 @@ def tick(now: dt.datetime | None = None) -> dict:
                         p.write_text(json.dumps(meta, indent=2))
             if stop or not progressed:
                 break
+        for a in plan_actions(build_state(now, cfg), cfg, now, skip=worked):  # the finishing pass: whatever the repairs just approved is scheduled and uploaded now, not 30 minutes later
+            key = (a["do"], a["slug"])
+            if a["do"] not in FINISHING or key in seen:
+                continue
+            seen.add(key)
+            try:
+                EXECUTORS[a["do"]](a["slug"], cfg, now)
+                actions.append(a)
+                _log(f"ok {a['do']} {a['slug'] or ''}")
+            except (Exception, SystemExit) as e:
+                errors.append(f"{a['do']} {a['slug'] or ''}: {e}".strip())
+                _log(f"FAIL {errors[-1]}")
         result = {"at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "enabled": cfg["enabled"], "actions": actions, "errors": errors}
         STATE_FILE.write_text(json.dumps(result, indent=2))
         return result
