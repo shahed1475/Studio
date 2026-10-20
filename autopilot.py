@@ -204,33 +204,39 @@ def _meta(slug: str) -> tuple[Path, dict]:
     return p, json.loads(p.read_text())
 
 
-def visually_ok(slug: str) -> bool:
-    """Before the reviewer's pass becomes an approval, a vision model reads sampled frames. A clearly bad picture set (two or more WRONG pictures: another place,
-    person or period than the narration names; atmospheric pictures do not count) or a garbled caption sends the video to the fixer, then to the owner. A reading that cannot run never blocks: the rule checks already passed."""
+def read_pictures(slug: str) -> dict | None:
+    """A vision model reads sampled frames and the reading is stored in meta (visual_check). bad = two or more WRONG pictures (another place, person or period
+    than the narration names; atmospheric pictures do not count) or a garbled caption. None when the reading cannot run: that never blocks anything."""
     import videoinspect
 
     try:
         rows = videoinspect.visual_review(config.OUT / slug)
     except Exception:
-        return True
+        return None
     pics = next((r for r in rows if r["name"] == "pictures_fit_story"), None)
-    p0, m0 = _meta(slug)
-    m0["visual_check"] = {"at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "ok": True, "rows": [r["name"] + ": " + r["detail"][:120] for r in rows if not r["ok"]],
-                         "wrong_at": (pics or {}).get("times", []) if pics and not pics["ok"] else []}
-    p0.write_text(json.dumps(m0, indent=2))
     caps = next((r for r in rows if r["name"] == "captions_readable"), None)
     n_pics = (pics["detail"].count(" s: ") if pics and not pics["ok"] else 0)
     garbled = bool(caps and not caps["ok"] and re.search(r"garbl|gibberish|stray|nonsens", caps["detail"], re.I))
-    if n_pics >= WRONG_PICTURES or garbled:
-        p, meta = _meta(slug)
-        review = meta.setdefault("review", {"checks": []})
-        review["checks"].append({"name": "visual_review", "ok": False, "severity": "human", "detail": " | ".join(r["detail"] for r in rows if not r["ok"])[:400]})
-        review["verdict"] = "needs_human"
-        meta["approved"] = False
-        meta["visual_check"] = {**meta.get("visual_check", {}), "ok": False}
-        p.write_text(json.dumps(meta, indent=2))
-        return False
-    return True
+    bad = n_pics >= WRONG_PICTURES or garbled
+    p, meta = _meta(slug)
+    meta["visual_check"] = {"at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "ok": not bad, "rows": [r["name"] + ": " + r["detail"][:120] for r in rows if not r["ok"]],
+                            "wrong_at": (pics or {}).get("times", []) if pics and not pics["ok"] else []}
+    p.write_text(json.dumps(meta, indent=2))
+    return {"bad": bad, "rows": rows}
+
+
+def visually_ok(slug: str) -> bool:
+    """Before the reviewer's pass becomes an approval, the pictures are read (read_pictures). A clearly bad set sends the video to the fixer, then to the owner."""
+    seen = read_pictures(slug)
+    if seen is None or not seen["bad"]:
+        return True
+    p, meta = _meta(slug)
+    review = meta.setdefault("review", {"checks": []})
+    review["checks"].append({"name": "visual_review", "ok": False, "severity": "human", "detail": " | ".join(r["detail"] for r in seen["rows"] if not r["ok"])[:400]})
+    review["verdict"] = "needs_human"
+    meta["approved"] = False
+    p.write_text(json.dumps(meta, indent=2))
+    return False
 
 
 def _approve(slug: str) -> None:
@@ -283,6 +289,11 @@ def do_prelaunch(slug, cfg, now):
     import agentlog
     import prelaunch
 
+    _, mine = _meta(slug)
+    if mine.get("approved_by") == "you" and not (mine.get("visual_check") or {}).get("ok"):  # only reviewer-approved videos were ever picture-checked: read yours too, and tell you
+        seen = read_pictures(slug)
+        if seen and seen["bad"]:
+            agentlog.event("error", f"Pictures may not fit: {mine.get('title', slug)}", "; ".join(r["detail"] for r in seen["rows"] if not r["ok"])[:300] + " You approved it, so it stays scheduled until you decide.", notify=True, now=now)
     res = prelaunch.check(slug, now)
     p, meta = _meta(slug)
     meta["prelaunch"] = {"at": res["at"], "ok": res["ok"], "problems": res["problems"]}

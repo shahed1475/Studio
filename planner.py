@@ -113,8 +113,12 @@ def needs(cfg: dict, videos: list[dict], now: dt.datetime) -> dict:
 
 
 def repair_targets(cfg: dict, videos: list[dict], now: dt.datetime) -> set[str]:
-    """The drafts worth working on now: the ones that take a slot which is due. Every other draft stays parked."""
-    return {r["slug"] for r in rows(cfg, videos, now) if r["status"] in ("repairing", "checking") and r["slug"]}
+    """The drafts worth working on now: the ones that take a slot which is due, and failed ones that already hold a slot inside the window. Every other draft stays parked."""
+    due = {r["slug"] for r in rows(cfg, videos, now) if r["status"] in ("repairing", "checking") and r["slug"]}
+    until = horizon(cfg, now)  # a video that fails while it still holds a slot is repaired even if the slot is too soon for a new video to fill
+    held = {v["slug"] for v in videos if v.get("publish_at") and not (v.get("hold") or v.get("video_id") or v.get("approved")) and v.get("verdict") in ("fail", "needs_human")
+            and now < _parse(v["publish_at"]) <= until}
+    return due | held
 
 
 def sync_ready_folder(videos: list[dict], root: Path | None = None) -> list[str]:

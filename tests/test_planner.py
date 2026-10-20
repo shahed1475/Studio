@@ -67,3 +67,12 @@ def test_plan_view_lists_the_next_videos_and_what_is_still_to_make(monkeypatch):
     v = autopilot.plan_view(NOW)
     assert v["needs"] == {"doc": 0, "short": 1} and v["prepare_hours"] == 12 and v["per_day"] == {"doc": 1, "short": 1}
     assert {r["status"] for r in v["rows"]} >= {"ready", "empty", "too_soon", "later"} and all(r["at"] <= "2026-10-29T14:00:00Z" for r in v["rows"])
+
+
+def test_a_failed_video_that_still_holds_a_slot_inside_the_window_is_repaired_even_when_the_slot_is_too_soon_for_a_new_video():
+    held = vid("k", "short", verdict="fail", fix_attempts=1, publish_at="2026-10-21T16:30:00Z")  # Wed 16:30 UTC is under 24 h away
+    assert planner.repair_targets(CFG, [held], NOW) == {"k"}
+    far = vid("f", "short", verdict="fail", publish_at="2026-10-25T16:30:00Z")
+    others = [vid("a", "short", verdict="fail", approved=True, publish_at="2026-10-21T16:30:00Z"), vid("h", "short", verdict="fail", hold=True, publish_at="2026-10-21T16:30:00Z"),
+              vid("u", "short", verdict="fail", video_id="X", publish_at="2026-10-21T16:30:00Z"), vid("p", "short", verdict="pass", publish_at="2026-10-21T16:30:00Z")]
+    assert planner.repair_targets(CFG, [far, *others], NOW) == set()

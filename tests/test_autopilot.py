@@ -426,3 +426,30 @@ def test_do_polish_approves_a_pass_and_never_raises(tmp_path, monkeypatch):
     monkeypatch.setattr(fixer, "polish", lambda slug, now=None: (_ for _ in ()).throw(RuntimeError("render broke")))
     assert autopilot.do_polish("v", CFG, NOW) == {"skipped": "error"}
     assert "render broke" in json.loads((tmp_path / "v" / "meta.json").read_text())["polish_done"]["result"]
+
+
+def test_a_video_you_approved_gets_a_picture_reading_at_the_final_check_and_you_are_told_never_overruled(tmp_path, monkeypatch):
+    import agentlog, config, prelaunch, videoinspect
+    monkeypatch.setattr(config, "OUT", tmp_path)
+    monkeypatch.setattr(agentlog, "FILE", tmp_path / "events.jsonl")
+    monkeypatch.setattr(agentlog.subprocess, "run", lambda *a, **k: None)
+    monkeypatch.setattr(prelaunch, "check", lambda slug, now=None: {"at": "2026-10-20T00:00:00Z", "ok": True, "problems": []})
+    rows = lambda pics: [{"name": "pictures_fit_story", "ok": not pics, "severity": "warn", "times": pics, "detail": "; ".join(f"{t} s: wrong place" for t in pics) or "ok"},
+                         {"name": "captions_readable", "ok": True, "severity": "warn", "detail": "fine"}]
+    for name, pics in (("bad", [4.0, 9.0]), ("fine", []), ("seen", None)):
+        (tmp_path / name).mkdir()
+        meta = {"title": name, "approved": True, "approved_by": "you", "publish_at": "2026-10-21T16:30:00Z", "review": {"verdict": "pass", "checks": []}}
+        if pics is None:
+            meta["visual_check"] = {"ok": True, "rows": []}
+        (tmp_path / name / "meta.json").write_text(json.dumps(meta))
+
+        def reading(folder, pics=pics):
+            assert pics is not None, "a video with a passed picture check is not read again"
+            return rows(pics)
+        monkeypatch.setattr(videoinspect, "visual_review", reading)
+        autopilot.do_prelaunch(name, CFG, NOW)
+    bad = json.loads((tmp_path / "bad" / "meta.json").read_text())
+    assert bad["approved"] is True and bad["publish_at"] and bad["review"]["verdict"] == "pass"  # told, not withdrawn
+    assert bad["visual_check"]["ok"] is False and bad["visual_check"]["wrong_at"] == [4.0, 9.0] and bad["prelaunch"]["ok"] is True
+    assert json.loads((tmp_path / "fine" / "meta.json").read_text())["visual_check"]["ok"] is True
+    assert [e["title"] for e in agentlog.recent() if e["title"].startswith("Pictures")] == ["Pictures may not fit: bad"]
