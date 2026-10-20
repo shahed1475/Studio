@@ -283,8 +283,8 @@ def fix(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) -> 
         _save(folder, meta)
     result = reviewer.review(folder)
     meta = json.loads((folder / "meta.json").read_text())
-    if result["verdict"] == "unreviewed":  # the reviewer model could not answer: that is not this video's failure, so the try is not used up
-        meta["fix_attempts"] = attempts
+    if result["verdict"] == "unreviewed":  # the reviewer model could not answer: that is not this video's failure, so a words-only try is not used up
+        meta["fix_attempts"] = attempts + (1 if rewrite else 0)  # a re-render cost real time and money, so it still counts
         _save(folder, meta)
         return {"fixed": fixed, "archived": None, "verdict": "unreviewed", "rerendered": rewrite}
     if result["verdict"] != "pass" and attempts + 1 >= MAX_ATTEMPTS:

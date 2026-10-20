@@ -207,12 +207,15 @@ def rule_checks(meta: dict, probe: dict, existing_titles: list[str], thumb_bytes
     return out
 
 
+UNREVIEWED_ALERT = 8  # reviews with no usable AI answer, in a row, before the owner is told
+
+
 def verdict_from(checks: list[dict], source: str | None) -> str:
-    if any(c["name"] == "llm_review" and not c["ok"] for c in checks):
-        return "unreviewed"  # the AI part could not run (model down, cap, a malformed reply): not a pass and not a fail, ask again later
-    if any(not c["ok"] and c["severity"] == "block" for c in checks):
-        return "fail"
+    if any(not c["ok"] and c["severity"] == "block" and c["name"] != "llm_review" for c in checks):
+        return "fail"  # a rule check that failed settles it, whether or not the AI part could run
     human = any(not c["ok"] and c["severity"] == "human" for c in checks)
+    if not human and any(c["name"] == "llm_review" and not c["ok"] for c in checks):
+        return "unreviewed"  # only the AI part is missing (model down, cap, a malformed reply): not a pass and not a fail, ask again later
     return "needs_human" if human or source == "news" else "pass"
 
 
@@ -314,6 +317,14 @@ def review(folder: Path, existing_titles: list[str] | None = None, use_llm: bool
     apply_verdict(meta, result)
     if result["verdict"] == "unreviewed":
         meta.pop("review", None)  # no stored verdict means Autopilot reviews it again on its next look
+        meta["unreviewed_tries"] = meta.get("unreviewed_tries", 0) + 1
+        if meta["unreviewed_tries"] == UNREVIEWED_ALERT:  # the model keeps failing on this video: the owner is told once
+            import agentlog
+
+            agentlog.event("error", f"The AI review keeps failing: {meta.get('title', folder.name)}",
+                           f"{UNREVIEWED_ALERT} tries in a row got no usable answer from the review model. Check the OpenRouter balance and the daily cap.", notify=True)
+    else:
+        meta.pop("unreviewed_tries", None)
     meta_path.write_text(json.dumps(meta, indent=2))
     try:
         import ledger

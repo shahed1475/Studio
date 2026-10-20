@@ -214,4 +214,32 @@ def test_an_unusable_ai_reply_means_unreviewed_not_failed(monkeypatch):
     monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p: {"policy_risk": 1})  # a free model that forgot a key
     checks = reviewer.llm_review({"title": "t", "lines": [{"text": "a line"}]})
     assert checks[0]["name"] == "llm_review" and not checks[0]["ok"]
-    assert reviewer.verdict_from(checks + [{"name": "x", "ok": False, "severity": "block"}], None) == "unreviewed"
+    assert reviewer.verdict_from(checks, None) == "unreviewed"
+
+
+def test_a_failed_rule_check_still_fails_the_video_when_the_ai_part_is_missing():
+    llm_down = {"name": "llm_review", "ok": False, "severity": "block", "detail": "review unavailable"}
+    rule = {"name": "duration", "ok": False, "severity": "block", "detail": "x"}
+    assert reviewer.verdict_from([rule, llm_down], None) == "fail"
+    assert reviewer.verdict_from([llm_down], None) == "unreviewed"
+    assert reviewer.verdict_from([{"name": "claims", "ok": False, "severity": "human", "detail": "x"}, llm_down], None) == "needs_human"
+
+
+def test_the_owner_is_told_once_when_the_ai_review_keeps_failing(tmp_path, monkeypatch):
+    import agentlog, json
+    monkeypatch.setattr(agentlog, "FILE", tmp_path / "events.jsonl")
+    monkeypatch.setattr(agentlog.subprocess, "run", lambda *a, **k: None)
+    d = tmp_path / "out" / "v"
+    d.mkdir(parents=True)
+    (d / "video.mp4").write_bytes(b"x")
+    (d / "meta.json").write_text(json.dumps({"title": "A title here", "format": "doc", "lines": [{"text": "a line"}]}))
+    monkeypatch.setattr(reviewer, "probe_video", lambda p: {"duration": 400, "width": 1920, "height": 1080, "has_audio": True, "mean_db": -16, "black_ratio": 0})
+    monkeypatch.setattr(reviewer, "llm_review", lambda meta, source="": [{"name": "llm_review", "ok": False, "severity": "block", "detail": "review unavailable"}])
+    monkeypatch.setattr(reviewer, "source_text", lambda meta: "")
+    monkeypatch.setattr(reviewer, "rule_checks", lambda *a, **k: [])
+    for _ in range(reviewer.UNREVIEWED_ALERT + 2):
+        out = reviewer.review(d)
+    assert out["verdict"] == "unreviewed"
+    meta = json.loads((d / "meta.json").read_text())
+    assert meta["unreviewed_tries"] == reviewer.UNREVIEWED_ALERT + 2 and "review" not in meta
+    assert sum("keeps failing" in e["title"] for e in agentlog.recent()) == 1
