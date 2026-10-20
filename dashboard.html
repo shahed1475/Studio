@@ -263,7 +263,7 @@ async function api(path,body){
   const j=await r.json();if(j.error){toast(j.error);throw new Error(j.error)}return j;
 }
 const badge=(t,c)=>`<span class="badge b-${c}">${esc(t)}</span>`;
-const STATE={"needs review":["Needs review","warn"],approved:["Approved","ok"],uploaded:["On YouTube","mute"]};
+const STATE={"needs review":["Draft","warn"],approved:["Approved","ok"],uploaded:["On YouTube","mute"]};
 const stateBadge=s=>badge(...STATE[s]);
 const ago=t=>{const s=Math.max(0,Date.now()/1000-t);return s<60?"just now":s<3600?Math.round(s/60)+" min ago":s<86400?Math.round(s/3600)+" h ago":Math.round(s/86400)+" d ago"};
 const dur=s=>s<90?Math.round(s)+" s":Math.round(s/60)+" min";
@@ -315,6 +315,7 @@ function nextStep(){
   const r=running();
   if(r)return{icon:"hourglass-medium",title:"Working on it",text:`Running: ${esc(r.cmd)}. A documentary takes a while, you can leave this page open.`,btn:`<button class="btn" onclick="openJob='${r.id}';go('activity')">Watch progress</button>`};
   if(S.autopilot.needs_you)return{icon:"hand-palm",title:"A video needs your decision",text:`The reviewer agent flagged ${S.autopilot.needs_you===1?"a video":S.autopilot.needs_you+" videos"}. Nothing goes live until you decide.`,btn:`<button class="btn" onclick="go('autopilot')">See what was flagged</button>`};
+  if(S.autopilot.enabled){const n=S.autopilot.next;return{icon:"robot",title:"Autopilot is running",text:n?`Next post: ${n.format==="doc"?"documentary":"Short"} on ${esc(n.us)} US Eastern (${esc(n.bd)} Bangladesh)${n.title?", \""+esc(n.title)+"\"":""}. ${n.status==="later"?"Autopilot starts on it "+esc(n.starts_us)+".":(PLAN_WORDS[n.status]||"")}`:"It repairs, checks and schedules videos by itself. Nothing for you to do.",btn:`<button class="btn" onclick="go('autopilot')">See the plan</button>`}}
   const rev=S.videos.find(v=>v.state==="needs review");
   if(rev)return{icon:"play",title:"Watch your new video",text:`"${esc(rev.title)}" is ready. Watch it, then approve it.`,btn:`<button class="btn" onclick="go('videos',{slug:'${rev.slug}'})">Watch and review</button>`};
   const ap=S.videos.find(v=>v.state==="approved");
@@ -345,7 +346,7 @@ function home(m){
   <div class="sec"><h2>Pipeline</h2>
     <div class="panel pipe">
       <div><div class="n mono">${S.queue.length}</div><div class="l">Topics waiting</div></div>
-      <div><div class="n mono">${c["needs review"]}</div><div class="l">Need your review</div></div>
+      <div><div class="n mono">${c["needs review"]}</div><div class="l">Drafts in progress</div></div>
       <div><div class="n mono">${c.approved}</div><div class="l">Approved, not uploaded</div></div>
       <div><div class="n mono">${c.uploaded}</div><div class="l">On YouTube</div></div>
     </div></div>
@@ -429,7 +430,7 @@ function daySections(list,tall,kind){
 function videosList(m){
   const all=S.videos,long=all.filter(v=>v.format==="doc"),shorts=all.filter(v=>v.format!=="doc");
   const keep=v=>vFilter==="all"||v.state===vFilter,c=S.counts;
-  const FILTERS=[["all","All",all.length],["needs review","Needs review",c["needs review"]],["approved","Approved",c.approved],["uploaded","On YouTube",c.uploaded]];
+  const FILTERS=[["all","All",all.length],["needs review","Drafts",c["needs review"]],["approved","Approved",c.approved],["uploaded","On YouTube",c.uploaded]];
   if(!all.length){m.innerHTML=`<div class="head"><h1>Videos</h1><p class="sub">Everything the studio has made.</p></div><div class="panel">${empty("film-strip","Nothing here yet","Videos you make show up here with a preview and their dates.",`<button class="btn" onclick="go('create')">Make a video</button>`)}</div>`;return}
   const sec=(title,icon,list,tall,kind)=>{
     const shown=list.filter(keep);

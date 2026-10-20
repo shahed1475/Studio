@@ -198,7 +198,7 @@ def state() -> dict:
         },
         "youtube": {"secret": SECRET.exists(), "token": TOKEN.exists(), "connecting": YT_STATE["connecting"], "error": YT_STATE["error"]},
         "jobs": sorted(({k: v for k, v in j.items() if k != "proc"} for j in JOBS.values()), key=lambda j: -j["started"])[:30],
-        "autopilot": {"enabled": autopilot_cfg().get("enabled", False), "needs_you": len(autopilot_view()["needs_you"])},
+        "autopilot": {"enabled": autopilot_cfg().get("enabled", False), "needs_you": len(autopilot_view()["needs_you"]), "next": next_slot_view()},
         "agent": {"unread": __import__("agentlog").unread()},
         "auth": {"on": webauth.enabled(), "email": webauth.owner_email()},
         "settings": {"pexels_key": "saved" if load_settings().get("pexels_key") else ""},
@@ -321,6 +321,19 @@ def agent_read() -> dict:
 
     agentlog.mark_read()
     return {"ok": True}
+
+
+_NEXT = {"at": 0.0, "data": None}
+
+
+def next_slot_view() -> dict | None:
+    """The next slot that is not already too close, for the Home card; recomputed at most every 30 seconds."""
+    import autopilot
+
+    if time.time() - _NEXT["at"] > 30:
+        rows = [r for r in autopilot.plan_view()["rows"] if r["status"] != "too_soon"]
+        _NEXT.update(at=time.time(), data={k: rows[0][k] for k in ("us", "bd", "format", "status", "title", "starts_us")} if rows else None)
+    return _NEXT["data"]
 
 
 def autopilot_view() -> dict:
