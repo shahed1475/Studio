@@ -192,11 +192,15 @@ class Limiter:
             self.fails.setdefault(ip, []).append(now or time.time())
 
     def clear(self, ip: str) -> None:
+        """A right password: this visitor's attempts are forgotten, and so are their slots in the shared count (only wrong guesses use it up)."""
         with self.lock:
-            self.fails.pop(ip, None)
+            for t in self.fails.pop(ip, []):
+                if t in self.all:
+                    self.all.remove(t)
 
 
 LIMITER = Limiter()
+CLAIM_LIMITER = Limiter()  # the first-password page is counted apart, so guessing at it cannot lock the login page
 
 
 def login_page(error: str = "") -> bytes:

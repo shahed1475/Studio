@@ -477,7 +477,7 @@ class H(BaseHTTPRequestHandler):
         form = parse_qs(self.rfile.read(min(n, 4096)).decode(errors="replace"))
         tok, email = form.get("token", [""])[0], form.get("email", [""])[0]
         pw, pw2 = form.get("password", [""])[0], form.get("password2", [""])[0]
-        if not webauth.LIMITER.reserve(ip):
+        if not webauth.CLAIM_LIMITER.reserve(ip):
             return self._page(webauth.claim_page(tok, "Too many tries. Wait ten minutes."), 429)
         if pw != pw2:
             return self._page(webauth.claim_page(tok, "The two passwords are different."), 400)
@@ -485,7 +485,7 @@ class H(BaseHTTPRequestHandler):
             webauth.claim(tok, email, pw)
         except ValueError as e:
             return self._page(webauth.claim_page(tok, str(e)), 400)
-        webauth.LIMITER.clear(ip)
+        webauth.CLAIM_LIMITER.clear(ip)
         secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
         cookie = f"{webauth.COOKIE}={webauth.make_token(webauth.owner_email())}; HttpOnly; SameSite=Strict; Path=/; Max-Age={webauth.SESSION_DAYS * 86400}{secure}"
         return self._redirect("/", [("Set-Cookie", cookie)])
@@ -841,7 +841,8 @@ if __name__ == "__main__":
 
     if tenantmode.is_tenant():
         tenantmode.apply_defaults()
-        webauth.LIMITER.global_max = 30  # guessing from many addresses at once is stopped too
+        webauth.LIMITER.global_max = 30  # guessing from many addresses at once is stopped too (a sign-in that works gives its slot back; a signed-in session is not affected)
+        webauth.CLAIM_LIMITER.global_max = 30
     print(f"Dashboard: http://studio.localhost:{PORT}   (also http://127.0.0.1:{PORT})")
     bind = os.getenv("STUDIO_BIND", "").strip()
     if bind and webauth.enabled():  # a second address (the Tailscale one) is opened only when a login exists

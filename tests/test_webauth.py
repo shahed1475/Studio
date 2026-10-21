@@ -105,3 +105,15 @@ def test_a_global_limit_stops_guessing_spread_over_many_addresses():
     assert lim.reserve("10.0.0.99", now=1001) is False  # eleven different visitors in ten minutes: refused for everybody
     assert lim.reserve("10.0.0.99", now=1000 + webauth.WINDOW + 1) is True
     assert webauth.Limiter().reserve("a", now=1000) is True  # no global limit unless asked for (the owner's studio)
+
+
+def test_a_successful_sign_in_gives_its_slot_back_to_the_global_count():
+    lim = webauth.Limiter(global_max=3)
+    for i in range(3):
+        assert lim.reserve("10.0.0.1", now=1000 + i)
+        lim.clear("10.0.0.1")  # each was a right password
+    assert lim.reserve("10.0.0.2", now=1010)  # the owner signing in three times never uses up the shared allowance
+
+
+def test_the_first_sign_in_page_has_its_own_limits_apart_from_the_login_page():
+    assert webauth.CLAIM_LIMITER is not webauth.LIMITER
