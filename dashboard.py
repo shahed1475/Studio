@@ -161,6 +161,7 @@ def yt_connect() -> None:
 
 def llm_view() -> dict:
     """Settings for the AI models panel. The key itself is never included."""
+    import aiart
     import autopilot
     import llm
 
@@ -170,7 +171,8 @@ def llm_view() -> dict:
     role_prices = {r: (prices.get(cfg["models"][r]) if cfg["models"][r] else (0.0, 0.0)) for r in llm.ROLES}
     known = all(v is not None for v in role_prices.values())
     ap = autopilot.load_config()
-    est = llm.estimate({r: v for r, v in role_prices.items() if v}, ap["uploads_per_day"], ap["shorts_per_day"] if ap["shorts"] else 0) if known else None
+    art = (aiart.MAX_PER_VIDEO["doc"] * aiart.PRICE_EACH, aiart.MAX_PER_VIDEO["short"] * aiart.PRICE_EACH) if cfg.get("ai_art") else (0.0, 0.0)
+    est = llm.estimate({r: v for r, v in role_prices.items() if v}, ap["uploads_per_day"], ap["shorts_per_day"] if ap["shorts"] else 0, art=art) if known else None
     today = usage.get(llm._day(now), {})
     return {
         "config": cfg, "key_set": bool(llm.api_key()), "anthropic_key_set": bool(llm.anthropic_key()), "spent_today": round(llm.spent_today(now), 4), "calls_today": today.get("calls", 0),

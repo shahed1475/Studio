@@ -20,6 +20,7 @@ STYLE = ("Antique storybook illustration, muted watercolour and ink, warm candle
          "no text, no letters, no captions, no watermark")
 CREDIT = "Illustration: AI-generated storybook art (Google Gemini image model via OpenRouter)"
 MAX_PER_VIDEO = {"doc": 16, "short": 6}
+PRICE_EACH = 0.034  # dollars per picture, measured 20 Oct 2026: $3.19 for 95 pictures
 _off_until: dict = {}  # a failed call (no credit) pauses drawing for the rest of the day
 
 

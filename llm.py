@@ -26,7 +26,9 @@ UNKNOWN_PRICE = (10.0, 30.0)  # per million tokens: deliberately high, so an unk
 
 # Tokens per finished item, by role: (input, output). Estimates from our prompts; the dashboard shows real spend next to them.
 TOKENS = {
-    "doc": {"script": (13000, 3000), "review": (2000, 100), "cheap": (1700, 450)},
+    # measured 19-21 Oct 2026 (data/llm_usage.json): the script is an outline plus one request per chapter carrying the source article, the script gate
+    # checks and rewrites it, and a documentary is reviewed several times (first review, picture check, final check, every repair)
+    "doc": {"script": (50000, 14000), "review": (25000, 5000), "cheap": (4000, 1200)},
     "short": {"script": (700, 450), "review": (700, 100), "cheap": (1100, 330)},
     "weekly": {"script": (3000, 800), "cheap": (1200, 400)},  # news digest, trend and channel ideas
 }
@@ -177,17 +179,19 @@ def _usd(model: str, tin: int, tout: int) -> float:
     return (tin * pin + tout * pout) / 1e6
 
 
-def estimate(prices: dict, docs_per_day: float, shorts_per_day: float, days: int = 30) -> dict:
-    """Cost from token estimates and per-role prices {role: (in, out) $/Mtok}."""
+def estimate(prices: dict, docs_per_day: float, shorts_per_day: float, days: int = 30, art: tuple[float, float] = (0.0, 0.0)) -> dict:
+    """Cost from token estimates and per-role prices {role: (in, out) $/Mtok}, plus `art` = (documentary, Short) dollars for AI pictures (the biggest
+    single cost: 95 pictures, $3.19, on 20 Oct). A first try with no repairs: the real spend shows next to it."""
     def cost(kind):
         by = {r: (tin * prices[r][0] + tout * prices[r][1]) / 1e6 for r, (tin, tout) in TOKENS[kind].items() if r in prices}
         return sum(by.values()), by
     doc, doc_by = cost("doc")
     short, short_by = cost("short")
     weekly, weekly_by = cost("weekly")
+    doc, short = doc + art[0], short + art[1]
     per_day = docs_per_day * doc + shorts_per_day * short
     by_role = {r: (docs_per_day * doc_by.get(r, 0) + shorts_per_day * short_by.get(r, 0)) * days + weekly_by.get(r, 0) * days / 7 for r in ROLES}
-    return {"per_doc_usd": doc, "per_short_usd": short, "weekly_usd": weekly, "per_day_usd": per_day,
+    return {"per_doc_usd": doc, "per_short_usd": short, "weekly_usd": weekly, "per_day_usd": per_day, "art_per_doc_usd": art[0], "art_per_short_usd": art[1],
             "per_month_usd": per_day * days + weekly * days / 7, "by_role": by_role}
 
 

@@ -135,8 +135,10 @@ def test_estimate_costs_from_prices():
     prices = {"script": (2.0, 10.0), "review": (4.0, 20.0), "cheap": (0.1, 0.5)}
     e = llm.estimate(prices, docs_per_day=1, shorts_per_day=1, days=30)
     doc = e["per_doc_usd"]
-    # doc: script 13000 in / 3000 out, review 2000/100, cheap 1700/450
-    assert doc == pytest.approx(13000 * 2 / 1e6 + 3000 * 10 / 1e6 + 2000 * 4 / 1e6 + 100 * 20 / 1e6 + 1700 * 0.1 / 1e6 + 450 * 0.5 / 1e6)
+    t = llm.TOKENS["doc"]
+    assert doc == pytest.approx(t["script"][0] * 2 / 1e6 + t["script"][1] * 10 / 1e6 + t["review"][0] * 4 / 1e6 + t["review"][1] * 20 / 1e6 + t["cheap"][0] * 0.1 / 1e6 + t["cheap"][1] * 0.5 / 1e6)
+    with_art = llm.estimate(prices, docs_per_day=1, shorts_per_day=1, days=30, art=(0.544, 0.204))
+    assert with_art["per_doc_usd"] == pytest.approx(doc + 0.544) and with_art["art_per_doc_usd"] == 0.544 and with_art["per_day_usd"] > e["per_day_usd"]
     assert e["per_month_usd"] == pytest.approx((e["per_doc_usd"] + e["per_short_usd"]) * 30 + e["weekly_usd"] * 30 / 7)
     assert set(e["by_role"]) == {"script", "review", "cheap"}
 
