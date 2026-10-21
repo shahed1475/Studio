@@ -40,3 +40,14 @@ def test_repo_root_router_is_not_installed_when_it_has_skills(tmp_path):
     make_skill(repo / "skills", "a")
     (repo / "SKILL.md").write_text("router")
     assert [s.name for s in extend.find_skills(repo)] == ["a"]
+
+
+def test_symlinks_are_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "ROOT", tmp_path / "studio")
+    repo = tmp_path / "repo"
+    d = make_skill(repo, "linky")
+    secret = tmp_path / "secret.txt"
+    secret.write_text("token")
+    (d / "notes.md").symlink_to(secret)
+    assert extend.install(d, repo)[0] == "refused"
+    assert not (extend.skills_dir() / "linky").exists()

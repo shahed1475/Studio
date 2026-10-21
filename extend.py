@@ -38,6 +38,11 @@ def find_skills(repo: Path) -> list[Path]:
     return [d for d in leaves if d != repo] or leaves  # a router SKILL.md at the repo root is not installed when the repo has skills of its own
 
 
+def symlinks(folder: Path) -> list[str]:
+    """Links inside a folder to be copied (a clone could point one at a file elsewhere on this machine). Any link means the folder is not installed."""
+    return sorted(str(p.relative_to(folder)) for p in folder.rglob("*") if p.is_symlink() and not (set(p.relative_to(folder).parts) & SKIP_DIRS))
+
+
 def files_of(folder: Path) -> dict[str, str]:
     return {str(p.relative_to(folder)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(folder.rglob("*"))
             if p.is_file() and p.name not in META and not (set(p.relative_to(folder).parts) & SKIP_DIRS) and p.name not in SKIP_NAMES}
@@ -56,6 +61,8 @@ def install(skill: Path, repo: Path, replace: bool = False, skills_dir_: Path | 
     """-> (status, why). status: installed | refused | skipped."""
     base = skills_dir_ or skills_dir()
     name = skill.name
+    if links := symlinks(skill):
+        return "refused", f"contains symbolic links ({', '.join(links[:3])})"
     result = vetskill.scan(skill)
     if result["counts"]["high"]:
         return "refused", "; ".join(f["what"] for f in result["findings"] if f["severity"] == "high")[:200]
@@ -66,7 +73,7 @@ def install(skill: Path, repo: Path, replace: bool = False, skills_dir_: Path | 
         shutil.rmtree(target)
     for rel in files_of(skill):
         (target / rel).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(skill / rel, target / rel)
+        shutil.copy2(skill / rel, target / rel, follow_symlinks=False)
     pins = files_of(target)
     remote, commit = _git(repo, "remote", "get-url", "origin"), _git(repo, "rev-parse", "--short", "HEAD")
     licence = next((p.name for p in sorted(repo.glob("LICENSE*"))), "none found")
@@ -87,6 +94,8 @@ def install(skill: Path, repo: Path, replace: bool = False, skills_dir_: Path | 
 def _share_references(shared: Path, repo: Path, base: Path) -> str:
     """Skills of a pack read ../../references (shared notes); that folder is `.claude/references`. One pack at a time: a second, different pack is not merged."""
     dest = base.parent / "references"
+    if symlinks(shared):
+        return "; shared references NOT copied: they contain symbolic links"
     pins = files_of(shared)
     pinfile = dest / "VENDORED.sha256.json"
     if dest.exists() and not pinfile.exists():
@@ -95,7 +104,7 @@ def _share_references(shared: Path, repo: Path, base: Path) -> str:
         return "; shared references NOT copied: another pack's references are installed"
     for rel in pins:
         (dest / rel).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(shared / rel, dest / rel)
+        shutil.copy2(shared / rel, dest / rel, follow_symlinks=False)
     pinfile.write_text(json.dumps({"source": _git(repo, "remote", "get-url", "origin"), "commit": _git(repo, "rev-parse", "--short", "HEAD"), "files": pins}, indent=1) + "\n")
     return f"; shared references ({len(pins)} files)"
 
