@@ -202,3 +202,53 @@ def test_no_art_function_means_no_drawing(monkeypatch):
     _fake_images(monkeypatch, {})
     clips, _, stats = footage.scene_images([{"visual": "x", "text": "t"}], "T", [], art=None, art_limit=5)
     assert clips == [None] and stats["drawn"] == 0
+
+
+def _lines(n=10):
+    return [{"text": f"line {i}", "visual": f"v{i}"} for i in range(n)]
+
+
+def test_verify_and_revise_rewrites_flagged_lines_from_the_sources_and_checks_again(monkeypatch):
+    import scriptgen
+    judged = []
+
+    def judge(prompt, *a, **k):
+        judged.append(prompt)
+        return {"unsupported": [{"n": 2, "why": "invented guide"}]} if len(judged) == 1 else {"unsupported": []}
+
+    monkeypatch.setattr(scriptgen, "_review_chat", judge)
+    monkeypatch.setattr(scriptgen, "_script_chat", lambda p, *a, **k: {"lines": [{"n": 2, "text": "rewritten from the source", "visual": "Delphi"}]})
+    out, ch = scriptgen.verify_and_revise(_lines(), [{"title": "a", "start_line": 0}], "SOURCES")
+    assert out[2] == {"text": "rewritten from the source", "visual": "Delphi"} and len(out) == 10 and len(judged) == 2
+
+
+def test_verify_and_revise_drops_a_line_when_no_source_fact_fits_and_when_it_stays_flagged(monkeypatch):
+    import scriptgen
+    monkeypatch.setattr(scriptgen, "_review_chat", lambda p, *a, **k: {"unsupported": [{"n": 1, "why": "x"}]} if "line 1" in p else {"unsupported": []})
+    monkeypatch.setattr(scriptgen, "_script_chat", lambda p, *a, **k: {"lines": [{"n": 1, "text": "", "visual": ""}]})
+    out, ch = scriptgen.verify_and_revise(_lines(), [{"title": "a", "start_line": 0}, {"title": "b", "start_line": 5}], "S")
+    assert [l["text"] for l in out] == [f"line {i}" for i in (0, 2, 3, 4, 5, 6, 7, 8, 9)] and [c["start_line"] for c in ch] == [0, 4]
+    monkeypatch.setattr(scriptgen, "_review_chat", lambda p, *a, **k: {"unsupported": [{"n": 1, "why": "x"}]} if "line 1" in p else {"unsupported": []})
+    monkeypatch.setattr(scriptgen, "_script_chat", lambda p, *a, **k: {"lines": [{"n": 1, "text": "line 1", "visual": "v"}]})  # the writer keeps the same flagged line
+    out, _ = scriptgen.verify_and_revise(_lines(), [{"title": "a", "start_line": 0}], "S")
+    assert "line 1" not in [l["text"] for l in out]
+
+
+def test_verify_and_revise_refuses_a_script_the_source_mostly_does_not_support(monkeypatch):
+    import pytest
+    import scriptgen
+    monkeypatch.setattr(scriptgen, "_review_chat", lambda p, *a, **k: {"unsupported": [{"n": i, "why": "x"} for i in range(6)]})
+    with pytest.raises(ValueError, match="do not support"):
+        scriptgen.verify_and_revise(_lines(), [{"title": "a", "start_line": 0}], "S")
+
+
+def test_verify_and_revise_refuses_to_pass_a_script_it_could_not_check(monkeypatch):
+    import pytest
+    import scriptgen
+
+    def boom(*a, **k):
+        raise RuntimeError("no model")
+
+    monkeypatch.setattr(scriptgen, "_review_chat", boom)
+    with pytest.raises(ValueError, match="could not be fact-checked"):
+        scriptgen.verify_and_revise(_lines(), [{"title": "a", "start_line": 0}], "S")

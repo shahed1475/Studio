@@ -80,8 +80,8 @@ def rows(cfg: dict, videos: list[dict], now: dt.datetime, per_format: int | None
                 best = min(slots, key=lambda s: abs(s - at), default=None)
                 if best is not None and abs(best - at) <= MATCH and best not in taken:
                     taken[best] = v
-        ready = sorted((v for v in mine if coming(v) and v.get("verdict") == "pass"), key=lambda v: v.get("slug", ""))
-        drafts = sorted((v for v in mine if coming(v) and v.get("verdict") != "pass"), key=_draft_key)
+        ready = sorted((v for v in mine if coming(v) and v.get("verdict") == "pass" and not v.get("facts_open")), key=lambda v: v.get("slug", ""))
+        drafts = sorted((v for v in mine if coming(v) and (v.get("verdict") != "pass" or v.get("facts_open"))), key=_draft_key)
         for at in slots:
             starts = at - dt.timedelta(hours=cfg["review_window_hours"] + cfg["prepare_hours"])
             row = {"format": fmt, "at": scheduler.to_rfc3339(at), "us": scheduler.fmt_local(at, TZ_AUDIENCE), "bd": scheduler.fmt_local(at, TZ_OWNER),

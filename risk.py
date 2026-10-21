@@ -68,10 +68,14 @@ def facts(vs) -> dict:
             unverified.append(f"{folder.name} ({len(u)})")
         if m.get("grounded") is not True:
             ungrounded.append(folder.name)
-    level = "act" if conflicts else "watch" if unverified or ungrounded else "ok"
-    ev = (f"contradicted claims in: {', '.join(conflicts)}. " if conflicts else "") + (f"unverified claims in: {', '.join(unverified)}. " if unverified else "") + \
+    import fixer
+
+    warned = [f.name for f, m in vs if not m.get("video_id") and not m.get("hold") and m.get("approved_by") != "you"
+              and fixer.watch_problems((m.get("review") or {}).get("checks", []))]  # an open invented-facts warning: the gate holds these videos out of the upload
+    level = "act" if conflicts else "watch" if unverified or ungrounded or warned else "ok"
+    ev = (f"contradicted claims in: {', '.join(conflicts)}. " if conflicts else "") + (f"held for an invented-facts warning: {', '.join(warned)}. " if warned else "") + (f"unverified claims in: {', '.join(unverified)}. " if unverified else "") + \
          (f"no source article: {', '.join(ungrounded)}. " if ungrounded else "")
-    return ind("facts", "Wrong or unsupported facts", level, ev or f"{len(_pending(vs))} videos waiting to go out: no open claims, all built from a source",
+    return ind("facts", "Wrong or unsupported facts", level, ev or f"{len(_pending(vs))} videos waiting to go out: no open claims and no invented-facts warning, all built from a source",
                "source-grounded scripts, claim ledger, web check with cited pages, fixer agent, AI review that sees the source",
                "Wikipedia is secondary and the web check is a model with search: for a topic where facts matter, add a primary source by hand.")
 
@@ -277,7 +281,9 @@ def supply(now: dt.datetime | None = None) -> dict:
     now = now or dt.datetime.now(dt.timezone.utc)
     view = autopilot.plan_view(now)
     docs = [r for r in view["rows"] if r["format"] == "doc" and r["status"] != "too_soon"]
-    controls = "Autopilot prepares each video 36 hours before it posts, repairs the best draft first, makes a new one only when none is usable, and works on one at a time"
+    cfg = autopilot.load_config()
+    controls = (f"Autopilot starts each video {cfg['review_window_hours'] + cfg['prepare_hours']} hours before it posts and finishes it {cfg['review_window_hours']} hours before, "
+                "repairs the best draft first, makes a new one only when none is usable, and works on one at a time")
     if not docs:
         return ind("supply", "Next documentary", "watch", "no documentary slot is set for the coming days", controls, "Add documentary publish times under Rules on the Autopilot page.")
     nxt = docs[0]

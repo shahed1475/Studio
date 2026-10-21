@@ -110,6 +110,59 @@ def support_filter(lines: list[dict], chapters: list[dict], sources: str) -> tup
     return _drop_lines(lines, chapters, bad)
 
 
+MOST_UNSUPPORTED = 0.4  # a first judgement flagging more of the script than this means the writer ignored the sources: write it again, do not patch it
+REVISE_ROUNDS = 2
+
+
+def unsupported(lines: list[dict], sources: str) -> dict[int, str]:
+    """Line number -> why, for every narration line stating something SOURCES do not support. A judge that cannot answer raises: an unchecked script is not passed on."""
+    numbered = "\n".join(f"{i}: {l['text']}" for i, l in enumerate(lines))
+    try:
+        out = _review_chat(
+            "You are a strict fact-checker. SOURCES is the only truth. List every narration line that states a fact, date, number, place, quote, "
+            "name, tradition or event that SOURCES do not support, or that contradicts SOURCES or another line. Knowledge from outside SOURCES counts as "
+            "unsupported even when it is true. Atmospheric wording without a factual claim is fine.\nSOURCES:\n" + sources + "\n\nLINES:\n" + numbered +
+            '\n\nReturn JSON: {"unsupported": [{"n": line number, "why": "one short sentence"}]}')
+        found = {}
+        for item in out.get("unsupported", []):
+            n = item.get("n") if isinstance(item, dict) else item
+            if str(n).lstrip("-").isdigit() and 0 <= int(n) < len(lines):
+                found[int(n)] = str(item.get("why", "")) if isinstance(item, dict) else ""
+        return found
+    except Exception as e:
+        raise ValueError(f"the script could not be fact-checked ({type(e).__name__})") from e
+
+
+def verify_and_revise(lines: list[dict], chapters: list[dict], sources: str, rounds: int = REVISE_ROUNDS) -> tuple[list[dict], list[dict]]:
+    """Draft, check against the sources, rewrite what is flagged from the sources only, check again (chain-of-verification: the judge sees the sources,
+    not the writer's reasoning). A line the writer cannot support is dropped. A script the sources mostly do not support is refused outright, so
+    the writer is asked again before any voice or picture is paid for."""
+    lines = [dict(l) for l in lines]
+    for r in range(rounds + 1):
+        bad = unsupported(lines, sources)
+        if not bad:
+            return lines, chapters
+        if r == 0 and len(bad) > len(lines) * MOST_UNSUPPORTED:
+            raise ValueError(f"the sources do not support {len(bad)} of {len(lines)} lines")
+        if r == rounds:
+            return _drop_lines(lines, chapters, set(bad))
+        listing = "\n".join(f"{n}: {lines[n]['text']}  (problem: {bad[n] or 'not in SOURCES'})" for n in sorted(bad))
+        got = _script_chat(
+            "Rewrite each flagged narration line so it says only what SOURCES state, in your own words, 16 to 24 words, with a 'visual' (2 to 4 words naming a real "
+            "place, person or object in the line). If SOURCES hold no fact that fits the place of that line, return an empty text and it is removed. Add nothing "
+            "from outside SOURCES.\nSOURCES:\n" + sources + "\n\nFLAGGED LINES:\n" + listing +
+            '\n\nReturn JSON: {"lines": [{"n": line number, "text": "...", "visual": "..."}]}')
+        drop = set(bad)  # a flagged line the writer did not answer is not kept either
+        for item in got.get("lines", []) if isinstance(got, dict) else []:
+            n, text = item.get("n"), str(item.get("text", "")).strip()
+            if str(n).lstrip("-").isdigit() and int(n) in bad and text and text != lines[int(n)]["text"]:
+                lines[int(n)] = {"text": text, "visual": str(item.get("visual", "")).strip() or lines[int(n)].get("visual", "")}
+                drop.discard(int(n))
+        if drop:
+            lines, chapters = _drop_lines(lines, chapters, drop)
+    return lines, chapters
+
+
 _NUMBER = r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)"
 LABEL = re.compile(rf"^\s*(?:chapter|part|section)\s+{_NUMBER}\b\s*([:.)\u2013\u2014-]?)\s*", re.I)
 MIN_STRIPPED_WORDS = 6  # what is left after a "Chapter 5:" prefix must still be a real sentence, else the line was only a heading
@@ -247,7 +300,7 @@ def doc_script(topic: str, facts: str | None = None, grounded: str | None = None
         told += f" Chapter {n} ({ch.get('title', '')}): {ch.get('summary', '')}"
     lines, chapters, _ = strip_labels(lines, chapters)  # the writer must not narrate its own outline
     if grounded:
-        lines, chapters = support_filter(lines, chapters, grounded)
+        lines, chapters = verify_and_revise(lines, chapters, grounded)
     words = sum(len(l["text"].split()) for l in lines)
     if len(chapters) < 5 or words < 400:
         raise ValueError(f"documentary too thin ({len(chapters)} chapters, {words} words)")

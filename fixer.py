@@ -552,7 +552,7 @@ def fix(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) -> 
         why = "; ".join(c["detail"] for c in result["checks"] if not c["ok"] and c["severity"] in ("block", "human"))[:300]
         agentlog.event("error", f"Needs your eyes: {meta.get('title', slug)}", f"I used every try and the reviewer still says {result['verdict']}: {why}", notify=True, now=now)
     elif fixed:
-        agentlog.event("applied", f"Fixed: {meta.get('title', slug)}", "; ".join(fixed) + f". The reviewer now says {result['verdict']}.", now=now)
+        agentlog.event("applied", f"Fixed: {meta.get('title', slug)}", "; ".join(fixed) + f". The text and rules review now says {result['verdict']}; the pictures are read again before approval.", now=now)
     return {"fixed": fixed, "archived": None, "verdict": result["verdict"], "rerendered": rewrite}
 
 

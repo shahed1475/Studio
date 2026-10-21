@@ -194,3 +194,11 @@ def test_the_rules_row_counts_the_catalog_and_watches_pages_that_changed_after_a
     vid(world / "output", "p", review={"verdict": "fail", "checks": [{"name": "thumbnail_matches", "ok": False, "severity": "block", "detail": "x"}]})
     row = risk.rules(risk.videos(), dt.datetime(2026, 10, 26, tzinfo=dt.timezone.utc))
     assert row["level"] == "watch" and "thumbnail_matches" in row["evidence"] and "Spam, deceptive practices and scams" in row["evidence"] and "Monetization policies" not in row["evidence"]
+
+
+def test_facts_row_watches_a_waiting_video_with_an_open_invented_facts_warning(world):
+    warn = [{"name": "invented_facts", "ok": True, "severity": "block", "detail": "risk 5/10. an invented guide", "issues": ["an invented guide"]},
+            {"name": "invented_facts_watch", "ok": False, "severity": "warn", "detail": "moderate"}]
+    vid(world / "output", "w", approved=True, grounded=True, review={"verdict": "pass", "checks": warn})
+    r = risk.facts(risk.videos())
+    assert r["level"] == "watch" and "held for an invented-facts warning: w" in r["evidence"]

@@ -76,3 +76,10 @@ def test_a_failed_video_that_still_holds_a_slot_inside_the_window_is_repaired_ev
     others = [vid("a", "short", verdict="fail", approved=True, publish_at="2026-10-21T16:30:00Z"), vid("h", "short", verdict="fail", hold=True, publish_at="2026-10-21T16:30:00Z"),
               vid("u", "short", verdict="fail", video_id="X", publish_at="2026-10-21T16:30:00Z"), vid("p", "short", verdict="pass", publish_at="2026-10-21T16:30:00Z")]
     assert planner.repair_targets(CFG, [far, *others], NOW) == set()
+
+
+def test_a_passed_video_with_an_open_facts_warning_is_a_draft_not_ready():
+    vs = [vid("warned", verdict="pass", approved=True, facts_open=True), vid("clean", verdict="pass", approved=True)]
+    docs = [r for r in planner.rows(CFG, vs, NOW) if r["format"] == "doc"][:3]
+    assert [(r["status"], r["slug"]) for r in docs[1:3]] == [("ready", "clean"), ("repairing", "warned")] or [r["status"] for r in docs[1:3]] == ["ready", "later"]
+    assert not [r for r in docs if r["status"] == "ready" and r["slug"] == "warned"]
