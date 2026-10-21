@@ -184,6 +184,39 @@ def guard(left: float | None, apply: bool = True, now: dt.datetime | None = None
     return changed
 
 
+def money_watch(now: dt.datetime | None = None) -> dict:
+    """Hourly: read the balance, switch off what needs money when it runs low (the guard used to run only once a day), and once a UTC day say in plain
+    words what is left, what is spent and how long it lasts."""
+    import agentlog
+    import llm
+
+    now = now or dt.datetime.now(dt.timezone.utc)
+    state_file = config.ROOT / "data" / "money_digest.json"
+    key = llm.api_key()
+    left = credit_left(key) if key else None
+    changed = guard(left, now=now)
+    out = {"left": left, "changed": changed, "announced": False}
+    if left is None:
+        return out
+    try:
+        last = json.loads(state_file.read_text())
+    except (OSError, ValueError):
+        last = {}
+    day = now.strftime("%Y-%m-%d")
+    if last.get("day") == day:
+        return out
+    avg = daily_spend(3)
+    runway = left / avg if avg > 0 else 99
+    level = money(left, avg)["level"]
+    agentlog.event("info", f"Money: ${left:.2f} left, ${llm.spent_today(now):.2f} spent today",
+                   f"At the recent ${avg:.2f} a day that lasts about {min(runway, 99):.0f} days. A documentary costs about $1 with its pictures."
+                   + (" Top up OpenRouter soon." if level != "ok" else ""), notify=level != "ok", now=now)
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    state_file.write_text(json.dumps({"day": day, "left": left}))
+    out["announced"] = True
+    return out
+
+
 # ---- R5 process: deploys and restarts kill renders ----
 def running_jobs(proc: Path = Path("/proc")) -> list[str]:
     out = []

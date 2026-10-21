@@ -422,6 +422,10 @@ def main() -> None:
 
         import datetime as dt
 
+        import risk
+
+        m = risk.money_watch()
+        print("Money: " + ("balance not readable" if m["left"] is None else f"${m['left']:.2f} left") + ("; " + "; ".join(m["changed"]) if m["changed"] else ""))
         lg = ytlogin.check(dt.datetime.now(dt.timezone.utc))
         print("YouTube login: " + ("works" if lg["ok"] else f"NOT working ({lg['error']})"))
         r = safety.check()

@@ -202,3 +202,22 @@ def test_facts_row_watches_a_waiting_video_with_an_open_invented_facts_warning(w
     vid(world / "output", "w", approved=True, grounded=True, review={"verdict": "pass", "checks": warn})
     r = risk.facts(risk.videos())
     assert r["level"] == "watch" and "held for an invented-facts warning: w" in r["evidence"]
+
+
+def test_money_watch_writes_one_plain_message_a_day_and_runs_the_guard(world, monkeypatch):
+    import agentlog
+    import llm
+    monkeypatch.setattr(llm, "CONFIG_FILE", world / "llm.json")
+    monkeypatch.setattr(llm, "USAGE_FILE", world / "usage.json")
+    monkeypatch.setattr(agentlog, "FILE", world / "events.jsonl")
+    monkeypatch.setattr(agentlog.subprocess, "run", lambda *a, **k: None)
+    llm.save_config({**llm.load_config(), "enabled": True, "ai_art": True})
+    monkeypatch.setattr(risk, "credit_left", lambda key, *a, **k: 1.2)
+    monkeypatch.setattr(llm, "api_key", lambda: "k")
+    monkeypatch.setattr(risk, "daily_spend", lambda days=7: 2.0)
+    got = risk.money_watch(NOW)
+    assert got["left"] == 1.2 and got["announced"] is True and got["changed"] and llm.load_config()["ai_art"] is False
+    msgs = [e for e in agentlog.recent() if e["title"].startswith("Money:")]
+    assert len(msgs) == 1 and "$1.20 left" in msgs[0]["title"] and "Top up" in msgs[0]["detail"]
+    assert risk.money_watch(NOW + dt.timedelta(hours=3))["announced"] is False  # once a day
+    assert risk.money_watch(NOW + dt.timedelta(days=1))["announced"] is True
