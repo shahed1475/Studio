@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 
 import config
+import llm
 import planner
 import prelaunch
 import scheduler
@@ -14,6 +15,7 @@ import scheduler
 CONFIG_FILE = config.ROOT / "autopilot.json"
 STATE_FILE = config.ROOT / "autopilot_state.json"
 LOCK_FILE = config.ROOT / "autopilot.lock"
+MAX_VIDEO_COST = {"doc": 2.5, "short": 0.7}  # dollars one video may cost in all (script, pictures, reviews, repairs) before Autopilot stops repairing it and asks the owner
 MIN_CREDIT_TO_MAKE = 1.5  # dollars on the OpenRouter account below which no new video is started: a documentary costs about $1 and a stopped render wastes it
 NEWS_QUEUE = config.ROOT / "news_queue.json"
 LOG = config.ROOT / "logs" / "autopilot.log"
@@ -111,8 +113,12 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict
         fmt = v.get("format") or "doc"
         by_you = v["approved"] and v.get("approved_by") == "you"
         eligible = (v["verdict"] == "pass" and v["source"] != "news") or (v["verdict"] == "needs_human" and by_you)
+        limit = (cfg.get("max_video_cost_usd") or MAX_VIDEO_COST).get(fmt, MAX_VIDEO_COST.get(fmt, 2.5))
+        over = float(v.get("cost", 0.0)) >= limit
+        if over and v["verdict"] in ("fail", "needs_human") and not eligible and not by_you and not v.get("cost_alerted"):
+            acts.append({"do": "cost_stop", "slug": v["slug"]})
         repairable = v["verdict"] in ("fail", "needs_human") and not eligible and not by_you and v["source"] != "news" \
-            and v.get("fix_attempts", 0) < v.get("fix_limit", 2) and not (v.get("gave_up") and v.get("fix_limit", 2) <= 2)
+            and v.get("fix_attempts", 0) < v.get("fix_limit", 2) and not (v.get("gave_up") and v.get("fix_limit", 2) <= 2) and not over
         if v["verdict"] in ("fail", "needs_human") and not eligible and not by_you and not repairable:
             stuck[fmt] += 1
         if v["verdict"] is None:
@@ -121,7 +127,7 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict
             fixable.append(v)
         elif eligible:
             pub = _parse(v["publish_at"]) if v["publish_at"] else None
-            if v.get("polish_wanted") and state.get("spend_ok", True) and (pub is None or pub - now > POLISH_MIN_LEAD):
+            if v.get("polish_wanted") and not over and state.get("spend_ok", True) and (pub is None or pub - now > POLISH_MIN_LEAD):
                 polishable.append((pub or now + dt.timedelta(days=3650), v["slug"]))
                 continue  # edited first: approving or scheduling it now would be undone by the edit
             if v.get("facts_open", v.get("polish_wanted")):
@@ -187,7 +193,7 @@ def build_state(now: dt.datetime, cfg: dict) -> dict:
             "slug": m.parent.name, "format": d.get("format", "short"), "source": d.get("source"), "approved": bool(d.get("approved")),
             "verdict": None if any(c["name"] == "llm_review" and not c["ok"] for c in (d.get("review") or {}).get("checks", [])) else (d.get("review") or {}).get("verdict"),
             "hold": bool(d.get("hold")),
-            "approved_by": d.get("approved_by"), "fix_attempts": d.get("fix_attempts", 0), "gave_up": bool(d.get("fix_gave_up")), "fix_limit": fixer.attempt_limit((d.get("review") or {}).get("checks", [])),
+            "approved_by": d.get("approved_by"), "fix_attempts": d.get("fix_attempts", 0), "gave_up": bool(d.get("fix_gave_up")), "cost": llm.video_cost(m.parent.name), "cost_alerted": bool(d.get("cost_alerted")), "fix_limit": fixer.attempt_limit((d.get("review") or {}).get("checks", [])),
             "video_id": d.get("video_id"), "publish_at": d.get("publish_at"), "fails": d.get("autopilot_fails", 0),
             "prelaunch_ok": bool((d.get("prelaunch") or {}).get("ok")),
             "facts_open": d.get("approved_by") != "you" and bool(fixer.watch_problems((d.get("review") or {}).get("checks", []))),
@@ -403,7 +409,19 @@ def do_make_news(slug, cfg, now):
     newswatch.make_next_news_video()
 
 
-EXECUTORS = {"prelaunch": do_prelaunch, "review": do_review, "approve": do_approve, "fix": do_fix, "polish": do_polish, "schedule": do_schedule, "upload": do_upload,
+def do_cost_stop(slug, cfg, now):
+    """A video that has used up its money limit is no longer repaired: say so once, with the real number."""
+    import agentlog
+
+    p, meta = _meta(slug)
+    meta["cost_alerted"] = True
+    p.write_text(json.dumps(meta, indent=2))
+    agentlog.event("error", f"Stopped spending on: {meta.get('title', slug)}", f"It has cost ${llm.video_cost(slug):.2f} so far (limit for a "
+                   f"{'documentary' if meta.get('format') == 'doc' else 'Short'}: ${(cfg.get('max_video_cost_usd') or MAX_VIDEO_COST).get(meta.get('format', 'short'), 2.5):.2f}). "
+                   "It waits for you: approve it as it is, ask for one more try, or set it aside.", notify=True, now=now)
+
+
+EXECUTORS = {"cost_stop": do_cost_stop, "prelaunch": do_prelaunch, "review": do_review, "approve": do_approve, "fix": do_fix, "polish": do_polish, "schedule": do_schedule, "upload": do_upload,
              "ideas": do_ideas, "make": do_make, "make_short": do_make_short, "make_clip": do_make_clip, "make_news": do_make_news}
 
 
@@ -434,7 +452,8 @@ def tick(now: dt.datetime | None = None) -> dict:
                 seen.add(key)
                 progressed = True
                 try:
-                    res = EXECUTORS[a["do"]](a["slug"], cfg, now)
+                    with llm.cost_scope(a["slug"]):  # what a review, repair or picture check spends is charged to its video
+                        res = EXECUTORS[a["do"]](a["slug"], cfg, now)
                     actions.append(a)
                     _log(f"ok {a['do']} {a['slug'] or ''}")
                     if a["do"] in ("fix", "polish"):

@@ -484,3 +484,29 @@ def test_no_new_video_is_started_when_the_balance_cannot_pay_for_one_but_repairs
     assert ("make_short", None) not in plan(state([], credit_left=0.5)) and ("make_clip", None) not in plan(state([], credit_left=0.5, clippable=1))
     near = vid(verdict="pass", approved=True, publish_at=iso(NOW + timedelta(hours=1)))
     assert ("upload", "v") in plan(state([near], credit_left=0.2))  # an upload costs nothing
+
+
+def test_a_video_that_has_cost_more_than_its_limit_is_not_repaired_again_and_the_owner_is_told_once():
+    broke = vid("d", format="doc", verdict="fail", fix_attempts=1, cost=2.6, publish_at=iso(NOW + timedelta(hours=10)))
+    acts = plan(state([broke]))
+    assert ("fix", "d") not in acts and ("cost_stop", "d") in acts
+    told = vid("d", format="doc", verdict="fail", fix_attempts=1, cost=2.6, cost_alerted=True, publish_at=iso(NOW + timedelta(hours=10)))
+    assert ("cost_stop", "d") not in plan(state([told]))
+    cheap = vid("d", format="doc", verdict="fail", fix_attempts=1, cost=1.2, publish_at=iso(NOW + timedelta(hours=10)))
+    assert ("fix", "d") in plan(state([cheap])) and ("cost_stop", "d") not in plan(state([cheap]))
+    short = vid("s", format="short", verdict="fail", fix_attempts=1, cost=0.8, publish_at=iso(NOW + timedelta(hours=10)))
+    assert ("fix", "s") not in plan(state([short])) and ("cost_stop", "s") in plan(state([short]))  # a Short has a lower limit than a documentary
+
+
+def test_do_cost_stop_tells_the_owner_once_and_marks_the_video(tmp_path, monkeypatch):
+    import agentlog
+    import config
+    monkeypatch.setattr(config, "OUT", tmp_path)
+    monkeypatch.setattr(agentlog, "FILE", tmp_path / "events.jsonl")
+    monkeypatch.setattr(agentlog.subprocess, "run", lambda *a, **k: None)
+    (tmp_path / "d").mkdir()
+    (tmp_path / "d" / "meta.json").write_text(json.dumps({"title": "Delphi", "format": "doc"}))
+    monkeypatch.setattr(autopilot.llm, "video_cost", lambda slug: 2.61)
+    autopilot.do_cost_stop("d", CFG, NOW)
+    assert json.loads((tmp_path / "d" / "meta.json").read_text())["cost_alerted"] is True
+    assert any("Stopped spending" in e["title"] and "$2.61" in e["detail"] for e in agentlog.recent())

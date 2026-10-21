@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 import compliance
+import llm
 import scriptgen
 
 LIMITS = {"doc": {"duration": (180, 900), "size": (1920, 1080), "words": 400},
@@ -322,6 +323,7 @@ def invalidate(meta: dict) -> None:
         meta.pop("publish_at", None)
 
 
+@llm.charges_to(lambda folder, *a, **k: Path(folder).name)
 def review(folder: Path, existing_titles: list[str] | None = None, use_llm: bool = True, persist: bool = True) -> dict:
     """persist=False only reads: the verdict is returned and nothing about the video is changed (a rules-only read must not replace a stored AI review)."""
     meta_path = folder / "meta.json"

@@ -3,6 +3,8 @@
 Roles: script (writing, news summary), review (fact-check, must be a different model), cheap (titles, tags, hooks, ideas).
 The API key is read from settings.json or OPENROUTER_API_KEY and is never logged or returned.
 """
+import contextlib
+import contextvars
 import copy
 import datetime as dt
 import json
@@ -12,6 +14,7 @@ import time
 import requests
 
 import config
+import filelock
 import freemodels
 
 CONFIG_FILE = config.ROOT / "llm.json"
@@ -134,11 +137,75 @@ def spent_today(now: dt.datetime | None = None) -> float:
 
 
 def _save_day(now: dt.datetime, mutate) -> None:
-    data = _usage()
-    day = data.setdefault(_day(now), {"usd": 0.0, "calls": 0, "by_role": {}, "fallbacks": []})
-    mutate(day)
-    USAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    USAGE_FILE.write_text(json.dumps(data, indent=2))
+    with filelock.locked(USAGE_FILE):  # the worker, the dashboard and a repair run by hand all write this file
+        data = _usage()
+        day = data.setdefault(_day(now), {"usd": 0.0, "calls": 0, "by_role": {}, "fallbacks": []})
+        mutate(day)
+        filelock.write_atomic(USAGE_FILE, json.dumps(data, indent=2))
+
+
+# ---- what each video has cost ----
+_video: contextvars.ContextVar = contextvars.ContextVar("video", default=None)
+
+
+@contextlib.contextmanager
+def cost_scope(slug: str):
+    """Spend inside this block (writing, drawing, reviewing, repairing) is added to the video's own total. The outermost scope wins, so a review run inside a
+    repair is part of the repair."""
+    token = _video.set(slug) if slug and _video.get() is None else None
+    try:
+        yield
+    finally:
+        if token is not None:
+            _video.reset(token)
+
+
+def charges_to(key):
+    """Decorator: everything the function spends is charged to the video named by key(*args, **kwargs)."""
+    import functools
+
+    def deco(fn):
+        @functools.wraps(fn)
+        def wrapper(*a, **k):
+            with cost_scope(key(*a, **k)):
+                return fn(*a, **k)
+        return wrapper
+    return deco
+
+
+def merge_cost(src: str, dest: str) -> None:
+    """The script of a video is written before its folder exists: its cost is kept under a temporary name and moved here."""
+    path = _costs_file()
+    with filelock.locked(path):
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            return
+        if src in data:
+            data[dest] = round(float(data.get(dest, 0.0)) + float(data.pop(src)), 6)
+            filelock.write_atomic(path, json.dumps(data, indent=2))
+
+
+def _costs_file():
+    return config.ROOT / "data" / "video_costs.json"
+
+
+def video_cost(slug: str) -> float:
+    try:
+        return float(json.loads(_costs_file().read_text()).get(slug, 0.0))
+    except (OSError, ValueError):
+        return 0.0
+
+
+def _add_video_cost(slug: str, usd: float) -> None:
+    path = _costs_file()
+    with filelock.locked(path):
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            data = {}
+        data[slug] = round(float(data.get(slug, 0.0)) + usd, 6)
+        filelock.write_atomic(path, json.dumps(data, indent=2))
 
 
 def record(now: dt.datetime, role: str, model: str, tin: int, tout: int, usd: float) -> None:
@@ -148,6 +215,8 @@ def record(now: dt.datetime, role: str, model: str, tin: int, tout: int, usd: fl
         r = day["by_role"].setdefault(role, {"usd": 0.0, "calls": 0, "tokens_in": 0, "tokens_out": 0, "model": model})
         r.update(usd=round(r["usd"] + usd, 6), calls=r["calls"] + 1, tokens_in=r["tokens_in"] + tin, tokens_out=r["tokens_out"] + tout, model=model)
     _save_day(now, add)
+    if _video.get():
+        _add_video_cost(_video.get(), usd)
 
 
 def _note(now: dt.datetime, text: str) -> None:

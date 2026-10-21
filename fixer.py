@@ -22,6 +22,7 @@ from pathlib import Path
 import agentlog
 import compliance
 import config
+import llm
 import reviewer
 import scriptgen
 import seo
@@ -364,6 +365,7 @@ def correct_description(meta: dict, source: str, problems: list[str], chat=None)
     return True
 
 
+@llm.charges_to(lambda slug, *a, **k: slug)
 def polish(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) -> dict:
     """One bounded repair of a video that passed review with a moderate invented-facts warning: the narration lines and the description the reviewer
     named are rewritten from the source article (the old script is saved first), the video is made again only if narration changed, and the reviewer
@@ -461,6 +463,7 @@ def _save(folder: Path, meta: dict) -> None:
     (folder / "meta.json").write_text(json.dumps(meta, indent=2))
 
 
+@llm.charges_to(lambda slug, *a, **k: slug)
 def fix(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) -> dict:
     """One repair pass over one video. Returns {"fixed": [...], "archived": reason | None, "verdict": ...}."""
     now = now or dt.datetime.now(dt.timezone.utc)

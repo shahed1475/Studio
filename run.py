@@ -28,6 +28,7 @@
   python run.py list             show videos and their status
 """
 import json
+import os
 import re
 import shutil
 import sys
@@ -37,6 +38,7 @@ import archive_video
 import config
 import editprofile
 import footage
+import llm
 import subtitles
 import render
 import scriptgen
@@ -87,7 +89,21 @@ def _best_topic(fmt: str) -> str | None:
         return topicqueue.pop_first()
 
 
+def _charged(make, topic):
+    """Run a make function, charging its spend to the new video: its folder does not exist while the script is written, so the cost is kept under a
+    temporary name and moved to the folder's name when it is known."""
+    key = f"pending:{os.getpid()}"
+    with llm.cost_scope(key):
+        folder = make(topic)
+    llm.merge_cost(key, folder.name)
+    return folder
+
+
 def cmd_make(topic: str | None = None) -> Path:
+    return _charged(_cmd_make, topic)
+
+
+def _cmd_make(topic: str | None = None) -> Path:
     if not topic:
         topic = _best_topic("short")
         if not topic:
@@ -159,6 +175,10 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
 
 
 def cmd_doc(topic: str | None = None) -> Path:
+    return _charged(_cmd_doc, topic)
+
+
+def _cmd_doc(topic: str | None = None) -> Path:
     import random
 
     if not topic:

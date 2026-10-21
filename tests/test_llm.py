@@ -221,3 +221,57 @@ def test_the_fact_checker_is_asked_with_no_randomness_and_the_writer_with_some(m
     for role in ("review", "script", "cheap"):
         llm.chat(f"prompt for {role}", role, fallback=LOCAL, now=NOW)
     assert {p["model"]: p["temperature"] for p in sent} == {"vendor/checker": 0.0, "vendor/writer": 0.7, "vendor/small": 0.3}
+
+
+def test_spend_inside_a_cost_scope_is_added_to_that_video_and_the_outer_scope_wins(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "ROOT", tmp_path)
+    enable(monkeypatch)
+    monkeypatch.setattr(llm, "_post", lambda payload, key: reply('{"ok": 1}', cost=0.25))
+    llm.chat("outside any video", "script", fallback=LOCAL, now=NOW)
+    assert llm.video_cost("doc-a") == 0.0
+    with llm.cost_scope("doc-a"):
+        llm.chat("one", "script", fallback=LOCAL, now=NOW)
+        with llm.cost_scope("doc-b"):  # a nested job (a review inside a repair) is part of the repair's video
+            llm.chat("two", "review", fallback=LOCAL, now=NOW)
+    assert llm.video_cost("doc-a") == pytest.approx(0.5) and llm.video_cost("doc-b") == 0.0
+    assert llm.spent_today(NOW) == pytest.approx(0.75)  # the daily total still counts everything
+
+
+def test_two_writers_of_the_usage_file_do_not_lose_each_others_calls(monkeypatch):
+    import threading
+    enable(monkeypatch)
+    threads = [threading.Thread(target=lambda: [llm.record(NOW, "script", "m", 1, 1, 0.01) for _ in range(20)]) for _ in range(4)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    assert json.loads(llm.USAGE_FILE.read_text())["2026-10-19"]["calls"] == 80
+
+
+def test_charges_to_decorator_and_merge_cost(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "ROOT", tmp_path)
+    enable(monkeypatch)
+    monkeypatch.setattr(llm, "_post", lambda payload, key: reply('{"ok": 1}', cost=0.1))
+
+    @llm.charges_to(lambda slug, *a, **k: slug)
+    def job(slug):
+        llm.chat("x", "script", fallback=LOCAL, now=NOW)
+
+    job("doc-z")
+    assert llm.video_cost("doc-z") == pytest.approx(0.1)
+    with llm.cost_scope("pending:The Topic"):
+        llm.chat("script", "script", fallback=LOCAL, now=NOW)
+    llm.merge_cost("pending:The Topic", "doc-z")
+    assert llm.video_cost("doc-z") == pytest.approx(0.2) and llm.video_cost("pending:The Topic") == 0.0
+
+
+def test_a_make_function_charges_its_spend_to_the_new_videos_folder(monkeypatch, tmp_path):
+    import run
+    monkeypatch.setattr(config, "ROOT", tmp_path)
+    enable(monkeypatch)
+    monkeypatch.setattr(llm, "_post", lambda payload, key: reply('{"ok": 1}', cost=0.3))
+
+    def make(topic):
+        llm.chat("write the script", "script", fallback=LOCAL, now=NOW)
+        return tmp_path / "output" / "doc-new-video"
+
+    folder = run._charged(make, "A topic")
+    assert folder.name == "doc-new-video" and llm.video_cost("doc-new-video") == pytest.approx(0.3)
