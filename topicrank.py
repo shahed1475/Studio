@@ -58,9 +58,51 @@ def viable(topic: str, article: str | None) -> tuple[bool, str]:
     return True, ""
 
 
-def pop_best(fmt: str = "doc", sig=None, article_of=None) -> str | None:
+def made_titles() -> list[str]:
+    """Titles and topics of every video made so far (kept, set aside or archived), so a subject is not made twice."""
+    import json
+
+    import config
+
+    out = []
+    for root in (config.OUT, config.ROOT / "output_old"):
+        for m in root.glob("*/meta.json") if root.exists() else []:
+            try:
+                d = json.loads(m.read_text())
+            except ValueError:
+                continue
+            out += [str(d.get(k)) for k in ("title", "topic") if d.get(k)]
+    return list(dict.fromkeys(out))[:60]
+
+
+def premise_check(topic: str, article: str, made: list[str] | None = None, chat=None) -> tuple[bool, str]:
+    """One cheap Claude call before a topic is made: does the subject's wording promise something the source does not state, is it a subject this calm
+    history-and-legend channel should not retell as entertainment, or is it a story already made? A model that cannot answer lets the topic through:
+    the script gate and the review still stand behind it."""
+    import scriptgen
+
+    chat = chat or scriptgen._review_chat
+    made = made if made is not None else made_titles()
+    try:
+        out = chat(
+            "You screen story subjects for a calm history-and-folklore YouTube channel for US viewers. A video will be written ONLY from the source article.\n"
+            f"SUBJECT: {topic}\nSOURCE ARTICLE (start): {article[:1800]}\nALREADY MADE: {'; '.join(made) or 'nothing'}\n\n"
+            "Answer ok=false when ANY of these is true: (1) the subject's wording assumes a fact, link or mystery the article does not state (an invented or false "
+            "premise, such as tying two unrelated things together); (2) it is a real tragedy, war crime, trial, atrocity, living-person controversy or contested "
+            "political dispute that should not be retold as bedtime entertainment; (3) it is the same story as one in ALREADY MADE; (4) it is neither a legend, "
+            'myth, folktale nor a well-documented historical mystery.\nReturn JSON: {"ok": true or false, "reason": "one short sentence"}')
+    except Exception:
+        return True, ""
+    if not isinstance(out, dict) or "ok" not in out:
+        return True, ""
+    return bool(out["ok"]), str(out.get("reason", ""))[:200]
+
+
+def pop_best(fmt: str = "doc", sig=None, article_of=None, premise_of=None) -> str | None:
     """Take the best viable topic out of the queue. Topics that cannot be made well are dropped with a note; None when nothing is left."""
     sig = signals() if sig is None else sig
+    if article_of is None and premise_of is None:
+        premise_of = premise_check  # the real run asks Claude; a test that passes its own article_of opts out
     if article_of is None:
         import wikipedia
 
@@ -73,10 +115,50 @@ def pop_best(fmt: str = "doc", sig=None, article_of=None) -> str | None:
     queue = topicqueue.items()
     ranked = sorted(enumerate(queue), key=lambda x: (-score(x[1], sig), x[0]))
     for _, topic in ranked:
-        ok, why = viable(topic, article_of(topic))
+        article = article_of(topic)
+        ok, why = viable(topic, article)
+        if ok and premise_of:
+            ok, why = premise_of(topic, article)
+            why = f"screened out: {why}" if not ok else why
         if ok:
             topicqueue.remove_topic(topic)
             return topic
         topicqueue.remove_topic(topic)
         agentlog.event("info", f"Dropped a topic: {topic[:70]}", why + ". The queue moves on to the next one.")
     return None
+
+
+def audit_queue(article_of=None, premise_of=None, now=None) -> list[dict]:
+    """The same screening as pop_best, over the whole queue at once. Refused topics leave the queue and are kept in data/removed_topics.json with the reason
+    (nothing is lost: put one back with `python run.py` queue tools or the Create page)."""
+    import datetime as dt
+    import json
+
+    import config
+    import filelock
+
+    if article_of is None:
+        import wikipedia
+
+        def article_of(t):
+            got = wikipedia.facts_for(t, chars=7000)
+            return got[1] if got else None
+    premise_of = premise_of or premise_check
+    made = made_titles()
+    removed = []
+    for topic in list(topicqueue.items()):
+        article = article_of(topic)
+        ok, why = viable(topic, article)
+        if ok:
+            ok, why = premise_of(topic, article, made) if premise_of is premise_check else premise_of(topic, article)
+            why = f"screened out: {why}" if not ok else why
+        if not ok:
+            topicqueue.remove_topic(topic)
+            removed.append({"topic": topic, "why": why, "at": (now or dt.datetime.now(dt.timezone.utc)).strftime("%Y-%m-%dT%H:%M:%SZ")})
+    if removed:
+        path = config.ROOT / "data" / "removed_topics.json"
+        with filelock.locked(path):
+            old = json.loads(path.read_text()) if path.exists() else []
+            filelock.write_atomic(path, json.dumps(old + removed, indent=2))
+        agentlog.event("applied", f"Screened the topic queue: {len(removed)} removed", "; ".join(f"{r['topic'][:50]} ({r['why'][:60]})" for r in removed[:4]), now=now)
+    return removed

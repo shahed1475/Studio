@@ -387,6 +387,16 @@ def main() -> None:
         print(f"{len(ch)} rule pages changed" if ch else "no rule page changed (first run only saves a copy)")
         for c in ch:
             print(f"- {c['page']}: {(c['added'] or c['removed'])[0]}")
+    elif a[0] == "tidy-strategies":
+        import strategy
+
+        print(strategy.tidy())
+    elif a[0] == "audit-queue":
+        import topicrank
+
+        for r in topicrank.audit_queue():
+            print(f"removed: {r['topic']} -- {r['why']}")
+        print(f"{len(topicqueue.items())} topics left in the queue")
     elif a[0] == "remake" and len(a) > 1:
         import fixer
 

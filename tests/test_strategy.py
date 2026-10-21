@@ -1,3 +1,4 @@
+import datetime as dt
 import json
 
 import config
@@ -91,3 +92,39 @@ def test_generate_model_failure_returns_empty():
         raise RuntimeError("down")
 
     assert strategy.generate({}, [], chat) == []
+
+
+def test_clickbait_title_advice_is_refused_and_the_same_advice_in_other_words_is_not_added_twice(tmp_path, monkeypatch):
+    monkeypatch.setattr(strategy, "FILE", tmp_path / "s.json")
+    assert strategy.validate({"kind": "title", "text": "Use a title format like 'The True Story of [Legend] - What Really Happened?'"}) is None
+    assert strategy.validate({"kind": "thumbnail", "text": "Use curiosity-gap thumbnails with a shocking face"}) is None
+    assert strategy.validate({"kind": "title", "text": "Name the subject and the question plainly in the title."})
+    first = strategy.add([{"kind": "format", "text": "Publish one long documentary and one Short each week."}])
+    again = strategy.add([{"kind": "format", "text": "Publish one long documentary and one short every week."}])
+    assert len(first) == 1 and again == []
+
+
+def test_no_more_than_three_open_proposals_per_kind_and_tidy_keeps_the_newest(tmp_path, monkeypatch):
+    monkeypatch.setattr(strategy, "FILE", tmp_path / "s.json")
+    texts = ["Add a map in the first minute of each documentary", "End each documentary with a quiet thought about the source",
+             "Show the source article's title on screen for two seconds", "Name every image credit aloud once at the end"]
+    added = strategy.add([{"kind": "format", "text": t} for t in texts])
+    assert len(added) == 3
+    rows = strategy.load()
+    old = dict(rows[0], id="x", text="Add a map within the first minute of each documentary", created="2020-01-01T00:00:00Z")
+    strategy._save(rows + [old])
+    assert strategy.tidy()["duplicates"] == 1
+    assert [r["status"] for r in strategy.load() if r["id"] == "x"] == ["dismissed"] and all(r["status"] == "proposed" for r in strategy.load() if r["id"] != "x")
+
+
+def test_production_feedback_counts_the_owner_alerts_and_their_causes(tmp_path, monkeypatch):
+    import agentlog
+    monkeypatch.setattr(agentlog, "FILE", tmp_path / "e.jsonl")
+    monkeypatch.setattr(agentlog.subprocess, "run", lambda *a, **k: None)
+    import config
+    monkeypatch.setattr(config, "ROOT", tmp_path)
+    now = dt.datetime(2026, 10, 21, 12, 0, tzinfo=dt.timezone.utc)
+    agentlog.event("error", "Needs your eyes: A", "I used every try and the reviewer still says fail: title_matches title may mislead", now=now)
+    agentlog.event("applied", "Fixed: A", "new title", now=now)
+    got = strategy.production_feedback(now)
+    assert got["videos_that_needed_the_owner"] == 1 and got["repairs_applied"] == 1 and got["most_common_failures"] == ["title_matches"]

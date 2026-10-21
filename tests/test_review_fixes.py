@@ -93,9 +93,12 @@ def test_concurrent_strategy_writers_keep_everything(tmp_path, monkeypatch):
     monkeypatch.setattr(strategy, "FILE", tmp_path / "strategies.json")
     monkeypatch.setattr(config, "TOPICS_FILE", tmp_path / "topics.json")
 
+    import hashlib
+
     def adder(n):
         for i in range(5):
-            strategy.add([{"kind": "title", "text": f"Title idea {n} number {i}", "why": "w", "evidence": []}])
+            text = "retell " + hashlib.sha1(f"{n}-{i}".encode()).hexdigest()  # unlike each other: same-idea advice is refused now
+            strategy.add([{"kind": "topic", "text": text, "why": "w", "evidence": []}])
 
     threads = [threading.Thread(target=adder, args=(n,)) for n in range(5)]
     [t.start() for t in threads]

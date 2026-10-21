@@ -227,7 +227,7 @@ def run(now: dt.datetime | None = None, yt=None, chat=None, force: bool = False)
             import monetization
 
             analysis["monetization"] = monetization.progress(snaps[-1], now, monetization.ready_count())
-        added = strategy.add(strategy.generate(analysis, study, chat))
+        added = strategy.add(strategy.generate(analysis, study, chat, feedback=strategy.production_feedback(now)))
         applied = []
         if cfg["mode"] == "automatic":
             for s in added:
