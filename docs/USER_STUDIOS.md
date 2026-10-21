@@ -9,6 +9,12 @@ Built 21 Oct 2026. Design and decisions: docs/superpowers/plans/2026-10-21-user-
 - **Storage:** 10 GB per user kept by the app (an hourly check; warn at 80%, new videos paused at 100%, uploaded video files removed after 7 days). **Renders:** at most two at once across all user studios.
 - **Safety:** an unclaimed studio serves nothing except its invite page; the invite is valid 24 hours and once; the user chooses their own password (nobody else sees it); five wrong passwords per ten minutes per visitor and 30 across all visitors; the first-password page is counted apart from the login page.
 
+## Your own channel is never shown or used in a user studio (22 Oct 2026)
+A user studio carries none of the owner's login, pictures or settings. Google sign-in always shows the account chooser; the owner's channel id (`STUDIO_OWNER_CHANNELS`, set by `tenant.sh create`) and a channel already connected to another studio (one shared file in the render-gate folder) are refused with a plain message and the login is discarded. The YouTube page says "Connected as: <channel>" with how to disconnect. A user's AI jobs and Autopilot wait for the user's own OpenRouter key (saving it turns the models on) and a confirmed niche plan. Times show the user's own time zone.
+
+## Desktop icons on the owner's PC
+`~/Desktop/Story Studio.desktop` opens the owner's studio (needs Tailscale) and `~/Desktop/Story Studio Client.desktop` opens the client studio named `test` at `https://srv2029460.hstgr.cloud/u/test`, both as their own Chrome window through `~/.local/bin/story-studio-open owner|client`.
+
 ## Owner: commands (on the server, in `~/studio`)
 ```
 deploy/tenant.sh create <name>     # 2 to 15 lowercase letters or digits; at most 5 studios
@@ -19,7 +25,7 @@ deploy/tenant.sh sync [name|all]   # copy new code to users (a worker is restart
 deploy/tenant.sh stop|start <name>
 deploy/tenant.sh remove <name>     # moved to ~/tenants-removed, never deleted
 ```
-`deploy/deploy.sh` updates your own studio only; run `deploy/tenant.sh sync all` after it. A systemd user timer (`studio-tenants.timer`, lingering enabled) runs `deploy/tenant.sh list` hourly.
+`deploy/deploy.sh` updates your own studio only; run `deploy/tenant.sh sync all` after it so every user studio gets the same fixes. A systemd user timer (`studio-tenants.timer`, lingering enabled) runs `deploy/tenant.sh list` hourly.
 
 ## One thing only the owner can do: Google sign-in for users
 The studio's current Google client is a *Desktop app* client and cannot send a user back to a web address. Create a **Web application** client once:
