@@ -795,7 +795,7 @@ async function youtube(m){
   </div>
   <h2 style="margin-top:34px">Channel look</h2>
   <div class="panel pad stack"><p class="sub">A profile picture, banner and description that match your channel. Download them, then upload in YouTube Studio under Customization, then Branding. (Changing a channel's look needs a permission we do not ask for, so you do this part.)</p>
-    <div class="fld"><div><label for="br_n">Channel name</label><input id="br_n" value="The Sleeping Library" oninput="editing=true"></div><div><label for="br_t">Tagline</label><input id="br_t" value="Calm stories for quiet nights" oninput="editing=true"></div></div>
+    <div class="fld"><div><label for="br_n">Channel name</label><input id="br_n" value="${T?esc(S.niche.name.startsWith("Your niche")?"":S.niche.name):"The Sleeping Library"}" oninput="editing=true"></div><div><label for="br_t">Tagline</label><input id="br_t" value="${T?"":"Calm stories for quiet nights"}" oninput="editing=true"></div></div>
     <div><button class="btn" ${running()?"disabled":""} onclick="job('branding',[document.getElementById('br_n').value,document.getElementById('br_t').value])">${ico("magic-wand")}Make avatar and banner</button></div>
     <div id="brand_out"></div></div>`;
   m.firstElementChild.classList.add("view");
