@@ -51,13 +51,68 @@ def start(redirect: str, now: float | None = None) -> str:
         raise ValueError("Google sign-in is not set up on this server yet: ask the owner.")
     now = now or time.time()
     flow = _flow(redirect)
-    url, state = flow.authorization_url(access_type="offline", prompt="consent")
+    url, state = flow.authorization_url(access_type="offline", prompt="select_account consent")  # always ask which account: a browser signed in as someone else must never connect their channel unseen
     pending = {k: v for k, v in _load().items() if v["exp"] > now}
     pending[state] = {"verifier": flow.code_verifier, "exp": now + WAIT}
     PENDING.parent.mkdir(exist_ok=True)
     PENDING.write_text(json.dumps(pending))
     PENDING.chmod(0o600)
     return url
+
+
+def _channel_id(creds) -> str:
+    from googleapiclient.discovery import build
+
+    items = build("youtube", "v3", credentials=creds, cache_discovery=False).channels().list(part="id", mine=True).execute().get("items", [])
+    if not items:
+        raise ValueError("That Google account has no YouTube channel. Choose the account that owns your channel.")
+    return items[0]["id"]
+
+
+def _registry():
+    import filelock
+
+    gate = os.getenv("STUDIO_RENDER_GATE", "").strip()
+    if not gate:
+        return None, None
+    path = Path(gate) / "channels.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path, filelock
+
+
+def _claim(channel_id: str) -> None:
+    """One channel belongs to one studio, and never to the studio's owner: the owner's own channel ids are listed in STUDIO_OWNER_CHANNELS, and the claims of
+    every user studio are kept in one file in the folder they share."""
+    owners = {c.strip() for c in os.getenv("STUDIO_OWNER_CHANNELS", "").split(",") if c.strip()}
+    if channel_id in owners:
+        raise ValueError("That is the studio owner's channel. Sign in with the Google account that owns YOUR channel.")
+    path, filelock = _registry()
+    me = os.getenv("STUDIO_NAME", "")
+    if path is None:
+        return
+    with filelock.locked(path):
+        try:
+            claims = json.loads(path.read_text())
+        except (OSError, ValueError):
+            claims = {}
+        if claims.get(channel_id) not in (None, me):
+            raise ValueError("That channel is already connected to another studio.")
+        claims[channel_id] = me
+        filelock.write_atomic(path, json.dumps(claims))
+
+
+def release() -> None:
+    """Disconnecting gives this studio's channel back, so it can be connected to a studio that really owns it."""
+    path, filelock = _registry()
+    me = os.getenv("STUDIO_NAME", "")
+    if path is None or not path.exists():
+        return
+    with filelock.locked(path):
+        try:
+            claims = json.loads(path.read_text())
+        except (OSError, ValueError):
+            return
+        filelock.write_atomic(path, json.dumps({k: v for k, v in claims.items() if v != me}))
 
 
 def _after_login() -> None:
@@ -80,6 +135,7 @@ def finish(code: str, state: str, redirect: str, now: float | None = None) -> No
     flow = _flow(redirect)
     flow.code_verifier = entry["verifier"]
     flow.fetch_token(code=code)
+    _claim(_channel_id(flow.credentials))  # refused here: nothing is written, the login is thrown away
     TOKEN.write_text(flow.credentials.to_json())
     TOKEN.chmod(0o600)
     _after_login()

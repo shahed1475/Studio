@@ -341,7 +341,7 @@ def next_slot_view() -> dict | None:
 
     if time.time() - _NEXT["at"] > 30:
         rows = [r for r in autopilot.plan_view()["rows"] if r["status"] != "too_soon"]
-        _NEXT.update(at=time.time(), data={k: rows[0][k] for k in ("us", "bd", "format", "status", "title", "starts_us")} if rows else None)
+        _NEXT.update(at=time.time(), data={k: rows[0][k] for k in ("us", "bd", "format", "status", "title", "starts_us", "at")} if rows else None)
     return _NEXT["data"]
 
 
@@ -916,6 +916,8 @@ class H(BaseHTTPRequestHandler):
             TOKEN.unlink(missing_ok=True)
             return {"ok": True}
         if path == "/api/youtube/connect":
+            if __import__("tenantmode").is_tenant():
+                raise ValueError("Use Sign in with Google on this page: the desktop sign-in would open a browser on the server, not on your device.")
             if not SECRET.exists():
                 raise ValueError("save client_secret.json first")
             if YT_STATE["connecting"]:
@@ -955,6 +957,8 @@ class H(BaseHTTPRequestHandler):
             return {"url": ytweb.start(uri)}
         if path == "/api/youtube/disconnect":
             TOKEN.unlink(missing_ok=True)
+            if __import__("tenantmode").is_tenant():
+                __import__("ytweb").release()  # the channel can then be connected to the studio that really owns it
             return {"ok": True}
         raise ValueError("unknown endpoint")
 

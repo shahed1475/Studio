@@ -42,6 +42,9 @@ compose() { # compose <name> <args...>: the user's folder is mounted, the settin
   local n="$1"; shift
   GATE_DIR="$GATE" docker compose --env-file "$META/$n.env" -f "$SRC/deploy/tenant-compose.yml" --project-directory "$(tdir "$n")" "$@"
 }
+owner_channels() { # the owner's channel ids, read from the owner's own login; letters, digits, - and _ only
+  docker exec studio-dashboard python -c "import dashboard; print(dashboard.yt_channel()['id'])" 2>/dev/null | tr -cd 'A-Za-z0-9_,-' | head -c 200
+}
 studios() { local f; for f in "$META"/*.env; do [[ -f "$f" ]] && basename "$f" .env; done; true; }
 render_running() { docker exec "studio-$1-worker" sh -c 'for p in /proc/[0-9]*/cmdline; do tr "\0" " " < "$p" 2>/dev/null; echo; done' 2>/dev/null | grep -qE 'run\.py (doc|make|redo|clip|newsvideo|batch|autopilot)|ffmpeg' || return 1; }
 
@@ -64,6 +67,7 @@ cmd_create() {
 TENANT=$n
 PUBLIC_HOST=$HOST
 DASH_PORT=$port
+OWNER_CHANNELS=$(owner_channels)
 ENV
   chmod 600 "$META/$n.env"
   compose "$n" up -d

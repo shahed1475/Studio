@@ -256,3 +256,15 @@ def test_the_state_says_when_autopilot_or_a_repair_holds_the_lock_so_the_sidebar
     assert json.loads(call(port, "GET", "/api/state", headers=h)[2])["autopilot"]["busy"] is True
     monkeypatch.setattr(autopilot, "is_running", lambda: False)
     assert json.loads(call(port, "GET", "/api/state", headers=h)[2])["autopilot"]["busy"] is False
+
+
+def test_a_user_studio_has_no_desktop_sign_in_and_disconnecting_releases_the_channel(signed_in, monkeypatch):
+    import ytweb
+    port, h = signed_in
+    st, out = post(port, h, "/api/youtube/connect", {})
+    assert st == 400 and "Sign in with Google" in out["error"]  # the desktop flow would open a browser on the server
+    released = []
+    monkeypatch.setattr(ytweb, "release", lambda: released.append(1))
+    (dashboard.TOKEN).write_text("{}")
+    st, out = post(port, h, "/api/youtube/disconnect", {})
+    assert st == 200 and released == [1] and not dashboard.TOKEN.exists()

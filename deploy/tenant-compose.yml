@@ -14,6 +14,8 @@ x-user-studio: &user-studio
   environment:
     STUDIO_MODE: tenant
     STUDIO_COOKIE: studio_session_${TENANT}
+    STUDIO_NAME: ${TENANT}
+    STUDIO_OWNER_CHANNELS: ${OWNER_CHANNELS:-}   # the owner's own channel ids: never connectable to a user studio
     DASH_PORT: ${DASH_PORT}
     STUDIO_BIND: 0.0.0.0                 # inside the container only; the published port below is bound to 127.0.0.1
     STUDIO_HOSTS: ${PUBLIC_HOST}          # the name the browser uses (standard HTTPS port, so no port in it)

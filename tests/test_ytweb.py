@@ -29,6 +29,10 @@ def web(tmp_path, monkeypatch):
     monkeypatch.setattr(ytweb, "TOKEN", tmp_path / "token.json")
     monkeypatch.setattr(ytweb, "_flow", lambda redirect_uri: FakeFlow(redirect_uri))
     monkeypatch.setattr(ytweb, "_after_login", lambda: None)
+    monkeypatch.setattr(ytweb, "_channel_id", lambda creds: "UC_USER")
+    monkeypatch.setenv("STUDIO_RENDER_GATE", str(tmp_path / "gate"))
+    monkeypatch.setenv("STUDIO_NAME", "ann")
+    monkeypatch.delenv("STUDIO_OWNER_CHANNELS", raising=False)
     FakeFlow.created.clear()
     ytweb.SECRET.write_text("{}")
     return tmp_path
@@ -44,7 +48,7 @@ def test_google_sign_in_on_the_web_is_offered_only_when_the_owner_has_added_the_
 
 def test_start_returns_googles_address_asking_for_a_refresh_token_and_remembers_the_verifier(web):
     url = ytweb.start("https://studio.example.com/oauth/callback", now=1000)
-    assert url.startswith("https://accounts.google.com/") and FakeFlow.created[0].kw == {"access_type": "offline", "prompt": "consent"}
+    assert url.startswith("https://accounts.google.com/") and FakeFlow.created[0].kw == {"access_type": "offline", "prompt": "select_account consent"}  # the account chooser always shows
     pending = json.loads(ytweb.PENDING.read_text())
     assert pending["state-from-google"]["verifier"] == "verifier-123" and pending["state-from-google"]["exp"] == 1000 + ytweb.WAIT
 
@@ -72,3 +76,36 @@ def test_the_callback_address_comes_from_the_studios_own_public_name(monkeypatch
     assert ytweb.redirect_uri() == "https://studio.example.com/oauth/callback"
     monkeypatch.setenv("STUDIO_HOSTS", "")
     assert ytweb.redirect_uri() is None
+
+
+def _sign_in(now=1000):
+    ytweb.start("https://studio.example.com/oauth/callback", now=now)
+    ytweb.finish("c", "state-from-google", "https://studio.example.com/oauth/callback", now=now + 5)
+
+
+def test_the_owners_channel_is_refused_and_no_login_is_kept(web, monkeypatch):
+    monkeypatch.setenv("STUDIO_OWNER_CHANNELS", "UC_OWNER, UC_OTHER_OWNER_CHANNEL")
+    monkeypatch.setattr(ytweb, "_channel_id", lambda creds: "UC_OWNER")
+    with pytest.raises(ValueError, match="owner's channel"):
+        _sign_in()
+    assert not ytweb.TOKEN.exists()
+
+
+def test_a_channel_already_connected_to_another_studio_is_refused_and_the_same_studio_may_reconnect(web, monkeypatch):
+    _sign_in(1000)
+    assert ytweb.TOKEN.exists() and json.loads((web / "gate" / "channels.json").read_text()) == {"UC_USER": "ann"}
+    _sign_in(2000)  # the same studio signing in again is fine
+    monkeypatch.setenv("STUDIO_NAME", "bob")
+    ytweb.TOKEN.unlink()
+    with pytest.raises(ValueError, match="another studio"):
+        _sign_in(3000)
+    assert not ytweb.TOKEN.exists()
+
+
+def test_disconnecting_gives_the_channel_back(web, monkeypatch):
+    _sign_in()
+    ytweb.release()
+    assert json.loads((web / "gate" / "channels.json").read_text()) == {}
+    monkeypatch.setenv("STUDIO_NAME", "bob")
+    _sign_in(5000)  # now another studio can connect it
+    assert json.loads((web / "gate" / "channels.json").read_text()) == {"UC_USER": "bob"}
