@@ -39,7 +39,7 @@ def _api(params: dict) -> dict:
 
 
 def _terms(topic: str) -> str:
-    words = [w for w in re.findall(r"[A-Za-z0-9']+", topic) if w.lower() not in _GENERIC]
+    words = [w for w in re.findall(r"[\w']+", topic) if w.lower() not in _GENERIC]
     return " ".join(words) or topic
 
 

@@ -308,3 +308,11 @@ def test_wikipedia_requests_are_spaced_and_identify_the_bot_with_a_contact(monke
         wikipedia._api({"action": "query"})
     assert all(b - a >= wikipedia.MIN_GAP - 1e-9 for a, b in zip(times, times[1:]))
     assert "http" in wikipedia.UA["User-Agent"] or "@" in wikipedia.UA["User-Agent"]
+
+
+def test_search_terms_keep_accented_letters_in_names():
+    import wikipedia
+    assert wikipedia._terms("Göbekli Tepe") == "Göbekli Tepe"
+    assert wikipedia._terms("The Çatalhöyük settlement") == "Çatalhöyük settlement"
+    assert wikipedia._terms("Sagrada Família") == "Sagrada Família"
+    assert wikipedia._terms("The Mystery of the Voynich manuscript") == "Voynich manuscript"  # the generic words are still dropped
