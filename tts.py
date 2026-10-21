@@ -123,6 +123,7 @@ def _ass_rich(words: list[tuple], pos: str = "bottom") -> str:
     by_line: dict = {}
     for w in caps:
         by_line.setdefault(line_of(w), []).append(w)
+    cap_rows: list[list] = []
     for ws in by_line.values():
         found = keywords.kinds([w[2] for w in ws])  # judged on the whole line, so "Hamelin" at the start is not mistaken for a name
         for i, j in caption_spans([w[2] for w in ws]):
@@ -134,7 +135,11 @@ def _ass_rich(words: list[tuple], pos: str = "bottom") -> str:
                     col = f"\\c{keywords.color(mark[j])}" if mark[j] else ""
                     pop = "\\fscx115\\fscy115\\t(0,110,\\fscx100\\fscy100)" if j == k else ""  # the word being spoken pops
                     shown.append(f"{{{pop}{col}}}{c[2].upper()}{{\\r}}" if (pop or col) else c[2].upper())
-                rows.append(f"Dialogue: 0,{_ts(w[0])},{_ts(nxt)},Cap,{' '.join(shown)}")
+                cap_rows.append([w[0], nxt, " ".join(shown)])
+    cap_rows.sort(key=lambda r: r[0])
+    for a, b in zip(cap_rows, cap_rows[1:]):  # the last word of a group is held 0.15 s past its end: never into the next group, or the two lines print over each other
+        a[1] = min(a[1], b[0])
+    rows += [f"Dialogue: 0,{_ts(a)},{_ts(b)},Cap,{text}" for a, b, text in cap_rows]
     return head + "\n".join(rows) + "\n"
 
 

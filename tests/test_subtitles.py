@@ -77,3 +77,23 @@ def test_cues_break_after_a_clause_instead_of_in_the_middle():
     ws = subtitles.with_punctuation(words(line.replace(",", "").replace(".", ""), 0, per=0.3), [line])
     cues = subtitles.build_cues(ws)
     assert cues[0]["text"].replace("\n", " ").endswith("happened,")
+
+
+def _cap_times(ass):
+    import re
+    out = []
+    for m in re.finditer(r"Dialogue: 0,(\d+):(\d+):(\d+)\.(\d+),(\d+):(\d+):(\d+)\.(\d+),Cap,", ass):
+        g = [int(x) for x in m.groups()]
+        out.append((g[0] * 3600 + g[1] * 60 + g[2] + g[3] / 100, g[4] * 3600 + g[5] * 60 + g[6] + g[7] / 100))
+    return out
+
+
+def test_two_word_caption_groups_never_show_at_the_same_time():
+    import tts
+    # the voice's timings abut: the last word of a group ends exactly where the next group's first word starts, and the group's tail (+0.15 s) overlapped it
+    words = [(21.0, 21.9, "ancient", 1), (21.9, 22.8, "manuscript", 1), (22.8, 23.6, "deciphered", 1), (23.6, 24.4, "completely", 1), (24.4, 25.0, "today", 1)]
+    for motion in (1, 2):
+        times = _cap_times(tts._ass(words, motion))
+        assert times and all(b <= nxt[0] + 1e-9 for (a, b), nxt in zip(times, times[1:]))
+    times = _cap_times(tts._ass(words, 0).replace("Dialogue: 0,", "Dialogue: 0,"))
+    assert all(b <= nxt[0] + 1e-9 for (a, b), nxt in zip(times, times[1:]))
