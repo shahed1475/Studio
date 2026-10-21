@@ -20,6 +20,7 @@ SECRET_FILE = DATA / "auth_secret"
 COOKIE = "studio_session"
 SESSION_DAYS = 14
 SESSIONS_FILE = DATA / "sessions.json"
+INVITES_FILE = DATA / "invites.json"
 _SLOCK = threading.Lock()
 MAX_FAILS, WINDOW = 5, 600  # five wrong attempts per ten minutes from one address
 
@@ -43,6 +44,43 @@ def set_password(email: str, password: str) -> None:
     SECRET_FILE.write_bytes(secrets.token_bytes(32))  # a new password signs everybody out
     SESSIONS_FILE.unlink(missing_ok=True)
     os.chmod(SECRET_FILE, 0o600)
+
+
+def _invites() -> dict:
+    try:
+        return json.loads(INVITES_FILE.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def _digest(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def create_invite(hours: float = 24, now: float | None = None) -> str:
+    """A link token for a user's first sign-in: valid for `hours`, once. Only its hash is kept, so the file cannot be used to claim the studio."""
+    now = now or time.time()
+    token = secrets.token_urlsafe(24)
+    live = {k: v for k, v in _invites().items() if v > now}
+    live[_digest(token)] = now + hours * 3600
+    DATA.mkdir(exist_ok=True)
+    INVITES_FILE.write_text(json.dumps(live))
+    os.chmod(INVITES_FILE, 0o600)
+    return token
+
+
+def invite_valid(token: str, now: float | None = None) -> bool:
+    return bool(token) and _invites().get(_digest(token), 0) > (now or time.time())
+
+
+def claim(token: str, email: str, password: str, now: float | None = None) -> None:
+    """First sign-in: the invite lets the user choose their own email and password, once, and only while the studio has no login yet."""
+    if enabled():
+        raise ValueError("this studio already has a login")
+    if not invite_valid(token, now):
+        raise ValueError("this invite link is not valid any more")
+    set_password(email, password)  # raises ValueError for a weak password and then the invite stays usable
+    INVITES_FILE.unlink(missing_ok=True)
 
 
 def owner_email() -> str:
@@ -160,3 +198,18 @@ LIMITER = Limiter()
 def login_page(error: str = "") -> bytes:
     msg = f'<p class="err" role="alert">{error}</p>' if error else ""
     return (config.ROOT / "login.html").read_text().replace("<!--ERROR-->", msg).encode()
+
+
+def claim_page(token: str, error: str = "") -> bytes:
+    """The first-sign-in page of a user studio: the login page's look, with the invite token and a form for the user's own email and password."""
+    import html
+    import re
+
+    page = login_page(error).decode()
+    form = ('<form method="post" action="/claim"><input type="hidden" name="token" value="' + html.escape(token) + '">'
+            '<div><label for="e">Your email</label><input id="e" name="email" type="email" autocomplete="username" inputmode="email" required autofocus></div>'
+            '<div><label for="p">Choose a password (10 or more characters)</label><input id="p" name="password" type="password" autocomplete="new-password" minlength="10" required></div>'
+            '<div><label for="p2">Repeat it</label><input id="p2" name="password2" type="password" autocomplete="new-password" minlength="10" required></div>'
+            '<button type="submit">Create my studio login</button></form>')
+    page = re.sub(r"<form.*?</form>", lambda m: form, page, count=1, flags=re.S)
+    return re.sub(r"<p>Sign in to .*?</p>", "<p>Welcome. Choose the email and password you will use to open your own studio.</p>", page, count=1, flags=re.S).encode()

@@ -408,6 +408,20 @@ def allowed_hosts() -> set[str]:
     return {f"127.0.0.1:{PORT}", f"localhost:{PORT}", f"studio.localhost:{PORT}"} | {h if ":" in h else f"{h}:{PORT}" for h in extra}
 
 
+def client_ip(handler) -> str:
+    """The visitor's address. Behind the studio's own web proxy (it connects from this machine) the proxy's X-Forwarded-For names the real visitor, so wrong
+    passwords are counted per visitor and not for everybody at once; from anywhere else the header is not believed."""
+    ip = handler.client_address[0]
+    fwd = (handler.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+    return fwd if ip in ("127.0.0.1", "::1") and fwd else ip
+
+
+def _tenant_unclaimed() -> bool:
+    import tenantmode
+
+    return tenantmode.is_tenant() and not webauth.enabled()
+
+
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -421,6 +435,8 @@ class H(BaseHTTPRequestHandler):
         self.wfile.write(b)
 
     def _authed(self) -> bool:
+        if _tenant_unclaimed():
+            return False  # a user studio that nobody has claimed yet is never open
         return not webauth.enabled() or webauth.check_token(webauth.cookie_from(self.headers.get("Cookie", ""))) is not None
 
     def _page(self, b, code=200, extra=()):
@@ -442,7 +458,7 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _login(self):
-        ip = self.client_address[0]
+        ip = client_ip(self)
         n = int(self.headers.get("Content-Length") or 0)
         form = parse_qs(self.rfile.read(min(n, 4096)).decode(errors="replace"))
         if not webauth.LIMITER.reserve(ip):  # the slot is taken before the check; a right password gives it back
@@ -455,12 +471,38 @@ class H(BaseHTTPRequestHandler):
         time.sleep(0.6)
         self._page(webauth.login_page("That email or password is not right."), 401)
 
+    def _claim(self):
+        ip = client_ip(self)
+        n = int(self.headers.get("Content-Length") or 0)
+        form = parse_qs(self.rfile.read(min(n, 4096)).decode(errors="replace"))
+        tok, email = form.get("token", [""])[0], form.get("email", [""])[0]
+        pw, pw2 = form.get("password", [""])[0], form.get("password2", [""])[0]
+        if not webauth.LIMITER.reserve(ip):
+            return self._page(webauth.claim_page(tok, "Too many tries. Wait ten minutes."), 429)
+        if pw != pw2:
+            return self._page(webauth.claim_page(tok, "The two passwords are different."), 400)
+        try:
+            webauth.claim(tok, email, pw)
+        except ValueError as e:
+            return self._page(webauth.claim_page(tok, str(e)), 400)
+        webauth.LIMITER.clear(ip)
+        secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
+        cookie = f"{webauth.COOKIE}={webauth.make_token(webauth.owner_email())}; HttpOnly; SameSite=Strict; Path=/; Max-Age={webauth.SESSION_DAYS * 86400}{secure}"
+        return self._redirect("/", [("Set-Cookie", cookie)])
+
     def do_GET(self):
         if self.headers.get("Host", "") not in allowed_hosts():
             return self.send_error(403)
         u = urlparse(self.path)
         if u.path == "/healthz":
             return self.send_bytes(b"ok", "text/plain")
+        if u.path == "/claim":
+            tok = (parse_qs(u.query).get("token") or [""])[0]
+            if webauth.enabled() or not webauth.invite_valid(tok):
+                return self._page(b"This invite link is not valid any more. Ask for a new one.", 400)
+            return self._page(webauth.claim_page(tok))
+        if _tenant_unclaimed() and not u.path.startswith("/static/"):
+            return self._page(b"This studio is not set up yet. Open the invite link you were sent.", 403)
         if u.path == "/login":
             return self._redirect("/") if self._authed() else self._page(webauth.login_page())
         if not u.path.startswith("/static/") and not self._authed():
@@ -605,6 +647,8 @@ class H(BaseHTTPRequestHandler):
         if host not in allowed_hosts() or (origin and urlparse(origin).netloc != host):
             return self.send_json({"error": "forbidden"}, 403)
         path = urlparse(self.path).path
+        if path == "/claim":
+            return self._claim()
         if path == "/login":
             return self._login()
         if path == "/logout":

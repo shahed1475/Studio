@@ -9,6 +9,7 @@ def tmp_auth(tmp_path, monkeypatch):
     monkeypatch.setattr(webauth, "AUTH_FILE", tmp_path / "auth.json")
     monkeypatch.setattr(webauth, "SECRET_FILE", tmp_path / "auth_secret")
     monkeypatch.setattr(webauth, "SESSIONS_FILE", tmp_path / "sessions.json")
+    monkeypatch.setattr(webauth, "INVITES_FILE", tmp_path / "invites.json")
     webauth.LIMITER.fails.clear()
 
 
@@ -70,3 +71,29 @@ def test_reserve_is_atomic_under_parallel_guesses():
     ts = [threading.Thread(target=lambda: got.append(webauth.LIMITER.reserve("9.9.9.9"))) for _ in range(40)]
     [t.start() for t in ts]; [t.join() for t in ts]
     assert got.count(True) == webauth.MAX_FAILS
+
+
+def test_an_invite_is_stored_only_as_a_hash_and_works_once():
+    tok = webauth.create_invite(now=1000)
+    assert tok not in webauth.INVITES_FILE.read_text() and webauth.invite_valid(tok, now=1001)
+    webauth.claim(tok, "New@Mail.com", "a long enough password", now=1002)
+    assert webauth.verify("new@mail.com", "a long enough password")
+    assert not webauth.invite_valid(tok, now=1003)  # used
+    with pytest.raises(ValueError):
+        webauth.claim(tok, "other@mail.com", "another long password", now=1004)
+
+
+def test_an_expired_or_unknown_invite_is_refused_and_a_weak_password_keeps_the_invite():
+    tok = webauth.create_invite(hours=1, now=1000)
+    assert not webauth.invite_valid(tok, now=1000 + 3601) and not webauth.invite_valid("nope", now=1001)
+    with pytest.raises(ValueError):
+        webauth.claim(tok, "a@b.co", "short", now=1001)
+    assert webauth.invite_valid(tok, now=1002) and not webauth.enabled()
+
+
+def test_an_invite_cannot_replace_a_login_that_already_exists():
+    webauth.set_password("me@gmail.com", "correct horse battery")
+    tok = webauth.create_invite(now=1000)
+    with pytest.raises(ValueError):
+        webauth.claim(tok, "evil@mail.com", "a long enough password", now=1001)
+    assert webauth.verify("me@gmail.com", "correct horse battery")
