@@ -316,3 +316,13 @@ def test_search_terms_keep_accented_letters_in_names():
     assert wikipedia._terms("The Çatalhöyük settlement") == "Çatalhöyük settlement"
     assert wikipedia._terms("Sagrada Família") == "Sagrada Família"
     assert wikipedia._terms("The Mystery of the Voynich manuscript") == "Voynich manuscript"  # the generic words are still dropped
+
+
+def test_picture_downloads_wait_the_time_wikimedia_asks_after_a_429():
+    import footage
+
+    class R:
+        headers = {"Retry-After": "12"}
+
+    assert footage._told_wait(R()) == 12.0 and footage._told_wait(type("X", (), {"headers": {"Retry-After": "900"}})()) == 45.0
+    assert footage._told_wait(type("X", (), {})()) == 5.0 and footage._told_wait(type("X", (), {"headers": {"Retry-After": "soon"}})()) == 5.0

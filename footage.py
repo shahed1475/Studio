@@ -9,6 +9,7 @@ import requests
 
 import archive_video
 import config
+import wikipedia
 
 
 def clip_for(query: str) -> Path | None:
@@ -107,6 +108,14 @@ def image_relevant(title: str, categories: str, anchors: list[str]) -> bool:
     return any(a.lower() in text for a in anchors)
 
 
+def _told_wait(r, cap: float = 45.0) -> float:
+    """Seconds Wikimedia asked us to wait after an HTTP 429 (Retry-After), at most `cap`."""
+    try:
+        return min(max(float((getattr(r, "headers", None) or {}).get("Retry-After", 5)), 1.0), cap)
+    except (TypeError, ValueError):
+        return 5.0
+
+
 def _download(info: dict, page: dict, meta: dict, key: str) -> tuple[Path, str] | None:
     dest, credit_file = config.CACHE / f"{key}.jpg", config.CACHE / f"{key}.txt"
     if dest.exists() and credit_file.exists():
@@ -114,9 +123,10 @@ def _download(info: dict, page: dict, meta: dict, key: str) -> tuple[Path, str] 
     img = None
     for wait in (2, 8, 20):  # the image server rate-limits too
         time.sleep(wait)
-        img = requests.get(info["thumburl"], headers={"User-Agent": "SleepingLibraryBot/1.0 (educational storytelling channel)"}, timeout=60)
+        img = requests.get(info["thumburl"], headers=wikipedia.UA, timeout=60)
         if img.status_code != 429:
             break
+        time.sleep(_told_wait(img))
     if img is None or not img.ok:
         return None
     dest.write_bytes(img.content)
@@ -137,7 +147,7 @@ def images_for(query: str, anchors: list[str] | None = None, limit: int = 1, ski
             time.sleep(1.2 + attempt * 4)
             r = requests.get(
                 "https://commons.wikimedia.org/w/api.php",
-                headers={"User-Agent": "SleepingLibraryBot/1.0 (educational storytelling channel)"},
+                headers=wikipedia.UA,
                 params={
                     "action": "query", "format": "json", "generator": "search", "gsrnamespace": 6,
                     "gsrsearch": f"{query} filetype:bitmap", "gsrlimit": 30, "prop": "imageinfo",
@@ -147,6 +157,7 @@ def images_for(query: str, anchors: list[str] | None = None, limit: int = 1, ski
             )
             if r.status_code != 429:
                 break
+            time.sleep(_told_wait(r))  # the pause Wikimedia asks for, not a guess
         r.raise_for_status()
         cands = []
         for page in (r.json().get("query", {}).get("pages", {}) or {}).values():
