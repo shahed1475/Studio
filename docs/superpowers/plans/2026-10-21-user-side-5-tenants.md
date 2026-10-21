@@ -1,6 +1,6 @@
 # User side: five more studios on this server, each with its own niche
 
-> Status: research done, plan written, **waiting for the owner's three decisions** (section "Decisions"). Nothing below is built yet. The main studio is not touched by this document.
+> Status: the owner decided on 21 Oct 2026: each user brings their own OpenRouter key, public HTTPS on the free hostname, a fixed list of niches the engine does well plus a fit check for custom ones. Execution below, step by step, test first. The main studio behaves as today unless `STUDIO_MODE=tenant` is set.
 
 **Goal:** up to 5 more people can open a studio like the owner's from any device, sign in, connect their own YouTube channel, pick a niche, and have the automation research that niche and prepare videos for it. The owner's studio keeps working exactly as today.
 
@@ -37,7 +37,30 @@
 - Unverified-app warning shows for every user at Google sign-in; allowed up to 100 users.
 - Each user's videos are their responsibility on their own channel; the same review rules apply.
 
-## Decisions (needed before step 1)
+## Decisions (made by the owner, 21 Oct 2026)
 1. Who pays for AI (OpenRouter): **each user adds their own key** (recommended) or the owner pays for everyone.
 2. How users reach their studio: **public HTTPS on `srv2029460.hstgr.cloud`** (recommended, protected by the login) or only through Tailscale invites.
 3. Niche scope: **niches the engine can ground in Wikipedia, with a fit check for custom ones** (recommended), not "any niche".
+
+## Implementation tasks (interfaces fixed here so each step can be checked)
+Every Python step: failing test first, then code, then the whole suite (`.venv/bin/python -m pytest -q`) before commit. Server steps are checked on a demo user named `demo`.
+
+**T1 `tenantmode.py`** (tenant defaults, quota, render gate, invites on the command line)
+- `is_tenant() -> bool` (`STUDIO_MODE=tenant`).
+- `apply_defaults(root=config.ROOT)`: first run only (marker `data/tenant_ready.json`): `autopilot.json` enabled false and auto_approve false, `llm.json` enabled false, cap 1.5, ai_art false, `agent.json` mode "handoff".
+- `usage_gb(root) -> float`; `quota_state(root, limit_gb=10) -> {"used_gb", "pct", "state": "ok"|"warn"|"full"}`; `enforce_quota(root, now)`: at "full" sets `make_videos` false in autopilot.json and writes one Activity event, remembering that it did; below 90% it restores only what it paused.
+- `render_gate(slots=2)`: context manager; a no-op unless `STUDIO_RENDER_GATE` names a directory; otherwise waits for one of `slots` file locks there. Wrapped around `render.render`.
+
+**T2 invites (`webauth.py`, `dashboard.py`)**: `create_invite(hours=24) -> token` (only the hash is stored in `data/invites.json`), `claim(token, email, password)` (valid once, only while no login exists, 10+ character password). In tenant mode with no login yet the dashboard answers only `/claim`, `/healthz` and static files (it never serves the studio to an unclaimed address). `python tenantmode.py invite <base_url>` prints the link.
+
+**T3 niches (`niche.py`)**: `PRESETS` (ten, each with id, name, audience, style, channel_angle, hashtags, search_seeds, starter_topics); `fit_check(description, chat, article_of) -> {"fit": bool, "reason": str, "closest": id|None}` (word filter for unsuitable subjects, one model judgement, five sample topics each needing a real article of 1,500+ characters, article reads retried as in `topicrank.read_article`); `build(choice_or_description, chat) -> niche dict`; `research(niche, yt=None, chat=None) -> brief` (trend study when YouTube is connected, ten topic ideas screened by `topicrank.premise_check`, cadence and format advice); `apply(niche, brief)` writes `niche.json` (adds `id`, `search_seeds`), `data/niche_brief.json`, the topic queue. `discover.SEEDS` and `trendwatch.SEEDS` read `niche["search_seeds"]` when present.
+
+**T4 dashboard (tenant mode only)**: "Get started" card (key, YouTube, niche, Autopilot) and a Niche page with the presets, the custom box, progress, the brief and an Edit/Confirm step. APIs `/api/niche`, `/api/niche/choose`, `/api/niche/custom`, `/api/niche/confirm`.
+
+**T5 `deploy/tenant.sh` and `deploy/tenant-compose.yml`**: `create <name> <port>`, `invite <name>`, `list`, `stop`, `start`, `sync [name|all]`, `remove <name>` (archives, never deletes), `quota`. Copies code only (never `.env`, settings, llm.json, token, data, output), copies `client_secret.json` mode 600, per-user caps: dashboard 256 MB / 0.25 CPU, worker 1.5 GB / 1 CPU / low priority.
+
+**T6 public HTTPS**: Caddy container (host network) with a generated Caddyfile for `srv2029460.hstgr.cloud` on 443 and one port per user (8921 to 8925); `STUDIO_HOSTS` per user; the owner's studio unchanged and Tailscale-only (checked).
+
+**T7 `ytweb.py`: Google sign-in on the web**: `start(redirect_uri, email) -> url` and `finish(code, state, redirect_uri)` with state and PKCE verifier kept 10 minutes, then the same token file and `ytlogin.stamp`. **Needs a "Web application" OAuth client** (the current one is a Desktop client, which cannot take a web redirect): the owner creates it and copies `web_client_secret.json` to the server; I write the exact steps.
+
+**T8 proof**: demo user end to end (create, claim, key, niche, research brief), the owner's studio re-checked, Risks row "user studios" (count, disk per user, last quota state), docs and CLAUDE.md.
