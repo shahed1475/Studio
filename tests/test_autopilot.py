@@ -476,3 +476,11 @@ def test_a_video_that_gave_up_after_two_tries_is_repaired_again_only_when_it_has
     assert not [a for a in plan(state([vid(**done, fix_limit=2)])) if a[0] == "fix"]
     assert [a for a in plan(state([vid(**done, fix_limit=3)])) if a[0] == "fix"]
     assert not [a for a in plan(state([vid(**{**done, "fix_attempts": 3}, fix_limit=3)])) if a[0] == "fix"]
+
+
+def test_no_new_video_is_started_when_the_balance_cannot_pay_for_one_but_repairs_and_uploads_go_on():
+    assert ("make", None) in plan(state([], credit_left=5.0)) and ("make", None) in plan(state([], credit_left=None))  # unknown balance: not blocked
+    assert ("make", None) not in plan(state([], credit_left=autopilot.MIN_CREDIT_TO_MAKE - 0.01))
+    assert ("make_short", None) not in plan(state([], credit_left=0.5)) and ("make_clip", None) not in plan(state([], credit_left=0.5, clippable=1))
+    near = vid(verdict="pass", approved=True, publish_at=iso(NOW + timedelta(hours=1)))
+    assert ("upload", "v") in plan(state([near], credit_left=0.2))  # an upload costs nothing
