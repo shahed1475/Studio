@@ -17,6 +17,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import config
+import llm
 import webauth
 
 PORT = int(os.getenv("DASH_PORT", "8913"))
@@ -408,6 +409,50 @@ def allowed_hosts() -> set[str]:
     return {f"127.0.0.1:{PORT}", f"localhost:{PORT}", f"studio.localhost:{PORT}"} | {h if ":" in h else f"{h}:{PORT}" for h in extra}
 
 
+# ---------- niche page (user studios) ----------
+NICHE_JOB = {"state": "idle", "step": "", "error": "", "fit": None}
+
+
+def _niche_yt():
+    """A YouTube client for niche research when the user has connected their channel, else None (the research then skips the trend study)."""
+    try:
+        import upload
+
+        return upload._service() if TOKEN.exists() else None
+    except Exception:
+        return None
+
+
+def niche_view() -> dict:
+    import niche
+
+    return {"presets": [{k: p[k] for k in ("id", "name", "audience", "channel_angle", "starter_topics")} for p in niche.PRESETS],
+            "current": niche.current(), "job": dict(NICHE_JOB), "setup": {"key": bool(llm.api_key()), "youtube": TOKEN.exists()}}
+
+
+def _niche_start(build) -> None:
+    """Research a chosen niche in the background: the subjects are checked against Wikipedia and screened, then the niche and its brief are saved for the user to read."""
+    import niche
+    import topicrank
+
+    if not llm.api_key():
+        raise ValueError("Add your OpenRouter key in Settings first: the niche research uses your own key.")
+    if NICHE_JOB["state"] == "working":
+        raise ValueError("The niche research is already running.")
+    NICHE_JOB.update(state="working", step="checking the subjects in Wikipedia and what viewers watch", error="")
+
+    def work():
+        try:
+            n = build()
+            brief = niche.research(n, yt=_niche_yt(), premise_of=lambda t, a: topicrank.premise_check(t, a))
+            niche.apply(n, brief)
+            NICHE_JOB.update(state="done", step="")
+        except Exception as e:
+            NICHE_JOB.update(state="error", error=f"{type(e).__name__}: {e}"[:300], step="")
+
+    threading.Thread(target=work, daemon=True).start()
+
+
 def client_ip(handler) -> str:
     """The visitor's address. Behind the studio's own web proxy (it connects from this machine) the proxy's X-Forwarded-For names the real visitor, so wrong
     passwords are counted per visitor and not for everybody at once; from anywhere else the header is not believed."""
@@ -546,6 +591,10 @@ class H(BaseHTTPRequestHandler):
             self.send_json(llm_view())
         elif u.path == "/api/youtube":
             self.send_json(yt_status())
+        elif u.path == "/api/niche":
+            import tenantmode
+
+            self.send_json(niche_view()) if tenantmode.is_tenant() else self.send_json({"error": "only in a user studio"}, 404)
         elif u.path == "/api/log":
             jid = parse_qs(u.query).get("id", [""])[0]
             f = LOGS / f"{re.sub(r'[^A-Za-z0-9_-]', '', jid)}.log"
@@ -829,6 +878,30 @@ class H(BaseHTTPRequestHandler):
                 raise ValueError("already waiting for Google sign-in")
             threading.Thread(target=yt_connect, daemon=True).start()
             return {"ok": True}
+        if path.startswith("/api/niche/"):
+            import niche
+            import tenantmode
+
+            if not tenantmode.is_tenant():
+                raise ValueError("only in a user studio")
+            if path == "/api/niche/choose":
+                chosen = niche.preset(str(b.get("id", "")))
+                if not chosen:
+                    raise ValueError("unknown niche")
+                _niche_start(lambda: chosen)
+                return {"ok": True}
+            if path == "/api/niche/custom":
+                desc = str(b.get("description", ""))
+                if not sys.modules["llm"].api_key():  # `llm` is imported inside other branches of this function, so the module is reached by name
+                    raise ValueError("Add your OpenRouter key in Settings first: the niche check uses your own key.")
+                fit = niche.fit_check(desc)
+                NICHE_JOB["fit"] = fit
+                if not fit["fit"]:
+                    return {"ok": True, **fit}
+                _niche_start(lambda: niche.build_custom(desc, fit))
+                return {"ok": True, **fit}
+            if path == "/api/niche/confirm":
+                return {"ok": True, "brief": niche.confirm()}
         if path == "/api/youtube/disconnect":
             TOKEN.unlink(missing_ok=True)
             return {"ok": True}
