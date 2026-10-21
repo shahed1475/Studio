@@ -260,3 +260,51 @@ def test_a_drawn_scene_about_writing_is_told_to_show_no_legible_text():
     plain = aiart.prompt_for("A piper walks through the narrow streets of the town.", "Hamelin street", "Pied Piper", False)
     assert "no legible writing" in texty.lower() and "no legible writing" not in plain.lower()
     assert aiart.prompt_for("An old map of the colony.", "Roanoke map", "Roanoke", True).lower().count("no legible writing") == 1
+
+
+class _Resp:
+    def __init__(self, status, body=None, retry_after=None):
+        self.status_code, self._body = status, body or {}
+        self.headers = {"Retry-After": str(retry_after)} if retry_after is not None else {}
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            import requests
+            raise requests.HTTPError(f"{self.status_code}")
+
+    def json(self):
+        return self._body
+
+
+def test_wikipedia_waits_out_a_429_as_told_and_then_gets_the_answer(monkeypatch):
+    import wikipedia
+    answers = [_Resp(429, retry_after=7), _Resp(429, retry_after=500), _Resp(200, {"ok": 1})]
+    slept = []
+    monkeypatch.setattr(wikipedia.requests, "get", lambda *a, **k: answers.pop(0))
+    monkeypatch.setattr(wikipedia.time, "sleep", lambda s: slept.append(s))
+    assert wikipedia._api({"action": "query"}) == {"ok": 1}
+    assert slept[0] == 7 and max(slept) <= wikipedia.MAX_WAIT  # a huge Retry-After is not obeyed blindly
+
+
+def test_wikipedia_gives_up_after_a_few_429s_and_the_callers_see_a_request_error(monkeypatch):
+    import pytest
+    import requests
+    import wikipedia
+    monkeypatch.setattr(wikipedia.requests, "get", lambda *a, **k: _Resp(429, retry_after=1))
+    monkeypatch.setattr(wikipedia.time, "sleep", lambda s: None)
+    with pytest.raises(requests.RequestException):
+        wikipedia._api({"action": "query"})
+    assert wikipedia.facts_for("Apollo 13") is None  # unchanged: callers treat a failed read as no article (and retry, see topicrank.read_article)
+
+
+def test_wikipedia_requests_are_spaced_and_identify_the_bot_with_a_contact(monkeypatch):
+    import wikipedia
+    times, now = [], [1000.0]
+    monkeypatch.setattr(wikipedia.requests, "get", lambda *a, **k: times.append(now[0]) or _Resp(200, {}))
+    monkeypatch.setattr(wikipedia.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(wikipedia.time, "sleep", lambda s: now.__setitem__(0, now[0] + s))
+    wikipedia._last_call[0] = 0.0
+    for _ in range(3):
+        wikipedia._api({"action": "query"})
+    assert all(b - a >= wikipedia.MIN_GAP - 1e-9 for a, b in zip(times, times[1:]))
+    assert "http" in wikipedia.UA["User-Agent"] or "@" in wikipedia.UA["User-Agent"]

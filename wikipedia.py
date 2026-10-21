@@ -1,18 +1,41 @@
 """Source text for scripts: the Wikipedia article for a topic, so narration is built from documented facts."""
+import os
 import re
+import threading
+import time
 
 import requests
 
 API = "https://en.wikipedia.org/w/api.php"
-UA = {"User-Agent": "SleepingLibraryBot/1.0 (educational storytelling channel)"}
+# Wikimedia asks every bot to say who runs it (API etiquette): a name, a version and a place to reach the operator
+UA = {"User-Agent": f"SleepingLibraryBot/1.0 ({os.getenv('WIKI_CONTACT', 'https://github.com/shahed1475/Studio')}; educational storytelling channel)"}
+MIN_GAP = 1.0  # seconds between requests from this process: on 21 Oct 2026 about ten requests in ten seconds brought HTTP 429 for half a minute, and every studio on the server shares one address
+MAX_WAIT = 60  # the longest pause obeyed after a 429, whatever Retry-After says
+TRIES = 4
+_last_call = [0.0]
+_gate = threading.Lock()
 _GENERIC = {"the", "of", "a", "an", "and", "in", "on", "mystery", "mysteries", "real", "true", "story", "legend", "secret",
             "secrets", "unsolved", "was", "is", "or", "did", "why", "what", "how", "behind", "truth"}
 
 
 def _api(params: dict) -> dict:
-    r = requests.get(API, params={**params, "format": "json"}, headers=UA, timeout=30)
-    r.raise_for_status()
-    return r.json()
+    """One API call, spaced from the last one, and patient with HTTP 429: it waits the time Retry-After names (at most MAX_WAIT) and asks again, a few times."""
+    for attempt in range(TRIES):
+        with _gate:
+            wait = _last_call[0] + MIN_GAP - time.monotonic()
+            if wait > 0:
+                time.sleep(wait)
+            _last_call[0] = time.monotonic()
+        r = requests.get(API, params={**params, "format": "json"}, headers=UA, timeout=30)
+        if r.status_code == 429 and attempt < TRIES - 1:
+            try:
+                pause = float(r.headers.get("Retry-After", 10))
+            except (TypeError, ValueError):
+                pause = 10.0
+            time.sleep(min(max(pause, 1.0), MAX_WAIT))
+            continue
+        r.raise_for_status()
+        return r.json()
 
 
 def _terms(topic: str) -> str:
