@@ -113,8 +113,8 @@ cmd_caddy() {
       echo "  @t_$n header_regexp tc Cookie (^|;\\s*)studio_tenant=$n(;|\$)"
       echo "  @enter_$n path /u/$n /u/$n/"
       echo "  @claim_$n path /u/$n/claim"
-      echo "  handle @enter_$n {"; echo "    header Set-Cookie \"studio_tenant=$n; Path=/; Max-Age=31536000; Secure; HttpOnly; SameSite=Lax\""; echo "    redir / 303"; echo "  }"
-      echo "  handle @claim_$n {"; echo "    header Set-Cookie \"studio_tenant=$n; Path=/; Max-Age=31536000; Secure; HttpOnly; SameSite=Lax\""; echo "    redir /claim?{query} 303"; echo "  }"
+      echo "  handle @enter_$n {"; echo "    header Set-Cookie \"studio_tenant=$n; Path=/; Max-Age=31536000; Secure; HttpOnly; SameSite=Lax\""; echo "    redir * / 303"; echo "  }"
+      echo "  handle @claim_$n {"; echo "    header Set-Cookie \"studio_tenant=$n; Path=/; Max-Age=31536000; Secure; HttpOnly; SameSite=Lax\""; echo "    redir * /claim?{query} 303"; echo "  }"
       echo "  handle @t_$n {"; echo "    reverse_proxy 127.0.0.1:$p"; echo "  }"
     done
     echo "  handle {"; echo "    respond \"Story Studio. Open the link you were sent.\" 200"; echo "  }"
