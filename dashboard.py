@@ -459,7 +459,34 @@ def client_ip(handler) -> str:
     passwords are counted per visitor and not for everybody at once; from anywhere else the header is not believed."""
     ip = handler.client_address[0]
     fwd = (handler.headers.get("X-Forwarded-For") or "").split(",")[-1].strip()  # the last entry is the one our proxy added; earlier ones came from the visitor
-    return fwd if ip in ("127.0.0.1", "::1") and fwd else ip
+    return fwd if _is_proxy(ip) and fwd else ip
+
+
+def _is_proxy(ip: str) -> bool:
+    """Our own web proxy: this machine, or (in a user studio, which runs in a container) the gateway of the container's network, which is how Docker shows
+    a connection that came through the published port. Nothing else is believed about who the visitor is."""
+    if ip in ("127.0.0.1", "::1"):
+        return True
+    import ipaddress
+
+    import tenantmode
+
+    try:
+        a = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return tenantmode.is_tenant() and a.version == 4 and a in ipaddress.ip_network("172.16.0.0/12") and int(a) % 256 == 1
+
+
+def listen_addresses(claimed: bool) -> list[str]:
+    """Where the dashboard listens. The owner's studio: loopback, plus STUDIO_BIND once a login exists. A user studio (in a container behind a published port): only
+    STUDIO_BIND, from the start, because the invite page has to be reachable; until the login exists the studio answers nothing else."""
+    import tenantmode
+
+    bind = os.getenv("STUDIO_BIND", "").strip()
+    if tenantmode.is_tenant() and bind:
+        return [bind]
+    return ["127.0.0.1"] + ([bind] if bind and claimed else [])
 
 
 def _tenant_unclaimed() -> bool:
@@ -918,10 +945,10 @@ if __name__ == "__main__":
         webauth.LIMITER.global_max = 30  # guessing from many addresses at once is stopped too (a sign-in that works gives its slot back; a signed-in session is not affected)
         webauth.CLAIM_LIMITER.global_max = 30
     print(f"Dashboard: http://studio.localhost:{PORT}   (also http://127.0.0.1:{PORT})")
-    bind = os.getenv("STUDIO_BIND", "").strip()
-    if bind and webauth.enabled():  # a second address (the Tailscale one) is opened only when a login exists
-        threading.Thread(target=ThreadingHTTPServer((bind, PORT), H).serve_forever, daemon=True).start()
-        print(f"Also listening on {bind}:{PORT} behind the login")
-    elif bind:
+    addrs = listen_addresses(webauth.enabled())
+    if os.getenv("STUDIO_BIND", "").strip() and len(addrs) == 1 and addrs[0] == "127.0.0.1":
         print("STUDIO_BIND ignored: set a password first with python set_password.py")
-    ThreadingHTTPServer(("127.0.0.1", PORT), H).serve_forever()
+    for extra in addrs[1:]:
+        threading.Thread(target=ThreadingHTTPServer((extra, PORT), H).serve_forever, daemon=True).start()
+        print(f"Also listening on {extra}:{PORT} behind the login")
+    ThreadingHTTPServer((addrs[0], PORT), H).serve_forever()

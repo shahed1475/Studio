@@ -78,6 +78,29 @@ def test_wrong_password_attempts_are_counted_per_visitor_behind_the_proxy():
     assert dashboard.client_ip(Fake) == "127.0.0.1"
 
 
+def test_in_a_user_studio_the_container_networks_gateway_counts_as_the_proxy(monkeypatch):
+    class Fake:
+        client_address = ("172.19.0.1", 5)  # how the proxy appears to a container behind Docker's published port
+        headers = {"X-Forwarded-For": "203.0.113.9"}
+
+    monkeypatch.delenv("STUDIO_MODE", raising=False)
+    assert dashboard.client_ip(Fake) == "172.19.0.1"  # the owner's studio: not believed
+    monkeypatch.setenv("STUDIO_MODE", "tenant")
+    assert dashboard.client_ip(Fake) == "203.0.113.9"
+    Fake.client_address = ("172.19.0.7", 5)  # another container on that network is not the gateway
+    assert dashboard.client_ip(Fake) == "172.19.0.7"
+    Fake.client_address = ("203.0.113.50", 5)
+    assert dashboard.client_ip(Fake) == "203.0.113.50"
+
+
+def test_a_user_studio_listens_only_on_its_bind_address_so_the_published_port_reaches_it(monkeypatch):
+    monkeypatch.setenv("STUDIO_MODE", "tenant")
+    monkeypatch.setenv("STUDIO_BIND", "0.0.0.0")
+    assert dashboard.listen_addresses(claimed=False) == ["0.0.0.0"]  # unclaimed too: the invite page must be reachable, everything else is refused
+    monkeypatch.delenv("STUDIO_MODE")
+    assert dashboard.listen_addresses(claimed=False) == ["127.0.0.1"] and dashboard.listen_addresses(claimed=True) == ["127.0.0.1", "0.0.0.0"]
+
+
 # ---- the niche page ----
 import json
 import time
