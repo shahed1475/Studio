@@ -51,3 +51,16 @@ def test_symlinks_are_refused(tmp_path, monkeypatch):
     (d / "notes.md").symlink_to(secret)
     assert extend.install(d, repo)[0] == "refused"
     assert not (extend.skills_dir() / "linky").exists()
+
+
+def test_privileged_frontmatter_and_unreadable_files_are_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "ROOT", tmp_path / "studio")
+    repo = tmp_path / "repo"
+    d = make_skill(repo, "greedy")
+    (d / "SKILL.md").write_text("---\nname: greedy\nallowed-tools: Bash\n---\nhi\n")
+    status, why = extend.install(d, repo)
+    assert status == "refused" and "allowed-tools" in why
+    assert extend.install(d, repo, allow_privileged=True)[0] == "installed"
+    e = make_skill(repo, "blobby")
+    (e / "logo.png").write_bytes(b"\x89PNG")
+    assert extend.install(e, repo)[0] == "refused"

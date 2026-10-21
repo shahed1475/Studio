@@ -1,6 +1,6 @@
 """Add other people's skills to the studio the safe way: scan, copy (never auto-update), pin the files, record where they came from.
 
-  python extend.py add <folder> [--only name1,name2] [--replace]   scan every skill folder (one that has a SKILL.md) in a cloned repo and install the clean ones
+  python extend.py add <folder> [--only name1,name2] [--replace] [--allow-privileged]   scan every skill folder (one that has a SKILL.md) in a cloned repo and install the clean ones
   python extend.py list                                           every installed skill and where it came from
   python extend.py verify                                         exit 1 if any installed skill differs from what was reviewed
 
@@ -21,6 +21,7 @@ import vetskill
 
 SKIP_DIRS = {".git", "__pycache__", "node_modules", ".github"}
 SKIP_NAMES = {"hooks.json", ".mcp.json", "mcp.json"}
+PRIVILEGED = ("allowed-tools", "hooks", "model", "permissions", "mcp-servers", "mcpservers", "tools")  # frontmatter keys that grant rights or run code
 META = ("VENDORED.md", "VENDORED.sha256.json")
 
 
@@ -43,9 +44,19 @@ def symlinks(folder: Path) -> list[str]:
     return sorted(str(p.relative_to(folder)) for p in folder.rglob("*") if p.is_symlink() and not (set(p.relative_to(folder).parts) & SKIP_DIRS))
 
 
+def privileged_keys(skill: Path) -> list[str]:
+    head = (skill / "SKILL.md").read_text(errors="ignore").split("---")
+    block = head[1] if len(head) > 2 and not head[0].strip() else ""
+    return sorted({k for k in (ln.split(":", 1)[0].strip().lower() for ln in block.splitlines() if ":" in ln and not ln.startswith((" ", "\t"))) if k in PRIVILEGED})
+
+
+def unscanned(result: dict) -> list[str]:
+    return [f["what"] for f in result["findings"] if "not scanned" in f["what"]]
+
+
 def files_of(folder: Path) -> dict[str, str]:
     return {str(p.relative_to(folder)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(folder.rglob("*"))
-            if p.is_file() and p.name not in META and not (set(p.relative_to(folder).parts) & SKIP_DIRS) and p.name not in SKIP_NAMES}
+            if p.is_file() and p.name not in META and not (set(p.relative_to(folder).parts) & SKIP_DIRS) and p.name not in SKIP_NAMES and "hooks" not in p.relative_to(folder).parts[:-1]}
 
 
 def skills_dir() -> Path:
@@ -57,13 +68,17 @@ def vendored() -> list[Path]:
     return sorted([p.parent for p in base.glob("*/VENDORED.sha256.json")] + [p.parent for p in [base.parent / "references" / "VENDORED.sha256.json"] if p.exists()])
 
 
-def install(skill: Path, repo: Path, replace: bool = False, skills_dir_: Path | None = None) -> tuple[str, str]:
+def install(skill: Path, repo: Path, replace: bool = False, allow_privileged: bool = False, skills_dir_: Path | None = None) -> tuple[str, str]:
     """-> (status, why). status: installed | refused | skipped."""
     base = skills_dir_ or skills_dir()
     name = skill.name
     if links := symlinks(skill):
         return "refused", f"contains symbolic links ({', '.join(links[:3])})"
+    if (keys := privileged_keys(skill)) and not allow_privileged:
+        return "refused", f"SKILL.md asks for rights or code ({', '.join(keys)}); read it, then add with --allow-privileged"
     result = vetskill.scan(skill)
+    if gaps := unscanned(result):
+        return "refused", f"files the scanner could not read ({gaps[0]})"
     if result["counts"]["high"]:
         return "refused", "; ".join(f["what"] for f in result["findings"] if f["severity"] == "high")[:200]
     target = base / name
@@ -96,6 +111,9 @@ def _share_references(shared: Path, repo: Path, base: Path) -> str:
     dest = base.parent / "references"
     if symlinks(shared):
         return "; shared references NOT copied: they contain symbolic links"
+    found = vetskill.scan(shared)
+    if found["counts"]["high"] or unscanned(found):
+        return "; shared references NOT copied: the scan found a high finding or unreadable files"
     pins = files_of(shared)
     pinfile = dest / "VENDORED.sha256.json"
     if dest.exists() and not pinfile.exists():
@@ -144,7 +162,7 @@ def main(argv: list[str]) -> int:
             return 3
         code = 0
         for s in skills:
-            status, why = install(s, repo, replace="--replace" in argv)
+            status, why = install(s, repo, replace="--replace" in argv, allow_privileged="--allow-privileged" in argv)
             print(f"{status:9} {s.name}: {why}")
             code = code or (1 if status == "refused" else 0)
         return code
