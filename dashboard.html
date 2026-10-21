@@ -754,15 +754,15 @@ async function growth(m){
 
 /* ---------- YouTube ---------- */
 async function youtube(m){
-  const y=S.youtube;
+  const y=S.youtube,T=!!S.tenant;
   if(!editing&&y.token){ytInfo=await safe(()=>api("/api/youtube"))||ytInfo}
   if(!y.token)ytInfo=null;
   const info=ytInfo||{},ch=info.channel,err=info.error||y.error;
-  const st=n=>n===1?(y.secret?"done":"now"):n===2?(y.token?"done":y.secret?"now":"lock"):(ch?"done":y.token?"now":"lock");
+  const ready=T?y.web:y.secret,st=n=>n===1?(ready?"done":"now"):n===2?(y.token?"done":ready?"now":"lock"):(ch?"done":y.token?"now":"lock");
   m.innerHTML=`<div class="head"><h1>YouTube</h1><p class="sub">Connect your channel once. After that, uploads happen from the Videos page, as private unless you choose public.</p></div>
   ${err?`<div class="err" style="margin-bottom:14px">${esc(err)}</div>`:""}
   <div class="panel rows">
-    <div class="step ${st(1)}"><div class="no">${y.secret?ico("check-circle"):"1"}</div><div class="grow stack" style="gap:10px">
+    ${T?`<div class="step ${y.web?"done":"lock"}"><div class="no">${y.web?ico("check-circle"):"1"}</div><div class="grow stack" style="gap:10px"><div><div class="ttl">Google sign-in</div><div class="mute">${y.web?"Ready. This studio uses the owner's Google app, so you do not need your own client file.":"Google sign-in is not set up on this server yet. Ask the owner."}</div></div></div></div>`:`    <div class="step ${st(1)}"><div class="no">${y.secret?ico("check-circle"):"1"}</div><div class="grow stack" style="gap:10px">
       <div><div class="ttl">Add your Google client file</div><div class="mute">YouTube needs an OAuth client of type Desktop app. A plain API key cannot upload videos.</div></div>
       ${y.secret&&!editing?`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${badge("Saved","ok")}<button class="btn quiet sm" onclick="editing=true;youtube(document.getElementById('main'))">Replace</button></div>`:`
       <details ${y.secret?"open":""} ${y.secret?"":"open"}><summary class="mute" style="cursor:pointer">How to get this file (5 steps)</summary>
@@ -777,15 +777,14 @@ async function youtube(m){
       <input type="file" id="pick" accept=".json,application/json" hidden>
       <div><label for="secret">Or paste the file contents</label><textarea class="code" id="secret" placeholder='{"installed":{"client_id":"...","client_secret":"..."}}' oninput="editing=true"></textarea></div>
       <div><button class="btn" onclick="saveSecret()">Save client file</button>${y.secret?` <button class="btn quiet" onclick="editing=false;youtube(document.getElementById('main'))">Cancel</button>`:""}</div>`}
-    </div></div>
-
+    </div></div>`}
     <div class="step ${st(2)}"><div class="no">${y.token?ico("check-circle"):"2"}</div><div class="grow stack" style="gap:10px">
-      <div><div class="ttl">Sign in with Google</div><div class="mute">A browser tab opens on this computer. Choose the account that owns your channel and allow access.</div></div>
+      <div><div class="ttl">Sign in with Google</div><div class="mute">${T?"You go to Google, choose the account that owns your channel and allow access, then come back here.":"A browser tab opens on this computer. Choose the account that owns your channel and allow access."}</div></div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-        <button class="btn" ${y.secret&&!y.connecting?"":"disabled"} onclick="ytConnect()">${y.connecting?"Waiting for you in the browser…":y.token?"Sign in again":"Sign in with Google"}</button>
+        <button class="btn" ${ready&&!y.connecting?"":"disabled"} onclick="${T?"ytWebStart()":"ytConnect()"}">${y.connecting?"Waiting for you in the browser…":y.token?"Sign in again":"Sign in with Google"}</button>
         ${y.token?`<button class="btn danger" onclick="ytDisc()">Disconnect</button>`:""}
       </div>
-      ${y.secret&&!y.token&&!y.connecting?`<div class="help">Google may say the app is not verified. That is normal for your own project: choose Advanced, then continue.</div>`:""}
+      ${ready&&!y.token&&!y.connecting?`<div class="help">Google may say the app is not verified. That is normal for your own project: choose Advanced, then continue.</div>`:""}
     </div></div>
 
     <div class="step ${st(3)}"><div class="no">${ch?ico("check-circle"):"3"}</div><div class="grow stack" style="gap:10px">
@@ -819,6 +818,7 @@ async function brandPreview(){
 }
 async function saveSecret(){const v=document.getElementById("secret").value;if(!v.trim())return toast("Choose a file or paste its text first");await api("/api/youtube/secret",{json:v});editing=false;toast("Client file saved");ytInfo=null;await refresh(true)}
 async function ytConnect(){await api("/api/youtube/connect",{});toast("Finish signing in on the browser tab that opened");await refresh(true);const t=setInterval(async()=>{await refresh();if(!S.youtube.connecting){clearInterval(t);ytInfo=null;render(true)}},2000)}
+async function ytWebStart(){try{const r=await api("/api/youtube/web-start",{});location.href=r.url}catch(e){}}
 async function ytDisc(){if(!confirm("Disconnect this channel? You can sign in again later."))return;await api("/api/youtube/disconnect",{});ytInfo=null;refresh(true)}
 
 /* ---------- Settings ---------- */

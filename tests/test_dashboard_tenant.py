@@ -216,3 +216,34 @@ def test_a_host_name_without_a_port_is_accepted_when_it_is_listed(monkeypatch):
     hosts = dashboard.allowed_hosts()
     assert "studio.example.com" in hosts and "studio.example.com:18921" in hosts and "100.1.2.3:8913" in hosts  # behind the proxy the browser sends no port
     assert "evil.example.com" not in hosts and "127.0.0.1:18921" in hosts
+
+
+# ---- Google sign-in on the web ----
+def test_the_youtube_page_offers_the_web_sign_in_and_starts_it(signed_in, monkeypatch):
+    import ytweb
+    port, h = signed_in
+    monkeypatch.setenv("STUDIO_HOSTS", "studio.example.com")
+    monkeypatch.setattr(ytweb, "available", lambda: True)
+    st = json.loads(call(port, "GET", "/api/state", headers=h)[2])
+    assert st["youtube"]["web"] is True
+    seen = []
+    monkeypatch.setattr(ytweb, "start", lambda redirect, **k: seen.append(redirect) or "https://accounts.google.com/o/oauth2/auth?x=1")
+    st, out = post(port, h, "/api/youtube/web-start", {})
+    assert st == 200 and out["url"].startswith("https://accounts.google.com/") and seen == ["https://studio.example.com/oauth/callback"]
+    monkeypatch.setattr(ytweb, "redirect_uri", lambda: None)
+    assert post(port, h, "/api/youtube/web-start", {})[0] == 400  # no public name set: nothing to send Google back to
+
+
+def test_the_callback_needs_a_signed_in_user_and_reports_a_bad_state_plainly(signed_in, monkeypatch):
+    import ytweb
+    port, h = signed_in
+    assert call(port, "GET", "/oauth/callback?code=c&state=s")[0] == 303  # not signed in: to the login page
+    monkeypatch.setattr(ytweb, "finish", lambda code, state, redirect, **k: (_ for _ in ()).throw(ValueError("This sign-in link expired or unknown.")))
+    st, _, body = call(port, "GET", "/oauth/callback?code=c&state=s", headers=h)
+    assert st == 400 and b"expired or unknown" in body and b'href="/#youtube"' in body
+    done = []
+    monkeypatch.setattr(ytweb, "finish", lambda code, state, redirect, **k: done.append((code, state)))
+    st, hh, _ = call(port, "GET", "/oauth/callback?code=the-code&state=the-state", headers=h)
+    assert st == 303 and hh["Location"] == "/#youtube" and done == [("the-code", "the-state")]
+    st, _, body = call(port, "GET", "/oauth/callback?error=access_denied", headers=h)
+    assert st == 400 and b"not allowed" in body.lower()

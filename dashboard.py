@@ -204,7 +204,7 @@ def state() -> dict:
             "ollama": writer_status()[0], "model": writer_status()[1], "ffmpeg": bool(shutil.which("ffmpeg")),
             "pexels": bool(pexels_key()), "voice": config.VOICE, "disk_free_gb": round(shutil.disk_usage(config.ROOT).free / 1e9, 1),
         },
-        "youtube": {"secret": SECRET.exists(), "token": TOKEN.exists(), "connecting": YT_STATE["connecting"], "error": YT_STATE["error"]},
+        "youtube": {"secret": SECRET.exists(), "token": TOKEN.exists(), "connecting": YT_STATE["connecting"], "error": YT_STATE["error"], "web": __import__("ytweb").available()},
         "jobs": sorted(({k: v for k, v in j.items() if k != "proc"} for j in JOBS.values()), key=lambda j: -j["started"])[:30],
         "autopilot": {"enabled": autopilot_cfg().get("enabled", False), "needs_you": len(autopilot_view()["needs_you"]), "next": next_slot_view()},
         "agent": {"unread": __import__("agentlog").unread()},
@@ -570,6 +570,21 @@ class H(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         if u.path == "/healthz":
             return self.send_bytes(b"ok", "text/plain")
+        if u.path == "/oauth/callback":
+            if not self._authed():
+                return self._redirect("/login")
+            import ytweb
+
+            q = parse_qs(u.query)
+            if q.get("error"):
+                return self._page(b'<p>Google sign-in was not allowed or was cancelled.</p><p><a href="/#youtube">Back to the YouTube page</a></p>', 400)
+            try:
+                ytweb.finish((q.get("code") or [""])[0], (q.get("state") or [""])[0], ytweb.redirect_uri() or "")
+            except Exception as e:
+                import html
+
+                return self._page(f'<p>{html.escape(str(e))}</p><p><a href="/#youtube">Back to the YouTube page</a></p>'.encode(), 400)
+            return self._redirect("/#youtube")
         if u.path == "/claim":
             tok = (parse_qs(u.query).get("token") or [""])[0]
             if webauth.enabled() or not webauth.invite_valid(tok):
@@ -931,6 +946,13 @@ class H(BaseHTTPRequestHandler):
                 return {"ok": True, **fit}
             if path == "/api/niche/confirm":
                 return {"ok": True, "brief": niche.confirm()}
+        if path == "/api/youtube/web-start":
+            import ytweb
+
+            uri = ytweb.redirect_uri()
+            if not uri:
+                raise ValueError("This studio has no public address set, so Google cannot send you back to it.")
+            return {"url": ytweb.start(uri)}
         if path == "/api/youtube/disconnect":
             TOKEN.unlink(missing_ok=True)
             return {"ok": True}
