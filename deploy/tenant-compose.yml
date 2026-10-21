@@ -1,0 +1,48 @@
+# One user's studio: a dashboard and a worker, from the same image as the owner's studio, with the user's own folder mounted at /app.
+# Started by deploy/tenant.sh (never by hand): TENANT, DASH_PORT, PUBLIC_HOST, PUBLIC_PORT, GATE_DIR, STUDIO_UID and STUDIO_GID come from its environment.
+# The dashboard listens on loopback only; the web proxy (deploy/tenant.sh caddy) is the only thing the internet reaches.
+name: studio-${TENANT}
+x-user-studio: &user-studio
+  image: studio:local
+  network_mode: host
+  init: true
+  restart: unless-stopped
+  user: "${STUDIO_UID:-1000}:${STUDIO_GID:-1000}"
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  volumes: [".:/app", "${GATE_DIR}:/gate"]
+  environment:
+    STUDIO_MODE: tenant
+    DASH_PORT: ${DASH_PORT}
+    STUDIO_HOSTS: ${PUBLIC_HOST}:${PUBLIC_PORT}
+    STUDIO_RENDER_GATE: /gate            # at most two videos render at once across all user studios
+    STUDIO_PRUNE_UPLOADED_DAYS: "7"      # video files of uploaded videos are removed after a week (the records stay)
+    WIKI_CONTACT: ${PUBLIC_HOST}
+  logging:
+    driver: json-file
+    options: {max-size: "10m", max-file: "3"}
+
+services:
+  dashboard:
+    <<: *user-studio
+    container_name: studio-${TENANT}-dashboard
+    command: ["python", "dashboard.py"]
+    cpus: 0.25
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://127.0.0.1:${DASH_PORT}/healthz"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+  worker:
+    <<: *user-studio
+    container_name: studio-${TENANT}-worker
+    command: ["python", "worker.py"]
+    cpus: 1
+    cpu_shares: 256                      # lower priority than the owner's studio (default 1024) when the server is busy
+    mem_limit: 1536m
+    healthcheck:
+      test: ["CMD", "python", "-c", "import worker,sys; sys.exit(0 if worker.alive() else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
