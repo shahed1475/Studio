@@ -130,3 +130,14 @@ def test_prompts_describe_the_users_niche_and_the_owners_prompts_are_unchanged(t
 def test_the_metadata_writer_can_reach_the_niche_settings():
     import seo
     assert seo.config is config  # it asks config for the channel description and search phrases
+
+
+def test_a_new_user_studio_without_a_niche_file_runs_on_a_neutral_placeholder(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "NICHE_FILE", tmp_path / "none.json")
+    monkeypatch.setenv("STUDIO_MODE", "tenant")
+    n = config.niche()
+    assert n["id"] == "unset" and "choose" in n["name"] and niche.valid_niche({**n, "starter_topics": ["a"] * 5, "search_seeds": ["a", "b"]})
+    assert config.channel_blurb().startswith("a calm narrated channel")  # not the owner's wording
+    monkeypatch.delenv("STUDIO_MODE")
+    with pytest.raises(OSError):
+        config.niche()  # the owner's studio still needs its file

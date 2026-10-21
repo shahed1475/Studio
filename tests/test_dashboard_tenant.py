@@ -173,3 +173,15 @@ def test_a_failure_inside_the_job_is_shown_to_the_user_not_lost(signed_in, monke
     view = wait_done(port, h)
     assert view["job"]["state"] == "error" and "OpenRouter said no" in view["job"]["error"]
     assert post(port, h, "/api/niche/choose", {"id": "space_history"})[0] == 200  # and the user can try again
+
+
+def test_the_state_tells_the_page_it_is_a_user_studio_and_whether_the_plan_is_confirmed(signed_in, monkeypatch):
+    port, h = signed_in
+    st = json.loads(call(port, "GET", "/api/state", headers=h)[2])
+    assert st["tenant"] is True and st["niche_confirmed"] is False
+    niche.apply(niche.preset("space_history"), {"topics": ["Apollo 13"], "advice": {}})
+    niche.confirm()
+    assert json.loads(call(port, "GET", "/api/state", headers=h)[2])["niche_confirmed"] is True
+    monkeypatch.delenv("STUDIO_MODE")
+    monkeypatch.setattr(webauth, "AUTH_FILE", webauth.AUTH_FILE.with_name("none.json"))  # the owner's studio, open
+    assert json.loads(call(port, "GET", "/api/state")[2])["tenant"] is False

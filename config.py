@@ -41,7 +41,13 @@ DOC_VIDEO_CLIPS = os.getenv("YT_DOC_VIDEO", "0") == "1"  # also use it in docume
 MAX_UPLOADS_PER_DAY = 2  # growth research: 1 a day is strong, 2 is the ceiling; above ~3 quality drops and YouTube's inauthentic-content check looks at the pattern (the API itself allows 100 uploads a day)
 
 
+UNSET_NICHE = {"id": "unset", "name": "Your niche (choose one on the Niche page)", "audience": "viewers who enjoy calm, documented stories",
+               "style": "calm, clear narrator, plain American English", "channel_angle": "Documented stories retold from encyclopedia sources", "hashtags": ["#Shorts", "#Storytime", "#History"]}
+
+
 def niche() -> dict:
+    if not NICHE_FILE.exists() and os.getenv("STUDIO_MODE", "").strip().lower() == "tenant":
+        return dict(UNSET_NICHE)  # a new user studio, before its owner has chosen a niche
     return json.loads(NICHE_FILE.read_text())
 
 
