@@ -117,3 +117,15 @@ def test_a_successful_sign_in_gives_its_slot_back_to_the_global_count():
 
 def test_the_first_sign_in_page_has_its_own_limits_apart_from_the_login_page():
     assert webauth.CLAIM_LIMITER is not webauth.LIMITER
+
+
+def test_each_user_studio_can_have_its_own_session_cookie_name(monkeypatch):
+    import importlib
+    assert webauth.COOKIE == "studio_session"  # the owner's studio keeps its name
+    monkeypatch.setenv("STUDIO_COOKIE", "studio_session_demo")
+    importlib.reload(webauth)
+    try:
+        assert webauth.COOKIE == "studio_session_demo" and webauth.cookie_from("studio_session=a; studio_session_demo=b") == "b"
+    finally:
+        monkeypatch.delenv("STUDIO_COOKIE")
+        importlib.reload(webauth)

@@ -17,7 +17,7 @@ import config
 DATA = config.ROOT / "data"
 AUTH_FILE = DATA / "auth.json"
 SECRET_FILE = DATA / "auth_secret"
-COOKIE = "studio_session"
+COOKIE = os.getenv("STUDIO_COOKIE", "studio_session")  # a user studio sets its own, so signing in to one studio never replaces the session of another on the same address
 SESSION_DAYS = 14
 SESSIONS_FILE = DATA / "sessions.json"
 INVITES_FILE = DATA / "invites.json"

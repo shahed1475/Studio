@@ -32,7 +32,12 @@ dash_port() { # the studio's internal port, read from the settings file and chec
   [[ "$p" =~ ^189[2-9][0-9]$ && "$p" -ge 18921 ]] || die "bad port in the settings of $1"
   echo "$p"
 }
-next_port() { local p; for p in $(seq 18921 18999); do grep -qsE "^DASH_PORT=$p$" "$META"/*.env || { echo "$p"; return; }; done; die "no free port"; }
+next_port() { # a port is never reused while the proxy's route file or the removed-studio records still name it
+  local p; for p in $(seq 18921 18999); do
+    grep -qsE "^DASH_PORT=$p$" "$META"/*.env "$HOME"/tenants-removed/*.env && continue
+    grep -qs "127.0.0.1:$p\$" "$BASE/caddy/Caddyfile" && continue
+    echo "$p"; return
+  done; die "no free port"; }
 compose() { # compose <name> <args...>: the user's folder is mounted, the settings come from the owner-only file
   local n="$1"; shift
   GATE_DIR="$GATE" docker compose --env-file "$META/$n.env" -f "$SRC/deploy/tenant-compose.yml" --project-directory "$(tdir "$n")" "$@"
@@ -99,6 +104,7 @@ cmd_remove() {
   mkdir -p "$HOME/tenants-removed"
   mv "$(tdir "$n")" "$HOME/tenants-removed/$n-$(date -u +%Y%m%d%H%M)"
   mv "$META/$n.env" "$HOME/tenants-removed/$n-$(date -u +%Y%m%d%H%M).env"
+  cmd_caddy >/dev/null   # its route goes at once, so a later studio on the same internal port can never be reached through the old cookie
   echo "removed $n (its folder is in ~/tenants-removed; delete it yourself when you are sure)"
 }
 
