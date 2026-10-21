@@ -387,6 +387,25 @@ def polish(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) 
     return {"changed": changed, "rerendered": bool(n), "verdict": result["verdict"], "held": bool(left)}
 
 
+def repair(slug: str, extra: bool = False, now: dt.datetime | None = None) -> dict:
+    """A repair run by hand. It holds the Autopilot lock, so the worker leaves the folder alone and the dashboard shows a pass running. With extra=True a
+    video that used its tries gets one more (the owner's call): the count goes back by one and the event says so."""
+    import autopilot
+
+    now = now or dt.datetime.now(dt.timezone.utc)
+    with autopilot.exclusive():
+        folder = config.OUT / slug
+        meta = json.loads((folder / "meta.json").read_text())
+        if extra:
+            limit = attempt_limit((meta.get("review") or {}).get("checks", []))
+            if meta.get("fix_attempts", 0) >= limit:
+                meta["fix_attempts"] = limit - 1
+                meta.pop("fix_gave_up", None)
+                _save(folder, meta)
+                agentlog.event("info", f"Extra repair try: {meta.get('title', slug)}", "The owner allowed one more try after the usual ones.", now=now)
+        return fix(slug, now=now)
+
+
 def archive(folder: Path) -> Path:
     """Move a video to output_old (never deleted), under a name that is not taken."""
     dest_root = config.ROOT / "output_old"

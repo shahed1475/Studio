@@ -83,3 +83,11 @@ def test_audit_queue_removes_refused_topics_and_keeps_them_in_a_file(tmp_path, m
     assert topicqueue.items() == ["The Jersey Devil"]
     kept = json.loads((tmp_path / "data" / "removed_topics.json").read_text())
     assert kept[0]["why"].startswith("screened out") and "no source article" in kept[1]["why"]
+
+
+def test_the_choice_of_a_topic_is_written_to_the_activity_feed_with_its_reason(tmp_path, monkeypatch):
+    queue(tmp_path, monkeypatch, ["The Jersey Devil"])
+    sig = [(topicrank.words("The Jersey Devil of New Jersey"), 5.0)]
+    topicrank.pop_best("doc", sig, {"The Jersey Devil": LONG}.get, premise_of=lambda t, a: (True, ""))
+    chose = [e for e in agentlog.recent() if e["title"].startswith("Chose a topic")]
+    assert chose and "research score" in chose[0]["detail"] and "premise screen" in chose[0]["detail"]

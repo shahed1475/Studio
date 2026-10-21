@@ -467,6 +467,28 @@ def tick(now: dt.datetime | None = None) -> dict:
         lock.close()
 
 
+class Busy(RuntimeError):
+    """Autopilot (or another manual job) holds the lock."""
+
+
+class exclusive:
+    """Hold the Autopilot lock for a manual job (a repair run by hand), so the worker neither reviews nor re-renders the same folder meanwhile and the
+    dashboard shows that a pass is running. Raises Busy at once when the lock is taken."""
+
+    def __enter__(self):
+        LOCK_FILE.touch(exist_ok=True)
+        self.f = open(LOCK_FILE)
+        try:
+            fcntl.flock(self.f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            self.f.close()
+            raise Busy("Autopilot is working right now: try again when its pass ends")
+        return self
+
+    def __exit__(self, *exc):
+        self.f.close()
+
+
 def is_running() -> bool:
     """True while a tick holds the lock (the dashboard waits for it before starting its own jobs)."""
     LOCK_FILE.touch(exist_ok=True)

@@ -558,3 +558,21 @@ def test_a_picture_only_problem_gets_a_third_try_and_other_problems_do_not():
     other = [chk("visual_review", False, "human"), chk("title_matches", False, "block")]
     assert fixer.picture_only(picture) and not fixer.picture_only(other) and not fixer.picture_only([chk("visual_review", True)])
     assert fixer.attempt_limit(picture) == 3 and fixer.attempt_limit(other) == 2 and fixer.attempt_limit([]) == 2
+
+
+def test_a_manual_repair_holds_the_autopilot_lock_and_refuses_when_it_is_taken(tmp_path, world, monkeypatch):
+    import autopilot
+    monkeypatch.setattr(autopilot, "LOCK_FILE", tmp_path / "ap.lock")
+    d = video(tmp_path, "doc-r1", review=result("fail", ("title_matches", "block", "x")))
+    seen = {}
+    monkeypatch.setattr(fixer, "fix", lambda slug, **k: seen.update(locked=autopilot.is_running()) or {"fixed": []})
+    assert fixer.repair("doc-r1") == {"fixed": []} and seen["locked"] is True and autopilot.is_running() is False
+    with autopilot.exclusive():
+        with pytest.raises(autopilot.Busy):
+            fixer.repair("doc-r1")
+    meta = json.loads((d / "meta.json").read_text())
+    meta.update(fix_attempts=2, fix_gave_up=True)
+    (d / "meta.json").write_text(json.dumps(meta))
+    fixer.repair("doc-r1", extra=True)
+    again = json.loads((d / "meta.json").read_text())
+    assert again["fix_attempts"] == 1 and "fix_gave_up" not in again

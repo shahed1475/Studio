@@ -387,6 +387,10 @@ def main() -> None:
         print(f"{len(ch)} rule pages changed" if ch else "no rule page changed (first run only saves a copy)")
         for c in ch:
             print(f"- {c['page']}: {(c['added'] or c['removed'])[0]}")
+    elif a[0] == "repair" and len(a) > 1:
+        import fixer
+
+        print(json.dumps(fixer.repair(a[1], extra="--extra" in a), indent=2, default=str))
     elif a[0] == "tidy-strategies":
         import strategy
 

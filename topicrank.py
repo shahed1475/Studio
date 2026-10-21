@@ -122,6 +122,8 @@ def pop_best(fmt: str = "doc", sig=None, article_of=None, premise_of=None) -> st
             why = f"screened out: {why}" if not ok else why
         if ok:
             topicqueue.remove_topic(topic)
+            agentlog.event("info", f"Chose a topic: {topic[:70]}", f"Highest research score among the queue's viable topics ({score(topic, sig)}); its source article has {len(article or '')} characters"
+                           + ("; it passed the premise screen." if premise_of else "."))
             return topic
         topicqueue.remove_topic(topic)
         agentlog.event("info", f"Dropped a topic: {topic[:70]}", why + ". The queue moves on to the next one.")
