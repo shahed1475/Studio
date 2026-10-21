@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # User studios on this server. Run it ON the server (ssh in, cd ~/studio):  deploy/tenant.sh <command>
-#   create <name> <port>   a new user studio, port 8921..8999 (the address users open is https://HOST:<port>)
+#   create <name>          a new user studio. Everyone uses https://HOST (port 443, the only public port besides 80): the invite link
+#                          https://HOST/u/<name>/claim?token=... sets a cookie that sends that browser to its own studio
 #   invite <name>          a first-sign-in link, valid 24 hours and once: the user chooses their own password
 #   list                   every user studio, whether it runs, and its storage
 #   stop|start <name>      pause or resume one
 #   sync [name|all]        copy the newest code into the user studios (the worker is restarted only when no video is rendering)
 #   remove <name>          stop it and move its folder to ~/tenants-removed (nothing is deleted)
 #   quota                  storage per user studio
-#   caddy                  rebuild the web proxy's address list and (re)start it
+#   caddy                  rebuild the web proxy's routes and (re)start it
 # Their settings live in ~/tenants/.meta (owner-only, not mounted). Never copied to a user: .env, settings.json, llm.json, token.json, data, videos. client_secret.json is copied once (owner-only file) so the user can sign in to Google.
 set -euo pipefail
 BASE="${STUDIO_TENANTS_DIR:-$HOME/tenants}"
@@ -26,11 +27,12 @@ die() { echo "tenant.sh: $*" >&2; exit 1; }
 valid_name() { [[ "$1" =~ ^[a-z][a-z0-9]{1,14}$ ]] || die "the name must be 2 to 15 lowercase letters or digits, starting with a letter"; }
 tdir() { echo "$BASE/$1"; }
 exists() { [[ -d "$(tdir "$1")" ]] || die "no user studio named $1"; }
-public_port() { # the user's public port, read from the settings file and checked before any use
-  local p; p="$(sed -n 's/^PUBLIC_PORT=\(.*\)$/\1/p' "$META/$1.env" | head -1)"
-  [[ "$p" =~ ^89[2-9][0-9]$ && "$p" -ge 8921 ]] || die "bad port in the settings of $1"
+dash_port() { # the studio's internal port, read from the settings file and checked before any use
+  local p; p="$(sed -n 's/^DASH_PORT=\(.*\)$/\1/p' "$META/$1.env" | head -1)"
+  [[ "$p" =~ ^189[2-9][0-9]$ && "$p" -ge 18921 ]] || die "bad port in the settings of $1"
   echo "$p"
 }
+next_port() { local p; for p in $(seq 18921 18999); do grep -qsE "^DASH_PORT=$p$" "$META"/*.env || { echo "$p"; return; }; done; die "no free port"; }
 compose() { # compose <name> <args...>: the user's folder is mounted, the settings come from the owner-only file
   local n="$1"; shift
   GATE_DIR="$GATE" docker compose --env-file "$META/$n.env" -f "$SRC/deploy/tenant-compose.yml" --project-directory "$(tdir "$n")" "$@"
@@ -42,13 +44,12 @@ render_running() { docker exec "studio-$1-worker" sh -c 'for p in /proc/[0-9]*/c
 copy_code() { rsync -a "${EXCLUDES[@]}" "$SRC/" "$(tdir "$1")/"; }
 
 cmd_create() {
-  local n="${1:?name}" port="${2:?port 8921..8999}"
+  local n="${1:?name}" port
   valid_name "$n"
-  [[ "$port" =~ ^89[2-9][0-9]$ && "$port" -ge 8921 ]] || die "the port must be 8921 to 8999"
   [[ ! -e "$(tdir "$n")" ]] || die "$n already exists"
   [[ "$HOST" =~ ^[A-Za-z0-9.-]+$ ]] || die "STUDIO_PUBLIC_HOST must be a plain host name"
   [[ $(studios | wc -l) -lt "$MAX_TENANTS" ]] || die "the limit of $MAX_TENANTS user studios is reached"
-  grep -qsE "^PUBLIC_PORT=$port$" "$META"/*.env && die "port $port is taken"
+  mkdir -p -m 700 "$META"; port="$(next_port)"
   [[ -d "$SRC" ]] || die "the owner's studio folder $SRC is missing"
   mkdir -p "$(tdir "$n")" "$GATE"; mkdir -p -m 700 "$META"
   copy_code "$n"
@@ -57,17 +58,16 @@ cmd_create() {
   cat > "$META/$n.env" <<ENV
 TENANT=$n
 PUBLIC_HOST=$HOST
-PUBLIC_PORT=$port
-DASH_PORT=$((port + 10000))
+DASH_PORT=$port
 ENV
   chmod 600 "$META/$n.env"
   compose "$n" up -d
-  echo "created $n: https://$HOST:$port  (run: deploy/tenant.sh caddy   to publish the address, then: deploy/tenant.sh invite $n)"
+  echo "created $n (internal port $port). Next: deploy/tenant.sh caddy   to publish it, then: deploy/tenant.sh invite $n"
 }
 
 cmd_invite() {
   local n="${1:?name}"; exists "$n"
-  docker exec "studio-$n-dashboard" python tenantmode.py invite "https://$HOST:$(public_port "$n")"
+  docker exec "studio-$n-dashboard" python tenantmode.py invite "https://$HOST/u/$n"
 }
 
 cmd_list() {
@@ -75,7 +75,7 @@ cmd_list() {
   for n in $(studios); do
     st="$(docker inspect -f '{{.State.Status}}' "studio-$n-dashboard" 2>/dev/null || echo missing)"
     q="$(docker exec "studio-$n-dashboard" python tenantmode.py quota 2>/dev/null || echo '{}')"
-    printf '%-12s %-7s %-9s %s\n' "$n" "$(public_port "$n")" "$st" "$q"
+    printf '%-12s %-7s %-9s %s\n' "$n" "$(dash_port "$n")" "$st" "$q"
   done
 }
 
@@ -107,11 +107,18 @@ cmd_quota() { cmd_list; }
 cmd_caddy() {
   mkdir -p "$BASE/caddy/data" "$BASE/caddy/config"
   {
-    echo "$HOST {"; echo "  respond \"Story Studio. Ask the owner for your invite link.\" 200"; echo "}"
+    echo "$HOST {"
     for n in $(studios); do
-      p="$(public_port "$n")"   # checked: four digits from 8921 to 8999, so nothing else can reach the proxy's settings
-      echo "$HOST:$p {"; echo "  reverse_proxy 127.0.0.1:$((p + 10000))"; echo "}"
+      p="$(dash_port "$n")"   # checked: five digits from 18921, so nothing else can reach the proxy's settings
+      echo "  @t_$n header_regexp tc Cookie (^|;\\s*)studio_tenant=$n(;|\$)"
+      echo "  @enter_$n path /u/$n /u/$n/"
+      echo "  @claim_$n path /u/$n/claim"
+      echo "  handle @enter_$n {"; echo "    header Set-Cookie \"studio_tenant=$n; Path=/; Max-Age=31536000; Secure; HttpOnly; SameSite=Lax\""; echo "    redir / 303"; echo "  }"
+      echo "  handle @claim_$n {"; echo "    header Set-Cookie \"studio_tenant=$n; Path=/; Max-Age=31536000; Secure; HttpOnly; SameSite=Lax\""; echo "    redir /claim?{query} 303"; echo "  }"
+      echo "  handle @t_$n {"; echo "    reverse_proxy 127.0.0.1:$p"; echo "  }"
     done
+    echo "  handle {"; echo "    respond \"Story Studio. Open the link you were sent.\" 200"; echo "  }"
+    echo "}"
   } > "$BASE/caddy/Caddyfile"
   cat > "$BASE/caddy/docker-compose.yml" <<'YML'
 name: studio-proxy

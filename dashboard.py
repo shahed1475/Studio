@@ -407,7 +407,8 @@ def start_job(cmd: str, args: list[str]) -> str:
 def allowed_hosts() -> set[str]:
     """Names the browser may use. Others (a rebinding page, a stray proxy) are refused. STUDIO_HOSTS adds e.g. the Tailscale address."""
     extra = {h.strip() for h in os.getenv("STUDIO_HOSTS", "").split(",") if h.strip()}
-    return {f"127.0.0.1:{PORT}", f"localhost:{PORT}", f"studio.localhost:{PORT}"} | {h if ":" in h else f"{h}:{PORT}" for h in extra}
+    named = {h for h in extra} | {f"{h}:{PORT}" for h in extra if ":" not in h}  # a name alone is what a browser sends on the standard HTTPS port, behind the proxy
+    return {f"127.0.0.1:{PORT}", f"localhost:{PORT}", f"studio.localhost:{PORT}"} | named
 
 
 # ---------- niche page (user studios) ----------

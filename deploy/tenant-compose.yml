@@ -1,5 +1,5 @@
 # One user's studio: a dashboard and a worker, from the same image as the owner's studio, with the user's own folder mounted at /app.
-# Started by deploy/tenant.sh (never by hand): TENANT, DASH_PORT, PUBLIC_HOST, PUBLIC_PORT, GATE_DIR, STUDIO_UID and STUDIO_GID come from its environment.
+# Started by deploy/tenant.sh (never by hand): TENANT, DASH_PORT, PUBLIC_HOST, GATE_DIR, STUDIO_UID and STUDIO_GID come from its environment.
 # Each user studio has its own container network (not the server's): its dashboard is published on 127.0.0.1 only, and the web proxy
 # (deploy/tenant.sh caddy) is the only thing the internet reaches. The settings come from an owner-only file outside the user's folder (--env-file).
 name: studio-${TENANT}
@@ -15,7 +15,7 @@ x-user-studio: &user-studio
     STUDIO_MODE: tenant
     DASH_PORT: ${DASH_PORT}
     STUDIO_BIND: 0.0.0.0                 # inside the container only; the published port below is bound to 127.0.0.1
-    STUDIO_HOSTS: ${PUBLIC_HOST}:${PUBLIC_PORT}
+    STUDIO_HOSTS: ${PUBLIC_HOST}          # the name the browser uses (standard HTTPS port, so no port in it)
     STUDIO_RENDER_GATE: /gate            # at most two videos render at once across all user studios
     STUDIO_PRUNE_UPLOADED_DAYS: "7"      # video files of uploaded videos are removed after a week (the records stay)
     WIKI_CONTACT: ${PUBLIC_HOST}

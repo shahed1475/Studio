@@ -208,3 +208,11 @@ def test_the_state_tells_the_page_it_is_a_user_studio_and_whether_the_plan_is_co
     monkeypatch.delenv("STUDIO_MODE")
     monkeypatch.setattr(webauth, "AUTH_FILE", webauth.AUTH_FILE.with_name("none.json"))  # the owner's studio, open
     assert json.loads(call(port, "GET", "/api/state")[2])["tenant"] is False
+
+
+def test_a_host_name_without_a_port_is_accepted_when_it_is_listed(monkeypatch):
+    monkeypatch.setattr(dashboard, "PORT", 18921)
+    monkeypatch.setenv("STUDIO_HOSTS", "studio.example.com, 100.1.2.3:8913")
+    hosts = dashboard.allowed_hosts()
+    assert "studio.example.com" in hosts and "studio.example.com:18921" in hosts and "100.1.2.3:8913" in hosts  # behind the proxy the browser sends no port
+    assert "evil.example.com" not in hosts and "127.0.0.1:18921" in hosts
