@@ -11,6 +11,7 @@ import base64
 import datetime as dt
 import hashlib
 import io
+import re
 
 import config
 import llm
@@ -34,9 +35,16 @@ def _clean(text: str, limit: int = 220) -> str:
     return " ".join(str(text).split())[:limit]
 
 
+# An image model draws letters as garbled pseudo-text, and the picture check then flags the scene (an "inscription" with fake German, map labels in
+# no language): for scenes about writing the picture is told to keep any writing illegible, so there is nothing to garble.
+TEXTY = re.compile(r"inscription|manuscript|\bmaps?\b|letter|document|\bsigns?\b|\bbooks?\b|scroll|chronicle|parchment|plaque|tablet|newspaper|register|writing|poster|banner", re.I)
+NO_WRITING = " Show it at an angle or from a distance with no legible writing, letters, symbols or map labels: any writing is only a texture."
+
+
 def prompt_for(line: str, visual: str, topic: str, vertical: bool) -> str:
     shape = "vertical 9:16 composition" if vertical else "16:9 widescreen composition"
-    return f"{STYLE}, {shape}. Story: {_clean(topic, 120)}. Scene: {_clean(line)}. Show: {_clean(visual, 80) or 'the setting of the scene'}."
+    text = f"{STYLE}, {shape}. Story: {_clean(topic, 120)}. Scene: {_clean(line)}. Show: {_clean(visual, 80) or 'the setting of the scene'}."
+    return text + (NO_WRITING if TEXTY.search(f"{visual} {line}") else "")
 
 
 def generate(line: str, visual: str, topic: str, vertical: bool = False, now: dt.datetime | None = None):

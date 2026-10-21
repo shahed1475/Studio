@@ -252,3 +252,11 @@ def test_verify_and_revise_refuses_to_pass_a_script_it_could_not_check(monkeypat
     monkeypatch.setattr(scriptgen, "_review_chat", boom)
     with pytest.raises(ValueError, match="could not be fact-checked"):
         scriptgen.verify_and_revise(_lines(), [{"title": "a", "start_line": 0}], "S")
+
+
+def test_a_drawn_scene_about_writing_is_told_to_show_no_legible_text():
+    import aiart
+    texty = aiart.prompt_for("The Rattenfaenger house carries an inscription about the children.", "Rattenfaengerhaus inscription", "Pied Piper", False)
+    plain = aiart.prompt_for("A piper walks through the narrow streets of the town.", "Hamelin street", "Pied Piper", False)
+    assert "no legible writing" in texty.lower() and "no legible writing" not in plain.lower()
+    assert aiart.prompt_for("An old map of the colony.", "Roanoke map", "Roanoke", True).lower().count("no legible writing") == 1
