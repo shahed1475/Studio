@@ -212,3 +212,12 @@ def test_no_local_model_by_default_raises_model_unavailable(monkeypatch):
 def test_local_model_only_when_switched_on(monkeypatch):
     monkeypatch.setitem(llm.DEFAULTS, "local_fallback", True)
     assert llm.chat("hi", "script", fallback=lambda p: {"from": "local"}, now=NOW) == {"from": "local"}
+
+
+def test_the_fact_checker_is_asked_with_no_randomness_and_the_writer_with_some(monkeypatch):
+    enable(monkeypatch)
+    sent = []
+    monkeypatch.setattr(llm, "_post", lambda payload, key: sent.append(payload) or reply('{"ok": 1}'))
+    for role in ("review", "script", "cheap"):
+        llm.chat(f"prompt for {role}", role, fallback=LOCAL, now=NOW)
+    assert {p["model"]: p["temperature"] for p in sent} == {"vendor/checker": 0.0, "vendor/writer": 0.7, "vendor/small": 0.3}

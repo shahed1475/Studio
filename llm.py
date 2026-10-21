@@ -233,8 +233,13 @@ def _post(payload: dict, key: str) -> dict:
     return r.json()
 
 
-def _payload(model: str, prompt: str, max_tokens: int, json_mode: bool = True) -> dict:
-    p = {"model": model, "messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens, "temperature": 0.7, "usage": {"include": True}}
+# A judge must give the same verdict for the same text: with 0.7 the same script scored 5/10, 3/10 and 4/10 on 20-21 Oct 2026 and videos flipped
+# between pass and fail without any change. The writer keeps some freedom; small helper jobs a little.
+TEMPERATURE = {"review": 0.0, "cheap": 0.3, "script": 0.7}
+
+
+def _payload(model: str, prompt: str, max_tokens: int, json_mode: bool = True, role: str = "script") -> dict:
+    p = {"model": model, "messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens, "temperature": TEMPERATURE.get(role, 0.7), "usage": {"include": True}}
     if json_mode:  # some free models reject JSON mode: they are asked again without it
         p["response_format"] = {"type": "json_object"}
     return p
@@ -274,7 +279,7 @@ def _free_chat(prompt: str, role: str, cfg: dict, key: str, now: dt.datetime) ->
                     return None  # keep the rest of the free requests for scripts and fact-checks
                 freemodels.count_request(now, role)  # failed requests count against the limit too
                 try:
-                    body = _post(_payload(mid, prompt, cfg["max_output_tokens"], json_mode), key)
+                    body = _post(_payload(mid, prompt, cfg["max_output_tokens"], json_mode, role), key)
                 except Exception as e:
                     code = getattr(getattr(e, "response", None), "status_code", None)
                     if json_mode and isinstance(e, requests.HTTPError) and code == 400:
@@ -311,7 +316,7 @@ def chat(prompt: str, role: str = "cheap", fallback=None, now: dt.datetime | Non
         else:
             for _ in range(2):
                 try:
-                    body = _post(_payload(model, prompt, cfg["max_output_tokens"]), key)
+                    body = _post(_payload(model, prompt, cfg["max_output_tokens"], role=role), key)
                 except Exception as e:  # network, HTTP, auth: never stop the pipeline
                     _note(now, f"{role}: {type(e).__name__}: {e}")
                     break
