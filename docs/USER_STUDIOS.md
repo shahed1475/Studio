@@ -19,7 +19,7 @@ deploy/tenant.sh sync [name|all]   # copy new code to users (a worker is restart
 deploy/tenant.sh stop|start <name>
 deploy/tenant.sh remove <name>     # moved to ~/tenants-removed, never deleted
 ```
-`deploy/deploy.sh` updates your own studio only; run `deploy/tenant.sh sync all` after it. A crontab line runs `deploy/tenant.sh list` hourly.
+`deploy/deploy.sh` updates your own studio only; run `deploy/tenant.sh sync all` after it. A systemd user timer (`studio-tenants.timer`, lingering enabled) runs `deploy/tenant.sh list` hourly.
 
 ## One thing only the owner can do: Google sign-in for users
 The studio's current Google client is a *Desktop app* client and cannot send a user back to a web address. Create a **Web application** client once:
