@@ -30,6 +30,7 @@ SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googlea
 JOBS: dict[str, dict] = {}
 JOB_LOCK = threading.Lock()
 YT_STATE = {"connecting": False, "error": ""}
+AI_JOBS = {"make", "doc", "batch", "ideas", "research", "review", "seo", "newsvideo", "agent", "channels", "trends", "redo", "autopilot"}  # jobs that spend the user's AI key
 ALLOWED_JOBS = {"branding", "channels", "trends", "subtitles", "newsvideo", "review", "autopilot", "agent", "newswatch", "seo", "thumbs", "ideas", "research", "make", "doc", "batch", "redo", "approve", "upload"}
 
 
@@ -758,6 +759,10 @@ class H(BaseHTTPRequestHandler):
 
     def route(self, path, b):
         if path == "/api/job":
+            import tenantmode
+
+            if tenantmode.is_tenant() and b.get("cmd") in AI_JOBS and not sys.modules["llm"].api_key():
+                raise ValueError("Add your own OpenRouter key in Settings first: this uses your key.")
             args = [str(a) for a in b.get("args", [])]
             return {"id": start_job(b["cmd"], args)}
         if path == "/api/queue/add":
@@ -776,7 +781,13 @@ class H(BaseHTTPRequestHandler):
             import autopilot
 
             cfg = autopilot.load_config()
-            cfg.update(validate_autopilot_config(b))
+            new = validate_autopilot_config(b)
+            if new.get("enabled") and __import__("tenantmode").is_tenant():  # a user studio starts only with the user's own key and a plan they have confirmed
+                if not sys.modules["llm"].api_key():
+                    raise ValueError("Add your own OpenRouter key in Settings before turning Autopilot on.")
+                if not __import__("niche").current()["brief"] or not __import__("niche").current()["brief"].get("confirmed"):
+                    raise ValueError("Choose your niche and confirm the plan on the Niche page before turning Autopilot on.")
+            cfg.update(new)
             autopilot.save_config(cfg)
             return {"ok": True}
         if path == "/api/agent/config":
@@ -895,6 +906,8 @@ class H(BaseHTTPRequestHandler):
             st = load_settings()
             st[field] = value
             save_settings(st)  # owner-only file; the key is never sent back to a browser
+            if which == "openrouter" and __import__("tenantmode").is_tenant():
+                __import__("tenantmode").on_key_saved()
             return {"ok": True}
         if path == "/api/settings":
             s = load_settings()

@@ -47,6 +47,23 @@ def apply_defaults(root: Path | None = None) -> bool:
     return True
 
 
+AI_MODELS = {"script": "anthropic/claude-sonnet-5.5", "review": "anthropic/claude-sonnet-5.5", "cheap": "anthropic/claude-haiku-5.5"}  # what the owner's studio uses: reviews stay on Claude
+
+
+def on_key_saved() -> bool:
+    """The user saved their own OpenRouter key: turn the models on with the studio's usual choice, unless the user already chose models. Drawing and the
+    $1.50 daily cap are left as they are. True when it changed something."""
+    import llm
+
+    cfg = llm.load_config()
+    if any(cfg.get("models", {}).get(r) for r in AI_MODELS) and cfg.get("enabled"):
+        return False
+    cfg["models"] = {r: cfg.get("models", {}).get(r) or m for r, m in AI_MODELS.items()}
+    cfg["enabled"], cfg["free"] = True, True
+    llm.save_config(cfg)
+    return True
+
+
 def usage_gb(root: Path | None = None) -> float:
     root = Path(root or config.ROOT)
     total = 0

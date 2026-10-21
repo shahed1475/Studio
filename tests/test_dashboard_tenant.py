@@ -268,3 +268,47 @@ def test_a_user_studio_has_no_desktop_sign_in_and_disconnecting_releases_the_cha
     (dashboard.TOKEN).write_text("{}")
     st, out = post(port, h, "/api/youtube/disconnect", {})
     assert st == 200 and released == [1] and not dashboard.TOKEN.exists()
+
+
+# ---- a new user cannot start work that needs their key before they have one ----
+def test_jobs_that_use_the_ai_are_refused_with_a_clear_message_until_the_user_has_a_key(signed_in, monkeypatch):
+    port, h = signed_in
+    monkeypatch.setattr(dashboard.llm, "api_key", lambda: "")
+    for cmd in ("make", "doc", "ideas", "research", "review"):
+        st, out = post(port, h, "/api/job", {"cmd": cmd, "args": []})
+        assert st == 400 and "OpenRouter key" in out["error"], cmd
+    monkeypatch.setattr(dashboard, "start_job", lambda cmd, args: "job1")  # with a key the job is allowed to start (not started for real here)
+    monkeypatch.setattr(dashboard.llm, "api_key", lambda: "sk-user-key")
+    assert post(port, h, "/api/job", {"cmd": "ideas", "args": []}) == (200, {"id": "job1"})
+
+
+def test_autopilot_cannot_be_turned_on_before_there_is_a_key_and_a_confirmed_plan(signed_in, monkeypatch):
+    import autopilot
+    port, h = signed_in
+    monkeypatch.setattr(autopilot, "CONFIG_FILE", config.ROOT / "autopilot.json")
+    monkeypatch.setattr(dashboard.llm, "api_key", lambda: "")
+    st, out = post(port, h, "/api/autopilot/config", {"enabled": True})
+    assert st == 400 and "OpenRouter key" in out["error"]
+    monkeypatch.setattr(dashboard.llm, "api_key", lambda: "sk-user-key")
+    st, out = post(port, h, "/api/autopilot/config", {"enabled": True})
+    assert st == 400 and "niche" in out["error"].lower()
+    niche.apply(niche.preset("space_history"), {"topics": ["Apollo 13"], "advice": {}})
+    niche.confirm()
+    assert post(port, h, "/api/autopilot/config", {"enabled": True})[0] == 200
+    assert post(port, h, "/api/autopilot/config", {"enabled": False})[0] == 200  # turning it off is always allowed
+
+
+def test_saving_the_openrouter_key_turns_the_models_on_for_a_new_user_without_touching_their_choices(signed_in, monkeypatch):
+    import llm
+    port, h = signed_in
+    monkeypatch.setattr(llm, "CONFIG_FILE", config.ROOT / "llm.json")
+    monkeypatch.setattr(dashboard, "load_settings", lambda: {})
+    monkeypatch.setattr(dashboard, "save_settings", lambda d: None)
+    llm.save_config({**llm.DEFAULTS, "daily_budget_usd": 1.5})  # what a new user studio starts with
+    st, _ = post(port, h, "/api/key/save", {"which": "openrouter", "value": "sk-or-" + "x" * 20})
+    cfg = llm.load_config()
+    assert st == 200 and cfg["enabled"] is True and cfg["models"]["script"].startswith("anthropic/claude") and cfg["models"]["review"].startswith("anthropic/claude")
+    assert cfg["ai_art"] is False and cfg["daily_budget_usd"] == 1.5  # drawing and the cap stay as the safe defaults
+    llm.save_config({**cfg, "models": {"script": "vendor/mine", "review": "vendor/mine2", "cheap": "vendor/mine3"}})
+    post(port, h, "/api/key/save", {"which": "openrouter", "value": "sk-or-" + "y" * 20})
+    assert llm.load_config()["models"]["script"] == "vendor/mine"
