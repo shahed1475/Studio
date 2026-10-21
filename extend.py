@@ -44,6 +44,11 @@ def symlinks(folder: Path) -> list[str]:
     return sorted(str(p.relative_to(folder)) for p in folder.rglob("*") if p.is_symlink() and not (set(p.relative_to(folder).parts) & SKIP_DIRS))
 
 
+def inside(repo: Path, folder: Path) -> bool:
+    """The folder is not a link and really lies inside the cloned repo."""
+    return not folder.is_symlink() and folder.resolve().is_relative_to(repo.resolve())
+
+
 def privileged_keys(skill: Path) -> list[str]:
     head = (skill / "SKILL.md").read_text(errors="ignore").split("---")
     block = head[1] if len(head) > 2 and not head[0].strip() else ""
@@ -72,6 +77,8 @@ def install(skill: Path, repo: Path, replace: bool = False, allow_privileged: bo
     """-> (status, why). status: installed | refused | skipped."""
     base = skills_dir_ or skills_dir()
     name = skill.name
+    if not inside(repo, skill):
+        return "refused", "the skill folder is a link or lies outside the repo"
     if links := symlinks(skill):
         return "refused", f"contains symbolic links ({', '.join(links[:3])})"
     if (keys := privileged_keys(skill)) and not allow_privileged:
@@ -109,8 +116,8 @@ def install(skill: Path, repo: Path, replace: bool = False, allow_privileged: bo
 def _share_references(shared: Path, repo: Path, base: Path) -> str:
     """Skills of a pack read ../../references (shared notes); that folder is `.claude/references`. One pack at a time: a second, different pack is not merged."""
     dest = base.parent / "references"
-    if symlinks(shared):
-        return "; shared references NOT copied: they contain symbolic links"
+    if not inside(repo, shared) or symlinks(shared):
+        return "; shared references NOT copied: a link or a path outside the repo"
     found = vetskill.scan(shared)
     if found["counts"]["high"] or unscanned(found):
         return "; shared references NOT copied: the scan found a high finding or unreadable files"

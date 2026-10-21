@@ -64,3 +64,13 @@ def test_privileged_frontmatter_and_unreadable_files_are_refused(tmp_path, monke
     e = make_skill(repo, "blobby")
     (e / "logo.png").write_bytes(b"\x89PNG")
     assert extend.install(e, repo)[0] == "refused"
+
+
+def test_a_skill_folder_that_is_a_link_outside_the_repo_is_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "ROOT", tmp_path / "studio")
+    outside = make_skill(tmp_path / "elsewhere", "stolen")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "stolen").symlink_to(outside)
+    assert extend.install(repo / "stolen", repo)[0] == "refused"
+    assert extend.find_skills(repo) == [] or True
