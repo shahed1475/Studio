@@ -510,3 +510,17 @@ def test_do_cost_stop_tells_the_owner_once_and_marks_the_video(tmp_path, monkeyp
     autopilot.do_cost_stop("d", CFG, NOW)
     assert json.loads((tmp_path / "d" / "meta.json").read_text())["cost_alerted"] is True
     assert any("Stopped spending" in e["title"] and "$2.61" in e["detail"] for e in agentlog.recent())
+
+
+def test_workable_means_autopilot_can_still_review_repair_or_polish_the_video(monkeypatch):
+    monkeypatch.setattr(autopilot.llm, "video_cost", lambda slug: 0.5)
+    warn = [{"name": "invented_facts", "ok": True, "severity": "block", "detail": "risk 4/10. x", "issues": ["x"]}, {"name": "invented_facts_watch", "ok": False, "severity": "warn", "detail": "m"}]
+    w = lambda d: autopilot._workable({"format": "doc", **d}, CFG, "s")
+    assert w({}) and w({"review": {"verdict": None, "checks": []}})  # not reviewed yet
+    assert w({"review": {"verdict": "fail", "checks": [{"name": "title_matches", "ok": False, "severity": "block"}]}, "fix_attempts": 1})
+    assert not w({"review": {"verdict": "fail", "checks": [{"name": "title_matches", "ok": False, "severity": "block"}]}, "fix_attempts": 2})
+    assert w({"review": {"verdict": "needs_human", "checks": [{"name": "visual_review", "ok": False, "severity": "human"}]}, "fix_attempts": 2, "fix_gave_up": True})  # a third try for pictures
+    assert w({"review": {"verdict": "pass", "checks": warn}}) and not w({"review": {"verdict": "pass", "checks": warn}, "polish_done": {"round": 2}})
+    assert not w({"review": {"verdict": "pass", "checks": []}}) and not w({"review": {"verdict": "fail", "checks": []}, "hold": True})
+    monkeypatch.setattr(autopilot.llm, "video_cost", lambda slug: 9.0)
+    assert not w({"review": {"verdict": "fail", "checks": [{"name": "title_matches", "ok": False, "severity": "block"}]}, "fix_attempts": 0})

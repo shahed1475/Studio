@@ -170,6 +170,24 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict
     return acts
 
 
+def _workable(d: dict, cfg: dict, slug: str) -> bool:
+    """Can Autopilot still do something to this video (review it, repair it, polish it)? False once its tries or its money are used up."""
+    import fixer
+
+    checks = (d.get("review") or {}).get("checks", [])
+    if d.get("hold") or d.get("video_id") or d.get("approved_by") == "you":
+        return False
+    review = d.get("review") or {}
+    if not review.get("verdict") or any(c["name"] == "llm_review" and not c["ok"] for c in checks):
+        return True  # not reviewed yet
+    fmt = d.get("format", "short")
+    if llm.video_cost(slug) >= (cfg.get("max_video_cost_usd") or MAX_VIDEO_COST).get(fmt, MAX_VIDEO_COST.get(fmt, 2.5)):
+        return False
+    if review.get("verdict") in ("fail", "needs_human"):
+        return d.get("fix_attempts", 0) < fixer.attempt_limit(checks) and not (d.get("fix_gave_up") and fixer.attempt_limit(checks) <= 2)
+    return fixer.polish_rounds(d) < fixer.POLISH_ROUNDS and bool(fixer.watch_problems(checks))
+
+
 def build_state(now: dt.datetime, cfg: dict) -> dict:
     import fixer
     import llm
@@ -198,6 +216,7 @@ def build_state(now: dt.datetime, cfg: dict) -> dict:
             "prelaunch_ok": bool((d.get("prelaunch") or {}).get("ok")),
             "facts_open": d.get("approved_by") != "you" and bool(fixer.watch_problems((d.get("review") or {}).get("checks", []))),
             "polish_wanted": fixer.polish_rounds(d) < fixer.POLISH_ROUNDS and d.get("approved_by") != "you" and bool(fixer.watch_problems((d.get("review") or {}).get("checks", []))),
+            "workable": _workable(d, cfg, m.parent.name),
             "blocking": len(failing_names(d)), "problems": failing_names(d), "title": d.get("title", ""),
         })
     by_fmt: dict = {}

@@ -83,3 +83,11 @@ def test_a_passed_video_with_an_open_facts_warning_is_a_draft_not_ready():
     docs = [r for r in planner.rows(CFG, vs, NOW) if r["format"] == "doc"][:3]
     assert [(r["status"], r["slug"]) for r in docs[1:3]] == [("ready", "clean"), ("repairing", "warned")] or [r["status"] for r in docs[1:3]] == ["ready", "later"]
     assert not [r for r in docs if r["status"] == "ready" and r["slug"] == "warned"]
+
+
+def test_a_draft_autopilot_can_still_work_on_gets_the_due_slot_before_one_that_waits_for_the_owner():
+    stuck = vid("stuck", verdict="pass", facts_open=True, fix_attempts=2, workable=False, blocking=0)
+    work = vid("work", verdict="fail", fix_attempts=1, workable=True, blocking=2)
+    docs = [r for r in planner.rows(CFG, [stuck, work], NOW) if r["format"] == "doc"][:3]
+    assert docs[1]["slug"] == "work" and docs[1]["status"] == "repairing"  # Wed 22:00 UTC is the one due slot
+    assert planner.repair_targets(CFG, [stuck, work], NOW) == {"work"}

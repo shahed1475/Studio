@@ -58,7 +58,9 @@ def horizon(cfg: dict, now: dt.datetime) -> dt.datetime:
 
 
 def _draft_key(v: dict) -> tuple:
-    return (0 if v.get("verdict") is None else 1, 0 if v.get("fix_attempts", 0) > 0 else 1, v.get("blocking", 9), v.get("slug", ""))
+    # a draft Autopilot can still review, repair or polish comes first; one that has used its tries and waits for the owner must not hold the due slot
+    # while another draft that could be repaired is left parked
+    return (0 if v.get("workable", True) else 1, 0 if v.get("verdict") is None else 1, 0 if v.get("fix_attempts", 0) > 0 else 1, v.get("blocking", 9), v.get("slug", ""))
 
 
 def rows(cfg: dict, videos: list[dict], now: dt.datetime, per_format: int | None = None) -> list[dict]:
