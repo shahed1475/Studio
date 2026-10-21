@@ -103,7 +103,7 @@ def test_handoff_adds_strategies_applies_none(tmp_path):
     got = agent.run(NOW, FakeYT(), chat_with(EDIT, TOPIC))
     assert got["mode"] == "handoff" and got["strategies_added"] == 2 and got["applied"] == 0 and got["errors"] == []
     assert {s["status"] for s in strategy.load()} == {"proposed"}
-    assert editprofile.load()["target_lufs"] == -16.0 and json.loads((tmp_path / "topics.json").read_text()) == []
+    assert editprofile.load()["target_lufs"] == -14.0 and json.loads((tmp_path / "topics.json").read_text()) == []
     assert agent.latest_report()["date"] == "2026-10-19"
     assert discover.load() and growth.load_snapshots()[-1]["subscribers"] == 12
 

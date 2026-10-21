@@ -306,3 +306,29 @@ def test_the_ai_review_sees_the_chapter_titles_that_appear_in_the_public_descrip
     monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p: seen.append(p) or {"invented_facts_risk": 1, "policy_risk": 0, "misleading_title": False, "issues": []})
     reviewer.llm_review({"title": "t", "description": "d", "chapters": [{"title": "Prophecy or Political Theater?", "start_line": 0}], "lines": [{"text": "a line"}]})
     assert "Prophecy or Political Theater?" in seen[0]
+
+
+def _words_meta(words, **kw):
+    meta = copy.deepcopy(GOOD_META)
+    meta["lines"] = [{"text": " ".join(["word"] * 20), "visual": "v"} for _ in range(words // 20)]
+    return {**meta, **kw}
+
+
+def test_pace_warns_when_the_narration_is_much_too_fast_or_too_slow_and_not_for_a_comfortable_pace():
+    ok = run(meta=_words_meta(800), probe={**GOOD_PROBE, "duration": 320.0})  # 150 words a minute
+    assert "pace" not in failed(ok, "warn")
+    fast = run(meta=_words_meta(1100), probe={**GOOD_PROBE, "duration": 320.0})  # 206 wpm
+    slow = run(meta=_words_meta(400), probe={**GOOD_PROBE, "duration": 320.0})  # 75 wpm
+    assert "pace" in failed(fast, "warn") and "pace" in failed(slow, "warn")
+    assert "words a minute" in next(c["detail"] for c in fast if c["name"] == "pace")
+    assert "pace" not in {c["name"] for c in run(meta=_words_meta(20), probe={**GOOD_PROBE, "duration": 10.0})}  # too little to measure
+
+
+def test_loudness_is_judged_against_youtubes_reference_only_when_it_was_measured():
+    assert "loudness" not in {c["name"] for c in run()}  # the probe did not measure it
+    fine = run(probe={**GOOD_PROBE, "lufs": -14.4, "true_peak": -1.6})
+    assert "loudness" in {c["name"] for c in fine} and "loudness" not in failed(fine, "warn")
+    assert "loudness" not in failed(run(probe={**GOOD_PROBE, "lufs": -16.3, "true_peak": -1.3}), "warn")  # our older -16 renders are fine
+    quiet = run(probe={**GOOD_PROBE, "lufs": -20.8, "true_peak": -2.7})
+    assert "loudness" in failed(quiet, "warn") and "-14" in next(c["detail"] for c in quiet if c["name"] == "loudness")
+    assert "loudness" in failed(run(probe={**GOOD_PROBE, "lufs": -14.0, "true_peak": 0.4}), "warn")  # a peak over 0 dB clips

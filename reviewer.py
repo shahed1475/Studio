@@ -10,6 +10,8 @@ import compliance
 import llm
 import scriptgen
 
+LOUD_RANGE = (-17.5, -12.0)  # integrated LUFS that need no warning: YouTube's reference is -14; our -16 renders and the new -14 ones both sit inside
+PACE_RANGE = (105, 175)  # words a minute: the toolkit reviewed on 21 Oct 2026 calls 140 to 160 standard and warns outside 110 to 170; our videos measured 134 to 150
 LIMITS = {"doc": {"duration": (180, 900), "size": (1920, 1080), "words": 400},
           "short": {"duration": (20, 180), "size": (1080, 1920), "words": 100}}
 
@@ -175,6 +177,15 @@ def rule_checks(meta: dict, probe: dict, existing_titles: list[str], thumb_bytes
     loud = probe["has_audio"] and probe["mean_db"] is not None and probe["mean_db"] > -45
     out.append(_c("audio", loud, "no audio" if not probe["has_audio"] else f"mean volume {probe['mean_db']} dB"))
     out.append(_c("black_frames", probe["black_ratio"] < 0.15, f"{probe['black_ratio']:.0%} of the video is black"))
+    if probe.get("lufs") is not None:
+        lufs, peak = probe["lufs"], probe.get("true_peak")
+        fine = LOUD_RANGE[0] <= lufs <= LOUD_RANGE[1] and (peak is None or peak <= 0.0)
+        out.append(_c("loudness", fine, f"{lufs:.1f} LUFS" + (f", peak {peak:.1f} dB" if peak is not None else "") +
+                      f" (YouTube's reference is -14: it turns louder videos down and never turns quieter ones up{'; a peak above 0 dB clips' if peak is not None and peak > 0 else ''})", "warn"))
+    words = sum(len(l.get("text", "").split()) for l in meta.get("lines", []))
+    if probe["duration"] >= 30 and words >= 60:
+        wpm = words / probe["duration"] * 60
+        out.append(_c("pace", PACE_RANGE[0] <= wpm <= PACE_RANGE[1], f"{wpm:.0f} words a minute (comfortable narration is {PACE_RANGE[0]} to {PACE_RANGE[1]})", "warn"))
 
     title = meta.get("title", "")
     out.append(_c("title", 8 <= len(title) <= 100, f"{len(title)} characters"))
@@ -296,12 +307,21 @@ def probe_video(path: Path) -> dict:
     duration = float(info["format"]["duration"])
     vol = subprocess.run(["ffmpeg", "-nostats", "-i", str(path), "-af", "volumedetect", "-vn", "-f", "null", "-"], capture_output=True, text=True).stderr
     m = re.search(r"mean_volume:\s*(-?[\d.]+) dB", vol)
+    lufs = peak = None
+    ln = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", str(path), "-vn", "-af", "loudnorm=I=-14:TP=-1:print_format=json", "-f", "null", "-"], capture_output=True, text=True).stderr
+    mj = re.search(r"\{[^{}]*\"input_i\"[^{}]*\}", ln, re.S)
+    if mj:
+        try:
+            j = json.loads(mj.group(0))
+            lufs, peak = float(j["input_i"]), float(j["input_tp"])
+        except (ValueError, KeyError):
+            pass
     blk = subprocess.run(["ffmpeg", "-nostats", "-i", str(path), "-vf", "fps=1,scale=320:-2,blackdetect=d=0.5:pix_th=0.10", "-an", "-f", "null", "-"],
                          capture_output=True, text=True).stderr
     black = sum(float(x) for x in re.findall(r"black_duration:([\d.]+)", blk))
     return {"duration": duration, "width": v.get("width", 0), "height": v.get("height", 0),
             "has_audio": any(s["codec_type"] == "audio" for s in info["streams"]),
-            "mean_db": float(m.group(1)) if m else None, "black_ratio": black / duration if duration else 1.0}
+            "mean_db": float(m.group(1)) if m else None, "lufs": lufs, "true_peak": peak, "black_ratio": black / duration if duration else 1.0}
 
 
 def apply_verdict(meta: dict, result: dict) -> None:

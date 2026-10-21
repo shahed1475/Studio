@@ -9,7 +9,7 @@ import tts
 
 def test_defaults_when_no_file(tmp_path, monkeypatch):
     monkeypatch.setattr(editprofile, "FILE", tmp_path / "p.json")
-    assert editprofile.load() == {"target_lufs": -16.0, "sentence_pause_ms": 120, "motion": 2, "caption_pos": "bottom"}
+    assert editprofile.load() == {"target_lufs": -14.0, "sentence_pause_ms": 120, "motion": 2, "caption_pos": "bottom"}
 
 
 def test_validate_drops_unknown_and_out_of_range():
