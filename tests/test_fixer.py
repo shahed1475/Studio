@@ -551,3 +551,10 @@ def test_polish_reports_a_video_held_when_the_facts_warning_survives_it(tmp_path
     world["results"] = [result("pass", ("invented_facts", "warn", "risk 5/10. invented guide"), ("invented_facts_watch", "warn", "moderate risk 5/10"))]
     out = fixer.polish("doc-p8", chat=polish_chat(edits=[{"index": 2, "text": "The oracle was consulted on important decisions across the classical world by many visitors."}]), rerender=world["rerender"])
     assert out["held"] is True
+
+
+def test_a_picture_only_problem_gets_a_third_try_and_other_problems_do_not():
+    picture = [chk("visual_review", False, "human")]
+    other = [chk("visual_review", False, "human"), chk("title_matches", False, "block")]
+    assert fixer.picture_only(picture) and not fixer.picture_only(other) and not fixer.picture_only([chk("visual_review", True)])
+    assert fixer.attempt_limit(picture) == 3 and fixer.attempt_limit(other) == 2 and fixer.attempt_limit([]) == 2

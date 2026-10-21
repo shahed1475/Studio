@@ -469,3 +469,10 @@ def test_a_repair_waits_for_the_daily_cap_because_a_videos_two_tries_are_not_spe
     broken = vid("b", format="doc", verdict="fail", fix_attempts=1, publish_at=iso(NOW + timedelta(hours=10)))
     assert ("fix", "b") in plan(state([broken]))
     assert ("fix", "b") not in plan(state([broken], spend_ok=False))
+
+
+def test_a_video_that_gave_up_after_two_tries_is_repaired_again_only_when_it_has_a_third_try():
+    done = dict(verdict="needs_human", fix_attempts=2, gave_up=True, publish_at=iso(NOW + timedelta(hours=10)))
+    assert not [a for a in plan(state([vid(**done, fix_limit=2)])) if a[0] == "fix"]
+    assert [a for a in plan(state([vid(**done, fix_limit=3)])) if a[0] == "fix"]
+    assert not [a for a in plan(state([vid(**{**done, "fix_attempts": 3}, fix_limit=3)])) if a[0] == "fix"]

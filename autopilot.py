@@ -111,7 +111,7 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict
         by_you = v["approved"] and v.get("approved_by") == "you"
         eligible = (v["verdict"] == "pass" and v["source"] != "news") or (v["verdict"] == "needs_human" and by_you)
         repairable = v["verdict"] in ("fail", "needs_human") and not eligible and not by_you and v["source"] != "news" \
-            and v.get("fix_attempts", 0) < 2 and not v.get("gave_up")
+            and v.get("fix_attempts", 0) < v.get("fix_limit", 2) and not (v.get("gave_up") and v.get("fix_limit", 2) <= 2)
         if v["verdict"] in ("fail", "needs_human") and not eligible and not by_you and not repairable:
             stuck[fmt] += 1
         if v["verdict"] is None:
@@ -178,7 +178,7 @@ def build_state(now: dt.datetime, cfg: dict) -> dict:
             "slug": m.parent.name, "format": d.get("format", "short"), "source": d.get("source"), "approved": bool(d.get("approved")),
             "verdict": None if any(c["name"] == "llm_review" and not c["ok"] for c in (d.get("review") or {}).get("checks", [])) else (d.get("review") or {}).get("verdict"),
             "hold": bool(d.get("hold")),
-            "approved_by": d.get("approved_by"), "fix_attempts": d.get("fix_attempts", 0), "gave_up": bool(d.get("fix_gave_up")),
+            "approved_by": d.get("approved_by"), "fix_attempts": d.get("fix_attempts", 0), "gave_up": bool(d.get("fix_gave_up")), "fix_limit": fixer.attempt_limit((d.get("review") or {}).get("checks", [])),
             "video_id": d.get("video_id"), "publish_at": d.get("publish_at"), "fails": d.get("autopilot_fails", 0),
             "prelaunch_ok": bool((d.get("prelaunch") or {}).get("ok")),
             "facts_open": d.get("approved_by") != "you" and bool(fixer.watch_problems((d.get("review") or {}).get("checks", []))),

@@ -29,6 +29,16 @@ import topicqueue
 import webcheck
 
 MAX_ATTEMPTS = 2
+PICTURE_EXTRA = 1  # a video whose only blocking problem is a wrong picture gets one more try: redrawing a scene is cheap
+
+
+def picture_only(checks: list[dict]) -> bool:
+    names = {c["name"] for c in checks if not c["ok"] and c["severity"] in ("block", "human")}
+    return names == {"visual_review"}
+
+
+def attempt_limit(checks: list[dict]) -> int:
+    return MAX_ATTEMPTS + (PICTURE_EXTRA if picture_only(checks) else 0)
 SIMILAR = 0.7  # a new title may not be more like another video's title than this
 
 
@@ -418,9 +428,10 @@ def fix(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) -> 
     folder = config.OUT / slug
     meta = json.loads((folder / "meta.json").read_text())
     attempts = meta.get("fix_attempts", 0)
-    if attempts >= MAX_ATTEMPTS or meta.get("fix_gave_up"):
-        return {"skipped": "already tried"}
     checks = (meta.get("review") or {}).get("checks", [])
+    if attempts >= attempt_limit(checks) or (meta.get("fix_gave_up") and attempts >= MAX_ATTEMPTS and not picture_only(checks)):
+        return {"skipped": "already tried"}
+    meta.pop("fix_gave_up", None)  # a third try for a picture-only problem reopens a video that gave up after two
     failing = {c["name"]: c for c in checks if not c["ok"] and c["severity"] in ("block", "human")}
     is_doc = meta.get("format") == "doc"
     fixed: list[str] = []
@@ -535,11 +546,11 @@ def fix(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) -> 
         meta["fix_attempts"] = attempts + (1 if rewrite else 0)  # a re-render cost real time and money, so it still counts
         _save(folder, meta)
         return {"fixed": fixed, "archived": None, "verdict": "unreviewed", "rerendered": rewrite}
-    if result["verdict"] != "pass" and attempts + 1 >= MAX_ATTEMPTS:
+    if result["verdict"] != "pass" and attempts + 1 >= attempt_limit(result["checks"]):
         meta["fix_gave_up"] = True
         _save(folder, meta)
         why = "; ".join(c["detail"] for c in result["checks"] if not c["ok"] and c["severity"] in ("block", "human"))[:300]
-        agentlog.event("error", f"Needs your eyes: {meta.get('title', slug)}", f"I tried twice and the reviewer still says {result['verdict']}: {why}", notify=True, now=now)
+        agentlog.event("error", f"Needs your eyes: {meta.get('title', slug)}", f"I used every try and the reviewer still says {result['verdict']}: {why}", notify=True, now=now)
     elif fixed:
         agentlog.event("applied", f"Fixed: {meta.get('title', slug)}", "; ".join(fixed) + f". The reviewer now says {result['verdict']}.", now=now)
     return {"fixed": fixed, "archived": None, "verdict": result["verdict"], "rerendered": rewrite}
