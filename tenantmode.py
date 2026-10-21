@@ -134,11 +134,20 @@ def render_gate(slots: int = 2, poll: float = 1.0):
             held.close()
 
 
+def invite_link(base_url: str, hours: float = 24) -> str:
+    """A first-sign-in link for this studio, valid for 24 hours and once: the person who opens it chooses their own email and password."""
+    import webauth
+
+    return f"{base_url.rstrip('/')}/claim?token={webauth.create_invite(hours)}"
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "defaults":
         print("written" if apply_defaults() else "already set")
     elif cmd == "quota":
         print(json.dumps(quota_state()))
+    elif cmd == "invite" and len(sys.argv) > 2:
+        print(invite_link(sys.argv[2]))
     else:
-        sys.exit("usage: python tenantmode.py defaults | quota")
+        sys.exit("usage: python tenantmode.py defaults | quota | invite <https://address:port>")

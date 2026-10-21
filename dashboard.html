@@ -290,6 +290,7 @@ async function refresh(force){
   render();
 }
 function chrome(){
+  if(S.tenant&&!NAV.some(n=>n[0]==="niche"))NAV.splice(3,0,["niche","Niche","list-checks"]);
   const c=S.counts["needs review"],r=running();
   document.getElementById("nav").innerHTML=NAV.map(([k,l,i])=>`<button class="${tab===k?"on":""}" onclick="go('${k}',{slug:null})" ${tab===k?'aria-current="page"':""}>${ico(i)}<span class="t">${l}</span>${k==="videos"&&c?`<span class="count">${c}</span>`:""}${k==="autopilot"&&S.autopilot.needs_you?`<span class="count">${S.autopilot.needs_you}</span>`:""}${k==="growth"&&S.agent&&S.agent.unread?`<span class="count">${S.agent.unread}</span>`:""}</button>`).join("");
   document.getElementById("nav2").innerHTML=(([k,l,i])=>`<button class="${tab===k?"on":""}" onclick="go('${k}',{slug:null})" ${tab===k?'aria-current="page"':""}>${ico(i)}<span class="t">${l}</span></button>`)(SET);
@@ -305,7 +306,7 @@ function chrome(){
 function render(force){
   if(!S)return;chrome();
   const m=document.getElementById("main");
-  ({home,videos,create,autopilot,growth,activity,youtube,settings})[tab]?.(m);
+  ({home,videos,create,niche,autopilot,growth,activity,youtube,settings})[tab]?.(m);
   if(tab==="home")loadRisk();
   m.firstElementChild?.classList.add("view");setTheme(document.documentElement.dataset.theme);
 }
@@ -313,6 +314,7 @@ function render(force){
 /* ---------- Home ---------- */
 function nextStep(){
   const r=running();
+  if(!r&&S.tenant&&!S.niche_confirmed)return{icon:"list-checks",title:"Choose your niche",text:"Pick what your channel is about. The studio then researches it and writes you a plan to read before anything is made.",btn:`<button class="btn" onclick="go('niche')">Choose your niche</button>`};
   if(r)return{icon:"hourglass-medium",title:"Working on it",text:`Running: ${esc(r.cmd)}. A documentary takes a while, you can leave this page open.`,btn:`<button class="btn" onclick="openJob='${r.id}';go('activity')">Watch progress</button>`};
   if(S.autopilot.needs_you)return{icon:"hand-palm",title:"A video needs your decision",text:`The reviewer agent flagged ${S.autopilot.needs_you===1?"a video":S.autopilot.needs_you+" videos"}. Nothing goes live until you decide.`,btn:`<button class="btn" onclick="go('autopilot')">See what was flagged</button>`};
   if(S.autopilot.enabled){const n=S.autopilot.next;return{icon:"robot",title:"Autopilot is running",text:n?`Next post: ${n.format==="doc"?"documentary":"Short"} on ${esc(n.us)} US Eastern (${esc(n.bd)} Bangladesh)${n.title?", \""+esc(n.title)+"\"":""}. ${n.status==="later"?"Autopilot starts on it "+esc(n.starts_us)+".":(PLAN_WORDS[n.status]||"")}`:"It repairs, checks and schedules videos by itself. Nothing for you to do.",btn:`<button class="btn" onclick="go('autopilot')">See the plan</button>`}}
@@ -645,6 +647,38 @@ async function apChannelRemove(b){await api("/api/channels/remove",{ref:b.datase
 async function apChannelSuggest(b){await api("/api/channels/add",{ref:b.dataset.r});toast("Channel added");AP=null;refresh(true)}
 async function apHold(slug,hold){await api("/api/autopilot/hold",{slug,hold});toast(hold?"On hold. It will not be uploaded.":"Released");AP=null;refresh(true)}
 async function apNews(b){await api("/api/news/queue",{topic:b.dataset.t,sources:JSON.parse(b.dataset.s),week:b.dataset.w});toast("Queued. Autopilot will make it.");AP=null;refresh(true)}
+
+/* ---------- Niche (user studios) ---------- */
+let nicheView=null,nichePoll=null,nicheFit=null,nicheText="";
+async function niche(m){
+  m.innerHTML=`<div class="head"><h1>Your niche</h1><p class="sub">Choose what your channel is about. The studio checks the subjects in Wikipedia, looks at what viewers watch and writes you a plan. Nothing is made or uploaded until you turn Autopilot on yourself.</p></div><div id="nichebody" class="stack"><div class="panel pad">Loading…</div></div>`;
+  await nicheDraw();
+}
+async function nicheDraw(){
+  clearTimeout(nichePoll);
+  let v;try{v=await api("/api/niche")}catch(e){return}
+  nicheView=v;const el=document.getElementById("nichebody");if(!el||tab!=="niche")return;
+  const keep=document.getElementById("nichedesc");if(keep)nicheText=keep.value;
+  const cur=v.current,b=cur.brief,job=v.job,working=job.state==="working",chosen=cur.niche&&cur.niche.id&&cur.niche.id!=="unset";
+  const row=(ok,t,fix)=>`<div><div class="grow"><span class="ttl">${t}</span></div>${ok?badge("Done","ok"):fix}</div>`;
+  const steps=`<div class="panel rows">${row(v.setup.key,"1. Add your own OpenRouter key (it pays for your videos)",`<button class="btn quiet sm" onclick="go('settings')">Open Settings</button>`)}${row(v.setup.youtube,"2. Connect your YouTube channel",`<button class="btn quiet sm" onclick="go('youtube')">Connect</button>`)}${row(chosen,"3. Choose your niche",`<span class="mute">below</span>`)}${row(b&&b.confirmed,"4. Read your plan and confirm it",`<span class="mute">after step 3</span>`)}</div>`;
+  const status=working?`<div class="panel pad"><b>Researching your niche…</b><p class="sub">${esc(job.step)} This takes a minute or two.</p></div>`:job.state==="error"?`<div class="panel pad"><b>That did not work</b><p class="sub">${esc(job.error)}</p></div>`:"";
+  const presets=`<div class="sec"><h2>Ready-made niches</h2><p class="sub">These are the niches this studio does well: a calm narrated story built from an encyclopedia article, with public-domain pictures.</p><div class="panel rows">${v.presets.map(p=>`<div><div class="grow"><div class="ttl">${esc(p.name)}${cur.niche&&cur.niche.id===p.id?" "+badge("Chosen","ok"):""}</div><div class="mute">${esc(p.channel_angle)}</div><div class="mute">For example: ${p.starter_topics.slice(0,4).map(esc).join(", ")}</div></div><button class="btn quiet sm" ${working?"disabled":""} onclick="nicheChoose('${esc(p.id)}')">${cur.niche&&cur.niche.id===p.id?"Research again":"Choose"}</button></div>`).join("")}</div></div>`;
+  const fit=nicheFit?`<p class="sub">${nicheFit.fit?"Good fit. "+esc(nicheFit.reason||"")+" Researching it now.":"Not a fit: "+esc(nicheFit.reason||"")}</p>${!nicheFit.fit&&nicheFit.closest?`<button class="btn quiet sm" onclick="nicheChoose('${esc(nicheFit.closest)}')">Use the closest ready-made niche</button>`:""}`:"";
+  const custom=`<div class="sec"><h2>Or describe your own</h2><div class="panel pad stack"><p class="sub">One sentence. The studio checks that real Wikipedia articles exist for it before it accepts. News, finance, health advice, products, gaming, fitness, cooking, politics, children's content and living people are outside what it can do honestly.</p><textarea id="nichedesc" rows="2" style="width:100%" maxlength="300" placeholder="For example: the history of the Silk Road and its cities">${esc(nicheText)}</textarea><div><button class="btn" ${working?"disabled":""} onclick="nicheCustom()">Check my idea</button></div>${fit}</div></div>`;
+  let brief="";
+  if(b){const a=b.advice||{},t=(b.trend&&b.trend.top_titles)||[];
+    brief=`<div class="sec"><h2>Your plan</h2><div class="panel pad stack"><div><b>${esc(b.niche.name)}</b><p class="sub">${esc(b.niche.audience)}</p><p class="sub">Voice and style: ${esc(b.niche.style)}</p></div><div><b>First subjects (checked against Wikipedia)</b><p class="sub">${(b.topics||[]).map(esc).join(", ")||"none passed the check"}</p></div>${(b.dropped||[]).length?`<div><b>Left out</b><p class="sub">${b.dropped.map(d=>esc(d.topic)+" ("+esc(d.why)+")").join("; ")}</p></div>`:""}${a.cadence?`<div><b>How often</b><p class="sub">${esc(a.cadence)}</p></div>`:""}${a.titles?`<div><b>Titles</b><p class="sub">${esc(a.titles)}</p></div>`:""}${a.avoid?`<div><b>Avoid</b><p class="sub">${esc(a.avoid)}</p></div>`:""}${a.first_week?`<div><b>First week</b><p class="sub">${esc(a.first_week)}</p></div>`:""}${t.length?`<div><b>What viewers of this niche watch</b><p class="sub">${t.map(esc).join(" | ")}</p></div>`:`<p class="sub">${b.youtube_connected?"":"Connect YouTube and press Research again to add what viewers watch."}</p>`}<div>${b.confirmed?badge("Confirmed","ok")+` <span class="mute">Turn Autopilot on in its page when you want videos made.</span>`:`<button class="btn" onclick="nicheConfirm()">I have read it: confirm</button>`}</div></div></div>`;}
+  el.innerHTML=steps+status+brief+presets+custom;
+  if(working)nichePoll=setTimeout(nicheDraw,2500);
+}
+async function nicheChoose(id){nicheFit=null;try{await api("/api/niche/choose",{id});toast("Researching your niche…")}catch(e){}nicheDraw()}
+async function nicheCustom(){
+  const d=document.getElementById("nichedesc").value;nicheText=d;
+  try{nicheFit=await api("/api/niche/custom",{description:d})}catch(e){nicheFit=null}
+  nicheDraw();
+}
+async function nicheConfirm(){try{await api("/api/niche/confirm",{});toast("Plan confirmed")}catch(e){}await refresh(true);nicheDraw()}
 
 /* ---------- Activity ---------- */
 async function activity(m){

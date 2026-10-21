@@ -145,3 +145,11 @@ def test_a_video_started_by_hand_is_refused_when_storage_is_full(root, monkeypat
         run._charged(lambda topic: root / "doc-x", "A topic")
     monkeypatch.setenv("STUDIO_MODE", "")
     assert run._charged(lambda topic: root / "doc-x", "A topic") == root / "doc-x"  # the owner's studio has no such limit
+
+
+def test_the_invite_command_prints_a_link_that_opens_the_claim_page(tmp_path, monkeypatch, capsys):
+    import webauth
+    monkeypatch.setattr(webauth, "DATA", tmp_path)
+    monkeypatch.setattr(webauth, "INVITES_FILE", tmp_path / "invites.json")
+    link = tenantmode.invite_link("https://studio.example.com:8921/")
+    assert link.startswith("https://studio.example.com:8921/claim?token=") and webauth.invite_valid(link.split("token=")[1])
