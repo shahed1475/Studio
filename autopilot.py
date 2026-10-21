@@ -182,7 +182,7 @@ def build_state(now: dt.datetime, cfg: dict) -> dict:
             "video_id": d.get("video_id"), "publish_at": d.get("publish_at"), "fails": d.get("autopilot_fails", 0),
             "prelaunch_ok": bool((d.get("prelaunch") or {}).get("ok")),
             "facts_open": d.get("approved_by") != "you" and bool(fixer.watch_problems((d.get("review") or {}).get("checks", []))),
-            "polish_wanted": not d.get("polish_done") and d.get("approved_by") != "you" and bool(fixer.watch_problems((d.get("review") or {}).get("checks", []))),
+            "polish_wanted": fixer.polish_rounds(d) < fixer.POLISH_ROUNDS and d.get("approved_by") != "you" and bool(fixer.watch_problems((d.get("review") or {}).get("checks", []))),
             "blocking": len(failing_names(d)), "problems": failing_names(d), "title": d.get("title", ""),
         })
     by_fmt: dict = {}

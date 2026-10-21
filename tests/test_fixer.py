@@ -404,7 +404,7 @@ def test_polish_rewrites_the_named_lines_backs_up_the_script_and_reviews_again(t
     assert json.loads((d / "script_before_polish.json").read_text())["lines"][2]["text"] == LINES[2]["text"]
     assert world["rerenders"] == ["doc-p1"] and out["rerendered"] is True and out["verdict"] == "pass" and out["changed"]
     assert "publish_at" not in meta and meta["approved"] is False  # an edited video is reviewed, approved and scheduled again
-    assert fixer.polish("doc-p1", chat=polish_chat(), rerender=world["rerender"]) == {"skipped": "already polished"}
+    assert fixer.polish("doc-p1", chat=polish_chat(), rerender=world["rerender"]) == {"skipped": "no facts warning"}  # the warning is gone: nothing more to polish
 
 
 def test_polish_corrects_a_description_the_issues_name_without_a_re_render(tmp_path, world):
@@ -576,3 +576,34 @@ def test_a_manual_repair_holds_the_autopilot_lock_and_refuses_when_it_is_taken(t
     fixer.repair("doc-r1", extra=True)
     again = json.loads((d / "meta.json").read_text())
     assert again["fix_attempts"] == 1 and "fix_gave_up" not in again
+
+
+STILL_WARNED = result("pass", ("invented_facts", "warn", "risk 5/10. The description still calls it a 13th-century inscription."), ("invented_facts_watch", "warn", "moderate risk 5/10"))
+
+
+def test_a_second_polish_round_runs_when_the_warning_survives_the_first_and_a_third_never_runs(tmp_path, world):
+    d = video(tmp_path, "doc-p9", review=WATCH_REVIEW)
+    world["results"] = [STILL_WARNED, STILL_WARNED]
+    edit = [{"index": 2, "text": "The oracle was consulted on important decisions across the classical world by many visitors."}]
+    first = fixer.polish("doc-p9", chat=polish_chat(edits=edit), rerender=world["rerender"])
+    assert first["held"] is True and json.loads((d / "meta.json").read_text())["polish_done"]["round"] == 1
+    edit2 = [{"index": 3, "text": "Visitors came from many cities to ask the priestess about wars, journeys and the founding of colonies."}]
+    second = fixer.polish("doc-p9", chat=polish_chat(edits=edit2), rerender=world["rerender"])
+    meta = json.loads((d / "meta.json").read_text())
+    assert second["held"] is True and meta["polish_done"]["round"] == 2 and meta["lines"][3]["text"].startswith("Visitors came")
+    assert fixer.polish("doc-p9", chat=polish_chat(), rerender=world["rerender"]) == {"skipped": "already polished"}
+
+
+def test_a_polish_record_without_a_round_counts_as_finished(tmp_path, world):
+    video(tmp_path, "doc-p10", review=WATCH_REVIEW, polish_done={"at": "x", "result": "old record"})
+    assert fixer.polish("doc-p10", chat=polish_chat(), rerender=world["rerender"]) == {"skipped": "already polished"}
+
+
+def test_a_long_description_intro_is_cut_at_a_sentence_end_instead_of_being_refused():
+    meta = {"description": "old description\n\nSources:\nWikipedia"}
+    sentences = " ".join(f"This is sentence number {i} about the manuscript and its history." for i in range(1, 14))
+    assert len(sentences) > 600
+    assert fixer.correct_description(meta, "SOURCE text", ["description problem"], chat=lambda p: {"intro": sentences}) is True
+    head = meta["description"].split("\n\nSources:")[0]
+    assert 40 <= len(head) <= 520 and head.endswith(".")
+    assert fixer.correct_description({"description": "x"}, "S", ["p"], chat=lambda p: {"intro": "too short"}) is False

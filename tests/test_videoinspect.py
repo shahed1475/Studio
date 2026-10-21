@@ -157,3 +157,29 @@ def test_mood_pictures_are_noted_but_only_wrong_ones_fail_the_row(world):
     assert "1 atmospheric" in next(r for r in rows if r["name"] == "pictures_mood")["detail"]
     only_mood = vi.visual_review(d, 4, post=lambda p, k: reply(picture_issues=issues[:1]))
     assert next(r for r in only_mood if r["name"] == "pictures_fit_story")["ok"]
+
+
+def _folder(tmp_path):
+    (tmp_path / "meta.json").write_text(json.dumps({"title": "Bell Witch", "lines": [{"text": "The spirit was heard swinging the chains across the old farmhouse porch."}]}))
+    (tmp_path / "captions.srt").write_text("1\n00:01:50,000 --> 00:01:54,000\nswinging the chains across\n\n2\n00:01:54,000 --> 00:01:58,000\nthe old farmhouse porch\n\n")
+    return tmp_path
+
+
+def test_a_typo_the_vision_model_claims_is_dropped_when_every_caption_word_is_in_the_narration(tmp_path):
+    folder = _folder(tmp_path)
+    issues = [{"t": 112.6, "issue": "The caption has a typo: 'swinging' is spelled 'swinging' with a missing letter"}]
+    assert vi.real_caption_issues(issues, folder) == []
+
+
+def test_a_typo_is_kept_when_the_caption_really_holds_a_word_the_narration_does_not(tmp_path):
+    folder = _folder(tmp_path)
+    (folder / "captions.srt").write_text("1\n00:01:50,000 --> 00:01:54,000\nswingng the chains across\n\n")
+    issues = [{"t": 112.6, "issue": "typo in the caption"}]
+    assert vi.real_caption_issues(issues, folder) == issues
+
+
+def test_a_finding_the_model_itself_calls_probably_just_a_split_is_not_a_defect_and_other_issues_stay(tmp_path):
+    folder = _folder(tmp_path)
+    split = {"t": 181.9, "issue": "The caption ends mid-phrase ('it resembled'), but this is probably just a caption split across frames, not a confirmed defect."}
+    cut = {"t": 40.0, "issue": "The caption is cut off at the edge of the picture and unreadable."}
+    assert vi.real_caption_issues([split, cut], folder) == [cut]

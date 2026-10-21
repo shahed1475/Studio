@@ -29,7 +29,14 @@ import topicqueue
 import webcheck
 
 MAX_ATTEMPTS = 2
+POLISH_ROUNDS = 2  # a facts warning that survives the first polish gets one more; after that the video is held for the owner
 PICTURE_EXTRA = 1  # a video whose only blocking problem is a wrong picture gets one more try: redrawing a scene is cheap
+
+
+def polish_rounds(meta: dict) -> int:
+    """Polishes done so far. A record without a round (made before rounds existed) counts as finished."""
+    done = meta.get("polish_done")
+    return 0 if not done else int(done.get("round", POLISH_ROUNDS))
 
 
 def picture_only(checks: list[dict]) -> bool:
@@ -54,6 +61,17 @@ def other_titles(folder: Path) -> list[str]:
     return [json.loads(m.read_text()).get("title", "") for m in folder.parent.glob("*/meta.json") if m.parent != folder]
 
 
+def fit_intro(intro: str) -> str | None:
+    """A description opening of 40 to 520 characters. A longer answer is cut at its last full sentence (a long answer was thrown away twice on 20 Oct,
+    which left a wrong claim in the description); shorter than 40, or no sentence end to cut at, gives None."""
+    if len(intro) > 520:
+        cut = max(intro.rfind(m, 0, 520) for m in (". ", "? ", "! ", ".\n"))
+        if cut < 40:
+            return None
+        intro = intro[:cut + 1]
+    return intro if 40 <= len(intro) <= 520 else None
+
+
 def realign_description(meta: dict, covers: str, chat=None) -> bool:
     """The description's first two sentences promised something the narration does not deliver: write them again from what the video really covers."""
     chat = chat or scriptgen._chat
@@ -66,7 +84,8 @@ def realign_description(meta: dict, covers: str, chat=None) -> bool:
         intro = re.sub(r"[—–]", "-", str(got.get("intro", "")).strip())
     except Exception:
         return False
-    if not 40 <= len(intro) <= 400:
+    intro = fit_intro(intro)
+    if not intro:
         return False
     meta["description"] = seo.rebuild_description(meta.get("description", ""), intro)
     return True
@@ -338,7 +357,8 @@ def correct_description(meta: dict, source: str, problems: list[str], chat=None)
         intro = re.sub(r"[\u2014\u2013]", "-", str(got.get("intro", "")).strip())
     except Exception:
         return False
-    if not 40 <= len(intro) <= 400:
+    intro = fit_intro(intro)
+    if not intro:
         return False
     meta["description"] = seo.rebuild_description(meta.get("description", ""), intro)
     return True
@@ -351,14 +371,14 @@ def polish(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) 
     now = now or dt.datetime.now(dt.timezone.utc)
     folder = config.OUT / slug
     meta = json.loads((folder / "meta.json").read_text())
-    if meta.get("polish_done"):
+    if polish_rounds(meta) >= POLISH_ROUNDS:
         return {"skipped": "already polished"}
     if meta.get("approved_by") == "you" or meta.get("video_id") or meta.get("hold"):
         return {"skipped": "not touched"}
     problems = watch_problems((meta.get("review") or {}).get("checks", []))
     if not problems:
         return {"skipped": "no facts warning"}
-    stamp = {"at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "problems": problems}
+    stamp = {"at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "problems": problems, "round": polish_rounds(meta) + 1}
     source = reviewer.source_text(meta)
     if not source:
         meta["polish_done"] = {**stamp, "result": "no source article, nothing changed"}

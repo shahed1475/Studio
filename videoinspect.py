@@ -370,6 +370,42 @@ def render_report(report: dict, meta: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+HEDGED = re.compile(r"\b(probably just|likely just|might just be|may just be|could just be|not a confirmed defect|probably not a defect)\b", re.I)
+TYPO = re.compile(r"typo|misspell|spelled|spelling|missing letter|wrong letter|extra letter|garbled letters", re.I)
+
+
+def _words(text: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9']+", str(text).lower().replace("\u2019", "'")))
+
+
+def real_caption_issues(issues: list, folder: Path) -> list:
+    """Drop what a vision model got wrong about captions. Captions are made from the narration text, so a "typo" can only be real when a word on screen is not
+    a word of the narration (checked against captions.srt around that second); a finding the model itself calls "probably just a caption split" is not a defect.
+    On 21 Oct 2026 a reading claimed 'swinging' was spelled 'swinging' and sent a documentary to the owner."""
+    try:
+        meta = json.loads((folder / "meta.json").read_text())
+        known = _words(" ".join(l.get("text", "") for l in meta.get("lines", [])) + " " + str(meta.get("title", "")))
+        import studiochecks
+
+        cues = studiochecks.parse_srt((folder / "captions.srt").read_text())
+    except (OSError, ValueError, KeyError):
+        known, cues = set(), []
+    out = []
+    for i in issues:
+        if not isinstance(i, dict):
+            continue
+        text = str(i.get("issue", ""))
+        if HEDGED.search(text):
+            continue
+        t = i.get("t")
+        if TYPO.search(text) and known and isinstance(t, (int, float)):
+            shown = set().union(*[_words(c[2]) for c in cues if c[0] - 1.5 <= t <= c[1] + 1.5] or [set()])
+            if shown and shown <= known:
+                continue  # every word on screen is a word of the narration: there is no typo
+        out.append(i)
+    return out
+
+
 def visual_review(folder: Path, frames: int = 10, post=None) -> list[dict]:
     """Rows for the quality gate from a vision reading of one of our own videos. Every row is a warning: a model's reading is a lead, not proof."""
     report = inspect_source(str(folder.name), "Find defects: captions cut off or unreadable, pictures that do not fit the narration, repeated pictures, watermarks, artefacts.", frames, post=post)
@@ -379,7 +415,8 @@ def visual_review(folder: Path, frames: int = 10, post=None) -> list[dict]:
     issues = [i for i in a.get("picture_issues", []) if isinstance(i, dict)]
     wrong = [i for i in issues if i.get("kind") != "mood"]  # a picture with no kind counts as wrong: only a stated "mood" is let through
     mood = [i for i in issues if i.get("kind") == "mood"]
-    rows = [{"name": "captions_readable", "ok": not a.get("caption_issues"), "severity": "warn", "detail": "; ".join(f"{i.get('t')} s: {i.get('issue')}" for i in a.get("caption_issues", [])[:3]) or "no caption problem seen in the sampled frames"},
+    caption_issues = real_caption_issues(a.get("caption_issues") or [], folder)
+    rows = [{"name": "captions_readable", "ok": not caption_issues, "severity": "warn", "detail": "; ".join(f"{i.get('t')} s: {i.get('issue')}" for i in caption_issues[:3]) or "no caption problem seen in the sampled frames"},
             {"name": "pictures_fit_story", "ok": not wrong, "severity": "warn", "times": [i["t"] for i in wrong if isinstance(i.get("t"), (int, float))], "detail": "; ".join(f"{i.get('t')} s: {i.get('issue')}" for i in wrong[:3]) or "no mismatch seen in the sampled frames"},
             {"name": "no_repeated_pictures", "ok": not a.get("repeated_visuals"), "severity": "warn", "detail": "the same picture shows up repeatedly" if a.get("repeated_visuals") else "no repetition seen in the sampled frames"}]
     if mood:
