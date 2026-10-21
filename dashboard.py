@@ -59,7 +59,7 @@ def videos() -> list[dict]:
             "description": d.get("description", ""), "tags": d.get("tags", []),
             "subtitles": d.get("subtitles"), "has_srt": (m.parent / "captions.srt").exists(), "review": d.get("review"), "approved_by": d.get("approved_by"), "hold": bool(d.get("hold")), "publish_at": d.get("publish_at"), "seo": d.get("seo"), "tags": d.get("tags", []), "thumbs": d.get("thumbnails", []), "thumbnail": d.get("thumbnail", ""), "hook": d.get("thumb_hook", ""),
             "thumb_v": int((m.parent / "thumbs").stat().st_mtime) if (m.parent / "thumbs").exists() else 0,
-            "mb": round(v.stat().st_size / 1e6, 1) if v.exists() else 0,
+            "mb": round(v.stat().st_size / 1e6, 1) if v.exists() else 0, "cost": round(__import__("llm").video_cost(m.parent.name), 2),
             "made": time.strftime("%Y-%m-%d %H:%M", time.localtime(v.stat().st_mtime)) if v.exists() else "",
             "mtime": v.stat().st_mtime if v.exists() else 0,
             "made_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(v.stat().st_mtime)) if v.exists() else "",

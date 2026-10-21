@@ -449,7 +449,7 @@ function videos(m){
     const v=S.videos.find(x=>x.slug===openSlug);if(!v){openSlug=null;return videos(m)}
     const can=v.state!=="uploaded",yt=S.youtube.token;
     m.innerHTML=`<div class="head"><div><button class="btn quiet sm" onclick="openSlug=null;editing=false;render()">${ico("arrow-left")}All videos</button></div><h1>${esc(v.title)}</h1>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${stateBadge(v.state)}<span class="mute">${v.format==="doc"?"Documentary":"Short"}, ${v.mb} MB, made ${esc(v.made)}</span></div></div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${stateBadge(v.state)}<span class="mute">${v.format==="doc"?"Documentary":"Short"}, ${v.mb} MB, made ${esc(v.made)}${v.cost?`, cost so far ${usd(v.cost)}`:""}</span></div></div>
     <div class="detail">
       <div class="stack"><video controls preload="metadata" poster="/thumb/${esc(v.slug)}" src="/video/${esc(v.slug)}"></video>
         ${v.format==="doc"?thumbPanel(v):""}
