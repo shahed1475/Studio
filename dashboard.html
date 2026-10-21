@@ -649,7 +649,10 @@ async function apNews(b){await api("/api/news/queue",{topic:b.dataset.t,sources:
 /* ---------- Activity ---------- */
 async function activity(m){
   if(!openJob&&S.jobs[0])openJob=S.jobs[0].id;
-  m.innerHTML=`<div class="head"><h1>Activity</h1><p class="sub">Every job the dashboard started, with its live log.</p></div>
+  let EV=[];try{EV=(await api("/api/agent")).events||[]}catch(e){}
+  m.innerHTML=`<div class="head"><h1>Activity</h1><p class="sub">What the automation did on its own, then every job the dashboard started with its live log.</p></div>
+  <div class="sec"><h2>What Autopilot and the agents did</h2><div class="panel">${EV.length?`<div class="rows">${EV.slice(0,30).map(e=>`<div><div class="grow"><div class="ttl">${esc(e.title)}</div><div class="mute">${esc(e.detail)} ${ago(Date.parse(e.at)/1000)}</div></div>${badge(...(AG_EVENT[e.kind]||AG_EVENT.info))}</div>`).join("")}</div>`:empty("pulse","Nothing yet","Every step the automation takes is written here in plain words.")}</div></div>
+  <div class="sec"><h2>Jobs you started</h2></div>
   <div class="panel">${S.jobs.length?`<div class="rows">${S.jobs.map(j=>`<div><div class="grow"><span class="ttl">${esc(j.cmd)}</span><div class="mute">${ago(j.started)}${j.ended?", took "+dur(j.ended-j.started):""}</div></div>${jobBadge(j)}<button class="btn quiet sm" onclick="openJob='${j.id}';activity(document.getElementById('main'))">${j.id===openJob?"Showing":"Show log"}</button></div>`).join("")}</div>`:empty("pulse","No jobs yet","When you create a video or approve one, progress appears here.",`<button class="btn" onclick="go('create')">Go to Create</button>`)}</div>
   ${S.jobs.length?`<div class="sec"><h2>Log</h2><pre class="log" id="log">Loading…</pre></div>`:""}`;
   m.firstElementChild.classList.add("view");
