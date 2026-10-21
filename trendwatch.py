@@ -80,14 +80,14 @@ def run(now: dt.datetime | None = None, yt=None) -> Path:
     queue = json.loads(config.TOPICS_FILE.read_text()) if config.TOPICS_FILE.exists() else []
     digest = {"week": f"{y}-W{w:02d}", "generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "videos": [], "ideas": []}
     try:
-        videos = search_niche(SEEDS + queue[:2], yt)
+        videos = search_niche(config.search_seeds(SEEDS) + queue[:2], yt)
         digest["videos"] = videos[:25]
         digest["summary"] = summarize_videos(videos)
         got = scriptgen._chat(
-            "You plan original YouTube videos for a calm storytelling channel (legends, mysteries, strange true history) "
+            f"You plan original YouTube videos for {config.channel_blurb()} "
             "for US viewers. These titles from other channels only show which themes are popular. Never reuse their wording "
             "or structure.\n" + "\n".join(f"- {v['title']}" for v in videos[:15]) +
-            "\n\nSuggest 5 different topics built from public-domain legends or well-documented history, each with its own "
+            f"\n\nSuggest 5 different topics {config.topic_kinds()}, each with its own "
             'angle and fresh wording. Return JSON: {"topics": ["..."]}')
         scraped = {_norm(v["title"]) for v in videos}
         new = [t.strip() for t in got.get("topics", []) if isinstance(t, str) and t.strip() and _norm(t) not in scraped and t not in queue]

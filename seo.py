@@ -5,6 +5,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+import config
 import reviewer
 import scriptgen
 
@@ -78,7 +79,7 @@ def core_phrase(meta: dict) -> str:
 
 def keywords(core: str) -> list[str]:
     found: list[str] = []
-    for q in [core, f"{core} story", f"{core} real story", f"{core} history", f"{core} explained", *SEEDS]:
+    for q in [core, f"{core} story", f"{core} real story", f"{core} history", f"{core} explained", *config.search_seeds(SEEDS)]:
         for s in suggest(q):
             if s not in found and not OFF_TOPIC.search(s):
                 found.append(s)
@@ -102,7 +103,7 @@ def make(folder: Path) -> dict:
     outline = " ".join(f"[{c.get('title', '')}] {meta['lines'][c['start_line']]['text']}" for c in meta.get("chapters", []) if c["start_line"] < len(meta["lines"]))
     story = (outline if starts and len(outline) > 200 else " ".join(l["text"] for l in meta["lines"][:10]))[:2200]
     data = scriptgen._chat(
-        f"You write YouTube metadata for a calm storytelling channel (history, legends, mysteries) for US viewers.\n"
+        f"You write YouTube metadata for {config.channel_blurb() if not config._owner_niche() else 'a calm storytelling channel (history, legends, mysteries)'} for US viewers.\n"
         f"Video topic: {meta['topic']}\nMain search phrase: {core}\nStory so far: {story}\n\n"
         f"Real search suggestions from YouTube: {json.dumps(kws[:30])}\n\n"
         "Rules:\n"

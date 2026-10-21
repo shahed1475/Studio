@@ -43,3 +43,35 @@ MAX_UPLOADS_PER_DAY = 2  # growth research: 1 a day is strong, 2 is the ceiling;
 
 def niche() -> dict:
     return json.loads(NICHE_FILE.read_text())
+
+
+def search_seeds(default: list[str]) -> list[str]:
+    """YouTube search phrases for research: the niche's own when a user studio chose one, else `default` (the owner's studio keeps its fixed list)."""
+    try:
+        seeds = niche().get("search_seeds")
+    except (OSError, ValueError):
+        return default
+    return list(seeds) if isinstance(seeds, list) and seeds and all(isinstance(x, str) and x.strip() for x in seeds) else default
+
+
+def _owner_niche() -> bool:
+    """True for the owner's original niche (or no niche file): every prompt keeps its original wording."""
+    try:
+        return niche().get("id", "folklore_mystery") == "folklore_mystery"
+    except (OSError, ValueError):
+        return True
+
+
+def channel_blurb() -> str:
+    """Who the channel is, for model prompts."""
+    if _owner_niche():
+        return "a calm storytelling channel (legends, mysteries, strange true history)"
+    nc = niche()
+    return f"a calm narrated channel: {nc['channel_angle']} (audience: {nc['audience']})"
+
+
+def topic_kinds() -> str:
+    """What kinds of topics to propose, for model prompts."""
+    if _owner_niche():
+        return "built from public-domain legends or well-documented history"
+    return "of well-documented subjects that each have an encyclopedia article, in the niche above"

@@ -160,10 +160,10 @@ def run(now: dt.datetime | None = None, yt=None) -> Path:
         if top:
             try:
                 got = scriptgen._chat(
-                    "You plan original YouTube videos for a calm storytelling channel (legends, mysteries, strange true history) for US "
+                    f"You plan original YouTube videos for {config.channel_blurb()} for US "
                     "viewers. These titles from other channels only show which themes already work. Never reuse their wording, structure "
                     "or script.\n" + "\n".join(f"- {v['title']}" for v in top[:25]) +
-                    "\n\nSuggest 5 different topics built from public-domain legends or well-documented history, each with its own angle "
+                    f"\n\nSuggest 5 different topics {config.topic_kinds()}, each with its own angle "
                     'and fresh wording. Return JSON: {"topics": ["..."]}')
                 scraped = {_norm(v["title"]) for v in top}
                 digest["ideas"] = [t.strip() for t in got.get("topics", []) if isinstance(t, str) and t.strip() and _norm(t) not in scraped]

@@ -45,8 +45,10 @@ def ideas(n: int = 10) -> list[str]:
     nc = config.niche()
     data = _chat(
         f"You plan YouTube Shorts for a US audience.\nNiche: {nc['name']}\nAudience: {nc['audience']}\n"
-        f"Angle: {nc['channel_angle']}\n\nGive {n} specific, different story topics: public-domain folk tales, fables and legends from around the world, "
-        f"or well-documented historical events and mysteries that have a surprising twist. Never pick modern copyrighted stories or characters. Return JSON: {{\"topics\": [\"...\"]}}"
+        f"Angle: {nc['channel_angle']}\n\nGive {n} specific, different story topics: "
+        + ("public-domain folk tales, fables and legends from around the world, or well-documented historical events and mysteries that have a surprising twist. "
+           if config._owner_niche() else "well-documented subjects of this niche that each have an encyclopedia article, each with a surprising or little-known angle. ")
+        + f"Never pick modern copyrighted stories or characters. Return JSON: {{\"topics\": [\"...\"]}}"
     )
     return [t.strip() for t in data["topics"] if isinstance(t, str) and t.strip()]
 

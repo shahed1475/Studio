@@ -22,8 +22,9 @@ REJECT_DAYS = 30  # a channel that was inactive or not a fit is not looked at ag
 
 def seeds_for(day: dt.date, n: int = SEARCHES_PER_RUN, shift: int = 0) -> list[str]:
     """The next n seed phrases. The start moves every day, and by one more step for every extra run in the same day."""
-    start = ((day.toordinal() + shift) * n) % len(SEEDS)
-    return [SEEDS[(start + i) % len(SEEDS)] for i in range(n)]
+    seeds = config.search_seeds(SEEDS)
+    start = ((day.toordinal() + shift) * n) % len(seeds)
+    return [seeds[(start + i) % len(seeds)] for i in range(n)]
 
 
 def _next_shift(today: dt.date) -> int:
