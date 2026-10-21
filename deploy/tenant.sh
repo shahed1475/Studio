@@ -7,7 +7,7 @@
 #   stop|start <name>      pause or resume one
 #   sync [name|all]        copy the newest code into the user studios (the worker is restarted only when no video is rendering)
 #   remove <name>          stop it and move its folder to ~/tenants-removed (nothing is deleted)
-#   quota                  storage per user studio
+#   quota                  storage per user studio, and refreshes data/tenants.json (the owner's Risks card reads it; run hourly from cron)
 #   caddy                  rebuild the web proxy's routes and (re)start it
 # Their settings live in ~/tenants/.meta (owner-only, not mounted). Never copied to a user: .env, settings.json, llm.json, token.json, data, videos. client_secret.json is copied once (owner-only file) so the user can sign in to Google.
 set -euo pipefail
@@ -77,11 +77,31 @@ cmd_invite() {
 
 cmd_list() {
   printf '%-12s %-7s %-9s %s\n' name port state storage
+  local rows=""
   for n in $(studios); do
     st="$(docker inspect -f '{{.State.Status}}' "studio-$n-dashboard" 2>/dev/null || echo missing)"
     q="$(docker exec "studio-$n-dashboard" python tenantmode.py quota 2>/dev/null || echo '{}')"
     printf '%-12s %-7s %-9s %s\n' "$n" "$(dash_port "$n")" "$st" "$q"
+    rows+="$n|$st|$q"$'\n'
   done
+  write_status "$rows"
+}
+
+write_status() { # data/tenants.json in the owner's studio: name, state, storage, proxy; read by the Risks card
+  local proxy="missing"; [[ "$(docker inspect -f '{{.State.Status}}' studio-proxy 2>/dev/null)" == running ]] && proxy="running"
+  ROWS="$1" PROXY="$proxy" python3 - "$SRC/data/tenants.json" <<'PY'
+import json, os, sys, datetime as dt
+studios = []
+for line in os.environ["ROWS"].splitlines():
+    name, state, q = (line.split("|", 2) + ["{}"])[:3]
+    try:
+        q = json.loads(q)
+    except ValueError:
+        q = {}
+    studios.append({"name": name, "state": state, "used_gb": q.get("used_gb"), "pct": q.get("pct"), "quota": q.get("state", "unknown")})
+os.makedirs(os.path.dirname(sys.argv[1]), exist_ok=True)
+json.dump({"at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "proxy": os.environ["PROXY"], "studios": studios}, open(sys.argv[1], "w"))
+PY
 }
 
 cmd_stop() { exists "${1:?name}"; compose "$1" stop; }

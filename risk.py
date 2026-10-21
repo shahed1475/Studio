@@ -332,6 +332,43 @@ def supply(now: dt.datetime | None = None) -> dict:
                "Check the Autopilot page: it should be working on this now. If money is the reason, top up OpenRouter." if urgent else "")
 
 
+def tenants(now: dt.datetime | None = None) -> dict | None:
+    """R12, only on a server that hosts user studios: `deploy/tenant.sh` writes data/tenants.json every hour (name, state, storage, whether the web proxy runs).
+    A full storage or a missing proxy needs action; a studio that is not running, a nearly full one, or a status file that stopped updating is a watch."""
+    path = config.ROOT / "data" / "tenants.json"
+    if not path.exists():
+        return None
+    now = now or dt.datetime.now(dt.timezone.utc)
+    try:
+        d = json.loads(path.read_text())
+        at = dt.datetime.strptime(d["at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)
+        studios = d["studios"]
+    except (OSError, ValueError, KeyError):
+        return ind("tenants", "User studios", "watch", "the user-studio status file cannot be read", "deploy/tenant.sh writes it every hour", "Run deploy/tenant.sh list on the server.")
+    notes, level = [], "ok"
+    if d.get("proxy") != "running":
+        notes.append("the web proxy is not running: users cannot open their studios")
+        level = "act"
+    for st in studios:
+        if st.get("quota") == "full":
+            notes.append(f"{st['name']}: storage full ({st.get('used_gb')} GB)")
+            level = worst(level, "act")
+        elif st.get("quota") == "warn":
+            notes.append(f"{st['name']}: storage {st.get('pct')}% used")
+            level = worst(level, "watch")
+        if st.get("state") != "running":
+            notes.append(f"{st['name']}: not running ({st.get('state')})")
+            level = worst(level, "watch")
+    if (now - at).total_seconds() > 3 * 3600:
+        notes.append("the status was not updated for over three hours")
+        level = worst(level, "watch")
+    names = ", ".join(st["name"] for st in studios) or "none"
+    ev = f"{len(studios)} user studio{'s' if len(studios) != 1 else ''} ({names}). " + ("; ".join(notes) if notes else "all running, storage inside the limit, proxy up")
+    return ind("tenants", "User studios", level, ev,
+               "own containers and folders per user, a 10 GB limit kept by each studio, at most two renders at once, an unclaimed studio serves nothing, the proxy removes other studios' cookies",
+               "Check deploy/tenant.sh list; a studio at its storage limit stops making videos until its user deletes some." if level != "ok" else "")
+
+
 def rules(vs, now: dt.datetime | None = None) -> dict:
     """The compliance catalog (compliance.RULES): which rules are enforced, which source pages changed after a rule was last verified, and which waiting videos fail one."""
     import compliance
@@ -381,6 +418,9 @@ def assess(now: dt.datetime | None = None, out: Path | None = None, left: float 
         left = credit_left(key) if key else None
     run = running_jobs() if running is None else running
     rows = [facts(vs), rights(vs), pattern(vs, now), money(left, daily_spend()), process(run, worker_starts(now)), skills(), access(), publishing(vs, now), supply(now), rules(vs, now), login(now)]
+    t = tenants(now)
+    if t:
+        rows.append(t)
     return rows
 
 

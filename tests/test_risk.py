@@ -221,3 +221,28 @@ def test_money_watch_writes_one_plain_message_a_day_and_runs_the_guard(world, mo
     assert len(msgs) == 1 and "$1.20 left" in msgs[0]["title"] and "Top up" in msgs[0]["detail"]
     assert risk.money_watch(NOW + dt.timedelta(hours=3))["announced"] is False  # once a day
     assert risk.money_watch(NOW + dt.timedelta(days=1))["announced"] is True
+
+
+def _tenants_file(world, now, studios, proxy="running", age_hours=0.5):
+    (world / "data").mkdir(exist_ok=True)
+    at = (now - dt.timedelta(hours=age_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    (world / "data" / "tenants.json").write_text(json.dumps({"at": at, "proxy": proxy, "studios": studios}))
+
+
+def test_the_user_studios_row_exists_only_where_user_studios_do_and_follows_storage_and_the_proxy(world):
+    assert risk.tenants(NOW) is None and not any(r["id"] == "tenants" for r in risk.assess(NOW, left=5.0, running=[]))
+    ok = {"name": "ann", "state": "running", "used_gb": 1.2, "pct": 12, "quota": "ok"}
+    _tenants_file(world, NOW, [ok])
+    r = risk.tenants(NOW)
+    assert r["id"] == "tenants" and r["level"] == "ok" and "1 user studio" in r["evidence"] and "ann" in r["evidence"]
+    assert any(x["id"] == "tenants" for x in risk.assess(NOW, left=5.0, running=[]))
+    _tenants_file(world, NOW, [ok, {**ok, "name": "bob", "pct": 85, "used_gb": 8.5, "quota": "warn"}])
+    assert risk.tenants(NOW)["level"] == "watch" and "bob" in risk.tenants(NOW)["evidence"]
+    _tenants_file(world, NOW, [{**ok, "pct": 100, "quota": "full"}])
+    assert risk.tenants(NOW)["level"] == "act"
+    _tenants_file(world, NOW, [{**ok, "state": "exited"}])
+    assert risk.tenants(NOW)["level"] == "watch" and "not running" in risk.tenants(NOW)["evidence"]
+    _tenants_file(world, NOW, [ok], proxy="missing")
+    assert risk.tenants(NOW)["level"] == "act" and "web proxy" in risk.tenants(NOW)["evidence"]
+    _tenants_file(world, NOW, [ok], age_hours=6)
+    assert risk.tenants(NOW)["level"] == "watch" and "not updated" in risk.tenants(NOW)["evidence"]
