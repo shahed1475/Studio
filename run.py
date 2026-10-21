@@ -452,6 +452,10 @@ def main() -> None:
         print(r.get("error") or f"{r['checked']} published videos checked, {len(r['problems'])} problems" + (", Autopilot paused" if r["paused"] else ""))
         for p in r["problems"]:
             print(" -", p)
+    elif a[0] == "tenant-quota":
+        import tenantmode
+
+        print(json.dumps(tenantmode.enforce_quota()))
     elif a[0] == "titletest":
         import titletest
 

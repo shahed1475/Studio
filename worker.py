@@ -25,6 +25,8 @@ JOBS = [
     {"name": "agent", "at": "06:30", "cmds": [["agent"]], "timeout": 1800},
     {"name": "weekly", "at": "09:00", "weekday": 0, "cmds": [["newswatch"], ["trends"], ["channels"]], "timeout": 3600},
 ]
+if os.getenv("STUDIO_MODE", "").strip().lower() == "tenant":  # a user studio keeps its own storage limit
+    JOBS.append({"name": "quota", "every": 3600, "cmds": [["tenant-quota"]], "timeout": 600})
 CACHE_MAX_AGE_DAYS = 21
 
 
@@ -198,4 +200,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    import tenantmode
+
+    if tenantmode.is_tenant():
+        tenantmode.apply_defaults()  # first run of a user studio: nothing starts by itself until the user turns it on
     main()

@@ -53,7 +53,7 @@ def _picture_filter(w: int, h: int, frames: int, shot: dict | None, i: int) -> s
             f"zoompan={move}:d={frames}:s={w}x{h}:fps={config.FPS},setsar=1,eq=brightness=-0.05:saturation=0.85")
 
 
-def render(clips, durations, narration: Path, ass: Path | None, work: Path, out: Path,
+def _render_ungated(clips, durations, narration: Path, ass: Path | None, work: Path, out: Path,
            size: tuple[int, int] | None = None, music: Path | None = None, loudness: float | None = None,
            shots: bool = False, crossfade: float = 0.0, grain: bool = False) -> Path:
     """crossfade: seconds of dissolve between scenes (the video keeps the voice's length). grain: vignette and film grain."""
@@ -118,3 +118,11 @@ def render(clips, durations, narration: Path, ass: Path | None, work: Path, out:
         args += ["-vf", ",".join(vf)]
     _ff(*args, *venc, cwd=work)
     return out
+
+
+def render(*args, **kwargs) -> Path:
+    """The render, behind the server-wide gate of a user studio (STUDIO_RENDER_GATE): without that setting it runs at once, as before."""
+    import tenantmode
+
+    with tenantmode.render_gate():
+        return _render_ungated(*args, **kwargs)

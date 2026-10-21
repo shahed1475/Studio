@@ -793,6 +793,10 @@ class H(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    import tenantmode
+
+    if tenantmode.is_tenant():
+        tenantmode.apply_defaults()
     print(f"Dashboard: http://studio.localhost:{PORT}   (also http://127.0.0.1:{PORT})")
     bind = os.getenv("STUDIO_BIND", "").strip()
     if bind and webauth.enabled():  # a second address (the Tailscale one) is opened only when a login exists
