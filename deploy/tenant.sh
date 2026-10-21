@@ -121,7 +121,12 @@ cmd_caddy() {
       echo "  @claim_$n path /u/$n/claim"
       echo "  handle @enter_$n {"; echo "    header Set-Cookie \"studio_tenant=$n; Path=/; Max-Age=31536000; Secure; HttpOnly; SameSite=Lax\""; echo "    redir * / 303"; echo "  }"
       echo "  handle @claim_$n {"; echo "    header Set-Cookie \"studio_tenant=$n; Path=/; Max-Age=31536000; Secure; HttpOnly; SameSite=Lax\""; echo "    redir * /claim?{query} 303"; echo "  }"
-      echo "  handle @t_$n {"; echo "    reverse_proxy 127.0.0.1:$p"; echo "  }"
+      # the browser sends every studio's session cookie to this one address: this studio gets its own and nothing else (RE2 has no look-ahead, so its own is set aside, the rest removed, its own put back)
+      echo "  handle @t_$n {"; echo "    reverse_proxy 127.0.0.1:$p {"
+      echo "      header_up Cookie \"studio_session_$n=\" \"__own=\""
+      echo "      header_up Cookie \"studio_(session|tenant)[A-Za-z0-9_]*=[^;]*;?[ ]*\" \"\""
+      echo "      header_up Cookie \"__own=\" \"studio_session_$n=\""
+      echo "    }"; echo "  }"
     done
     echo "  handle {"; echo "    respond \"Story Studio. Open the link you were sent.\" 200"; echo "  }"
     echo "}"
