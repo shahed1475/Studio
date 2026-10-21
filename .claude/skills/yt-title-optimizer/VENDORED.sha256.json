@@ -1,0 +1,8 @@
+{
+ "source": "https://github.com/sergebulaev/youtube-skills.git",
+ "commit": "0829e02",
+ "files": {
+  "SKILL.md": "0dbe555c605574667e23b71eebed2b8281a4a8f18c351f6c53b526348c8cc156",
+  "references/title-checklist.md": "d4a419d494609ec2f359064ec0c33d44da607606a493dcae4b20d7542755830c"
+ }
+}

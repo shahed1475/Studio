@@ -1,0 +1,12 @@
+{
+ "source": "https://github.com/sergebulaev/youtube-skills.git",
+ "commit": "0829e02",
+ "files": {
+  "algorithm-heuristics.md": "08b924c31356e233f2e22d1388534429205b56aa4b8be9a2b36eb82fcabdb6e9",
+  "hook-formulas.md": "f242a4c2b98c8ce5a8e7cd34511cade3e951956c2576ecaf38d6368f77084f35",
+  "thumbnail-principles.md": "ec97aa11c07d5b6722652d40d108b5f9f1fe5c90ad78870c2e9dd026e025d651",
+  "untrusted-content.md": "f770c33de809c4ac8f877318bf5a7f4874cc7b95c27202aeca2fecb98c2d78ef",
+  "voice-profile.md": "c5437756a54c850bc1fa8a08b74e28cb6aa41aa5caa16b953a12a97af3d8243e",
+  "voice-rules.md": "050db7ee555f31ad134d3eaf85a2f0f4896b6f483bf2dd04772253ba4e368502"
+ }
+}

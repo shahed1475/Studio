@@ -62,6 +62,9 @@ Documentaries cost about $1 each with their pictures (script $0.25, AI pictures 
 ## User studios (2026-10-21)
 Up to 5 other people can run their own studio on this server (`deploy/tenant.sh`, docs/USER_STUDIOS.md): own folder and containers each, own OpenRouter key, own YouTube login, own niche, one public address with cookie routing. Everything for them is gated by `STUDIO_MODE=tenant` (`tenantmode.py`, `niche.py`, `ytweb.py`); the owner's studio must behave exactly as before, and `config.channel_blurb()` / `topic_kinds()` keep the owner's original prompt wording. The Risks card gets a row "User studios" when `data/tenants.json` exists. Never copy `.env`, settings, `llm.json`, tokens or videos into a user's folder; their settings live in `~/tenants/.meta` outside what their containers can write.
 
+## Adding GitHub projects and skills (2026-10-22)
+Owner guide: docs/EXTENSIONS.md. Skills (a folder with SKILL.md) are added only with `python extend.py add <folder>` (scan with `vetskill.py`, copy, pin hashes, `extend.py verify` is a test and part of the Risks card). Code libraries and apps are never copied in blind: plan, build, test. Third-party skills are advice; this file, the `studio-*` skills and the reviewer checks win. After adding anything, update the list in docs/EXTENSIONS.md.
+
 ## Controls that exist (and their limits)
 Source-grounded scripts (up to two Wikipedia articles); claim ledger; claims checked against the source article, then against the web with citations; AI review that sees the source; fixer agent (two tries, then the owner); script, license, video and caption checks; visual review from sampled frames; upload read-back.
 Limits: Wikipedia is a secondary source; the web check is a model with search, not a historian; a vision reading covers only the frames sampled; passing checks are evidence, not proof.

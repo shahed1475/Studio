@@ -1,0 +1,10 @@
+{
+ "source": "https://github.com/sergebulaev/youtube-skills.git",
+ "commit": "0829e02",
+ "files": {
+  "SKILL.md": "04a8b2190de836a82c2b5210faa1b2cfaee7da638af160c22c5670464237905e",
+  "references/post-types.md": "f1036b73d1bd96b54d8cf9ab450c83d56c78ee43c73aa59d0025eb2d7716a562",
+  "sub-skills/illustration.md": "325e9ff0828a09ac8e68728ed5b6a8601647f6ab9f230f35fe3b8c0d38f96af2",
+  "sub-skills/voice-profile.md": "53c596b6eedd38af350a4974dbfa30e06ac2d48b96f28d3f38a62cb4a4c7bd1b"
+ }
+}

@@ -251,17 +251,15 @@ def worker_starts(now: dt.datetime, log: Path | None = None) -> int:
 
 # ---- R6 third-party skills ----
 def skills() -> dict:
-    root = config.ROOT / ".claude" / "skills" / "watch"
-    try:
-        pinned = json.loads((root / "VENDORED.sha256.json").read_text())["files"]
-    except (OSError, ValueError, KeyError):
-        return ind("skills", "Third-party skills and plugins", "watch", "no pinned fingerprint for the vendored skill", "static scanner (vetskill.py), copy instead of auto-update, pinned hashes")
-    actual = {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(root.rglob("*"))
-              if p.is_file() and p.name not in ("VENDORED.md", "VENDORED.sha256.json") and "__pycache__" not in p.parts}
-    changed = sorted(k for k in set(pinned) | set(actual) if pinned.get(k) != actual.get(k))
+    import extend
+
+    pinned = extend.vendored()
+    if not pinned:
+        return ind("skills", "Third-party skills and plugins", "watch", "no pinned fingerprint for any vendored skill", "static scanner (vetskill.py), copy instead of auto-update, pinned hashes")
+    changed = extend.verify()
     return ind("skills", "Third-party skills and plugins", "act" if changed else "ok",
-               f"changed since review: {', '.join(changed[:4])}" if changed else f"{len(pinned)} vendored files match the reviewed fingerprint",
-               "read before install, scanned with vetskill.py, copied (never auto-updated), hashes pinned and tested; publishing code from third parties not installed",
+               f"changed since review: {'; '.join(changed[:4])}" if changed else f"{len(pinned)} vendored skills match the reviewed fingerprint ({', '.join(p.name for p in pinned[:6])}{'...' if len(pinned) > 6 else ''})",
+               "read before install, scanned with vetskill.py, copied by extend.py (never auto-updated), hashes pinned and tested; publishing code from third parties not installed",
                "Re-read the upstream diff before accepting any update.")
 
 
