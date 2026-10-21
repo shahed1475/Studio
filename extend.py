@@ -22,7 +22,6 @@ import vetskill
 
 SKIP_DIRS = {".git", "__pycache__", "node_modules", ".github"}
 SKIP_NAMES = {"hooks.json", ".mcp.json", "mcp.json"}
-PRIVILEGED = ("allowed-tools", "hooks", "model", "permissions", "mcp-servers", "mcpservers", "tools")  # frontmatter keys that grant rights or run code
 META = ("VENDORED.md", "VENDORED.sha256.json")
 
 
@@ -50,30 +49,43 @@ def inside(repo: Path, folder: Path) -> bool:
     return not folder.is_symlink() and folder.resolve().is_relative_to(repo.resolve())
 
 
-KEY_LINE = re.compile(r"""^(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_.-]+))\s*:(?:\s|$)""")
+SAFE_KEYS = {"name", "description", "license", "version", "author", "homepage", "repository", "metadata", "compatibility", "tags"}  # anything else is refused unless --allow-privileged
+KEY_LINE = re.compile(r"^([A-Za-z0-9_-]+):(?:[ ]|$)")
+ODD_CHARS = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029\ufeff]")  # controls, lone CR, VT/FF, NEL, Unicode line and paragraph separators, stray BOM
 
 
 def privileged_keys(skill: Path) -> list[str]:
-    """Frontmatter keys that grant rights or run code. Fails closed: no frontmatter, no closing line, or a top-level line that is not a plain `key: value`
-    (flow maps, tabs, odd syntax a real YAML reader might see differently) is reported as 'unreadable frontmatter' and the skill is refused."""
-    lines = (skill / "SKILL.md").read_text(errors="replace").lstrip("\ufeff").splitlines()
-    if not lines or lines[0].rstrip() != "---":
-        return ["unreadable frontmatter"]
+    """Frontmatter keys outside a short allowlist (rights, hooks, tools, models ...). Fails closed so that no reader of the file can see something else
+    than this check does: the block must open on the first line, every top-level line is a plain unquoted `key: value`, the first line after the opening is a key
+    (not an indent), tabs, control characters and unusual line separators are refused, and only `\\n` / `\\r\\n` end lines. The result is the list of keys not allowed."""
+    raw = (skill / "SKILL.md").read_bytes().decode("utf-8", errors="replace")
+    text = raw[1:] if raw.startswith("\ufeff") else raw
+    text = text.replace("\r\n", "\n")
+    lines = text.split("\n")
+    bad = ["unreadable frontmatter"]
+    if lines[0] != "---":
+        return bad
     try:
-        end = next(i for i in range(1, len(lines)) if lines[i].rstrip() == "---")
+        end = next(i for i in range(1, len(lines)) if lines[i].rstrip(" ") == "---")
     except StopIteration:
-        return ["unreadable frontmatter"]
-    keys = set()
-    for ln in lines[1:end]:
-        if not ln.strip() or ln.lstrip().startswith("#") or ln[0] in " \t":
-            if ln.startswith("\t"):
-                return ["unreadable frontmatter"]
-            continue  # blank, comment or an indented continuation of the key above
+        return bad
+    block = lines[1:end]
+    if ODD_CHARS.search("\n".join(block)) or any(ln.startswith("\t") or "\t" in ln[:len(ln) - len(ln.lstrip(" \t"))] for ln in block):
+        return bad
+    keys, seen_key = set(), False
+    for ln in block:
+        if not ln.strip() or ln.lstrip(" ").startswith("#"):
+            continue
+        if ln[0] == " ":
+            if not seen_key:
+                return bad  # an indented line before any key
+            continue
         m = KEY_LINE.match(ln)
         if not m:
-            return ["unreadable frontmatter"]
-        keys.add(next(g for g in m.groups() if g).strip().lower())
-    return sorted(k for k in keys if k in PRIVILEGED)
+            return bad
+        keys.add(m.group(1).lower())
+        seen_key = True
+    return sorted(k for k in keys if k not in SAFE_KEYS)
 
 
 def unscanned(result: dict) -> list[str]:
@@ -103,7 +115,7 @@ def install(skill: Path, repo: Path, replace: bool = False, allow_privileged: bo
     if links := symlinks(skill):
         return "refused", f"contains symbolic links ({', '.join(links[:3])})"
     if (keys := privileged_keys(skill)) and not allow_privileged:
-        return "refused", f"SKILL.md asks for rights or code ({', '.join(keys)}); read it, then add with --allow-privileged"
+        return "refused", f"SKILL.md has keys outside the safe list ({', '.join(keys)}); read it, then add with --allow-privileged"
     result = vetskill.scan(skill)
     if gaps := unscanned(result):
         return "refused", f"files the scanner could not read ({gaps[0]})"

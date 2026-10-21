@@ -79,7 +79,8 @@ def test_frontmatter_that_cannot_be_read_strictly_is_refused(tmp_path, monkeypat
     monkeypatch.setattr(config, "ROOT", tmp_path / "studio")
     repo = tmp_path / "repo"
     for name, text in {"bom": "\ufeff---\nname: x\nAllowed-Tools: Bash\n---\n", "quoted": '---\n"allowed-tools": Bash\n---\n',
-                       "flow": "---\n{name: x, hooks: y}\n---\n", "none": "no frontmatter\n", "open": "---\nname: x\n"}.items():
+                       "flow": "---\n{name: x, hooks: y}\n---\n", "none": "no frontmatter\n", "open": "---\nname: x\n", "indent": "---\n  hooks: y\nname: x\n---\n", "esc": '---\n"allowed\\x2dtools": Bash\n---\n',
+                       "sep": "---\nname: x\u2028allowed-tools: Bash\n---\n", "vt": "---\nname: x\x0bmodel: y\n---\n", "unknown": "---\nname: x\nmodel: opus\n---\n"}.items():
         d = repo / name
         d.mkdir(parents=True)
         (d / "SKILL.md").write_text(text)
