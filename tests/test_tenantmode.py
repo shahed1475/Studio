@@ -116,3 +116,32 @@ def test_the_worker_checks_storage_hourly_only_for_a_user_studio(monkeypatch):
     assert any(j["name"] == "quota" and j["every"] == 3600 and j["cmds"] == [["tenant-quota"]] for j in worker.JOBS)
     monkeypatch.delenv("STUDIO_MODE", raising=False)
     importlib.reload(worker)
+
+
+def test_a_user_who_turns_new_videos_back_on_while_storage_is_still_full_is_stopped_again(root):
+    (root / "output").mkdir()
+    (root / "output" / "v.mp4").write_bytes(b"x" * 1_000_000)
+    (root / "autopilot.json").write_text(json.dumps({"enabled": True, "make_videos": True}))
+    tenantmode.enforce_quota(root, NOW, limit_gb=0.001)
+    (root / "autopilot.json").write_text(json.dumps({"enabled": True, "make_videos": True}))  # switched back on in the dashboard
+    tenantmode.enforce_quota(root, NOW + dt.timedelta(hours=1), limit_gb=0.001)
+    assert json.loads((root / "autopilot.json").read_text())["make_videos"] is False
+    assert len([e for e in agentlog.recent() if "storage" in e["title"].lower()]) == 1  # still one message
+
+
+def test_an_unreadable_settings_file_is_left_alone_not_replaced(root):
+    (root / "output").mkdir()
+    (root / "output" / "v.mp4").write_bytes(b"x" * 1_000_000)
+    (root / "autopilot.json").write_text("{ broken")
+    tenantmode.enforce_quota(root, NOW, limit_gb=0.001)
+    assert (root / "autopilot.json").read_text() == "{ broken"
+
+
+def test_a_video_started_by_hand_is_refused_when_storage_is_full(root, monkeypatch):
+    import run
+    monkeypatch.setenv("STUDIO_MODE", "tenant")
+    monkeypatch.setattr(tenantmode, "quota_state", lambda *a, **k: {"state": "full", "used_gb": 10.2, "limit_gb": 10.0, "pct": 102})
+    with pytest.raises(SystemExit, match="storage is full"):
+        run._charged(lambda topic: root / "doc-x", "A topic")
+    monkeypatch.setenv("STUDIO_MODE", "")
+    assert run._charged(lambda topic: root / "doc-x", "A topic") == root / "doc-x"  # the owner's studio has no such limit

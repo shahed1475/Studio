@@ -69,6 +69,9 @@ def test_wrong_password_attempts_are_counted_per_visitor_behind_the_proxy():
         headers = {"X-Forwarded-For": "203.0.113.9"}
 
     assert dashboard.client_ip(Fake) == "203.0.113.9"
+    Fake.headers = {"X-Forwarded-For": "1.2.3.4, 203.0.113.9"}  # a visitor can send their own first entry: only the last, added by our proxy, counts
+    assert dashboard.client_ip(Fake) == "203.0.113.9"
+    Fake.headers = {"X-Forwarded-For": "203.0.113.9"}
     Fake.client_address = ("198.51.100.4", 5)  # not the proxy: the header is not trusted
     assert dashboard.client_ip(Fake) == "198.51.100.4"
     Fake.client_address, Fake.headers = ("127.0.0.1", 5), {}

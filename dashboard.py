@@ -412,7 +412,7 @@ def client_ip(handler) -> str:
     """The visitor's address. Behind the studio's own web proxy (it connects from this machine) the proxy's X-Forwarded-For names the real visitor, so wrong
     passwords are counted per visitor and not for everybody at once; from anywhere else the header is not believed."""
     ip = handler.client_address[0]
-    fwd = (handler.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+    fwd = (handler.headers.get("X-Forwarded-For") or "").split(",")[-1].strip()  # the last entry is the one our proxy added; earlier ones came from the visitor
     return fwd if ip in ("127.0.0.1", "::1") and fwd else ip
 
 
@@ -841,6 +841,7 @@ if __name__ == "__main__":
 
     if tenantmode.is_tenant():
         tenantmode.apply_defaults()
+        webauth.LIMITER.global_max = 30  # guessing from many addresses at once is stopped too
     print(f"Dashboard: http://studio.localhost:{PORT}   (also http://127.0.0.1:{PORT})")
     bind = os.getenv("STUDIO_BIND", "").strip()
     if bind and webauth.enabled():  # a second address (the Tailscale one) is opened only when a login exists

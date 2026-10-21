@@ -524,3 +524,10 @@ def test_workable_means_autopilot_can_still_review_repair_or_polish_the_video(mo
     assert not w({"review": {"verdict": "pass", "checks": []}}) and not w({"review": {"verdict": "fail", "checks": []}, "hold": True})
     monkeypatch.setattr(autopilot.llm, "video_cost", lambda slug: 9.0)
     assert not w({"review": {"verdict": "fail", "checks": [{"name": "title_matches", "ok": False, "severity": "block"}]}, "fix_attempts": 0})
+
+
+def test_no_new_video_is_planned_while_a_user_studios_storage_is_full():
+    assert ("make", None) in plan(state([], storage_full=False))
+    assert ("make", None) not in plan(state([], storage_full=True)) and ("make_short", None) not in plan(state([], storage_full=True))
+    near = vid(verdict="pass", approved=True, publish_at=iso(NOW + timedelta(hours=1)))
+    assert ("upload", "v") in plan(state([near], storage_full=True))  # what exists still goes out

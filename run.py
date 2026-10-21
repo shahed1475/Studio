@@ -92,6 +92,10 @@ def _best_topic(fmt: str) -> str | None:
 def _charged(make, topic):
     """Run a make function, charging its spend to the new video: its folder does not exist while the script is written, so the cost is kept under a
     temporary name and moved to the folder's name when it is known."""
+    import tenantmode
+
+    if tenantmode.is_tenant() and tenantmode.quota_state()["state"] == "full":
+        raise SystemExit("storage is full: delete videos you no longer need, then try again")
     key = f"pending:{os.getpid()}"
     with llm.cost_scope(key):
         folder = make(topic)

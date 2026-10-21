@@ -83,18 +83,22 @@ def enforce_quota(root: Path | None = None, now: dt.datetime | None = None, limi
     ap_file = root / "autopilot.json"
     try:
         ap = json.loads(ap_file.read_text())
-    except (OSError, ValueError):
+    except OSError:
         ap = {}
-    if q["state"] == "full" and not st.get("paused_by_quota"):
-        if ap.get("make_videos", True):
-            ap["make_videos"] = False
+    except ValueError:
+        ap = None  # unreadable: it is never rewritten from an empty guess
+    if q["state"] == "full":
+        if ap is not None and ap.get("make_videos", True):
+            ap["make_videos"] = False  # every run, so switching it back on while the folder is still full does not get around the limit
             _write_json(ap_file, ap)
+        if not st.get("paused_by_quota"):
             st["paused_by_quota"] = True
-        agentlog.event("error", "Storage is full: no new videos", f"Your studio uses {q['used_gb']:.1f} of {q['limit_gb']:.0f} GB. Delete videos you no longer need "
-                       "(uploaded video files are removed after 7 days by themselves) and new videos start again.", notify=True, now=now)
+            agentlog.event("error", "Storage is full: no new videos", f"Your studio uses {q['used_gb']:.1f} of {q['limit_gb']:.0f} GB. Delete videos you no longer need "
+                           "(uploaded video files are removed after 7 days by themselves) and new videos start again.", notify=True, now=now)
     elif st.get("paused_by_quota") and q["pct"] < 90:
-        ap["make_videos"] = True
-        _write_json(ap_file, ap)
+        if ap is not None:
+            ap["make_videos"] = True
+            _write_json(ap_file, ap)
         st["paused_by_quota"] = False
         agentlog.event("applied", "Storage is back under the limit: new videos start again", f"{q['used_gb']:.1f} of {q['limit_gb']:.0f} GB used.", now=now)
     st["last"] = {**q, "at": now.strftime("%Y-%m-%dT%H:%M:%SZ")}

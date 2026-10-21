@@ -160,9 +160,11 @@ def cookie_from(header: str) -> str:
 
 
 class Limiter:
-    def __init__(self):
+    def __init__(self, global_max: int = 0):
         self.fails: dict[str, list[float]] = {}
         self.lock = threading.Lock()
+        self.global_max = global_max  # 0 = no limit across all visitors; a user studio on the open internet sets one
+        self.all: list[float] = []
 
     def blocked(self, ip: str, now: float | None = None) -> bool:
         now = now or time.time()
@@ -176,10 +178,12 @@ class Limiter:
         now = now or time.time()
         with self.lock:
             recent = [t for t in self.fails.get(ip, []) if now - t < WINDOW]
-            if len(recent) >= MAX_FAILS:
+            self.all = [t for t in self.all if now - t < WINDOW]
+            if len(recent) >= MAX_FAILS or (self.global_max and len(self.all) >= self.global_max):
                 self.fails[ip] = recent
                 return False
             recent.append(now)
+            self.all.append(now)
             self.fails[ip] = recent
             return True
 

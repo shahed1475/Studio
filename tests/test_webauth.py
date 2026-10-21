@@ -97,3 +97,11 @@ def test_an_invite_cannot_replace_a_login_that_already_exists():
     with pytest.raises(ValueError):
         webauth.claim(tok, "evil@mail.com", "a long enough password", now=1001)
     assert webauth.verify("me@gmail.com", "correct horse battery")
+
+
+def test_a_global_limit_stops_guessing_spread_over_many_addresses():
+    lim = webauth.Limiter(global_max=10)
+    assert all(lim.reserve(f"10.0.0.{i}", now=1000) for i in range(10))
+    assert lim.reserve("10.0.0.99", now=1001) is False  # eleven different visitors in ten minutes: refused for everybody
+    assert lim.reserve("10.0.0.99", now=1000 + webauth.WINDOW + 1) is True
+    assert webauth.Limiter().reserve("a", now=1000) is True  # no global limit unless asked for (the owner's studio)
