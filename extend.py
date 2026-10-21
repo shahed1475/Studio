@@ -11,6 +11,7 @@ other own skill. Docs: docs/EXTENSIONS.md.
 import datetime as dt
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -49,10 +50,30 @@ def inside(repo: Path, folder: Path) -> bool:
     return not folder.is_symlink() and folder.resolve().is_relative_to(repo.resolve())
 
 
+KEY_LINE = re.compile(r"""^(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_.-]+))\s*:(?:\s|$)""")
+
+
 def privileged_keys(skill: Path) -> list[str]:
-    head = (skill / "SKILL.md").read_text(errors="ignore").split("---")
-    block = head[1] if len(head) > 2 and not head[0].strip() else ""
-    return sorted({k for k in (ln.split(":", 1)[0].strip().lower() for ln in block.splitlines() if ":" in ln and not ln.startswith((" ", "\t"))) if k in PRIVILEGED})
+    """Frontmatter keys that grant rights or run code. Fails closed: no frontmatter, no closing line, or a top-level line that is not a plain `key: value`
+    (flow maps, tabs, odd syntax a real YAML reader might see differently) is reported as 'unreadable frontmatter' and the skill is refused."""
+    lines = (skill / "SKILL.md").read_text(errors="replace").lstrip("\ufeff").splitlines()
+    if not lines or lines[0].rstrip() != "---":
+        return ["unreadable frontmatter"]
+    try:
+        end = next(i for i in range(1, len(lines)) if lines[i].rstrip() == "---")
+    except StopIteration:
+        return ["unreadable frontmatter"]
+    keys = set()
+    for ln in lines[1:end]:
+        if not ln.strip() or ln.lstrip().startswith("#") or ln[0] in " \t":
+            if ln.startswith("\t"):
+                return ["unreadable frontmatter"]
+            continue  # blank, comment or an indented continuation of the key above
+        m = KEY_LINE.match(ln)
+        if not m:
+            return ["unreadable frontmatter"]
+        keys.add(next(g for g in m.groups() if g).strip().lower())
+    return sorted(k for k in keys if k in PRIVILEGED)
 
 
 def unscanned(result: dict) -> list[str]:

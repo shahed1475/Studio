@@ -73,4 +73,14 @@ def test_a_skill_folder_that_is_a_link_outside_the_repo_is_refused(tmp_path, mon
     repo.mkdir()
     (repo / "stolen").symlink_to(outside)
     assert extend.install(repo / "stolen", repo)[0] == "refused"
-    assert extend.find_skills(repo) == [] or True
+
+
+def test_frontmatter_that_cannot_be_read_strictly_is_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "ROOT", tmp_path / "studio")
+    repo = tmp_path / "repo"
+    for name, text in {"bom": "\ufeff---\nname: x\nAllowed-Tools: Bash\n---\n", "quoted": '---\n"allowed-tools": Bash\n---\n',
+                       "flow": "---\n{name: x, hooks: y}\n---\n", "none": "no frontmatter\n", "open": "---\nname: x\n"}.items():
+        d = repo / name
+        d.mkdir(parents=True)
+        (d / "SKILL.md").write_text(text)
+        assert extend.install(d, repo)[0] == "refused", name
