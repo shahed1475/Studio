@@ -257,7 +257,7 @@ const url=u=>/^https?:\/\//i.test(u||"")?u:"";
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const ico=(n,c="")=>`<i class="ic ${c}" style="--i:url(/static/icons/${n}.svg)"></i>`;
 const safe=f=>{try{return f()}catch(e){return null}};
-function toast(m){const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("show"),3800)}
+function toast(m){const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("show"),/working right now|already running|another job/.test(m)?9000:3800)}
 async function api(path,body){
   let r;try{r=await fetch(path,body===undefined?{}:{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})}catch(e){toast("Dashboard server not reachable");throw e}
   const j=await r.json();if(j.error){toast(j.error);throw new Error(j.error)}return j;
@@ -298,10 +298,11 @@ function chrome(){
   document.getElementById("nav2").innerHTML+=au?`<button class="logout" onclick="logout()">${ico("sign-out")}<span class="t">Sign out</span></button>`:"";
   const nv=S.autopilot.needs_you,gv=S.agent&&S.agent.unread,more=["growth","activity","youtube","settings"].includes(tab);
   document.getElementById("tabbar").innerHTML=NAV.slice(0,4).map(([k,l,i])=>bt(k,l,i,k==="videos"&&c?`<span class="count">${c}</span>`:k==="autopilot"&&nv?`<span class="count">${nv}</span>`:"")).join("")+`<button class="${more?"on":""}" onclick="sheet()" aria-haspopup="true">${ico("dots-three")}<span class="t">More</span>${gv?`<span class="count">${gv}</span>`:""}</button>`;
-  document.getElementById("sheetcard").innerHTML=`<div class="state"><b>${r?"Working":"Idle"}</b>${r?esc(r.cmd):"Nothing is running"}</div>`+[...NAV.slice(4),SET].map(([k,l,i])=>bt(k,l,i,k==="growth"&&gv?`<span class="count">${gv}</span>`:"")).join("")+(au?`<button onclick="logout()">${ico("sign-out")}<span class="t">Sign out</span></button>`:"");
+  document.getElementById("sheetcard").innerHTML=`<div class="state"><b>${r||S.autopilot.busy?"Working":"Idle"}</b>${r?esc(r.cmd):S.autopilot.busy?"Autopilot or a repair is running":"Nothing is running"}</div>`+[...NAV.slice(4),SET].map(([k,l,i])=>bt(k,l,i,k==="growth"&&gv?`<span class="count">${gv}</span>`:"")).join("")+(au?`<button onclick="logout()">${ico("sign-out")}<span class="t">Sign out</span></button>`:"");
   document.documentElement.classList.toggle("busy",!!r);
   document.getElementById("runbox").className="runbox"+(r?" busy":"");
-  document.getElementById("runbox").innerHTML=r?`<b>Working</b>${esc(r.cmd)}`:`<b>Idle</b>Nothing is running`;
+  const lockBusy=!r&&S.autopilot&&S.autopilot.busy;
+  document.getElementById("runbox").innerHTML=r?`<b>Working</b>${esc(r.cmd)}`:lockBusy?`<b>Working</b>Autopilot or a repair is running`:`<b>Idle</b>Nothing is running`;
 }
 function render(force){
   if(!S)return;chrome();

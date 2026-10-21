@@ -247,3 +247,12 @@ def test_the_callback_needs_a_signed_in_user_and_reports_a_bad_state_plainly(sig
     assert st == 303 and hh["Location"] == "/#youtube" and done == [("the-code", "the-state")]
     st, _, body = call(port, "GET", "/oauth/callback?error=access_denied", headers=h)
     assert st == 400 and b"not allowed" in body.lower()
+
+
+def test_the_state_says_when_autopilot_or_a_repair_holds_the_lock_so_the_sidebar_is_not_wrongly_idle(signed_in, monkeypatch):
+    import autopilot
+    port, h = signed_in
+    monkeypatch.setattr(autopilot, "is_running", lambda: True)
+    assert json.loads(call(port, "GET", "/api/state", headers=h)[2])["autopilot"]["busy"] is True
+    monkeypatch.setattr(autopilot, "is_running", lambda: False)
+    assert json.loads(call(port, "GET", "/api/state", headers=h)[2])["autopilot"]["busy"] is False

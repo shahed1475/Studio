@@ -206,7 +206,7 @@ def state() -> dict:
         },
         "youtube": {"secret": SECRET.exists(), "token": TOKEN.exists(), "connecting": YT_STATE["connecting"], "error": YT_STATE["error"], "web": __import__("ytweb").available()},
         "jobs": sorted(({k: v for k, v in j.items() if k != "proc"} for j in JOBS.values()), key=lambda j: -j["started"])[:30],
-        "autopilot": {"enabled": autopilot_cfg().get("enabled", False), "needs_you": len(autopilot_view()["needs_you"]), "next": next_slot_view()},
+        "autopilot": {"enabled": autopilot_cfg().get("enabled", False), "needs_you": len(autopilot_view()["needs_you"]), "next": next_slot_view(), "busy": __import__("autopilot").is_running()},
         "agent": {"unread": __import__("agentlog").unread()},
         "tenant": __import__("tenantmode").is_tenant(), "niche_confirmed": __import__("niche").current()["brief"] is not None and bool((__import__("niche").current()["brief"] or {}).get("confirmed")),
         "auth": {"on": webauth.enabled(), "email": webauth.owner_email()},
