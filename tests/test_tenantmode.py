@@ -153,3 +153,21 @@ def test_the_invite_command_prints_a_link_that_opens_the_claim_page(tmp_path, mo
     monkeypatch.setattr(webauth, "INVITES_FILE", tmp_path / "invites.json")
     link = tenantmode.invite_link("https://studio.example.com:8921/")
     assert link.startswith("https://studio.example.com:8921/claim?token=") and webauth.invite_valid(link.split("token=")[1])
+
+
+def test_a_new_user_studio_runs_nothing_but_the_storage_check_until_the_plan_is_confirmed(tmp_path, monkeypatch):
+    import importlib
+
+    import config
+    import worker
+    monkeypatch.setenv("STUDIO_MODE", "tenant")
+    importlib.reload(worker)
+    monkeypatch.setattr(config, "ROOT", tmp_path)
+    now = dt.datetime(2026, 10, 21, 12, 0, tzinfo=dt.timezone.utc)
+    assert [j["name"] for j in worker.due(now, {})] == ["quota"]  # no daily research, no policy pages, no Autopilot pass for someone who has not chosen a niche
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "niche_brief.json").write_text(json.dumps({"confirmed": True}))
+    assert {"autopilot", "health", "agent", "quota"} <= {j["name"] for j in worker.due(now, {})}
+    monkeypatch.delenv("STUDIO_MODE")
+    importlib.reload(worker)
+    assert "quota" not in [j["name"] for j in worker.due(now, {})] and "agent" in [j["name"] for j in worker.due(now, {})]

@@ -57,7 +57,16 @@ def due(now: dt.datetime, last: dict, jobs: list[dict] = JOBS) -> list[dict]:
                 out.append(job)
         elif ran is None or ran < _last_slot(job, now):
             out.append(job)
+    if os.getenv("STUDIO_MODE", "").strip().lower() == "tenant" and not _plan_confirmed():
+        out = [j for j in out if j["name"] == "quota"]  # a user who has not chosen a niche yet has nothing to research, check or publish
     return out
+
+
+def _plan_confirmed() -> bool:
+    try:
+        return bool(json.loads((config.ROOT / "data" / "niche_brief.json").read_text()).get("confirmed"))
+    except (OSError, ValueError):
+        return False
 
 
 def load_state() -> dict:
