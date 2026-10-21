@@ -88,8 +88,8 @@ PRESETS = [
 PRESET_IDS = {p["id"] for p in PRESETS}
 REQUIRED = ("id", "name", "audience", "style", "channel_angle", "hashtags", "search_seeds", "starter_topics")
 # subjects the engine cannot do honestly: it needs an encyclopedia article and public-domain pictures, and it must never invent
-UNSUITABLE = re.compile(r"\b(news|breaking|election|politic\w*|stock\w*|crypto\w*|trading|invest\w*|forex|financial advice|medical advice|diet|weight loss|workout|fitness|"
-                        r"recipes?|cooking|gaming|let'?s play|unboxing|reviews?|products?|gambling|betting|adult|nsfw|celebrit\w+|gossip|kids|children|nursery|cartoons?)\b", re.I)
+UNSUITABLE = re.compile(r"\b(news|breaking news|current events|stock (market|picks|tips|prices)|crypto\w*|bitcoin|forex|day trading|financial advice|investment advice|medical advice|weight loss|"
+                        r"workouts?|gambling|betting|nsfw|adult content|celebrity gossip|gossip|unboxing|let'?s play|for kids|kids)\b", re.I)  # only the clear cases: the model judges the rest
 MIN_ARTICLE_CHARS = 1500
 MIN_SAMPLES_WITH_ARTICLE = 5
 

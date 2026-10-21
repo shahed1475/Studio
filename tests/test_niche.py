@@ -19,8 +19,11 @@ def test_every_preset_is_complete_and_the_list_has_ten_distinct_niches():
     assert niche.preset("folklore_mystery")["name"] == "Mystery, history and folklore stories"  # the owner's own niche is the first preset
 
 
-def test_unsuitable_ideas_are_refused_before_any_model_is_asked():
-    for idea in ("daily stock market news", "crypto trading tips", "healthy cooking recipes for kids", "gaming let's play videos", "celebrity gossip"):
+def test_ideas_that_are_clearly_not_encyclopedia_stories_are_refused_but_history_words_are_not():
+    for fine in ("the history of the Silk Road and its trading cities", "political history of ancient Rome", "investigations into famous historical hoaxes",
+                 "the Children's Crusade in medieval Europe", "newspaper wars of the 1890s", "livestock markets of the Middle Ages", "the first stock exchange in Amsterdam, 1602"):
+        assert not niche.UNSUITABLE.search(fine), fine
+    for idea in ("daily stock market news", "crypto trading tips", "healthy cooking recipes for kids", "gaming let's play videos", "celebrity gossip", "bitcoin price updates", "weight loss workouts"):
         got = niche.fit_check(idea, chat=lambda p: pytest.fail("no model call"), article_of=lambda t: pytest.fail("no lookup"))
         assert got["fit"] is False and "outside" in got["reason"], idea
     assert niche.fit_check("hi", chat=None)["fit"] is False  # too short to judge

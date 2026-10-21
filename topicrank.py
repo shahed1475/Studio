@@ -9,6 +9,7 @@ import re
 import time
 
 import agentlog
+import config
 import topicqueue
 
 STOP = {"the", "and", "of", "in", "a", "an", "to", "for", "with", "from", "that", "this", "why", "how", "what", "did", "was", "were", "is", "are", "who",
@@ -98,12 +99,14 @@ def premise_check(topic: str, article: str, made: list[str] | None = None, chat=
     made = made if made is not None else made_titles()
     try:
         out = chat(
-            "You screen story subjects for a calm history-and-folklore YouTube channel for US viewers. A video will be written ONLY from the source article.\n"
+            f"You screen story subjects for {'a calm history-and-folklore YouTube channel' if config._owner_niche() else config.channel_blurb()} for US viewers. A video will be written ONLY from the source article.\n"
             f"SUBJECT: {topic}\nSOURCE ARTICLE (start): {article[:1800]}\nALREADY MADE: {'; '.join(made) or 'nothing'}\n\n"
             "Answer ok=false when ANY of these is true: (1) the subject's wording assumes a fact, link or mystery the article does not state (an invented or false "
             "premise, such as tying two unrelated things together); (2) it is a real tragedy, war crime, trial, atrocity, living-person controversy or contested "
-            "political dispute that should not be retold as bedtime entertainment; (3) it is the same story as one in ALREADY MADE; (4) it is neither a legend, "
-            'myth, folktale nor a well-documented historical mystery.\nReturn JSON: {"ok": true or false, "reason": "one short sentence"}')
+            "political dispute that should not be retold as bedtime entertainment; (3) it is the same story as one in ALREADY MADE; (4) "
+            + ("it is neither a legend, myth, folktale nor a well-documented historical mystery" if config._owner_niche()
+               else f"it does not belong to this channel's niche ({config.niche()['channel_angle']})") +
+            '.\nReturn JSON: {"ok": true or false, "reason": "one short sentence"}')
     except Exception:
         return True, ""
     if not isinstance(out, dict) or "ok" not in out:

@@ -107,3 +107,16 @@ def test_audit_queue_keeps_a_topic_whose_article_cannot_be_read_and_retries_befo
 
     got = topicrank.audit_queue(article_of=flaky, premise_of=lambda t, a: (True, ""))
     assert got == [] and topicqueue.items() == ["The Jersey Devil", "The Legend of the Wendigo"] and calls["The Jersey Devil"] == 2
+
+
+def test_the_premise_screen_judges_fit_by_the_channels_own_niche(tmp_path, monkeypatch):
+    import config
+    monkeypatch.setattr(config, "NICHE_FILE", tmp_path / "niche.json")
+    seen = []
+    (tmp_path / "niche.json").write_text(json.dumps({"id": "space_history", "name": "Space", "audience": "a", "style": "s", "hashtags": ["#a"],
+                                                      "channel_angle": "Missions and discoveries from Sputnik to Voyager, told from documented sources"}))
+    topicrank.premise_check("Apollo 13", "article", [], chat=lambda p: seen.append(p) or {"ok": True})
+    assert "Missions and discoveries from Sputnik to Voyager" in seen[0] and "neither a legend" not in seen[0]  # a space mission is not refused for being no legend
+    (tmp_path / "niche.json").write_text(json.dumps({"name": "Mystery, history and folklore stories", "audience": "a", "style": "s", "channel_angle": "Folk tales", "hashtags": ["#a"]}))
+    topicrank.premise_check("The Bell Witch", "article", [], chat=lambda p: seen.append(p) or {"ok": True})
+    assert "neither a legend, myth, folktale nor a well-documented historical mystery" in seen[1]  # the owner's studio keeps its wording
