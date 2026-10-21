@@ -91,3 +91,19 @@ def test_the_choice_of_a_topic_is_written_to_the_activity_feed_with_its_reason(t
     topicrank.pop_best("doc", sig, {"The Jersey Devil": LONG}.get, premise_of=lambda t, a: (True, ""))
     chose = [e for e in agentlog.recent() if e["title"].startswith("Chose a topic")]
     assert chose and "research score" in chose[0]["detail"] and "premise screen" in chose[0]["detail"]
+
+
+def test_audit_queue_keeps_a_topic_whose_article_cannot_be_read_and_retries_before_judging(tmp_path, monkeypatch):
+    queue(tmp_path, monkeypatch, ["The Jersey Devil", "The Legend of the Wendigo"])
+    monkeypatch.setattr(config, "ROOT", tmp_path)
+    monkeypatch.setattr(topicrank.time, "sleep", lambda s: None)
+    calls = {"The Jersey Devil": 0}
+
+    def flaky(topic):
+        if topic == "The Jersey Devil":  # a rate-limited first answer, then the article
+            calls[topic] += 1
+            return None if calls[topic] == 1 else LONG
+        return None  # never readable: unknown, not "has no article"
+
+    got = topicrank.audit_queue(article_of=flaky, premise_of=lambda t, a: (True, ""))
+    assert got == [] and topicqueue.items() == ["The Jersey Devil", "The Legend of the Wendigo"] and calls["The Jersey Devil"] == 2

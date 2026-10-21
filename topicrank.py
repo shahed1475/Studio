@@ -6,6 +6,7 @@ the subject, or (for a 'legend') never mentions a legend would make a video abou
 """
 import math
 import re
+import time
 
 import agentlog
 import topicqueue
@@ -56,6 +57,18 @@ def viable(topic: str, article: str | None) -> tuple[bool, str]:
     if FOLKLORE.search(topic) and not FOLKLORE.search(article):
         return False, "the source article describes no legend, myth or folk tale about it"
     return True, ""
+
+
+def read_article(article_of, topic: str, tries: int = 3, pause: float = 2.0):
+    """The source article, asked for again after a pause when the answer is empty: a rate-limited or timed-out request looks exactly like "no article"
+    (wikipedia.facts_for swallows network errors), and on 21 Oct 2026 that read removed 17 good topics from the queue in one audit."""
+    for i in range(tries):
+        got = article_of(topic)
+        if got:
+            return got
+        if i < tries - 1:
+            time.sleep(pause * (i + 1))
+    return None
 
 
 def made_titles() -> list[str]:
@@ -115,7 +128,7 @@ def pop_best(fmt: str = "doc", sig=None, article_of=None, premise_of=None) -> st
     queue = topicqueue.items()
     ranked = sorted(enumerate(queue), key=lambda x: (-score(x[1], sig), x[0]))
     for _, topic in ranked:
-        article = article_of(topic)
+        article = read_article(article_of, topic)
         ok, why = viable(topic, article)
         if ok and premise_of:
             ok, why = premise_of(topic, article)
@@ -149,7 +162,9 @@ def audit_queue(article_of=None, premise_of=None, now=None) -> list[dict]:
     made = made_titles()
     removed = []
     for topic in list(topicqueue.items()):
-        article = article_of(topic)
+        article = read_article(article_of, topic)
+        if not article:
+            continue  # unreadable is unknown, not "has no article": the topic stays and pop_best decides when it is picked
         ok, why = viable(topic, article)
         if ok:
             ok, why = premise_of(topic, article, made) if premise_of is premise_check else premise_of(topic, article)
