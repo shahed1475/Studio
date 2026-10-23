@@ -82,6 +82,9 @@ def test_guard_switches_off_ai_art_then_paid_models_and_logs_it(world, monkeypat
     assert len(risk.guard(1.0)) == 1 and llm.load_config()["ai_art"] is False and llm.load_config()["enabled"] is True
     assert len(risk.guard(0.2)) == 1 and llm.load_config()["enabled"] is False
     assert risk.guard(None) == [] and any("Credit is low" in e["title"] for e in agentlog.recent())
+    assert len(risk.guard(5.8)) == 2 and llm.load_config()["enabled"] is True and llm.load_config()["ai_art"] is True  # a top-up switches back on what the guard switched off
+    llm.save_config({**llm.load_config(), "enabled": False})
+    assert risk.guard(5.8) == [] and llm.load_config()["enabled"] is False  # an owner's own choice stays off
 
 
 def test_running_renders_are_found_in_proc_and_make_the_process_risk_watch(tmp_path):

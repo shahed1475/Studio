@@ -172,14 +172,29 @@ def guard(left: float | None, apply: bool = True, now: dt.datetime | None = None
     if left is None:
         return []
     cfg, changed = llm.load_config(), []
+    marker = config.ROOT / "data" / "guard_off.json"  # what the guard (not the owner) switched off, so a top-up can switch it back on
+    try:
+        mine = json.loads(marker.read_text())
+    except (OSError, ValueError):
+        mine = []
     if cfg.get("ai_art") and left < CREDIT_ACT:
         changed.append(f"AI drawing switched off (${left:.2f} left; image output needs $1)")
         cfg["ai_art"] = False
+        mine = sorted(set(mine) | {"ai_art"})
     if cfg.get("enabled") and left < 0.3:
         changed.append(f"paid models switched off (${left:.2f} left); free models take over")
         cfg["enabled"] = False
+        mine = sorted(set(mine) | {"enabled"})
+    if left >= CREDIT_ACT:
+        for k in mine:
+            if not cfg.get(k):
+                changed.append(f"{'AI drawing' if k == 'ai_art' else 'paid models'} switched back on (${left:.2f} left after a top-up)")
+                cfg[k] = True
+        mine = []
     if changed and apply:
         llm.save_config(cfg)
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(json.dumps(mine))
         agentlog.event("applied", "Credit is low: " + "; ".join(changed), "Switch them back on in Settings after a top-up.", notify=True, now=now)
     return changed
 
