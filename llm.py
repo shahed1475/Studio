@@ -377,11 +377,13 @@ def chat(prompt: str, role: str = "cheap", fallback=None, now: dt.datetime | Non
     now = now or _now()
     cfg, key = load_config(), api_key()
     model = cfg["models"].get(role, "")
+    capped = False
     if model and is_claude(model):
         key = anthropic_key()
     if cfg["enabled"] and key and model:
         if spent_today(now) >= cfg["daily_budget_usd"] + (REVIEW_RESERVE_USD if role == "review" else 0.0):
             _note(now, f"{role}: the daily cap was reached, so this job waits for free models or tomorrow")
+            capped = True
         else:
             for _ in range(2):
                 try:
@@ -402,6 +404,8 @@ def chat(prompt: str, role: str = "cheap", fallback=None, now: dt.datetime | Non
         if got is not None:
             return got
     if fallback is None or not cfg.get("local_fallback"):
+        if capped:
+            raise ModelUnavailable(f"the daily spending cap (${cfg['daily_budget_usd']:.2f}) is used up and the free models did not answer the {role} job; raise the cap in Settings or wait for tomorrow (UTC)")
         raise ModelUnavailable(f"no cloud model answered the {role} job; it will be tried again later")
     return fallback(prompt)
 
