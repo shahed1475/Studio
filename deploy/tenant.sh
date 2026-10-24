@@ -18,7 +18,7 @@ GATE="$BASE/.gate"
 META="$BASE/.meta"   # one owner-only settings file per user studio, OUTSIDE the folder the user's containers can write; it is read with strict patterns and never sourced
 MAX_TENANTS="${STUDIO_MAX_TENANTS:-5}"
 export STUDIO_UID="$(id -u)" STUDIO_GID="$(id -g)"
-EXCLUDES=(--exclude .git --exclude .venv --exclude '__pycache__' --exclude 'output' --exclude 'output_old' --exclude 'cache' --exclude 'data' --exclude 'logs' --exclude 'ready'
+EXCLUDES=(--exclude .git --exclude .venv --exclude '__pycache__' --exclude 'render' --exclude 'output' --exclude 'output_old' --exclude 'cache' --exclude 'data' --exclude 'logs' --exclude 'ready'
   --exclude '.env' --exclude '.env.*' --exclude 'settings.json' --exclude 'llm.json*' --exclude 'agent.json' --exclude 'autopilot.json*' --exclude 'autopilot_state.json'
   --exclude 'token.json*' --exclude 'client_secret*.json' --exclude 'niche.json' --exclude 'topics.json*' --exclude 'news_topics.json' --exclude 'pinned_topics.json'
   --exclude 'edit_profile.json' --exclude 'reference_channels.json' --exclude 'reference_meta.json' --exclude '*.lock' --exclude '*.bak*' --exclude 'job.pid' --exclude 'tests' --exclude 'music' --exclude 'branding')

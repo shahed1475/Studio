@@ -1,0 +1,2 @@
+{"title":"Example project: release history (mock data)","asOf":"2026-10-25","format":"vertical","seconds":10,
+ "events":[{"date":"2024-03-01","label":"Version 1.0","detail":"first public release (mock)"},{"date":"2025-02-14","label":"Version 2.0","detail":"new plugin system (mock)"},{"date":"2025-09-30","label":"Version 3.0","detail":"faster startup (mock)"},{"date":"2026-06-12","label":"Version 3.5","detail":"long-term support (mock)"}]}
