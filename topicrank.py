@@ -114,11 +114,15 @@ def premise_check(topic: str, article: str, made: list[str] | None = None, chat=
     return bool(out["ok"]), str(out.get("reason", ""))[:200]
 
 
-def pop_best(fmt: str = "doc", sig=None, article_of=None, premise_of=None) -> str | None:
+def pop_best(fmt: str = "doc", sig=None, article_of=None, premise_of=None, demand_of=None) -> str | None:
     """Take the best viable topic out of the queue. Topics that cannot be made well are dropped with a note; None when nothing is left."""
     sig = signals() if sig is None else sig
     if article_of is None and premise_of is None:
         premise_of = premise_check  # the real run asks Claude; a test that passes its own article_of opts out
+        if demand_of is None:
+            import seo
+
+            demand_of = seo.demand  # a subject people already search for is worth more than an unknown one
     if article_of is None:
         import wikipedia
 
@@ -129,7 +133,7 @@ def pop_best(fmt: str = "doc", sig=None, article_of=None, premise_of=None) -> st
             wikipedia._api({"action": "query", "meta": "siteinfo"})  # raises when Wikipedia cannot be reached: an outage must not drop good topics
             return None
     queue = topicqueue.items()
-    ranked = sorted(enumerate(queue), key=lambda x: (-score(x[1], sig), x[0]))
+    ranked = sorted(enumerate(queue), key=lambda x: (-(score(x[1], sig) + (demand_of(x[1]) if demand_of else 0.0)), x[0]))
     for _, topic in ranked:
         article = read_article(article_of, topic)
         ok, why = viable(topic, article)

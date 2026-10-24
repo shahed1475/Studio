@@ -18,3 +18,10 @@ def test_a_script_that_keeps_failing_is_dropped_after_three_tries(tmp_path, monk
     monkeypatch.setattr(run, "PENDING_DOC", tmp_path / "pending_doc.json")
     run.PENDING_DOC.write_text(json.dumps({"data": {"title": "Saved"}, "folder": "", "tries": run.MAX_RESUMES}))
     assert run._pending_doc() is None
+
+
+def test_demand_rewards_subjects_people_search(monkeypatch):
+    import seo
+    monkeypatch.setattr(seo, "suggest", lambda q: ["pied piper of hamelin story", "pied piper real story", "pied piper song"] if "Piper" in q else [])
+    assert seo.demand("The Pied Piper of Hamelin: a legend") == 0.3
+    assert seo.demand("The 1817 Bell Farm accounts") == 0.0

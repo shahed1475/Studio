@@ -63,6 +63,17 @@ def suggest(q: str) -> list[str]:
         return []
 
 
+def demand(topic: str) -> float:
+    """0 to 1: how many YouTube autocomplete suggestions for the topic's name really contain that name. A subject people already type (Pied Piper,
+    Minotaur) scores high; one nobody searches (an obscure account book) scores near 0. Network trouble counts as no signal, never as a failure."""
+    subject = re.split(r"[:,(]", topic)[0].strip()
+    key = [w for w in re.findall(r"[a-z0-9']+", subject.lower()) if len(w) > 3]
+    if not key:
+        return 0.0
+    hits = [x for x in suggest(subject) if all(w in x.lower() for w in key[:2])]
+    return round(min(len(hits), 10) / 10, 2)
+
+
 def core_phrase(meta: dict) -> str:
     """The 2 to 4 words someone would type to find this story."""
     try:
@@ -109,6 +120,10 @@ def make(folder: Path) -> dict:
         "Rules:\n"
         "- Give 5 title options, each under 65 characters, with the main search phrase in the first 40 characters, honest about what the video covers, "
         "no ALL CAPS words, no em-dashes, no emojis. Vary the style: a question, a plain statement, a curiosity hook.\n"
+        "- Make each title a promise of one specific thing the video shows: the well-known name first, then the twist, stake or mystery (for example "
+        "'The Pied Piper of Hamelin: The Real Story Behind the Legend', 'Who Was the Minotaur? Inside the Labyrinth of Knossos'). Prefer words people type "
+        "(real story, mystery, legend, who was, what happened). Never a vague question like 'What do the accounts actually describe?'; never a title that "
+        "needs the viewer to already know the subject.\n"
         "- description_intro: 2 sentences that hook the viewer and use the main phrase once, naturally. Only facts the story supports, and promise only what the video covers: "
         "no question it does not answer, no debate, reveal or verdict it lacks.\n"
         "- tags: 12 search phrases people would type, taken from or close to the suggestions above, each under 30 characters.\n"
