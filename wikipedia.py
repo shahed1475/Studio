@@ -81,6 +81,14 @@ def article_info(title: str, chars: int = 20000) -> dict | None:
     return {"title": name, "url": "https://en.wikipedia.org/wiki/" + name.replace(" ", "_"), "text": text[:chars], "revised": rev}
 
 
+_MEDIA = re.compile(r"\b(is|was)\s+(a|an|the)\b[^.]{0,80}\b(film|movie|television series|tv series|miniseries|album|song|single|video game|novel|musical|anime|manga|sitcom)\b", re.I)
+
+
+def is_media_work(text: str) -> bool:
+    """True when the article's opening sentence says it is about a film, series, album, game or novel (an adaptation, not the subject itself)."""
+    return bool(_MEDIA.search((text or "")[:400]))
+
+
 def facts_multi(topic: str, n: int = 2, chars_each: int = 7000) -> list[dict]:
     """The best n matching articles (the main one first), each as {title, url, text, revised}, so a script can draw on more than one source."""
     try:

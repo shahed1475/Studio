@@ -39,3 +39,9 @@ def test_the_playlist_link_goes_before_the_credits_only_when_the_owner_set_one(t
     assert compliance._cta(f) == ""
     f.write_text(json.dumps({"doc": ["P"], "cta": "More stories: https://www.youtube.com/playlist?list=P"}))
     assert compliance._cta(f) == "\n\nMore stories: https://www.youtube.com/playlist?list=P"
+
+
+def test_a_film_article_is_recognised_as_a_media_work_but_a_legend_is_not():
+    import wikipedia
+    assert wikipedia.is_media_work("The Curse of La Llorona is a 2019 American supernatural horror film directed by Michael Chaves.")
+    assert not wikipedia.is_media_work("La Llorona, or the Weeping Woman, is a legend about a ghost who wanders near rivers.")

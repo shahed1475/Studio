@@ -217,7 +217,10 @@ def _cmd_doc(topic: str | None = None) -> Path:
     data = None
     import wikipedia
 
-    arts = wikipedia.facts_multi(topic, n=2, chars_each=7000)  # the two best articles: a script drawn from more than one source has fewer unsupported details
+    arts = wikipedia.facts_multi(topic, n=3, chars_each=7000)  # the best articles: a script drawn from more than one source has fewer unsupported details
+    if arts and not wikipedia.is_media_work(arts[0]["text"]):  # a folklore or history topic is not retold from a film's plot: keep the main article, drop adaptations
+        arts = [arts[0]] + [a for a in arts[1:] if not wikipedia.is_media_work(a["text"])]
+    arts = arts[:2]
     src = (arts[0]["title"], "\n\n".join(f"[{a['title']}]\n{a['text']}" for a in arts)) if arts else None
     print(f"  source articles: {', '.join(a['title'] for a in arts) or 'none found (script will be flagged for a human check)'}")
     for attempt in range(4):
