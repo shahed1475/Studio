@@ -62,7 +62,7 @@ def _due(now: dt.datetime) -> list[tuple[Path, dict]]:
             when = _parse(meta.get("publish_at") or meta.get("uploaded_at") or "")
         except ValueError:
             continue
-        if not meta.get("video_id") or when > now - GRACE or when < now - WATCH_FOR:
+        if not meta.get("video_id") or meta.get("hold") or when > now - GRACE or when < now - WATCH_FOR:  # a held upload is kept private (or gone) on purpose: it is not "published with a problem"
             continue
         try:
             if now - _parse(meta["health"]["checked_at"]) < RECHECK:

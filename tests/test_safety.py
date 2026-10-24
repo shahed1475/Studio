@@ -92,6 +92,7 @@ def test_check_skips_videos_not_due_and_already_confirmed(tmp_path, monkeypatch)
     make(tmp_path, "done", video_id="d", publish_at=iso(NOW - timedelta(hours=9)), health={"ok": True, "checked_at": iso(NOW - timedelta(hours=1))})
     make(tmp_path, "old", video_id="o", publish_at=iso(NOW - timedelta(days=9)))
     make(tmp_path, "noid", publish_at=iso(NOW - timedelta(hours=9)))
+    make(tmp_path, "held", video_id="h", hold=True, publish_at=iso(NOW - timedelta(hours=9)))  # kept private on purpose
     yt = FakeYT([])
     assert safety.check(NOW, yt=yt)["checked"] == 0 and yt.asked == []
 
