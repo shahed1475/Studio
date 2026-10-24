@@ -28,8 +28,8 @@ services:
     <<: *studio
     container_name: studio-dashboard
     command: ["python", "dashboard.py"]
-    cpus: 0.5
-    mem_limit: 512m
+    cpus: 2  # the dashboard also runs the jobs started from its buttons (Run one pass now), and a render killed at 512m by the memory limit
+    mem_limit: 3g
     healthcheck:
       test: ["CMD", "curl", "-fs", "http://127.0.0.1:8913/healthz"]
       interval: 60s
