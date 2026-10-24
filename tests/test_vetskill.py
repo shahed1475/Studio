@@ -122,3 +122,9 @@ def test_branch_remote_is_matched_exactly(tmp_path):
     for bad in ("Origin", '"origin"', "origin ; x", "origin # c"):
         (g / "config").write_text(f'[remote "origin"]\n\turl = https://github.com/x/y.git\n[branch "main"]\n\tremote = {bad}\n')
         assert any("branch.remote" in f["what"] for f in vetskill.scan(tmp_path)["findings"]), bad
+
+
+def test_unreadable_link_does_not_stop_the_scan(tmp_path):
+    (tmp_path / "SKILL.md").write_text("see http://[bad/link and https://github.com/x\n")
+    r = vetskill.scan(tmp_path)
+    assert any(f["what"] == "a web address that cannot be read" for f in r["findings"])

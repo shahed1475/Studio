@@ -179,7 +179,11 @@ def scan(root: Path) -> dict:
                 line = text.count("\n", 0, m.start()) + 1
                 findings.append({"severity": sev, "what": label, "file": rel, "line": line, "excerpt": text[max(0, m.start() - 20):m.end() + 40].replace("\n", " ")[:110]})
         for u in URL.findall(text):
-            parts = urlsplit(u.rstrip(".,;:"))
+            try:
+                parts = urlsplit(u.rstrip(".,;:"))
+            except ValueError:  # a malformed address (for example a stray "[") must not stop the scan
+                findings.append({"severity": "low", "what": "a web address that cannot be read", "file": rel, "line": text.count("\n", 0, text.find(u)) + 1, "excerpt": u[:110]})
+                continue
             if "@" in parts.netloc:
                 findings.append({"severity": "high", "what": "link with user@host: the real host is not the one that is shown", "file": rel, "line": text.count("\n", 0, text.find(u)) + 1, "excerpt": u[:110]})
             h = (parts.hostname or "").lower().rstrip(".")
