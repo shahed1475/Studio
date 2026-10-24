@@ -16,9 +16,10 @@ import config
 
 TS = "%Y-%m-%dT%H:%M:%SZ"
 META_ONLY = {"title_matches", "duplicate_title", "title", "description", "tags", "hashtags", "metadata_valid", "title_style"}
-AFTER = dt.timedelta(hours=72)    # a public video is looked at for three days after its time
-AHEAD = dt.timedelta(days=7)      # a scheduled one from the moment it is uploaded
-EVERY = dt.timedelta(hours=6)     # the same video is not reviewed again within six hours (each review costs a few cents)
+AFTER = dt.timedelta(hours=48)    # a public video is looked at for two days after its time
+AHEAD = dt.timedelta(days=3)      # a scheduled one for its last three days
+EVERY = dt.timedelta(hours=12)    # the same video is not reviewed again within twelve hours (each review costs a few cents)
+KEEP_FREE = 0.6                   # dollars of the day's cap left alone for making videos: no re-check when less than this remains
 PULL_AFTER = 2                    # consecutive content failures before a scheduled video is taken back to private
 
 
@@ -166,6 +167,10 @@ def run(now: dt.datetime | None = None, yt=None, review=None, chat=None, may_edi
     except BlockingIOError:
         return {"skipped": "locked"}
     try:
+        import llm
+
+        if llm.spent_today(now) > llm.load_config()["daily_budget_usd"] - KEEP_FREE:
+            return {"skipped": "the day's spending cap is nearly used"}
         todo = candidates(now)
         if not todo:
             return {"checked": 0}
@@ -178,8 +183,6 @@ def run(now: dt.datetime | None = None, yt=None, review=None, chat=None, may_edi
         if may_edit is None:
             may_edit = titletest.mode() == "apply" and titletest.can_write()
         yt = yt or titletest._service()
-        import llm
-
         with llm.cost_scope(folder.name):
             r = check_one(now, folder, meta, yt, review, chat, may_edit)
         return {"checked": 1, **r}

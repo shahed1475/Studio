@@ -110,3 +110,12 @@ def test_if_youtube_refuses_to_take_a_video_back_the_owner_is_told(vid, monkeypa
     recheck.check_one(NOW, vid, meta_of(vid), yt, lambda f: result("fail", "invented_facts"), may_edit=True)
     out = recheck.check_one(NOW + dt.timedelta(hours=7), vid, meta_of(vid), yt, lambda f: result("fail", "invented_facts"), may_edit=True)
     assert "could not take it back" in out["actions"][0] and not meta_of(vid).get("hold")
+
+
+def test_no_recheck_when_the_days_cap_is_nearly_used(vid, monkeypatch, tmp_path):
+    import autopilot
+    import llm
+    monkeypatch.setattr(autopilot, "LOCK_FILE", tmp_path / "ap.lock")
+    monkeypatch.setattr(llm, "spent_today", lambda now: 2.9)
+    monkeypatch.setattr(llm, "load_config", lambda: {"daily_budget_usd": 3.0})
+    assert recheck.run(NOW, yt=object(), review=lambda f: 1 / 0, may_edit=True) == {"skipped": "the day's spending cap is nearly used"}
