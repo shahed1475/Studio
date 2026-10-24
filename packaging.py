@@ -54,6 +54,23 @@ def rank_titles(titles: list[str], core: str = "", others=()) -> list[str]:
     return [t for _, _, t in sorted(((-title_score(t, core, others), i, t) for i, t in enumerate(titles)))]
 
 
+_STOP = set("the a an and of to in on at for with from by is was were are be been it its this that these those as but or not no yet then there their they he she his her "
+            "which who whom what when where while than into onto over under after before about also had has have do did does so such other another one two three first second third".split())
+
+
+def script_repeats(lines: list[str]) -> list[tuple[int, int]]:
+    """Pairs of narration lines (at least two apart) that say nearly the same thing: 6 or more shared content words and 70% of the shorter line's. Exact
+    repeats are caught elsewhere; this finds a chapter retelling what the opening already told. Measured: only one of our four documentaries trips it."""
+    sig = [{w for w in _words(t) if len(w) > 3 and w not in _STOP} for t in lines]
+    out = []
+    for i in range(len(sig)):
+        for j in range(i + 2, len(sig)):
+            shared = len(sig[i] & sig[j])
+            if shared >= 6 and shared / max(min(len(sig[i]), len(sig[j])), 1) >= 0.7:
+                out.append((i, j))
+    return out
+
+
 def _row(name: str, ok: bool, detail: str) -> dict:
     return {"name": name, "ok": ok, "detail": detail, "severity": "warn"}
 
@@ -81,6 +98,10 @@ def audit(meta: dict) -> list[dict]:
         ok = shared < 1.0 and len(hook.split()) <= 5
         out.append(_row("seo_thumbnail_text", ok, "the thumbnail text adds something the title does not" if ok
                         else "the thumbnail text only repeats the title's words or is too long; it should name the subject and add a new word"))
+    pairs = script_repeats([l.get("text", "") for l in meta.get("lines", [])])
+    if pairs:
+        out.append(_row("script_retells", False, "the script tells the same thing twice: lines " + ", ".join(f"{i + 1} and {j + 1}" for i, j in pairs[:3])
+                        + " (a viewer who hears it again may leave)"))
     if len(title) > 70:
         out.append(_row("seo_title_length", False, f"{len(title)} characters: YouTube cuts titles over about 70 on a phone"))
     return out

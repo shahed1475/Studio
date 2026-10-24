@@ -56,3 +56,13 @@ def test_a_refresh_keeps_every_permission_the_login_was_granted(tmp_path):
     f = tmp_path / "token.json"
     f.write_text(json.dumps({"token": "t", "refresh_token": "r", "token_uri": "https://oauth2.googleapis.com/token", "client_id": "c", "client_secret": "s", "scopes": scopes}))
     assert json.loads(upload.load_creds(f).to_json())["scopes"] == scopes
+
+
+def test_a_chapter_retelling_the_opening_is_found_but_new_facts_are_not():
+    told = "In 1880 Bernard Haussoullier dug briefly for the French School at Athens, and the site held the village of Kastri with about 200 people."
+    again = "In 1880 Bernard Haussoullier dug briefly here for the French School at Athens, though the village of Kastri still covered the ground."
+    other = "Treasuries lined the Sacred Way, holding offerings to Apollo from Athens, Argos, Boeotia and Thebes."
+    assert packaging.script_repeats([told, other, again]) == [(0, 2)]
+    assert packaging.script_repeats([told, other, other.replace("Athens", "Corinth") + " Many stood in rows."]) == []
+    row = {r["name"]: r for r in packaging.audit({"title": "x", "description": "", "lines": [{"text": told}, {"text": other}, {"text": again}]})}["script_retells"]
+    assert not row["ok"] and row["severity"] == "warn"
