@@ -62,6 +62,30 @@ def heal() -> list[str]:
     return healed
 
 
+def sync_titles(yt, now: dt.datetime) -> list[str]:
+    """YouTube's title is the truth after an upload: a change made in Studio, by the title test or by hand through the API must not be undone by a later
+    repair that pushes the saved record. For every uploaded video whose title on YouTube differs, the saved title is brought up to date (one cheap read for up to
+    50 videos). Returns the folders updated."""
+    mine = {}
+    for m in config.OUT.glob("*/meta.json"):
+        try:
+            meta = json.loads(m.read_text())
+        except ValueError:
+            continue
+        if meta.get("video_id"):
+            mine[meta["video_id"]] = (m.parent, meta)
+    changed, ids = [], list(mine)
+    for k in range(0, len(ids), 50):
+        for item in yt.videos().list(part="snippet", id=",".join(ids[k:k + 50])).execute().get("items", []):
+            folder, meta = mine[item["id"]]
+            title = item["snippet"]["title"]
+            if title and title != meta.get("title"):
+                _merge(folder, {"title": title})
+                agentlog.event("info", "The saved title now matches YouTube", f"{meta.get('title', '')[:60]} -> {title[:60]}", now=now)
+                changed.append(folder.name)
+    return changed
+
+
 def enforce_holds(yt, now: dt.datetime) -> list[str]:
     """A video on hold must not go public by itself. The hold used to stop only Autopilot: a video already scheduled on YouTube would still publish. For every
     uploaded video on hold whose time has not come, make sure YouTube shows it private with no time; YouTube's read-back can lag, so a second look follows
@@ -269,8 +293,12 @@ def run(now: dt.datetime | None = None, yt=None, review=None, chat=None, may_edi
             agentlog.event("applied", f"Restored the schedule and approval of an uploaded video ({slug[:40]})", "An edit had cleared them; YouTube still held the video.", now=now)
         if may_edit is None:
             may_edit = titletest.mode() == "apply" and titletest.can_write()
+        yt = yt or titletest._service()
+        try:
+            sync_titles(yt, now)
+        except Exception as e:  # a read that fails is not worth stopping the job
+            agentlog.event("found", "Could not compare saved titles with YouTube", type(e).__name__, now=now)
         if may_edit:
-            yt = yt or titletest._service()
             enforce_holds(yt, now)
         import llm
 
@@ -284,7 +312,6 @@ def run(now: dt.datetime | None = None, yt=None, review=None, chat=None, may_edi
 
             def review(f):
                 return reviewer.review(f, use_llm=True, persist=False)
-        yt = yt or titletest._service()
         errors = []
         for _, folder, meta in todo[:MAX_TRIES]:
             try:

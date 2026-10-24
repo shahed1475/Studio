@@ -295,3 +295,35 @@ def test_the_recheck_writes_only_its_own_fields(vid):
     (vid / "meta.json").write_text(json.dumps({**m, "title_test": {"verdict": "fine"}}))  # the title test wrote meanwhile
     recheck.check_one(NOW, vid, snapshot, FakeYT(), lambda f: result("pass"), may_edit=True)
     assert meta_of(vid)["title_test"] == {"verdict": "fine"} and meta_of(vid)["recheck"]["verdict"] == "pass"
+
+
+class TitleYT:
+    def __init__(self, titles):
+        self.titles = titles
+
+    def videos(self):
+        return self
+
+    def list(self, part, id):
+        items = [{"id": i, "snippet": {"title": self.titles[i]}} for i in id.split(",") if i in self.titles]
+        return type("R", (), {"execute": lambda s: {"items": items}})()
+
+
+def test_a_title_changed_on_youtube_becomes_the_saved_title(vid):
+    assert recheck.sync_titles(TitleYT({"abc": "Changed In Studio"}), NOW) == ["v1"]
+    assert meta_of(vid)["title"] == "Changed In Studio"
+    assert recheck.sync_titles(TitleYT({"abc": "Changed In Studio"}), NOW) == []  # nothing left to sync
+    assert recheck.sync_titles(TitleYT({}), NOW) == []  # a video deleted in Studio is left alone
+
+
+def test_the_saved_title_is_never_pushed_back_over_a_newer_youtube_title(vid, monkeypatch):
+    import fixer
+    import reviewer
+    monkeypatch.setattr(fixer, "realign_description", lambda *a, **k: False)
+    monkeypatch.setattr(fixer, "pick_title", lambda *a, **k: None)  # no new title found
+    monkeypatch.setattr(reviewer, "title_ok", lambda meta, title: (True, ""))
+    recheck.sync_titles(TitleYT({"abc": "The Title On YouTube Now"}), NOW)
+    yt = FakeYT()
+    recheck.check_one(NOW, vid, meta_of(vid), yt, lambda f: result("fail", "description"), may_edit=True)
+    pushed = [b["snippet"]["title"] for _, b in yt.updates if "snippet" in b]
+    assert all(t == "The Title On YouTube Now" for t in pushed)

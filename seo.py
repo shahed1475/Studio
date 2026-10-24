@@ -9,7 +9,7 @@ import config
 import reviewer
 import scriptgen
 
-OFF_TOPIC = re.compile(r"\b(cartoon|disney|movie|film|musical|animated|lyrics|songs?|karaoke|game|roblox|minecraft|19\d\d|20\d\d|trailer|full episodes?|for kids|read aloud|seasons?|episodes?|intro|theme|netflix|hbo|hulu|prime|hollywood|tv|series|reddit|wiki|pdf|download|cast|reaction|audiobook|asmr)\b")
+OFF_TOPIC = re.compile(r"\b(cartoon|disney|movie|film|musical|animated|lyrics|songs?|karaoke|game|roblox|minecraft|19\d\d|20\d\d|trailer|full episodes?|for kids|read aloud|seasons?|episodes?|intro|theme|netflix|hbo|hulu|prime|hollywood|tv|series|reddit|wiki|pdf|download|cast|reaction|audiobook|asmr)\b|\b(chapters?|parts?|vol(ume)?|ep)\.? ?\d+\b")
 SEEDS = ["history stories for sleep", "legends and folklore", "unsolved mysteries"]  # niche phrases people search
 
 

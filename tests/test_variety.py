@@ -85,3 +85,11 @@ def test_an_uploaded_video_is_never_redone_in_place(tmp_path, monkeypatch):
             raise AssertionError("should have refused")
         except SystemExit as e:
             assert "is on YouTube" in str(e)
+
+
+def test_tags_that_are_chapter_numbers_of_a_novel_are_dropped():
+    import seo
+    got = seo.relevant_tags(["hong gildong", "hong gildong chapter 12", "hong gildong chapter 13", "episode 4 recap", "korean folklore"],
+                            "hong gildong korean folklore chapter episode recap 12 13 4")
+    assert "hong gildong" in got and "korean folklore" in got
+    assert not any("chapter" in t or "episode" in t for t in got)
