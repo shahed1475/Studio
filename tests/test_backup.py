@@ -19,6 +19,12 @@ def build(root):
     (root / "token.json").write_text('{"refresh_token": "secret"}')
     (root / ".env").write_text("KEY=secret")
     (root / "client_secret.json").write_text("{}")
+    for name in ("auth.json", "auth_secret", "sessions.json", "tenants.json", "oauth_pending.json", "invites.json", "something_new.json"):
+        (root / "data" / name).write_text("secret")  # the dashboard login, its signing secret, live sessions: never in a backup
+    (root / "data" / "agent").mkdir()
+    (root / "data" / "agent" / "events.jsonl").write_text("{}")
+    (root / "data" / "agent" / "cookie_jar.json").write_text("secret")
+    (root / "data" / "llm_usage.json").write_text("{}")
 
 
 def test_backup_holds_the_records_and_settings_but_no_secrets_and_no_videos(tmp_path):
@@ -27,6 +33,8 @@ def test_backup_holds_the_records_and_settings_but_no_secrets_and_no_videos(tmp_
     with tarfile.open(out["path"]) as t:
         names = t.getnames()
     assert "output/v1/meta.json" in names and "data/titletest.json" in names and "autopilot.json" in names
+    assert "data/agent/events.jsonl" in names and "data/llm_usage.json" in names
+    assert not any(w in n for n in names for w in ("auth", "session", "tenant", "oauth", "invite", "something_new", "cookie"))  # an allowlist: new files are left out until named
     assert not any(n.endswith("video.mp4") or "token" in n or "settings.json" in n or ".env" in n or "client_secret" in n for n in names)
 
 
@@ -52,3 +60,11 @@ def test_the_risk_card_has_a_backup_row_that_turns_to_watch_when_none_is_recent(
     backup.run(NOW, root=tmp_path, dest=tmp_path / "b")
     assert risk.backups(NOW + dt.timedelta(hours=5), tmp_path / "b")["level"] == "ok"
     assert risk.backups(NOW + dt.timedelta(hours=60), tmp_path / "b")["level"] == "watch"
+
+
+def test_the_archive_and_its_folder_are_private(tmp_path):
+    import stat
+    build(tmp_path)
+    out = backup.run(NOW, root=tmp_path, dest=tmp_path / "backups")
+    assert stat.S_IMODE((tmp_path / "backups").stat().st_mode) == 0o700
+    assert stat.S_IMODE(__import__("pathlib").Path(out["path"]).stat().st_mode) == 0o600

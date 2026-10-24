@@ -8,7 +8,7 @@ A studio that researches, writes, voices, illustrates, renders, reviews and sche
 - Runs 24/7 on the VPS as two Docker containers (`studio-dashboard`, `studio-worker`) from `~/studio`. Dashboard through the owner's Tailscale at `http://vps-ai:8913` behind a login.
 - Tests: `.venv/bin/python -m pytest -q` (must pass before any commit). Skills: `.claude/skills/` (fact-check, research, scriptwriter, copyright, video editor, quality gate, publisher, packaging, QA, deploy, watch).
 - Models: one OpenRouter key runs everything (Claude for writing and review, free models as fallback, AI storybook art for missing pictures). The local Ollama model is off.
-- Never commit: `.env`, `client_secret.json`, `token.json`, `settings.json`, `llm.json`, `agent.json`, `autopilot.json`, `data/`, `output/`, `output_old/`. Secrets reach the server by `scp` only.
+- Never commit: `.env`, `client_secret.json`, `token.json`, `settings.json`, `llm.json`, `agent.json`, `autopilot.json`, `data/`, `output/`, `output_old/`, `backups/`. Secrets reach the server by `scp` only.
 
 ## A. Truth and evidence
 - Never invent facts, URLs, sources, quotes, statistics or test results.

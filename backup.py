@@ -1,9 +1,10 @@
 """Nightly backup of what cannot be rebuilt: every video's saved record (`meta.json`, claim ledger, caption words), the settings files and `data/`.
 
-Left out on purpose: secrets (`.env`, `settings.json`, `token*.json`, `client_secret*.json`: after a restore the login is made again), the videos themselves
+Left out on purpose: secrets (`.env`, `settings.json`, `token*.json`, `client_secret*.json`, and in `data/` the dashboard login, its signing secret, sessions and user-studio list: after a restore the logins are made again; `data/` is copied from an allowlist), the videos themselves
 and the picture cache (they can be rebuilt, and they are most of the 1.6 GB). The copy stays on the same server in `backups/` (seven kept); to keep one
 off the server, pull it from the PC: `scp deploy@<server>:studio/backups/backup-<date>.tar.gz .`"""
 import datetime as dt
+import os
 import tarfile
 from pathlib import Path
 
@@ -18,7 +19,16 @@ SETTINGS = ("llm.json", "autopilot.json", "agent.json", "niche.json", "topics.js
 
 
 def _is_secret(path: Path) -> bool:
-    return path.name in SECRET_NAMES or any(p in path.name for p in SECRET_PARTS)
+    n = path.name.lower()
+    return path.name in SECRET_NAMES or any(p in n for p in SECRET_PARTS)
+
+
+# `data/` holds the dashboard's login record, its cookie-signing secret and live sessions next to harmless records, so it is an ALLOWLIST: a new file in
+# `data/` is left out of the backup until it is named here (a denylist would copy it the day it appears).
+DATA_ALLOWED = {"agent", "channels", "newswatch", "trends", "research", "llm_usage.json", "video_costs.json", "titletest.json", "playlists.json",
+                "youtube_login.json", "worker_state.json", "money_digest.json", "topic_fails.json", "removed_topics.json", "pending_doc.json",
+                "guard_off.json", "daily_report.json", "free_models.json", "image_judge.json"}
+NEVER = ("secret", "session", "auth", "oauth", "invite", "cookie", "password", "tenant", "token", "credential")  # defence in depth inside the allowed folders
 
 
 def _files(root: Path):
@@ -28,9 +38,13 @@ def _files(root: Path):
             yield f
     data = root / "data"
     if data.is_dir():
-        for f in sorted(data.rglob("*")):
-            if f.is_file() and not _is_secret(f) and f.suffix != ".lock" and "cache" not in f.parts:
-                yield f
+        for top in sorted(data.iterdir()):
+            if top.name not in DATA_ALLOWED:
+                continue
+            for f in ([top] if top.is_file() else sorted(top.rglob("*"))):
+                rel = str(f.relative_to(data)).lower()
+                if f.is_file() and f.suffix != ".lock" and "cache" not in f.parts and not any(w in rel for w in NEVER):
+                    yield f
     out = root / "output"
     if out.is_dir():
         for f in sorted(out.glob("*/*")):
@@ -42,9 +56,11 @@ def run(now: dt.datetime | None = None, root: Path | None = None, dest: Path | N
     now = now or dt.datetime.now(dt.timezone.utc)
     root, dest = root or config.ROOT, dest or config.ROOT / "backups"
     dest.mkdir(parents=True, exist_ok=True)
+    dest.chmod(0o700)
     path = dest / f"backup-{now.strftime('%Y%m%d')}.tar.gz"
     n = 0
-    with tarfile.open(path, "w:gz") as t:
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)  # private from the first byte, never world-readable while it is written
+    with os.fdopen(fd, "wb") as raw, tarfile.open(fileobj=raw, mode="w:gz") as t:
         for f in _files(root):
             t.add(f, arcname=str(f.relative_to(root)))
             n += 1
