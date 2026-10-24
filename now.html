@@ -1,0 +1,37 @@
+<!doctype html>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Right now</title>
+<style>
+:root{--bg:#f5f4f0;--fg:#1d2420;--muted:#5d6762;--card:#fff;--line:#d9d6cc;--ok:#1b6b50;--warn:#a5521b}
+@media (prefers-color-scheme:dark){:root{--bg:#141a17;--fg:#e8ece9;--muted:#a1aca6;--card:#1d2521;--line:#303b36;--ok:#5fc7a0;--warn:#e29a62}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif;padding:16px;max-width:900px;margin-inline:auto}
+h1{font-size:1.4rem;margin:0 0 4px}h2{font-size:1rem;margin:20px 0 8px}.muted{color:var(--muted)}a{color:inherit}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px}
+.row{display:flex;gap:10px;justify-content:space-between;flex-wrap:wrap}.tag{font-size:.8rem;color:var(--muted)}
+pre{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px;overflow-x:auto;font-size:12px;white-space:pre-wrap;word-break:break-word}
+.on{color:var(--ok);font-weight:600}.off{color:var(--warn);font-weight:600}
+</style>
+<h1>Right now</h1><p class="muted" id="at">loading…</p>
+<div class="card" id="top"></div>
+<h2>Where each video stands</h2><div id="videos"></div>
+<h2>Last lines of the Autopilot log</h2><pre id="log"></pre>
+<p class="muted"><a href="/">Back to the dashboard</a> · refreshes every 10 seconds</p>
+<script>
+const $=id=>document.getElementById(id);
+function line(t,v,cls){const d=document.createElement("div");d.className="row";const a=document.createElement("span");a.textContent=t;const b=document.createElement("span");b.textContent=v;if(cls)b.className=cls;d.append(a,b);return d}
+async function load(){
+  try{
+    const r=await fetch("/api/now");if(r.status===401){location.href="/login";return}
+    const d=await r.json();
+    $("at").textContent="Updated "+d.at+" (UTC)";
+    const t=$("top");t.replaceChildren(
+      line("Autopilot",d.autopilot_on===null?"unknown":d.autopilot_on?"ON":"OFF",d.autopilot_on?"on":"off"),
+      line("A pass is running",d.pass_running?"yes":"no"),
+      line("A dashboard job is running",d.dashboard_job?"yes":"no"),
+      line("Spent today / daily cap",d.money?("$"+d.money.spent_today.toFixed(2)+" / $"+d.money.cap.toFixed(2)+(d.money.left<0?" (over: new work is paused until tomorrow UTC)":" ($"+d.money.left.toFixed(2)+" left)")):"unknown"),
+      line("Working on",d.working_on?(d.working_on.title+" (repair try "+d.working_on.tries+")"):"nothing is being repaired"));
+    const v=$("videos");v.replaceChildren(...d.videos.map(x=>{const c=document.createElement("div");c.className="card";const a=document.createElement("div");a.textContent=x.title;const b=document.createElement("div");b.className="tag";b.textContent=x.format+" · "+x.stage;c.append(a,b);return c}));
+    $("log").textContent=d.log.join("\n")||"(no log lines yet)";
+  }catch(e){$("at").textContent="Could not load: "+e}
+}
+load();setInterval(load,10000);
+</script>

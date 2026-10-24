@@ -620,6 +620,12 @@ class H(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(b)))
             self.end_headers()
             self.wfile.write(b)
+        elif u.path == "/now":
+            self.send_bytes((config.ROOT / "now.html").read_bytes(), "text/html; charset=utf-8")
+        elif u.path == "/api/now":
+            import nowview
+
+            self.send_json(nowview.build())
         elif u.path == "/api/state":
             self.send_json(state())
         elif u.path == "/api/autopilot":
