@@ -4,6 +4,7 @@ Every rule names the official page it comes from, the day it was read, and an ho
 enforced; the others are watched. The reviewer runs `checks` with every review, the fixer repairs what it can, and `risk.py` shows when a page a rule
 depends on changed after the rule was last verified. Docs: docs/COMPLIANCE.md.
 """
+import json
 import re
 
 import config
@@ -44,12 +45,21 @@ def tags_length(tags: list[str]) -> int:
     return sum(len(t) + (2 if " " in t else 0) for t in tags) + max(0, len(tags) - 1)
 
 
+def _cta(path=None) -> str:
+    """One labelled link to the owner's playlist ("cta" in data/playlists.json), for the line before the credits. Empty for a studio without the file."""
+    try:
+        text = str(json.loads((path or config.ROOT / "data" / "playlists.json").read_text()).get("cta", "")).strip()
+    except (OSError, ValueError, AttributeError):
+        return ""
+    return f"\n\n{text}" if text else ""
+
+
 def final_description(meta: dict) -> str:
     """The description exactly as it is sent to YouTube: ours, the image credits, the channel's hashtags and the AI narration note."""
     is_doc = meta.get("format") == "doc"
     tags = " ".join(h for h in config.niche()["hashtags"] if not (is_doc and h == "#Shorts"))
     credits = "\n\nFootage and image credits:\n" + "\n".join(meta["credits"]) if meta.get("credits") else ""
-    return f"{meta.get('description', '')}{credits}\n\n{tags}\n\nNarration is AI-generated."
+    return f"{meta.get('description', '')}{_cta()}{credits}\n\n{tags}\n\nNarration is AI-generated."
 
 
 def metadata_problems(meta: dict) -> list[str]:

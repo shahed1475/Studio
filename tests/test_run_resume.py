@@ -29,7 +29,7 @@ def test_demand_rewards_subjects_people_search(monkeypatch):
 
 def test_thumbnail_hook_prefers_one_that_names_the_subject():
     import thumbnail
-    meta = {"title": "Pied Piper of Hamelin: Real Story", "topic": "The Pied Piper of Hamelin", "lines": [{"text": "The Pied Piper led the children away from Hamelin."}],
+    meta = {"title": "The Pied Piper of Hamelin Legend", "topic": "The Pied Piper of Hamelin", "lines": [{"text": "The Pied Piper led the children away from Hamelin. The real story is disputed."}],
             "chapters": [{"title": "The Pied Piper"}]}
     got = thumbnail.hook_for(meta, chat=lambda p: {"hooks": ["THE LOST WINDOW!", "PIED PIPER REAL STORY", "WHO WAS THE PIPER?"]})
     assert got == "PIED PIPER REAL STORY"

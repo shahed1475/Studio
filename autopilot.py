@@ -400,7 +400,9 @@ def finish_video(folder: Path) -> None:
     others = fixer.other_titles(folder)
     titles = [t for t in (meta.get("seo") or {}).get("titles", []) if not fixer._too_similar(t, others)] or (meta.get("seo") or {}).get("titles") or []
     if titles:
-        meta["title"] = titles[0]
+        import packaging
+
+        meta["title"] = packaging.rank_titles(titles, (meta.get("seo") or {}).get("core", ""), others)[0]  # the best-scoring option, not just the first
     import seo
 
     meta["tags"] = fixer.clean_tags(meta)

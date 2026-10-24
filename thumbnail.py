@@ -57,6 +57,8 @@ def hook_for(meta: dict, avoid=(), chat=None) -> str:
         if 1 <= len(hook.split()) <= 5 and hook not in used and compliance.hook_supported(hook, support):
             ok.append(hook)
     named = [h for h in ok if subject & set(re.findall(r"[a-z0-9']+", h.lower()))]  # a thumbnail that names its subject is clicked more than a vague teaser
+    in_title = set(re.findall(r"[a-z0-9']+", meta["title"].lower()))
+    named.sort(key=lambda h: 0 if set(re.findall(r"[a-z0-9']+", h.lower())) - in_title else 1)  # and one that adds a word the title lacks comes first
     if named or ok:
         return (named or ok)[0]
     words = re.sub(r"[^A-Za-z0-9 ']", "", meta["title"]).upper().split()

@@ -142,6 +142,9 @@ def metadata_checks(meta: dict) -> list[dict]:
     shouting = len(letters) > 10 and sum(ch.isupper() for ch in letters) / len(letters) > 0.6
     if shouting or "!!" in title:
         out.append(_c("title_style", False, "title shouts (capital letters or !!), which reads as clickbait", "warn"))
+    import packaging
+
+    out.extend(_c(r["name"], r["ok"], r["detail"], "warn") for r in packaging.audit(meta))  # search and thumbnail advice: warnings only
     return out
 
 
