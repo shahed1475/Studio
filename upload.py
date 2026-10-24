@@ -59,7 +59,8 @@ def uploads_today(out_dir: Path, now: dt.datetime) -> int:
     day = now.astimezone(dt.timezone.utc).strftime("%Y-%m-%d")
     n = 0
     for m in out_dir.glob("*/meta.json"):
-        if str(json.loads(m.read_text()).get("uploaded_at", "")).startswith(day):
+        d = json.loads(m.read_text())
+        if str(d.get("uploaded_at", "")).startswith(day) and not d.get("hold"):  # a held upload will not go public: it does not use up the day's pace
             n += 1
     return n
 

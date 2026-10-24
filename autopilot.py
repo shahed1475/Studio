@@ -244,7 +244,7 @@ def build_state(now: dt.datetime, cfg: dict) -> dict:
     day = now.astimezone(dt.timezone.utc).strftime("%Y-%m-%d")
     for m in config.OUT.glob("*/meta.json"):
         d = json.loads(m.read_text())
-        if str(d.get("uploaded_at", "")).startswith(day):
+        if str(d.get("uploaded_at", "")).startswith(day) and not d.get("hold"):  # a held upload will not go public: it does not use up the day's pace
             by_fmt[d.get("format", "short")] = by_fmt.get(d.get("format", "short"), 0) + 1
     queue = json.loads(config.TOPICS_FILE.read_text()) if config.TOPICS_FILE.exists() else []
     news = json.loads(NEWS_QUEUE.read_text()) if NEWS_QUEUE.exists() else []
