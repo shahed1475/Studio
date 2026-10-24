@@ -28,7 +28,7 @@ services:
     <<: *studio
     container_name: studio-dashboard
     command: ["python", "dashboard.py"]
-    cpus: 2  # the dashboard also runs the jobs started from its buttons (Run one pass now), and a render killed at 512m by the memory limit
+    cpus: 4  # the dashboard also runs the jobs started from its buttons (Run one pass now), and a render killed at 512m by the memory limit
     mem_limit: 3g
     healthcheck:
       test: ["CMD", "curl", "-fs", "http://127.0.0.1:8913/healthz"]
@@ -39,7 +39,7 @@ services:
     <<: *studio
     container_name: studio-worker
     command: ["python", "worker.py"]
-    cpus: 2
+    cpus: 4
     mem_limit: 3g
     healthcheck:
       test: ["CMD", "python", "-c", "import worker,sys; sys.exit(0 if worker.alive() else 1)"]

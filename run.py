@@ -182,9 +182,30 @@ def cmd_doc(topic: str | None = None) -> Path:
     return _charged(_cmd_doc, topic)
 
 
+PENDING_DOC = config.ROOT / "data" / "pending_doc.json"  # a paid script whose video is not finished: the next pass renders it instead of paying for a new one
+MAX_RESUMES = 3
+
+
+def _pending_doc() -> dict | None:
+    try:
+        saved = json.loads(PENDING_DOC.read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(saved.get("data"), dict) or saved.get("tries", 0) >= MAX_RESUMES:
+        return None
+    return saved
+
+
 def _cmd_doc(topic: str | None = None) -> Path:
     import random
 
+    saved = _pending_doc() if not topic else None
+    if saved:
+        saved["tries"] = saved.get("tries", 0) + 1
+        PENDING_DOC.write_text(json.dumps(saved))
+        old = config.OUT / saved["folder"] if saved.get("folder") else None
+        print(f"Resuming the saved script (try {saved['tries']}): {saved['data']['title']}")
+        return _produce_doc(saved["data"], old if old and old.is_dir() and not (old / "meta.json").exists() else None)
     if not topic:
         topic = _best_topic("doc")
         if not topic:
@@ -210,6 +231,8 @@ def _cmd_doc(topic: str | None = None) -> Path:
             print(f"  script attempt {attempt + 1} failed: {e}")
     if not data:
         raise SystemExit("could not generate a documentary script")
+    PENDING_DOC.parent.mkdir(parents=True, exist_ok=True)
+    PENDING_DOC.write_text(json.dumps({"data": data, "folder": "", "tries": 0}))
     return _produce_doc(data)
 
 
@@ -247,6 +270,14 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
     folder = folder or unique_folder(config.OUT / slug)
     work = folder / "work"
     folder.mkdir(parents=True, exist_ok=True)
+    if PENDING_DOC.exists():
+        try:
+            saved = json.loads(PENDING_DOC.read_text())
+            if saved.get("data", {}).get("title") == data.get("title"):
+                saved["folder"] = folder.name
+                PENDING_DOC.write_text(json.dumps(saved))
+        except (OSError, ValueError):
+            pass
     print("Voice...")
     prof = editprofile.load()
     narration, _ass, durations = tts.narrate([l["text"] for l in data["lines"]], work, prof["sentence_pause_ms"] / 1000)
@@ -286,6 +317,7 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
     data["subtitles"] = "burned" if config.DOC_SUBTITLES else "srt"
     data["approved"] = False
     (folder / "meta.json").write_text(json.dumps(data, indent=2))
+    PENDING_DOC.unlink(missing_ok=True)
     print(f"\nDone: {folder / 'video.mp4'}\nTitle: {data['title']}\nWatch it, then: python run.py approve {folder.name}")
     return folder
 
