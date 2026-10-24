@@ -171,8 +171,9 @@ def images_for(query: str, anchors: list[str] | None = None, limit: int = 1, ski
             if image_relevant(title, cats, anchors):
                 cands.append((title, page, info, meta))
         if judge and cands:  # a name match is not enough: "Apollo" also names a moon mission
-            keep = set(judge([c[0] for c in cands]))
-            cands = [c for c in cands if c[0] in keep]
+            labels = {c[0]: f"{c[0]} | {' '.join(re.sub(r'<[^>]+>', ' ', c[3].get('Categories', {}).get('value', '')).split())[:140]}" for c in cands}  # a bare file name can be a ride or a brand; the categories tell
+            keep = set(judge(list(labels.values())))
+            cands = [c for c in cands if labels[c[0]] in keep]
         for title, page, info, meta in cands:
             key = hashlib.md5(info["thumburl"].encode()).hexdigest()[:12]
             hit = _download(info, page, meta, key)

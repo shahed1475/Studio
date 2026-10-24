@@ -282,7 +282,8 @@ def _image_judge(topic: str):
             "plausibly show that subject (its place, people, artwork, objects or maps). Reject anything about a "
             "different subject that merely shares a word (a space mission, an aircraft, a castle elsewhere, a flag). Also reject file names that describe a "
             "modern snapshot of ordinary people or soldiers, a brand, shop or advertisement, a street party, a Halloween or costume scene, or a medical or "
-            "military operation, unless the documentary is about exactly that.\n"
+            "military operation, unless the documentary is about exactly that. Each line is a file name, then | and its Commons categories: reject a bare name whose categories show a "
+            "ride, vehicle, aircraft, building or brand that only shares the word.\n"
             + "\n".join(f"{i}: {t}" for i, t in enumerate(titles)) + '\n\nReturn JSON: {"keep": [numbers]}'
         )
         keep = {int(n) for n in out.get("keep", []) if str(n).isdigit()}

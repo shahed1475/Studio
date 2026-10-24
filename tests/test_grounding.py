@@ -326,3 +326,17 @@ def test_picture_downloads_wait_the_time_wikimedia_asks_after_a_429():
 
     assert footage._told_wait(R()) == 12.0 and footage._told_wait(type("X", (), {"headers": {"Retry-After": "900"}})()) == 45.0
     assert footage._told_wait(type("X", (), {})()) == 5.0 and footage._told_wait(type("X", (), {"headers": {"Retry-After": "soon"}})()) == 5.0
+
+
+def test_judge_sees_commons_categories_so_a_bare_name_can_be_told_apart(monkeypatch):
+    pages = {"1": {"title": "File:Thunderbird.JPG", "imageinfo": [{"thumburl": "http://x/1.jpg", "extmetadata": {"LicenseShortName": {"value": "Public domain"}, "Categories": {"value": "Wooden roller coasters|Thunderbird (Holiday World)"}}}]}}
+
+    class R:
+        status_code, ok = 200, True
+        def raise_for_status(self): pass
+        def json(self): return {"query": {"pages": pages}}
+
+    seen = []
+    monkeypatch.setattr(footage.requests, "get", lambda *a, **k: R())
+    got = footage.images_for("Thunderbird", ["Thunderbird"], 5, judge=lambda labels: seen.extend(labels) or [])
+    assert got == [] and "roller coasters" in seen[0]
