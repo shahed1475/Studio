@@ -136,12 +136,11 @@ def test_unreadable_link_with_userinfo_is_still_high_and_host_is_listed(tmp_path
     assert any(f["severity"] == "high" and "user@host" in f["what"] for f in r["findings"])
 
 
-def test_unreadable_link_host_ends_at_backslash_like_a_browser(tmp_path):
+def test_unreadable_link_is_read_both_ways_and_the_stricter_result_is_kept(tmp_path):
     (tmp_path / "SKILL.md").write_text("see http://[github.com\\@evil.example.net/x\n")
     r = vetskill.scan(tmp_path)
-    assert not any("evil.example.net" in f["what"] for f in r["findings"])
-    assert not any(f["severity"] == "high" for f in r["findings"])
-
+    assert any(f["severity"] == "high" and "user@host" in f["what"] for f in r["findings"])
+    assert any("evil.example.net" in f["what"] for f in r["findings"])
 
 def test_unreadable_link_with_odd_host_characters_is_listed(tmp_path):
     (tmp_path / "SKILL.md").write_text("see http://[git_hub.com/x\n")

@@ -182,14 +182,16 @@ def scan(root: Path) -> dict:
             try:
                 parts = urlsplit(u.rstrip(".,;:"))
             except ValueError:  # malformed (for example a stray "["): never skip the checks, read the raw text instead
-                auth = re.split(r"[/\\?#]", u.split("://", 1)[-1], 1)[0]  # a browser ends the host at / \\ ? or #
+                rest = u.split("://", 1)[-1]
+                auths = {re.split(r"[/?#]", rest, 1)[0], re.split(r"[/\\?#]", rest, 1)[0]}  # read as a standard client and as a browser (which ends the host at \\ too)
                 line = text.count("\n", 0, text.find(u)) + 1
                 findings.append({"severity": "medium", "what": "a web address that cannot be parsed (checked as raw text)", "file": rel, "line": line, "excerpt": u[:110]})
-                if "@" in auth:
+                if any("@" in x for x in auths):
                     findings.append({"severity": "high", "what": "link with user@host: the real host is not the one that is shown", "file": rel, "line": line, "excerpt": u[:110]})
-                h = auth.rsplit("@", 1)[-1].strip("[]").split(":")[0].lower().rstrip(".")
-                if h and (not re.fullmatch(r"[a-z0-9.-]+", h) or not any(h == x or h.endswith("." + x) for x in SAFE_HOSTS)):  # odd characters never match the safe list
-                    hosts.setdefault(h, set()).add(rel)
+                for x in auths:
+                    h = x.rsplit("@", 1)[-1].strip("[]").split(":")[0].lower().rstrip(".")
+                    if h and (not re.fullmatch(r"[a-z0-9.-]+", h) or not any(h == y or h.endswith("." + y) for y in SAFE_HOSTS)):  # odd characters never match the safe list
+                        hosts.setdefault(h, set()).add(rel)
                 continue
             if "@" in parts.netloc:
                 findings.append({"severity": "high", "what": "link with user@host: the real host is not the one that is shown", "file": rel, "line": text.count("\n", 0, text.find(u)) + 1, "excerpt": u[:110]})
