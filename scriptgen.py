@@ -217,6 +217,8 @@ def country_ideas(country: str, signals: list[str], n: int = 4) -> list[str]:
         f"Popular recent video titles there (for theme signals only; never copy them):\n{seen}\n\n"
         f"Suggest {n} different story topics from {country}: public-domain folk tales and legends, or "
         "well-documented history and mysteries with a surprising twist. Not modern copyrighted stories. "
+        "Give each topic as a short subject name of 2 to 8 words, like 'The Jersey Devil' or 'Mohenjo-daro', that has its own encyclopedia article: "
+        "no description, no dates, no details after the name. "
         'Return JSON: {"topics": ["..."]}'
     )
     return [t.strip() for t in data["topics"] if isinstance(t, str) and t.strip()]
