@@ -181,8 +181,15 @@ def scan(root: Path) -> dict:
         for u in URL.findall(text):
             try:
                 parts = urlsplit(u.rstrip(".,;:"))
-            except ValueError:  # a malformed address (for example a stray "[") must not stop the scan
-                findings.append({"severity": "low", "what": "a web address that cannot be read", "file": rel, "line": text.count("\n", 0, text.find(u)) + 1, "excerpt": u[:110]})
+            except ValueError:  # malformed (for example a stray "["): never skip the checks, read the raw text instead
+                auth = u.split("://", 1)[-1].split("/", 1)[0]
+                line = text.count("\n", 0, text.find(u)) + 1
+                findings.append({"severity": "medium", "what": "a web address that cannot be parsed (checked as raw text)", "file": rel, "line": line, "excerpt": u[:110]})
+                if "@" in auth:
+                    findings.append({"severity": "high", "what": "link with user@host: the real host is not the one that is shown", "file": rel, "line": line, "excerpt": u[:110]})
+                h = auth.rsplit("@", 1)[-1].strip("[]").split(":")[0].lower().rstrip(".")
+                if h and not any(h == x or h.endswith("." + x) for x in SAFE_HOSTS):
+                    hosts.setdefault(h, set()).add(rel)
                 continue
             if "@" in parts.netloc:
                 findings.append({"severity": "high", "what": "link with user@host: the real host is not the one that is shown", "file": rel, "line": text.count("\n", 0, text.find(u)) + 1, "excerpt": u[:110]})

@@ -127,4 +127,10 @@ def test_branch_remote_is_matched_exactly(tmp_path):
 def test_unreadable_link_does_not_stop_the_scan(tmp_path):
     (tmp_path / "SKILL.md").write_text("see http://[bad/link and https://github.com/x\n")
     r = vetskill.scan(tmp_path)
-    assert any(f["what"] == "a web address that cannot be read" for f in r["findings"])
+    assert any(f["what"].startswith("a web address that cannot be parsed") for f in r["findings"])
+
+
+def test_unreadable_link_with_userinfo_is_still_high_and_host_is_listed(tmp_path):
+    (tmp_path / "SKILL.md").write_text("see http://github.com@[evil.example.net/x\n")
+    r = vetskill.scan(tmp_path)
+    assert any(f["severity"] == "high" and "user@host" in f["what"] for f in r["findings"])
