@@ -19,6 +19,14 @@ GENERIC_TAG_WORDS = {"history", "histories", "stories", "story", "legend", "lege
                      "and", "a", "in", "to", "what", "why", "how", "was", "is", "did", "about", "behind", "really", "lost", "forgotten", "world", "folktales"}
 
 
+_A_BEFORE_VOWEL = re.compile(r"\b([Aa]) (?=(?!(?:one|once|ouija)\b)(?:[AIOaio][a-z]|[Ee](?![uw]))\w)", re.I)
+
+
+def fix_a_an(text: str) -> str:
+    """'A Author' becomes 'An Author' (a, i, o and e words; not 'a European' or 'a Eulogy'). Titles and chapter names are written by a model that sometimes slips."""
+    return _A_BEFORE_VOWEL.sub(lambda m: ("An " if m.group(1) == "A" else "an "), text)
+
+
 def polish_title(title: str, limit: int = 70) -> str:
     """Plain, properly capitalised title: no dashes or quote marks around it, no trailing full stop, cut at a word if too long."""
     t = re.sub(r"\s+", " ", re.sub(r"[\u2014\u2013]", "-", str(title))).strip().strip('"\u201c\u201d').rstrip(".")
@@ -32,7 +40,7 @@ def polish_title(title: str, limit: int = 70) -> str:
         t = t[:1].upper() + t[1:]
     if len(t) > limit:
         t = t[:limit].rsplit(" ", 1)[0].rstrip(":,-")
-    return t
+    return fix_a_an(t)
 
 
 def relevant_tags(tags: list[str], corpus: str, limit: int = 15) -> list[str]:

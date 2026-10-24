@@ -93,3 +93,11 @@ def test_tags_that_are_chapter_numbers_of_a_novel_are_dropped():
                             "hong gildong korean folklore chapter episode recap 12 13 4")
     assert "hong gildong" in got and "korean folklore" in got
     assert not any("chapter" in t or "episode" in t for t in got)
+
+
+def test_a_becomes_an_before_a_vowel_sound_only():
+    import seo
+    assert seo.fix_a_an("A Name Everyone Knows, A Author No One Can Name") == "A Name Everyone Knows, An Author No One Can Name"
+    assert seo.fix_a_an("a old road and a idea and a Egyptian tomb") == "an old road and an idea and an Egyptian tomb"
+    assert seo.fix_a_an("A European King, a Eulogy, a University, A Unicorn, a one-eyed man") == "A European King, a Eulogy, a University, A Unicorn, a one-eyed man"
+    assert seo.polish_title("a author in a oak room") == "An Author in an Oak Room"

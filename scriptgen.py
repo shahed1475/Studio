@@ -229,7 +229,9 @@ def chapter_title(ch: dict, lines: list[dict]) -> str:
     """The model's chapter title, or (when it left it empty) the first words of the chapter's summary or opening line, never a 'Part 3' placeholder."""
     t = str(ch.get("title", "")).strip()
     if t:
-        return t
+        import seo
+
+        return seo.fix_a_an(t)
     src = str(ch.get("summary", "")).strip() or (lines[0]["text"] if lines else "")
     words = re.sub(r"[^\w' -]", "", src.split(".")[0]).split()
     return " ".join(words[:6]).capitalize() if words else ""
