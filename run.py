@@ -14,6 +14,7 @@
   python run.py newswatch        weekly YouTube security/policy news digest
   python run.py policywatch      daily: has YouTube changed its rule pages?
   python run.py titletest        daily: weak title? suggest (or change) one, then check it was better
+  python run.py recheck          hourly: review one uploaded video again; repair its metadata, or take a failing scheduled one back to private
   python run.py remake <name> [--topic "..."]  set a video aside (never deleted) and make it again from the topic, first
   python run.py youtube-login [production|testing]  show the YouTube login's age and mode, or set the mode
   python run.py health           are published videos public and free of claims? (pauses Autopilot if not)
@@ -501,6 +502,10 @@ def main() -> None:
         r = titletest.run(quality=titletest.watch_quality())
         print(f"{r['checked']} public videos looked at (mode {titletest.mode()}): {len(r['changed'])} changed, {len(r['weak'])} suggested, "
               f"{len(r['reverted'])} put back or judged worse, {len(r['kept'])} kept, {r['learning']} too early to judge")
+    elif a[0] == "recheck":
+        import recheck
+
+        print(json.dumps(recheck.run(), indent=2, default=str))
     elif a[0] == "safety":
         import safety
 

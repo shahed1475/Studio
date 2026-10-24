@@ -19,6 +19,7 @@ LOG = config.ROOT / "logs" / "worker.log"
 TS = "%Y-%m-%dT%H:%M:%SZ"
 JOBS = [
     {"name": "autopilot", "every": 1800, "cmds": [["autopilot", "tick"]], "timeout": 7200},
+    {"name": "recheck", "every": 3600, "cmds": [["recheck"]], "timeout": 900},
     {"name": "health", "every": 3600, "cmds": [["health"]], "timeout": 600},
     {"name": "titletest", "at": "08:00", "cmds": [["titletest"]], "timeout": 900},
     {"name": "policywatch", "at": "06:10", "cmds": [["policywatch"]], "timeout": 900},
