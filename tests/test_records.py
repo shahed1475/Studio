@@ -118,3 +118,33 @@ def test_fixer_save_replaces_the_record_atomically_and_upload_merge_keeps_other_
     assert not (f / "meta.json.tmp").exists()
     records.merge(f, {"video_id": "x", "upload_check": {"ok": True}})  # what upload() now saves in one merge
     assert records.read(f)["c"] == 4 and records.read(f)["video_id"] == "x"
+
+
+def _hold_lock(folder, seconds, ready):
+    with records._lock(folder):
+        ready.set()
+        import time
+
+        time.sleep(seconds)
+
+
+def test_a_lock_held_by_another_process_blocks_and_then_releases(tmp_path, monkeypatch):
+    """The CI version of step 2b: a different OS process holds the lock, so this one must wait, time out with a clear error, and succeed after the release.
+    (Two containers share the same disk and use the same flock, which was checked on the server on 25 Oct.)"""
+    import multiprocessing
+
+    f = tmp_path / "v"
+    records.create(f, {"n": 0})
+    ready = multiprocessing.Event()
+    other = multiprocessing.Process(target=_hold_lock, args=(f, 1.5, ready))
+    other.start()
+    try:
+        assert ready.wait(10)
+        monkeypatch.setattr(records, "LOCK_WAIT_SECONDS", 0.3)
+        with pytest.raises(records.RecordError, match="could not lock"):
+            records.merge(f, {"d": 1})
+        monkeypatch.setattr(records, "LOCK_WAIT_SECONDS", 10)
+        records.merge(f, {"d": 1})  # waits for the other process to let go
+    finally:
+        other.join(10)
+    assert records.read(f) == {"n": 0, "d": 1}
