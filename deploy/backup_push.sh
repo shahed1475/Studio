@@ -14,7 +14,7 @@ PATHRE='^/[A-Za-z0-9._/-]+$'   # absolute and plain: these go into the ssh comma
 [[ "$KEY" =~ $PATHRE && "$KNOWN" =~ $PATHRE ]] || die "BACKUP_SSH_KEY_FILE and the known-hosts file must be plain absolute paths"
 [[ -f "$KEY" && -f "$KNOWN" ]] || die "BACKUP_SSH_KEY_FILE or the known-hosts file is missing"
 # only real files named like a backup (a link planted in backups/, which the containers can write, is never followed), newest first, and each must be a readable gzip
-mapfile -t ARCHIVES < <(find "$SRC/backups" -maxdepth 1 -type f -regex '.*/backup-[0-9]{8}\.tar\.gz' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -2 | cut -d' ' -f2-)
+mapfile -t ARCHIVES < <(find "$SRC/backups" -maxdepth 1 -type f -regextype posix-extended -regex '.*/backup-[0-9]{8}\.tar\.gz' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -2 | cut -d' ' -f2-)
 for a in "${ARCHIVES[@]}"; do gzip -t "$a" 2>/dev/null || die "$(basename "$a") is not a valid gzip file"; done
 [[ ${#ARCHIVES[@]} -ge 1 ]] || die "no backup archive in $SRC/backups"
 NEWEST="${ARCHIVES[0]}"
