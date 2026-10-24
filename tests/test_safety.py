@@ -150,3 +150,12 @@ def test_pace_settings_match_the_research():
 def test_a_video_still_private_after_its_slot_names_the_api_project_possibility_without_claiming_it():
     msg = " ".join(safety.judge(item("a", privacy="private"), published=True))
     assert "API project" in msg and "sources disagree" in msg and "developers.google.com/youtube/v3/docs/videos" in msg
+
+
+def test_write_scope_is_accepted_only_when_the_owner_turned_title_changes_on(tmp_path):
+    (tmp_path / "token.json").write_text(json.dumps({"scopes": [safety.WRITE_SCOPE], "refresh_token": "r"}))
+    os.chmod(tmp_path / "token.json", 0o600)
+    assert not {c["name"]: c for c in safety.local_audit(tmp_path, use_git=False)}["token_scopes"]["ok"]
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "titletest.json").write_text(json.dumps({"mode": "apply"}))
+    assert {c["name"]: c for c in safety.local_audit(tmp_path, use_git=False)}["token_scopes"]["ok"]

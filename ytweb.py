@@ -11,12 +11,14 @@ import time
 from pathlib import Path
 
 import config
+import tenantmode
+import safety
 
 SECRET = config.ROOT / "web_client_secret.json"
 TOKEN = config.ROOT / "token.json"
 PENDING = config.ROOT / "data" / "oauth_pending.json"
 WAIT = 600  # seconds a sign-in may take from the click to Google's answer
-SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.readonly"]
+SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.readonly"] + ([] if tenantmode.is_tenant() else [safety.WRITE_SCOPE])
 
 
 def available() -> bool:

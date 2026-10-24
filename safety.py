@@ -20,6 +20,7 @@ WATCH_FOR = dt.timedelta(days=3)      # claims and takedowns show up in the firs
 RECHECK = dt.timedelta(hours=6)
 SECRETS = [".env", "token*.json", "client_secret*.json", "settings.json", "llm.json"]
 ALLOWED_SCOPES = {"https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.readonly"}
+WRITE_SCOPE = "https://www.googleapis.com/auth/youtube"  # lets the title test change a title; the owner's choice (titletest mode "apply"), never a user studio's
 REASONS = {"copyright": "a copyright claim", "claim": "a content claim", "duplicate": "it was seen as a duplicate",
            "termsOfUse": "a terms of use problem", "inappropriate": "it was judged inappropriate", "length": "its length",
            "trademark": "a trademark claim", "uploaderAccountClosed": "the account is closed", "uploaderAccountSuspended": "the account is suspended"}
@@ -142,7 +143,13 @@ def local_audit(root: Path | None = None, use_git: bool = True) -> list[dict]:
             data = json.loads(token.read_text())
         except ValueError:
             data = {}
-    extra = sorted(set(data.get("scopes") or []) - ALLOWED_SCOPES)
+    allowed = set(ALLOWED_SCOPES)
+    try:
+        if json.loads((root / "data" / "titletest.json").read_text()).get("mode") == "apply":
+            allowed.add(WRITE_SCOPE)
+    except (OSError, ValueError):
+        pass
+    extra = sorted(set(data.get("scopes") or []) - allowed)
     out.append(_c("token_scopes", not extra, f"the login has more power than needed: {', '.join(extra)}" if extra else "only upload and read access"))
     out.append(_c("refresh_token", not token.exists() or bool(data.get("refresh_token")),
                   "login can renew itself" if data.get("refresh_token") else ("no login saved yet" if not token.exists() else "no refresh token: reconnect YouTube")))
