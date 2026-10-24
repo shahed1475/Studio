@@ -23,6 +23,7 @@ Skills only guide Claude in sessions in this folder; they do not run inside the 
 - `yt-title-optimizer`, `yt-hook-scripter`, `yt-description-writer`, `yt-thumbnail-brief`: second opinions when a reviewer note about packaging needs a better idea. Output still goes through `run.py review`.
 - `yt-content-planner`, `yt-channel-optimizer`, `yt-community-post-writer`, `yt-repurposer`: planning and channel-growth ideas for the owner. Nothing is posted by them; posting to YouTube stays with the studio's publisher and the owner.
 - `watch` (already installed): look at a finished local video.
+- `architecture-redesign` (added 25 Oct 2026, scan 0/0/0, source: a file the owner downloaded): a phased checklist for reviewing or redesigning the system. Use it only when the owner asks, on one part at a time. Its steps that edit CLAUDE.md, push or deploy need the owner's yes; CLAUDE.md and the studio-* skills win where they disagree. Not used by Autopilot.
 - Refused: `yt-audience-insights` (its text tripped the scanner's "skip approval" rule; it also needs analytics access the studio login does not have).
 
 ## Rules that never change
