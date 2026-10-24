@@ -25,3 +25,11 @@ def test_demand_rewards_subjects_people_search(monkeypatch):
     monkeypatch.setattr(seo, "suggest", lambda q: ["pied piper of hamelin story", "pied piper real story", "pied piper song"] if "Piper" in q else [])
     assert seo.demand("The Pied Piper of Hamelin: a legend") == 0.3
     assert seo.demand("The 1817 Bell Farm accounts") == 0.0
+
+
+def test_thumbnail_hook_prefers_one_that_names_the_subject():
+    import thumbnail
+    meta = {"title": "Pied Piper of Hamelin: Real Story", "topic": "The Pied Piper of Hamelin", "lines": [{"text": "The Pied Piper led the children away from Hamelin."}],
+            "chapters": [{"title": "The Pied Piper"}]}
+    got = thumbnail.hook_for(meta, chat=lambda p: {"hooks": ["THE LOST WINDOW!", "PIED PIPER REAL STORY", "WHO WAS THE PIPER?"]})
+    assert got == "PIED PIPER REAL STORY"

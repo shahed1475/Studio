@@ -42,17 +42,23 @@ def hook_for(meta: dict, avoid=(), chat=None) -> str:
             f"Write 3 different texts for a YouTube thumbnail about: {meta['title']}.\n"
             f"What the narration really covers: {outline[:500]}. It opens: {' '.join(lines[:2])[:300]}\n"
             "Rules: 2 to 4 words, ALL CAPS, creates curiosity, promises only something the narration says or shows: no question it does not answer, no debate it does "
-            "not describe, no clickbait lies, no punctuation except ? or !. "
+            "not describe, no clickbait lies, no punctuation except ? or !. Name the subject: at least one of the 3 texts must contain its best-known "
+            f"name or word ({meta.get('topic', '')[:60]}), like PIED PIPER REAL STORY or BELL WITCH TRUTH, so a viewer sees what it is about. "
             + (f"Not these (already used): {sorted(used)}. " if used else "") + 'Return JSON: {"hooks": ["..."]}'
         )
         candidates = out.get("hooks") or ([out["hook"]] if out.get("hook") else [])
     except Exception:
         candidates = []
     support = " ".join([meta["title"], outline, *lines])
+    subject = {w for w in re.findall(r"[a-z0-9']+", re.split(r"[:,(]", meta.get("topic", ""))[0].lower()) if len(w) > 3 and w not in {"legend", "mystery", "story", "real"}}
+    ok = []
     for raw in candidates:
         hook = re.sub(r"[^A-Za-z0-9?! ']", "", str(raw)).strip().upper()
         if 1 <= len(hook.split()) <= 5 and hook not in used and compliance.hook_supported(hook, support):
-            return hook
+            ok.append(hook)
+    named = [h for h in ok if subject & set(re.findall(r"[a-z0-9']+", h.lower()))]  # a thumbnail that names its subject is clicked more than a vague teaser
+    if named or ok:
+        return (named or ok)[0]
     words = re.sub(r"[^A-Za-z0-9 ']", "", meta["title"]).upper().split()
     skip = {"THE", "OF", "A", "AN", "AND", "IN", "ON"}
     return " ".join([w for w in words if w not in skip][:3]) or "UNSOLVED"
