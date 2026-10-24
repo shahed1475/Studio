@@ -106,3 +106,15 @@ def test_autopilot_writers_keep_keys_saved_by_others(tmp_path, monkeypatch):
     autopilot._approve("v")
     now = records.read(f)
     assert now["approved"] is True and now["approved_by"] == "reviewer-agent" and now["added_by_dashboard"] is True and now["other"] == 1
+
+
+def test_fixer_save_replaces_the_record_atomically_and_upload_merge_keeps_other_keys(tmp_path):
+    import fixer
+
+    f = tmp_path / "v"
+    records.create(f, {"a": 1, "b": 2})
+    fixer._save(f, {"a": 1, "b": 3, "c": 4})
+    assert records.read(f) == {"a": 1, "b": 3, "c": 4}
+    assert not (f / "meta.json.tmp").exists()
+    records.merge(f, {"video_id": "x", "upload_check": {"ok": True}})  # what upload() now saves in one merge
+    assert records.read(f)["c"] == 4 and records.read(f)["video_id"] == "x"

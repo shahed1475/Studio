@@ -11,6 +11,7 @@ from googleapiclient.http import MediaFileUpload
 
 import compliance
 import config
+import records
 
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.readonly"]  # same as dashboard.py
 SECRET = config.ROOT / "client_secret.json"
@@ -133,39 +134,35 @@ def upload(folder: Path, privacy: str = "private", publish_at: str | None = None
     if meta.get("upload_started") and not meta.get("video_id"):  # an earlier attempt did not finish cleanly: look before sending again
         found = find_interrupted(yt, meta)
         if found:
-            meta.update(video_id=found, uploaded_at=dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), publish_at=publish_at)
-            (folder / "meta.json").write_text(json.dumps(meta, indent=2))
+            records.merge(folder, {"video_id": found, "uploaded_at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "publish_at": publish_at})
             print(f"An earlier upload of this video reached YouTube as {found}; not sending it again.")
             return found
-    meta["upload_started"] = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")  # written before the send, so a crash leaves a trace
-    (folder / "meta.json").write_text(json.dumps(meta, indent=2))
+    records.merge(folder, {"upload_started": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")})  # written before the send, so a crash leaves a trace
     req = yt.videos().insert(
         part="snippet,status", body=body, media_body=MediaFileUpload(str(folder / "video.mp4"), resumable=True)
     )
     resp = None
     while resp is None:
         _, resp = req.next_chunk()
-    meta["video_id"] = resp["id"]
-    meta["uploaded_at"] = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    meta["publish_at"] = publish_at
+    done = {"video_id": resp["id"], "uploaded_at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "publish_at": publish_at}  # saved in one merge at the end
     thumb = folder / meta["thumbnail"] if meta.get("thumbnail") else None
     if thumb and thumb.exists():
         try:
             yt.thumbnails().set(videoId=resp["id"], media_body=MediaFileUpload(str(thumb), mimetype="image/jpeg")).execute()
-            meta["thumbnail_uploaded"] = True
+            done["thumbnail_uploaded"] = True
         except Exception as e:  # usually: channel not phone-verified yet. The video is already up.
-            meta["thumbnail_error"] = str(e)[:300]
+            done["thumbnail_error"] = str(e)[:300]
             print(f"Thumbnail not set ({e}). Verify the channel at youtube.com/verify, then add it in YouTube Studio.")
             import agentlog
 
             agentlog.event("error", f"Thumbnail was not set: {meta.get('title', folder.name)}",
                            "YouTube refused the custom thumbnail (often a channel that is not phone-verified: youtube.com/verify). The video is uploaded; add the thumbnail in YouTube Studio.", notify=True)
     try:
-        meta["upload_check"] = verify_upload(yt, resp["id"], {"title": meta["title"], "privacy": body["status"]["privacyStatus"], "publish_at": publish_at})
-        if not meta["upload_check"]["ok"]:
-            print("WARNING: YouTube stored something different from what was sent: " + "; ".join(meta["upload_check"]["problems"]))
+        done["upload_check"] = verify_upload(yt, resp["id"], {"title": meta["title"], "privacy": body["status"]["privacyStatus"], "publish_at": publish_at})
+        if not done["upload_check"]["ok"]:
+            print("WARNING: YouTube stored something different from what was sent: " + "; ".join(done["upload_check"]["problems"]))
     except Exception as e:  # the video is up; only the read-back failed
-        meta["upload_check"] = {"ok": False, "problems": [f"could not read it back: {type(e).__name__}"]}
-    meta["playlists"] = join_playlists(yt, resp["id"], meta.get("format") or "short")
-    (folder / "meta.json").write_text(json.dumps(meta, indent=2))
+        done["upload_check"] = {"ok": False, "problems": [f"could not read it back: {type(e).__name__}"]}
+    done["playlists"] = join_playlists(yt, resp["id"], meta.get("format") or "short")
+    records.merge(folder, done)
     return resp["id"]

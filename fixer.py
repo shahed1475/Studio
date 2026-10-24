@@ -22,6 +22,7 @@ from pathlib import Path
 import agentlog
 import compliance
 import config
+import records
 import llm
 import reviewer
 import scriptgen
@@ -460,7 +461,7 @@ def remake(slug: str, topic: str | None = None, now: dt.datetime | None = None) 
 
 
 def _save(folder: Path, meta: dict) -> None:
-    (folder / "meta.json").write_text(json.dumps(meta, indent=2))
+    records.save(folder, meta)  # atomic and locked; a whole-record save because a repair pass edits many keys
 
 
 @llm.charges_to(lambda slug, *a, **k: slug)

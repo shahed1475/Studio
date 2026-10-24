@@ -62,6 +62,15 @@ def update(folder, fn) -> dict:
         return data
 
 
+def save(folder, data: dict) -> dict:
+    """Replace the whole record atomically under the lock. Only for code that edits many keys across a long pass (the fixer): it still overwrites a key written
+    meanwhile, so prefer merge/update everywhere else."""
+    folder = Path(folder)
+    with _lock(folder):
+        _write(folder, data)
+        return data
+
+
 def merge(folder, changes: dict) -> dict:
     return update(folder, lambda d: d.update(changes))
 

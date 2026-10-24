@@ -13,6 +13,7 @@ from pathlib import Path
 
 import agentlog
 import config
+import records
 import fixer
 
 TS = "%Y-%m-%dT%H:%M:%SZ"
@@ -148,7 +149,7 @@ def run(now: dt.datetime | None = None, yt=None, pick=None, quality=None) -> dic
                 tt["verdict"] = "kept"
                 res["kept"].append(path.parent.name)
             meta["title_test"] = tt
-            path.write_text(json.dumps(meta, indent=2))
+            records.merge(path.parent, {"title_test": tt, **({"title": meta["title"]} if write and tt.get("verdict") == "reverted" and tt.get("applied") else {})})
             continue
         if tt:  # already tested once: never a second change
             continue
@@ -159,12 +160,12 @@ def run(now: dt.datetime | None = None, yt=None, pick=None, quality=None) -> dic
             continue
         if verdict == "ok":
             meta["title_test"] = {"verdict": "fine", "checked_at": now.strftime(TS), "rate": round(rates[vid], 2)}
-            path.write_text(json.dumps(meta, indent=2))
+            records.merge(path.parent, {"title_test": meta["title_test"]})
             continue
         pct = quality.get(vid)
         if pct is not None and pct < LOW_RETENTION:  # people who do find it leave early: a new title would only bring more people who leave
             meta["title_test"] = {"verdict": "content", "checked_at": now.strftime(TS), "rate": round(rates[vid], 2), "watched_percent": round(pct, 1)}
-            path.write_text(json.dumps(meta, indent=2))
+            records.merge(path.parent, {"title_test": meta["title_test"]})
             res["content"].append(path.parent.name)
             agentlog.event("found", f"Title test: {meta['title'][:50]} is watched only {pct:.0f}% through",
                            "Few views and viewers leave early, so the title is not the problem: look at its opening and pacing. The title was not changed.", now=now)
@@ -183,7 +184,7 @@ def run(now: dt.datetime | None = None, yt=None, pick=None, quality=None) -> dic
         else:
             res["weak"].append(path.parent.name)
         meta["title_test"] = tt
-        path.write_text(json.dumps(meta, indent=2))
+        records.merge(path.parent, {"title_test": tt, **({"title": new} if apply_now else {})})
         agentlog.event("applied" if apply_now else "found", f"Title test: {'changed' if apply_now else 'suggest changing'} the title of a weak video",
                        f"{tt['original']} -> {new}. It gets {tt['rate_before']} views/day, the channel median for this kind is {statistics.median(peers):.1f}."
                        + ("" if apply_now else " Not changed on YouTube (suggest mode" + ("" if can_write() else ", no permission to edit titles yet") + ")."), now=now)
