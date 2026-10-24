@@ -101,3 +101,27 @@ def test_a_becomes_an_before_a_vowel_sound_only():
     assert seo.fix_a_an("a old road and a idea and a Egyptian tomb") == "an old road and an idea and an Egyptian tomb"
     assert seo.fix_a_an("A European King, a Eulogy, a University, A Unicorn, a one-eyed man") == "A European King, a Eulogy, a University, A Unicorn, a one-eyed man"
     assert seo.polish_title("a author in a oak room") == "An Author in an Oak Room"
+
+
+def test_a_short_without_a_format_key_joins_only_the_short_playlists(tmp_path, monkeypatch):
+    import json
+
+    import upload
+    f = tmp_path / "playlists.json"
+    f.write_text(json.dumps({"doc": ["DOCS", "LEGENDS"], "short": ["LEGENDS"]}))
+    seen = []
+
+    class Items:
+        def insert(self, part, body):
+            seen.append(body["snippet"]["playlistId"])
+            return type("R", (), {"execute": lambda self: {}})()
+
+    class YT:
+        def playlistItems(self):
+            return Items()
+
+    monkeypatch.setattr(upload.config, "ROOT", tmp_path)
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "playlists.json").write_text(f.read_text())
+    meta = {"title": "t"}  # no "format" key: a Short
+    assert upload.join_playlists(YT(), "vid", meta.get("format") or "short") == ["LEGENDS"]

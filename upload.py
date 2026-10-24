@@ -166,6 +166,6 @@ def upload(folder: Path, privacy: str = "private", publish_at: str | None = None
             print("WARNING: YouTube stored something different from what was sent: " + "; ".join(meta["upload_check"]["problems"]))
     except Exception as e:  # the video is up; only the read-back failed
         meta["upload_check"] = {"ok": False, "problems": [f"could not read it back: {type(e).__name__}"]}
-    meta["playlists"] = join_playlists(yt, resp["id"], meta.get("format") or "doc")
+    meta["playlists"] = join_playlists(yt, resp["id"], meta.get("format") or "short")
     (folder / "meta.json").write_text(json.dumps(meta, indent=2))
     return resp["id"]
