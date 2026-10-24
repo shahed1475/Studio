@@ -121,7 +121,9 @@ def yt_creds():
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
 
-    creds = Credentials.from_authorized_user_file(str(TOKEN), SCOPES)
+    import upload
+
+    creds = upload.load_creds(TOKEN)
     if not creds.valid and creds.refresh_token:
         creds.refresh(Request())
         TOKEN.write_text(creds.to_json())

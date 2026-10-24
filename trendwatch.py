@@ -43,7 +43,7 @@ def _service():
 
     import upload
 
-    creds = upload.Credentials.from_authorized_user_file(str(upload.TOKEN), upload.SCOPES)
+    creds = upload.load_creds()
     if not creds.valid:
         creds.refresh(Request())
     return build("youtube", "v3", credentials=creds, cache_discovery=False)

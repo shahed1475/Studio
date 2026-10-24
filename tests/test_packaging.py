@@ -45,3 +45,14 @@ def test_a_film_article_is_recognised_as_a_media_work_but_a_legend_is_not():
     import wikipedia
     assert wikipedia.is_media_work("The Curse of La Llorona is a 2019 American supernatural horror film directed by Michael Chaves.")
     assert not wikipedia.is_media_work("La Llorona, or the Weeping Woman, is a legend about a ghost who wanders near rivers.")
+
+
+def test_a_refresh_keeps_every_permission_the_login_was_granted(tmp_path):
+    import json
+
+    import upload
+    scopes = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.readonly",
+              "https://www.googleapis.com/auth/youtube", "https://www.googleapis.com/auth/yt-analytics.readonly"]
+    f = tmp_path / "token.json"
+    f.write_text(json.dumps({"token": "t", "refresh_token": "r", "token_uri": "https://oauth2.googleapis.com/token", "client_id": "c", "client_secret": "s", "scopes": scopes}))
+    assert json.loads(upload.load_creds(f).to_json())["scopes"] == scopes

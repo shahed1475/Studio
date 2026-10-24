@@ -17,8 +17,14 @@ SECRET = config.ROOT / "client_secret.json"
 TOKEN = config.ROOT / "token.json"
 
 
+def load_creds(path: Path | None = None):
+    """The saved login with the permissions it was granted. Never pass a scope list here: Credentials would keep that list and save it back on the next
+    refresh, which silently dropped the edit and analytics permissions an hour after each reconnect."""
+    return Credentials.from_authorized_user_file(str(path or TOKEN))
+
+
 def _service():
-    creds = Credentials.from_authorized_user_file(str(TOKEN), SCOPES) if TOKEN.exists() else None
+    creds = load_creds() if TOKEN.exists() else None
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())

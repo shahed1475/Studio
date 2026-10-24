@@ -58,7 +58,7 @@ def _real_refresh() -> None:
 
     import upload
 
-    creds = Credentials.from_authorized_user_file(str(upload.TOKEN), upload.SCOPES)
+    creds = upload.load_creds()
     creds.refresh(Request())
     upload.TOKEN.write_text(creds.to_json())
     upload.TOKEN.chmod(0o600)

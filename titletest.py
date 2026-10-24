@@ -70,7 +70,7 @@ def watch_quality(now: dt.datetime | None = None) -> dict[str, float]:
 
         import upload
 
-        creds = upload.Credentials.from_authorized_user_file(str(upload.TOKEN), upload.SCOPES)
+        creds = upload.load_creds()
         if not creds.valid:
             creds.refresh(Request())
         end = (now or dt.datetime.now(dt.timezone.utc)).date()
