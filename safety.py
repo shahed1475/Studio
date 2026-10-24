@@ -19,7 +19,8 @@ GRACE = dt.timedelta(minutes=15)      # YouTube needs a moment to flip a schedul
 WATCH_FOR = dt.timedelta(days=3)      # claims and takedowns show up in the first days
 RECHECK = dt.timedelta(hours=6)
 SECRETS = [".env", "token*.json", "client_secret*.json", "settings.json", "llm.json"]
-ALLOWED_SCOPES = {"https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.readonly"}
+ANALYTICS_SCOPE = "https://www.googleapis.com/auth/yt-analytics.readonly"  # read-only: views, watch time, impressions and click rate of the owner's own channel
+ALLOWED_SCOPES = {"https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.readonly", ANALYTICS_SCOPE}
 WRITE_SCOPE = "https://www.googleapis.com/auth/youtube"  # lets the title test change a title; the owner's choice (titletest mode "apply"), never a user studio's
 REASONS = {"copyright": "a copyright claim", "claim": "a content claim", "duplicate": "it was seen as a duplicate",
            "termsOfUse": "a terms of use problem", "inappropriate": "it was judged inappropriate", "length": "its length",

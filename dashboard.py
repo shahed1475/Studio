@@ -150,7 +150,7 @@ def yt_connect() -> None:
 
     YT_STATE.update(connecting=True, error="")
     try:
-        scopes = SCOPES if tenantmode.is_tenant() else SCOPES + [safety.WRITE_SCOPE]  # the owner's login can also change titles (the title test)
+        scopes = SCOPES if tenantmode.is_tenant() else SCOPES + [safety.WRITE_SCOPE, safety.ANALYTICS_SCOPE]  # the owner's login can also change titles (the title test) and read the channel's own analytics
         creds = InstalledAppFlow.from_client_secrets_file(str(SECRET), scopes).run_local_server(port=0, timeout_seconds=300)
         TOKEN.write_text(creds.to_json())
         TOKEN.chmod(0o600)

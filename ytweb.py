@@ -18,7 +18,7 @@ SECRET = config.ROOT / "web_client_secret.json"
 TOKEN = config.ROOT / "token.json"
 PENDING = config.ROOT / "data" / "oauth_pending.json"
 WAIT = 600  # seconds a sign-in may take from the click to Google's answer
-SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.readonly"] + ([] if tenantmode.is_tenant() else [safety.WRITE_SCOPE])
+SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.readonly"] + ([] if tenantmode.is_tenant() else [safety.WRITE_SCOPE, safety.ANALYTICS_SCOPE])
 
 
 def available() -> bool:
