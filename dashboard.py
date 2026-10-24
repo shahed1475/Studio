@@ -145,9 +145,13 @@ def yt_connect() -> None:
     """Runs Google's OAuth flow (opens a browser tab on this machine). Blocks, so call from a thread."""
     from google_auth_oauthlib.flow import InstalledAppFlow
 
+    import safety
+    import tenantmode
+
     YT_STATE.update(connecting=True, error="")
     try:
-        creds = InstalledAppFlow.from_client_secrets_file(str(SECRET), SCOPES).run_local_server(port=0, timeout_seconds=300)
+        scopes = SCOPES if tenantmode.is_tenant() else SCOPES + [safety.WRITE_SCOPE]  # the owner's login can also change titles (the title test)
+        creds = InstalledAppFlow.from_client_secrets_file(str(SECRET), scopes).run_local_server(port=0, timeout_seconds=300)
         TOKEN.write_text(creds.to_json())
         TOKEN.chmod(0o600)
         import datetime as dt

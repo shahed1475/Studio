@@ -30,3 +30,6 @@ Two scopes only, both justified above; the login file is owner-only (mode 600) a
 ## Open items
 - The private-upload rule for unaudited API projects is **CONFLICTING** (search results say uploads are locked private; the official videos page says they are not). The first video that reaches its public time settles it (Bell Witch, Wed 21 Oct 22:00 UTC); the safety check reports it if it stays private.
 - Phone verification for custom thumbnails and videos over 15 minutes comes from third-party guides only (UNVERIFIED). A refused thumbnail is recorded and reported.
+
+## Title changes (24 Oct 2026)
+The owner's login now also asks for the `youtube` permission (`safety.WRITE_SCOPE`) when you press Connect YouTube on the PC, so the title test can change a title and put the old one back. It also allows editing or deleting videos, so the code never deletes anything and the scope audit accepts it only while `data/titletest.json` says `"mode": "apply"`. User studios never ask for it.
