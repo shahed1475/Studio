@@ -31,6 +31,23 @@ def _service():
     return build("youtube", "v3", credentials=creds)
 
 
+def join_playlists(yt, video_id: str, fmt: str, path: Path | None = None) -> list[str]:
+    """Add a new video to the owner's channel playlists named in data/playlists.json ({"doc": [ids], "short": [ids]}). No file, no permission or any
+    error: the video is simply not added (it is already up), never a failed upload."""
+    try:
+        wanted = json.loads((path or config.ROOT / "data" / "playlists.json").read_text()).get("doc" if fmt != "short" else "short", [])
+    except (OSError, ValueError, AttributeError):
+        return []
+    done = []
+    for pid in wanted:
+        try:
+            yt.playlistItems().insert(part="snippet", body={"snippet": {"playlistId": pid, "resourceId": {"kind": "youtube#video", "videoId": video_id}}}).execute()
+            done.append(pid)
+        except Exception:
+            pass
+    return done
+
+
 def uploads_today(out_dir: Path, now: dt.datetime) -> int:
     """How many videos were uploaded on the current UTC day (our own pace cap, config.MAX_UPLOADS_PER_DAY)."""
     day = now.astimezone(dt.timezone.utc).strftime("%Y-%m-%d")
@@ -142,5 +159,6 @@ def upload(folder: Path, privacy: str = "private", publish_at: str | None = None
             print("WARNING: YouTube stored something different from what was sent: " + "; ".join(meta["upload_check"]["problems"]))
     except Exception as e:  # the video is up; only the read-back failed
         meta["upload_check"] = {"ok": False, "problems": [f"could not read it back: {type(e).__name__}"]}
+    meta["playlists"] = join_playlists(yt, resp["id"], meta.get("format") or "doc")
     (folder / "meta.json").write_text(json.dumps(meta, indent=2))
     return resp["id"]

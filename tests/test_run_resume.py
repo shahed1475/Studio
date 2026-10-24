@@ -33,3 +33,22 @@ def test_thumbnail_hook_prefers_one_that_names_the_subject():
             "chapters": [{"title": "The Pied Piper"}]}
     got = thumbnail.hook_for(meta, chat=lambda p: {"hooks": ["THE LOST WINDOW!", "PIED PIPER REAL STORY", "WHO WAS THE PIPER?"]})
     assert got == "PIED PIPER REAL STORY"
+
+
+def test_new_videos_join_the_playlists_named_in_the_file(tmp_path):
+    import upload
+    f = tmp_path / "playlists.json"
+    f.write_text(json.dumps({"doc": ["P1", "P2"], "short": ["P3"]}))
+    calls = []
+
+    class Items:
+        def insert(self, part, body):
+            calls.append(body["snippet"]["playlistId"])
+            return type("R", (), {"execute": lambda self: {}})()
+
+    class YT:
+        def playlistItems(self):
+            return Items()
+
+    assert upload.join_playlists(YT(), "vid", "doc", f) == ["P1", "P2"] and upload.join_playlists(YT(), "vid", "short", f) == ["P3"]
+    assert upload.join_playlists(YT(), "vid", "doc", tmp_path / "missing.json") == []
