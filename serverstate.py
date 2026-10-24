@@ -7,13 +7,18 @@ import config
 
 FILES = ("llm.json", "autopilot.json", "agent.json", "niche.json", "data/titletest.json", "data/playlists.json", "data/youtube_login.json",
          "data/worker_state.json")
-SECRET = ("key", "token", "secret", "password", "hash")
+SECRET_PARTS = ("secret", "password", "hash")
+
+
+def _is_secret(name: str) -> bool:
+    n = name.lower()
+    return n == "key" or n.endswith("_key") or n.endswith("key") and "api" in n or n == "token" or n.endswith("_token") or any(p in n for p in SECRET_PARTS)
 LONG = 400  # characters: longer values (a niche brief, a list of ideas) are cut
 
 
 def _hide(v):
     if isinstance(v, dict):
-        return {k: ("[hidden]" if any(s in k.lower() for s in SECRET) else _hide(x)) for k, x in v.items()}
+        return {k: ("[hidden]" if _is_secret(k) else _hide(x)) for k, x in v.items()}
     if isinstance(v, list):
         return [_hide(x) for x in v]
     if isinstance(v, str) and len(v) > LONG:

@@ -45,3 +45,9 @@ def test_the_snapshot_renders_as_markdown(tmp_path):
     (tmp_path / "autopilot.json").write_text('{"enabled": true}')
     md = serverstate.markdown(serverstate.snapshot(tmp_path))
     assert md.startswith("# Server-only settings") and "autopilot.json" in md and "enabled" in md
+
+
+def test_harmless_settings_that_mention_tokens_are_shown():
+    assert not serverstate._is_secret("max_output_tokens") and not serverstate._is_secret("daily_budget_usd")
+    for k in ("api_key", "openrouter_key", "refresh_token", "client_secret", "password_hash", "token"):
+        assert serverstate._is_secret(k)
