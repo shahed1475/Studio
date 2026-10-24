@@ -169,3 +169,11 @@ def test_heal_restores_the_schedule_and_approval_an_upload_record_proves(vid):
     fixed = meta_of(vid)
     assert fixed["publish_at"] == "2026-10-25T14:00:00Z" and fixed["approved"] is True and fixed["healed"]
     assert recheck.heal() == []
+
+
+def test_a_failing_review_does_not_unapprove_a_video_that_is_already_uploaded():
+    import reviewer
+    up, draft = dict(UPLOADED), {"approved": True}
+    reviewer.apply_verdict(up, {"verdict": "fail", "checks": []})
+    reviewer.apply_verdict(draft, {"verdict": "fail", "checks": []})
+    assert up["approved"] is True and draft["approved"] is False

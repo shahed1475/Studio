@@ -331,7 +331,7 @@ def apply_verdict(meta: dict, result: dict) -> None:
     """Store the result. A video the reviewer no longer passes loses the reviewer's own approval (never yours)."""
     meta["review"] = result
     meta["autopilot_fails"] = 0
-    if result["verdict"] != "pass" and meta.get("approved_by") != "you":
+    if result["verdict"] != "pass" and meta.get("approved_by") != "you" and not meta.get("video_id"):  # an uploaded video is already on YouTube: the file's approval is history
         meta["approved"] = False
         meta.pop("approved_by", None)
 
