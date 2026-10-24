@@ -23,6 +23,7 @@ JOB_FILE = config.ROOT / "job.pid"   # written by the dashboard while one of its
 
 DEFAULTS = {
     "enabled": False,            # master switch, off until the user turns it on
+    "max_videos_per_week": 0,    # 0 = no limit. Otherwise no new video is made for a slot that would be the Nth video out or scheduled in the 7 days before it
     "auto_approve": True,        # reviewer-agent "pass" counts as approval
     "uploads_per_day": 1,
     "review_window_hours": 24,   # time between a pass and the public slot, for the human veto
@@ -83,6 +84,16 @@ def dashboard_busy(job_file: Path = JOB_FILE) -> bool:
 WRONG_PICTURES = 2  # sampled frames showing the wrong place, person or period that hold a video back
 FINISHING = ("review", "approve", "prelaunch", "schedule", "upload")
 MAX_ROUNDS = 8  # videos looked at in one tick, when each repair is quick
+DOC_COST_ESTIMATE = 1.3   # dollars: a documentary cost $1.04 to $1.10 to make; the margin covers one repair
+SHORT_COST_ESTIMATE = 0.3  # a Short or a clip cost $0.01 to $0.14
+
+
+def can_afford(kind: str, cap_left: float | None) -> bool:
+    """Is there enough of the day's spending cap left to finish this kind of video? Starting one that cannot be finished wastes what it spent
+    (its script is saved and resumed after midnight UTC, but its voice and pictures are not). An unknown cap never blocks."""
+    return cap_left is None or cap_left >= (DOC_COST_ESTIMATE if kind == "doc" else SHORT_COST_ESTIMATE)
+
+
 MAX_STUCK = 3  # stop making a kind of video while this many of it sit failed or waiting for a human
 
 
@@ -157,12 +168,13 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict
         need = planner.needs(cfg, state["videos"], now)  # only the slots no video covers need a new one
         if state["queue_len"] < cfg["min_queue"]:
             acts.append({"do": "ideas", "slug": None})
-        if cfg["shorts"] and need["short"] > 0 and stuck["short"] < MAX_STUCK:
+        cap_left = state.get("cap_left")
+        if cfg["shorts"] and need["short"] > 0 and stuck["short"] < MAX_STUCK and can_afford("short", cap_left):
             if state.get("clippable", 0) > 0:  # cut from our own documentaries first: no script to write, cheapest
                 acts.append({"do": "make_clip", "slug": None})
             elif state["queue_len"] > 0:
                 acts.append({"do": "make_short", "slug": None})
-        if need["doc"] > 0 and stuck["doc"] < MAX_STUCK:
+        if need["doc"] > 0 and stuck["doc"] < MAX_STUCK and can_afford("doc", cap_left):
             if cfg["news_videos"] and state["news_pending"] > 0:
                 acts.append({"do": "make_news", "slug": None})
             elif state["queue_len"] > 0:
@@ -200,9 +212,11 @@ def build_state(now: dt.datetime, cfg: dict) -> dict:
     import upload
 
     try:
-        spend_ok = llm.spent_today(now) < cfg.get("daily_budget_usd", llm.load_config()["daily_budget_usd"])
+        cap = cfg.get("daily_budget_usd", llm.load_config()["daily_budget_usd"])
+        spend_ok = llm.spent_today(now) < cap
+        cap_left = cap - llm.spent_today(now)
     except Exception:
-        spend_ok = True
+        spend_ok, cap_left = True, None
     try:
         import risk
 
@@ -218,7 +232,7 @@ def build_state(now: dt.datetime, cfg: dict) -> dict:
             "verdict": None if any(c["name"] == "llm_review" and not c["ok"] for c in (d.get("review") or {}).get("checks", [])) else (d.get("review") or {}).get("verdict"),
             "hold": bool(d.get("hold")),
             "approved_by": d.get("approved_by"), "fix_attempts": d.get("fix_attempts", 0), "gave_up": bool(d.get("fix_gave_up")), "cost": llm.video_cost(m.parent.name), "cost_alerted": bool(d.get("cost_alerted")), "fix_limit": fixer.attempt_limit((d.get("review") or {}).get("checks", [])),
-            "video_id": d.get("video_id"), "publish_at": d.get("publish_at") or (((d.get("upload_check") or {}).get("publishAt") if d.get("video_id") else None)),
+            "video_id": d.get("video_id"), "publish_at": d.get("publish_at") or ((d.get("upload_check") or {}).get("publishAt") if d.get("video_id") and not d.get("taken_back") and not d.get("hold") else None),
             "fails": d.get("autopilot_fails", 0),
             "prelaunch_ok": bool((d.get("prelaunch") or {}).get("ok")),
             "facts_open": d.get("approved_by") != "you" and bool(fixer.watch_problems((d.get("review") or {}).get("checks", []))),
@@ -238,7 +252,7 @@ def build_state(now: dt.datetime, cfg: dict) -> dict:
         "queue_len": len(queue), "connected": upload.SECRET.exists() and upload.TOKEN.exists(), "busy": dashboard_busy(),
         "uploads_today": upload.uploads_today(config.OUT, now), "uploads_by_format": by_fmt,
         "news_pending": sum(1 for n in news if n.get("status") == "queued"), "videos": videos,
-        "clippable": __import__("clipper").clippable(), "spend_ok": spend_ok, "credit_left": credit_left, "storage_full": _storage_full(),
+        "clippable": __import__("clipper").clippable(), "spend_ok": spend_ok, "cap_left": cap_left, "credit_left": credit_left, "storage_full": _storage_full(),
     }
 
 

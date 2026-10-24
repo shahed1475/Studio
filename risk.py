@@ -420,6 +420,18 @@ def login(now: dt.datetime | None = None) -> dict:
                "Reconnect before it runs out (steps in the alert). To stop the 7-day limit: Google Cloud Console, Audience, Publish app, reconnect once, then python run.py youtube-login production. docs/GOOGLE_PRODUCTION.md")
 
 
+def backups(now: dt.datetime | None = None, dest: Path | None = None) -> dict:
+    import backup
+
+    age = backup.newest_age_hours(now, dest)
+    controls = "a nightly copy of every video's record, the settings, the schedule and the claim ledger (no secrets, no videos); seven are kept in backups/"
+    owner = "Copy the newest one off the server now and then: scp deploy@<server>:studio/backups/backup-<date>.tar.gz . (the server's own disk is the only other copy)."
+    if age is None:
+        return ind("backup", "Losing the records", "watch", "no backup has been made yet", controls, owner)
+    level = "ok" if age < 36 else "watch"
+    return ind("backup", "Losing the records", level, f"newest backup is {age:.0f} hours old", controls, owner if level != "ok" else "")
+
+
 def assess(now: dt.datetime | None = None, out: Path | None = None, left: float | None = -1.0, running: list[str] | None = None) -> list[dict]:
     """All indicators. left=-1 means: read the balance live."""
     import llm
@@ -430,7 +442,7 @@ def assess(now: dt.datetime | None = None, out: Path | None = None, left: float 
         key = llm.api_key()
         left = credit_left(key) if key else None
     run = running_jobs() if running is None else running
-    rows = [facts(vs), rights(vs), pattern(vs, now), money(left, daily_spend()), process(run, worker_starts(now)), skills(), access(), publishing(vs, now), supply(now), rules(vs, now), login(now)]
+    rows = [facts(vs), rights(vs), pattern(vs, now), money(left, daily_spend()), process(run, worker_starts(now)), skills(), access(), publishing(vs, now), supply(now), rules(vs, now), login(now), backups(now)]
     t = tenants(now)
     if t:
         rows.append(t)

@@ -250,8 +250,8 @@ def shape_for(topic: str) -> tuple[int, int]:
 
 
 MAX_DOC_LINES = 50
-THIN = re.compile(r"(sources?|records?|accounts?)\s+(say|tell|give|offer|have|contain)s?\s+(very\s+)?(little|nothing|almost nothing|few details)|"
-                  r"(won'?t|will not|cannot|can'?t)\s+invent|little is (known|said)|not much is known|my sources", re.I)
+THIN = re.compile(r"(my|our|the)\s+(sources?|records?)\s+(say|tell|give|offer|have|contain)s?\s+(very\s+)?(little|nothing|almost nothing|few details)|"
+                  r"(i|we)\s+(won'?t|will not|cannot|can'?t)\s+invent|my sources", re.I)  # first-person admissions only: "little is known" is honest history
 
 
 def thin_script(lines: list[dict]) -> bool:
@@ -263,7 +263,12 @@ def thin_script(lines: list[dict]) -> bool:
 def remove_lines(lines: list[dict], chapters: list[dict], drop: set[int]) -> tuple[list[dict], list[dict]]:
     """The script without the lines at these indexes; each chapter's start_line moves up by the number of removed lines before it."""
     kept = [l for i, l in enumerate(lines) if i not in drop]
-    moved = [{**c, "start_line": c["start_line"] - sum(1 for d in drop if d < c["start_line"])} for c in chapters]
+    moved = []
+    for n, c in enumerate(chapters):
+        end = chapters[n + 1]["start_line"] if n + 1 < len(chapters) else len(lines)
+        if all(i in drop for i in range(c["start_line"], end)):
+            continue  # every line of this chapter was removed
+        moved.append({**c, "start_line": c["start_line"] - sum(1 for d in drop if d < c["start_line"])})
     return kept, moved
 
 

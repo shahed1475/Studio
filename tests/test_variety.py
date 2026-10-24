@@ -14,7 +14,7 @@ def test_documentary_length_is_capped_at_about_eight_minutes():
 
 def test_a_script_that_admits_its_sources_say_little_is_thin():
     assert scriptgen.thin_script([{"text": "I won't invent details about it, because my sources say very little."}])
-    assert scriptgen.thin_script([{"text": "Little is known about the builders."}])
+    assert not scriptgen.thin_script([{"text": "Little is known about the builders."}])  # honest history, not an admission of a thin script
     assert not scriptgen.thin_script([{"text": "The Athenian Treasury marks their victory at Marathon in 490 BC."}])
 
 
@@ -55,3 +55,33 @@ def test_captions_never_overlap_however_fast_the_words_come():
             sec = lambda s: sum(float(x) * k for x, k in zip(s.split(":"), (3600, 60, 1)))
             rows.append((sec(p[1]), sec(p[2])))
     assert rows and all(b[0] >= a[1] - 0.005 for a, b in zip(rows, rows[1:]))
+
+
+def test_honest_history_is_not_called_thin():
+    assert not scriptgen.thin_script([{"text": "Little is known about the builders, and not much is known about the date."}])
+    assert scriptgen.thin_script([{"text": "I won't invent details about it."}, {"text": "x"}])
+    assert scriptgen.thin_script([{"text": "The sources say very little here."}])
+
+
+def test_removing_every_line_of_a_chapter_drops_the_chapter_and_keeps_starts_distinct():
+    lines = [{"text": str(i)} for i in range(6)]
+    chapters = [{"title": "a", "start_line": 0}, {"title": "b", "start_line": 2}, {"title": "c", "start_line": 3}, {"title": "d", "start_line": 5}]
+    kept, moved = scriptgen.remove_lines(lines, chapters, {2, 5})  # b's only line and d's only line
+    assert [c["title"] for c in moved] == ["a", "c"] and [c["start_line"] for c in moved] == [0, 2]
+    assert all(c["start_line"] < len(kept) for c in moved)
+
+
+def test_an_uploaded_video_is_never_redone_in_place(tmp_path, monkeypatch):
+    import json
+
+    import config
+    import run
+    monkeypatch.setattr(config, "OUT", tmp_path)
+    (tmp_path / "v").mkdir()
+    (tmp_path / "v" / "meta.json").write_text(json.dumps({"title": "t", "video_id": "abc"}))
+    for f in (run.cmd_redo, run.cmd_redo_short):
+        try:
+            f("v")
+            raise AssertionError("should have refused")
+        except SystemExit as e:
+            assert "is on YouTube" in str(e)

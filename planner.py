@@ -108,10 +108,24 @@ def rows(cfg: dict, videos: list[dict], now: dt.datetime, per_format: int | None
 def needs(cfg: dict, videos: list[dict], now: dt.datetime) -> dict:
     """How many new videos of each kind are missing for the slots that are due."""
     out = {"doc": 0, "short": 0}
+    cap = int(cfg.get("max_videos_per_week") or 0)
     for r in rows(cfg, videos, now):
-        if r["status"] == "empty":
+        if r["status"] == "empty" and not (cap and _week_count(videos, _parse(r["at"])) >= cap):
             out[r["format"]] += 1
     return out
+
+
+def _week_count(videos: list[dict], at: dt.datetime) -> int:
+    """Videos (not on hold) out or scheduled in the seven days up to this slot: the same window the Risks card reads for YouTube's template-content rule."""
+    n = 0
+    for v in videos:
+        if v.get("publish_at") and not v.get("hold"):
+            try:
+                t = _parse(v["publish_at"])
+            except ValueError:
+                continue
+            n += at - dt.timedelta(days=7) < t <= at
+    return n
 
 
 def repair_targets(cfg: dict, videos: list[dict], now: dt.datetime) -> set[str]:

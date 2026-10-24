@@ -37,7 +37,7 @@ def vid(tmp_path, monkeypatch):
     monkeypatch.setattr(recheck.agentlog, "FILE", tmp_path / "events.jsonl")
     d = config.OUT / "v1"
     d.mkdir(parents=True)
-    (d / "meta.json").write_text(json.dumps({"title": "Old title", "description": "intro", "video_id": "abc", "publish_at": "2026-10-25T14:00:00Z", "tags": ["x"],
+    (d / "meta.json").write_text(json.dumps({"title": "Old title", "description": "intro", "video_id": "abc", "publish_at": "2026-10-25T14:00:00Z", "tags": ["history stories for sleep", "legends and folklore"],
                                              "topic": "t", "chapters": [], "format": "doc", "credits": []}))
     return d
 
@@ -56,6 +56,8 @@ def test_a_misleading_title_is_repaired_and_pushed_to_youtube(vid, monkeypatch):
     import fixer
     monkeypatch.setattr(fixer, "realign_description", lambda meta, covers, chat=None: False)
     monkeypatch.setattr(fixer, "pick_title", lambda *a, **k: "A New Honest Title")
+    import reviewer
+    monkeypatch.setattr(reviewer, "title_ok", lambda meta, title: (True, ""))
     yt = FakeYT()
     out = recheck.check_one(NOW, vid, meta_of(vid), yt, lambda f: result("fail", "title_matches"), may_edit=True)
     assert "new title: A New Honest Title" in out["actions"]
@@ -194,3 +196,102 @@ def test_a_held_scheduled_video_is_made_private_on_youtube(vid):
     yt2 = FakeYT()
     yt2.status = {"privacyStatus": "private"}  # already private with no time: nothing to do
     assert recheck.enforce_holds(yt2, NOW) == [] and not yt2.updates
+
+
+def human_result(*names):
+    checks = [{"name": n, "ok": False, "severity": "human", "detail": f"{n} needs a person"} for n in names]
+    return {"verdict": "needs_human", "checks": checks + [{"name": "ok1", "ok": True, "severity": "block", "detail": ""}]}
+
+
+def test_a_check_that_needs_a_human_never_pulls_a_video(vid):
+    yt = FakeYT()
+    for k in range(3):
+        recheck.check_one(NOW + dt.timedelta(hours=13 * k), vid, meta_of(vid), yt, lambda f: human_result("claims", "variety_script"), may_edit=True)
+    assert not yt.updates and not meta_of(vid).get("hold") and meta_of(vid)["recheck"]["verdict"] == "pass"
+
+
+def test_a_failed_model_review_is_not_a_finding_even_beside_other_failures(vid):
+    yt = FakeYT()
+    res = {"verdict": "needs_human", "checks": [{"name": "llm_review", "ok": False, "severity": "block", "detail": "model down"},
+                                                 {"name": "invented_facts", "ok": False, "severity": "block", "detail": "x"}]}
+    out = recheck.check_one(NOW, vid, meta_of(vid), yt, lambda f: res, may_edit=True)
+    assert not yt.updates and "could not run" in out["actions"][0]
+
+
+def test_a_video_the_owner_approved_is_left_alone(vid):
+    m = meta_of(vid)
+    (vid / "meta.json").write_text(json.dumps({**m, "approved_by": "you"}))
+    assert recheck.candidates(NOW) == []
+
+
+def test_a_title_is_repaired_once_and_only_to_one_the_reviewer_accepts(vid, monkeypatch):
+    import fixer
+    import reviewer
+    monkeypatch.setattr(fixer, "realign_description", lambda *a, **k: False)
+    monkeypatch.setattr(fixer, "pick_title", lambda *a, **k: "Second Title")
+    monkeypatch.setattr(reviewer, "title_ok", lambda meta, title: (False, "promises too much"))
+    yt = FakeYT()
+    recheck.check_one(NOW, vid, meta_of(vid), yt, lambda f: result("fail", "title_matches"), may_edit=True)
+    assert not yt.updates and meta_of(vid)["title"] == "Old title"  # rejected title: nothing pushed
+    monkeypatch.setattr(reviewer, "title_ok", lambda meta, title: (True, ""))
+    recheck.check_one(NOW + dt.timedelta(hours=13), vid, meta_of(vid), yt, lambda f: result("fail", "title_matches"), may_edit=True)
+    assert len(yt.updates) == 1 and meta_of(vid)["title"] == "Second Title"
+    recheck.check_one(NOW + dt.timedelta(hours=26), vid, meta_of(vid), yt, lambda f: result("fail", "title_matches"), may_edit=True)
+    assert len(yt.updates) == 1  # a second repair is the owner's
+
+
+def test_a_crash_stamps_the_video_so_the_next_run_moves_on(vid, tmp_path, monkeypatch):
+    import autopilot
+    import llm
+    monkeypatch.setattr(autopilot, "LOCK_FILE", tmp_path / "ap.lock")
+    monkeypatch.setattr(llm, "spent_today", lambda now: 0.0)
+    monkeypatch.setattr(llm, "load_config", lambda: {"daily_budget_usd": 3.0})
+    d2 = config.OUT / "v2"
+    d2.mkdir()
+    (d2 / "meta.json").write_text(json.dumps({**meta_of(vid), "video_id": "def", "publish_at": "2026-10-25T16:00:00Z"}))
+    seen = []
+
+    def review(f):
+        seen.append(f.name)
+        if f.name == "v1":
+            raise RuntimeError("probe failed")
+        return result("pass")
+    out = recheck.run(NOW, yt=FakeYT(), review=review, may_edit=True)
+    assert seen == ["v1", "v2"] and out["checked"] == 1 and "v1: RuntimeError" in out["errors"][0]
+    assert meta_of(vid)["recheck"]["at"]  # v1 is stamped: it is not the first pick again
+
+
+def test_odd_timestamps_do_not_stop_the_job(vid):
+    m = meta_of(vid)
+    d2 = config.OUT / "bad"
+    d2.mkdir()
+    (d2 / "meta.json").write_text(json.dumps({**m, "video_id": "zzz", "publish_at": "tomorrow afternoon"}))
+    assert [c[1].name for c in recheck.candidates(NOW)] == ["v1"]
+
+
+def test_a_video_deleted_in_studio_does_not_stop_the_hold_check(vid):
+    m = meta_of(vid)
+    (vid / "meta.json").write_text(json.dumps({**m, "hold": True}))
+
+    class Gone(FakeYT):
+        def list(self, part, id):
+            return type("R", (), {"execute": lambda s: {"items": []}})()
+    assert recheck.enforce_holds(Gone(), NOW) == []
+
+
+def test_a_pulled_back_video_is_not_given_its_old_slot_back(vid):
+    import autopilot
+    m = meta_of(vid)
+    m.pop("publish_at")
+    m.update(approved=False, taken_back="2026-10-24T14:00:00Z", upload_check={"ok": True, "publishAt": "2026-10-25T14:00:00Z"})
+    (vid / "meta.json").write_text(json.dumps(m))
+    assert recheck.heal() == []
+    assert autopilot.build_state(NOW, autopilot.load_config())["videos"][0]["publish_at"] is None
+
+
+def test_the_recheck_writes_only_its_own_fields(vid):
+    snapshot = meta_of(vid)
+    m = meta_of(vid)
+    (vid / "meta.json").write_text(json.dumps({**m, "title_test": {"verdict": "fine"}}))  # the title test wrote meanwhile
+    recheck.check_one(NOW, vid, snapshot, FakeYT(), lambda f: result("pass"), may_edit=True)
+    assert meta_of(vid)["title_test"] == {"verdict": "fine"} and meta_of(vid)["recheck"]["verdict"] == "pass"

@@ -14,6 +14,9 @@
   python run.py newswatch        weekly YouTube security/policy news digest
   python run.py policywatch      daily: has YouTube changed its rule pages?
   python run.py titletest        daily: weak title? suggest (or change) one, then check it was better
+  python run.py report           daily: one plain-English summary in the activity feed (made, uploaded, coming, cost, problems)
+  python run.py state            print the server-only settings (secrets hidden) as Markdown
+  python run.py backup           nightly: copy the records and settings (no secrets, no videos) to backups/, seven kept
   python run.py recheck          hourly: review one uploaded video again; repair its metadata, or take a failing scheduled one back to private
   python run.py remake <name> [--topic "..."]  set a video aside (never deleted) and make it again from the topic, first
   python run.py youtube-login [production|testing]  show the YouTube login's age and mode, or set the mode
@@ -349,14 +352,22 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
 
 
 
+def _refuse_if_uploaded(name: str) -> None:
+    """A re-render in the same folder would leave the old upload scheduled on YouTube while a new one is made: an uploaded video is never redone in place."""
+    if json.loads((config.OUT / name / "meta.json").read_text()).get("video_id"):
+        raise SystemExit(f"{name} is on YouTube: its upload would stay scheduled. Make a new video of the topic and hold or delete the old one in YouTube Studio.")
+
+
 def cmd_redo_short(name: str) -> None:
     """Re-render an existing Short in its own folder from its saved script (new voice, pictures and video)."""
+    _refuse_if_uploaded(name)
     data = reset_for_rerender(json.loads((config.OUT / name / "meta.json").read_text()))
     _produce_short(data, data["topic"], requeue=False, folder=config.OUT / name)
 
 
 def cmd_redo(name: str) -> None:
     """Re-render an existing documentary from its saved script (keeps the text, redoes voice, images, video)."""
+    _refuse_if_uploaded(name)
     data = reset_for_rerender(json.loads((config.OUT / name / "meta.json").read_text()))
     _produce_doc(data, config.OUT / name)
 
@@ -524,6 +535,21 @@ def main() -> None:
         r = titletest.run(quality=titletest.watch_quality())
         print(f"{r['checked']} public videos looked at (mode {titletest.mode()}): {len(r['changed'])} changed, {len(r['weak'])} suggested, "
               f"{len(r['reverted'])} put back or judged worse, {len(r['kept'])} kept, {r['learning']} too early to judge")
+    elif a[0] == "report":
+        import dailyreport
+        import risk
+
+        key = llm.api_key()
+        out = dailyreport.run(credit=risk.credit_left(key) if key else None)
+        print(out.get("text") if out.get("written") else "today's report was already written")
+    elif a[0] == "state":
+        import serverstate
+
+        print(serverstate.markdown(serverstate.snapshot()))
+    elif a[0] == "backup":
+        import backup
+
+        print(json.dumps(backup.run(), indent=2))
     elif a[0] == "recheck":
         import recheck
 
