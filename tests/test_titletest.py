@@ -69,6 +69,21 @@ def test_weak_video_gets_a_suggestion_but_nothing_changes_in_suggest_mode(out):
     assert meta["title"] == "Title weak" and meta["title_test"]["proposed"] == "A better title for it" and not meta["title_test"]["applied"]
 
 
+def test_a_weak_video_that_people_leave_early_is_not_retitled(out):
+    path, views = build()
+    yt = FakeYT(views)
+    r = titletest.run(NOW, yt, pick=lambda m, o: "A better title for it", quality={"w": 12.0})
+    meta = json.loads(path.read_text())
+    assert r["content"] == ["weak"] and not r["weak"] and not yt.updates and meta["title"] == "Title weak"
+    assert meta["title_test"]["verdict"] == "content"
+
+
+def test_a_weak_video_people_watch_through_is_retitled_as_before(out):
+    path, views = build()
+    r = titletest.run(NOW, FakeYT(views), pick=lambda m, o: "A better title for it", quality={"w": 70.0})
+    assert r["weak"] == ["weak"] and not r["content"]
+
+
 def test_apply_mode_changes_only_the_title_and_keeps_the_rest(out):
     (out / "tt.json").write_text('{"mode": "apply"}')
     path, views = build()

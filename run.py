@@ -495,7 +495,7 @@ def main() -> None:
     elif a[0] == "titletest":
         import titletest
 
-        r = titletest.run()
+        r = titletest.run(quality=titletest.watch_quality())
         print(f"{r['checked']} public videos looked at (mode {titletest.mode()}): {len(r['changed'])} changed, {len(r['weak'])} suggested, "
               f"{len(r['reverted'])} put back or judged worse, {len(r['kept'])} kept, {r['learning']} too early to judge")
     elif a[0] == "safety":

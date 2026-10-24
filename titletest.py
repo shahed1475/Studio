@@ -21,6 +21,7 @@ RECHECK_AFTER = dt.timedelta(days=5)
 MIN_PEERS = 3            # no judgement without three other videos of the same kind to compare with
 WEAK_RATIO = 0.4         # below 40% of the median views per day counts as weak
 WORSE_RATIO = 0.8        # after the change, below 80% of the old rate: put the old title back
+LOW_RETENTION = 25.0     # viewers who find the video watch under a quarter of it on average: the content, not the title, is what needs work
 WRITE_SCOPES = {"https://www.googleapis.com/auth/youtube", "https://www.googleapis.com/auth/youtube.force-ssl"}
 CONFIG = config.ROOT / "data" / "titletest.json"
 
@@ -60,6 +61,27 @@ def _service():
     return trendwatch._service()
 
 
+def watch_quality(now: dt.datetime | None = None) -> dict[str, float]:
+    """{video id: average percent of the video watched} from YouTube Analytics (needs the read-only analytics permission and the Analytics API
+    enabled). Any failure gives {}: the title test then judges by views alone, as before."""
+    try:
+        from google.auth.transport.requests import Request
+        from googleapiclient.discovery import build
+
+        import upload
+
+        creds = upload.Credentials.from_authorized_user_file(str(upload.TOKEN), upload.SCOPES)
+        if not creds.valid:
+            creds.refresh(Request())
+        end = (now or dt.datetime.now(dt.timezone.utc)).date()
+        r = build("youtubeAnalytics", "v2", credentials=creds, cache_discovery=False).reports().query(
+            ids="channel==MINE", startDate=str(end - dt.timedelta(days=90)), endDate=str(end), metrics="views,averageViewPercentage",
+            dimensions="video", sort="-views", maxResults=200).execute()
+        return {row[0]: float(row[2]) for row in r.get("rows", []) if int(row[1]) >= 3}  # under 3 views is noise
+    except Exception:
+        return {}
+
+
 def _stats(yt, ids: list[str]) -> dict[str, dict]:
     out = {}
     for k in range(0, len(ids), 50):
@@ -79,9 +101,10 @@ def _kind(meta: dict) -> str:
     return "short" if meta.get("format", "short") == "short" else "long"
 
 
-def run(now: dt.datetime | None = None, yt=None, pick=None) -> dict:
+def run(now: dt.datetime | None = None, yt=None, pick=None, quality=None) -> dict:
     now = now or dt.datetime.now(dt.timezone.utc)
     pick = pick or fixer.pick_title
+    quality = quality or {}
     metas = []
     for m in sorted(config.OUT.glob("*/meta.json")):
         try:
@@ -90,7 +113,7 @@ def run(now: dt.datetime | None = None, yt=None, pick=None) -> dict:
             continue
         if meta.get("video_id") and meta.get("publish_at") and _parse(meta["publish_at"]) <= now - MIN_AGE:
             metas.append((m, meta))
-    res = {"checked": 0, "weak": [], "changed": [], "reverted": [], "kept": [], "learning": 0}
+    res = {"checked": 0, "weak": [], "changed": [], "reverted": [], "kept": [], "learning": 0, "content": []}
     if not metas:
         return res
     yt = yt or _service()
@@ -137,6 +160,14 @@ def run(now: dt.datetime | None = None, yt=None, pick=None) -> dict:
         if verdict == "ok":
             meta["title_test"] = {"verdict": "fine", "checked_at": now.strftime(TS), "rate": round(rates[vid], 2)}
             path.write_text(json.dumps(meta, indent=2))
+            continue
+        pct = quality.get(vid)
+        if pct is not None and pct < LOW_RETENTION:  # people who do find it leave early: a new title would only bring more people who leave
+            meta["title_test"] = {"verdict": "content", "checked_at": now.strftime(TS), "rate": round(rates[vid], 2), "watched_percent": round(pct, 1)}
+            path.write_text(json.dumps(meta, indent=2))
+            res["content"].append(path.parent.name)
+            agentlog.event("found", f"Title test: {meta['title'][:50]} is watched only {pct:.0f}% through",
+                           "Few views and viewers leave early, so the title is not the problem: look at its opening and pacing. The title was not changed.", now=now)
             continue
         new = pick(meta, fixer.other_titles(path.parent))
         if not new:
