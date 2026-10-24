@@ -183,7 +183,7 @@ def scan(root: Path) -> dict:
                 parts = urlsplit(u.rstrip(".,;:"))
             except ValueError:  # malformed (for example a stray "["): never skip the checks, read the raw text instead
                 rest = u.split("://", 1)[-1]
-                auths = {re.split(r"[/?#]", rest, 1)[0], re.split(r"[/\\?#]", rest, 1)[0]}  # read as a standard client and as a browser (which ends the host at \\ too)
+                auths = {re.split(r"[/?#]", rest, maxsplit=1)[0], re.split(r"[/\\?#]", rest, maxsplit=1)[0]}  # read as a standard client and as a browser (which ends the host at \\ too)
                 line = text.count("\n", 0, text.find(u)) + 1
                 findings.append({"severity": "medium", "what": "a web address that cannot be parsed (checked as raw text)", "file": rel, "line": line, "excerpt": u[:110]})
                 if any("@" in x for x in auths):
