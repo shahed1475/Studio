@@ -27,6 +27,11 @@ def _parse(ts: str) -> dt.datetime:
     return dt.datetime.strptime(ts, TS).replace(tzinfo=dt.timezone.utc)
 
 
+def _when(meta: dict) -> str:
+    """When the video is (or became) public: its scheduled time, or for one uploaded straight to public the upload time."""
+    return meta.get("publish_at") or meta.get("uploaded_at") or ""
+
+
 def candidates(now: dt.datetime) -> list:
     """(publish time, folder, meta) of uploaded videos worth a second look, the soonest first."""
     out = []
@@ -35,9 +40,9 @@ def candidates(now: dt.datetime) -> list:
             meta = json.loads(m.read_text())
         except ValueError:
             continue
-        if not meta.get("video_id") or not meta.get("publish_at") or meta.get("hold"):
+        if not meta.get("video_id") or not _when(meta) or meta.get("hold"):
             continue
-        at = _parse(meta["publish_at"])
+        at = _parse(_when(meta))
         last = (meta.get("recheck") or {}).get("at")
         if not (now - AFTER <= at <= now + AHEAD) or (last and _parse(last) > now - EVERY):
             continue
@@ -108,7 +113,7 @@ def check_one(now: dt.datetime, folder, meta: dict, yt, review, chat=None, may_e
         meta["recheck"] = {"at": rec["at"], "verdict": "pass", "content_fails": 0}
         _save(folder, meta)
         return out
-    public = _parse(meta["publish_at"]) <= now
+    public = _parse(_when(meta)) <= now
     if set(bad) <= META_ONLY:
         if not may_edit:
             agentlog.event("found", f"Re-check: {meta['title'][:50]} has a metadata problem ({', '.join(bad)})",

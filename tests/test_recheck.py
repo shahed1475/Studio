@@ -119,3 +119,14 @@ def test_no_recheck_when_the_days_cap_is_nearly_used(vid, monkeypatch, tmp_path)
     monkeypatch.setattr(llm, "spent_today", lambda now: 2.9)
     monkeypatch.setattr(llm, "load_config", lambda: {"daily_budget_usd": 3.0})
     assert recheck.run(NOW, yt=object(), review=lambda f: 1 / 0, may_edit=True) == {"skipped": "the day's spending cap is nearly used"}
+
+
+def test_a_video_uploaded_straight_to_public_is_found_by_its_upload_time(vid):
+    m = meta_of(vid)
+    m.pop("publish_at")
+    m["uploaded_at"] = (NOW - dt.timedelta(hours=26)).strftime(recheck.TS)
+    (vid / "meta.json").write_text(json.dumps(m))
+    assert [c[1].name for c in recheck.candidates(NOW)] == ["v1"]
+    m["uploaded_at"] = (NOW - dt.timedelta(hours=60)).strftime(recheck.TS)
+    (vid / "meta.json").write_text(json.dumps(m))
+    assert recheck.candidates(NOW) == []
