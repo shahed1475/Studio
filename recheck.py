@@ -27,6 +27,31 @@ def _parse(ts: str) -> dt.datetime:
     return dt.datetime.strptime(ts, TS).replace(tzinfo=dt.timezone.utc)
 
 
+def heal() -> list[str]:
+    """An uploaded video must keep its slot and its approval: YouTube holds it and an upload is only ever sent for an approved video. If an edit lost either
+    (reviewer.invalidate used to), restore them from the upload's own read-back. Returns the folders healed."""
+    healed = []
+    for m in config.OUT.glob("*/meta.json"):
+        try:
+            meta = json.loads(m.read_text())
+        except ValueError:
+            continue
+        chk = meta.get("upload_check") if isinstance(meta.get("upload_check"), dict) else {}
+        if not meta.get("video_id") or not chk.get("ok"):
+            continue
+        changes = {}
+        if not meta.get("publish_at") and chk.get("publishAt"):
+            changes["publish_at"] = chk["publishAt"]
+        if not meta.get("approved"):
+            changes["approved"] = True
+        if changes:
+            meta.update(changes)
+            meta["healed"] = {"fields": sorted(changes), "why": "uploaded video had lost its slot or approval; restored from the upload read-back"}
+            m.write_text(json.dumps(meta, indent=2))
+            healed.append(m.parent.name)
+    return healed
+
+
 def _when(meta: dict) -> str:
     """When the video is (or became) public: its scheduled time, or for one uploaded straight to public the upload time."""
     return meta.get("publish_at") or meta.get("uploaded_at") or ""
@@ -172,6 +197,8 @@ def run(now: dt.datetime | None = None, yt=None, review=None, chat=None, may_edi
     except BlockingIOError:
         return {"skipped": "locked"}
     try:
+        for slug in heal():
+            agentlog.event("applied", f"Restored the schedule and approval of an uploaded video ({slug[:40]})", "An edit had cleared them; YouTube still held the video.", now=now)
         import llm
 
         if llm.spent_today(now) > llm.load_config()["daily_budget_usd"] - KEEP_FREE:

@@ -130,3 +130,42 @@ def test_a_video_uploaded_straight_to_public_is_found_by_its_upload_time(vid):
     m["uploaded_at"] = (NOW - dt.timedelta(hours=60)).strftime(recheck.TS)
     (vid / "meta.json").write_text(json.dumps(m))
     assert recheck.candidates(NOW) == []
+
+
+UPLOADED = {"video_id": "abc", "approved": True, "publish_at": "2026-10-25T14:00:00Z", "review": {"verdict": "pass"}, "prelaunch": {"ok": True}}
+
+
+def test_editing_an_uploaded_video_keeps_its_approval_and_slot():
+    import reviewer
+    m = dict(UPLOADED)
+    reviewer.invalidate(m)
+    assert m["approved"] is True and m["publish_at"] == "2026-10-25T14:00:00Z" and "review" not in m
+
+
+def test_editing_a_draft_still_drops_approval_and_slot():
+    import reviewer
+    m = {"approved": True, "publish_at": "2026-10-25T14:00:00Z", "review": {"verdict": "pass"}}
+    reviewer.invalidate(m)
+    assert m["approved"] is False and "publish_at" not in m
+
+
+def test_the_planner_sees_an_uploaded_video_in_its_slot_even_without_a_saved_time(tmp_path, monkeypatch):
+    import autopilot
+    monkeypatch.setattr(config, "OUT", tmp_path / "output")
+    d = config.OUT / "u1"
+    d.mkdir(parents=True)
+    (d / "meta.json").write_text(json.dumps({"format": "doc", "video_id": "abc", "title": "t", "upload_check": {"ok": True, "publishAt": "2026-10-25T14:00:00Z"}}))
+    v = autopilot.build_state(NOW, autopilot.load_config())["videos"][0]
+    assert v["publish_at"] == "2026-10-25T14:00:00Z"
+
+
+def test_heal_restores_the_schedule_and_approval_an_upload_record_proves(vid):
+    m = meta_of(vid)
+    m.pop("publish_at")
+    m["approved"] = False
+    m["upload_check"] = {"ok": True, "publishAt": "2026-10-25T14:00:00Z"}
+    (vid / "meta.json").write_text(json.dumps(m))
+    assert recheck.heal() == ["v1"]
+    fixed = meta_of(vid)
+    assert fixed["publish_at"] == "2026-10-25T14:00:00Z" and fixed["approved"] is True and fixed["healed"]
+    assert recheck.heal() == []
