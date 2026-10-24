@@ -25,6 +25,9 @@ def test_each_stage_is_said_in_plain_words(tmp_path):
     for i, (meta, files, want) in enumerate(cases):
         d = make(tmp_path, f"v{i}", files, **meta)
         assert want in nowview.stage(d, meta), (meta, nowview.stage(d, meta))
+    past = make(tmp_path, "p", ("video.mp4",), video_id="v", publish_at="2026-10-01T10:00:00Z")
+    assert "has passed" in nowview.stage(past, {"video_id": "v", "publish_at": "2026-10-01T10:00:00Z"}, NOW)
+    assert nowview.stage(past, {"video_id": "v", "hold": True, "publish_at": "2026-10-01T10:00:00Z"}, NOW) == "ON HOLD · on YouTube, kept private"
     held = make(tmp_path, "h", ("video.mp4",), hold=True, review={"verdict": "pass"})
     assert nowview.stage(held, {"hold": True, "review": {"verdict": "pass"}}).startswith("ON HOLD")
 

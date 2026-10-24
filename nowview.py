@@ -10,12 +10,20 @@ SHOWN = 10          # videos listed, newest first
 LOG_LINES = 15
 
 
-def stage(folder, meta: dict) -> str:
+def stage(folder, meta: dict, now: dt.datetime | None = None) -> str:
     """Plain words for where one video stands, from its record and files."""
     held = "ON HOLD · " if meta.get("hold") else ""
     if meta.get("video_id"):
         when = meta.get("publish_at")
-        return held + ("on YouTube, private until " + when if when else "on YouTube")
+        try:
+            past = bool(when) and dt.datetime.fromisoformat(when.replace("Z", "+00:00")) <= (now or dt.datetime.now(dt.timezone.utc))
+        except ValueError:
+            past = False
+        if held:
+            return held + "on YouTube, kept private"
+        if past:
+            return f"on YouTube, its public time ({when}) has passed"  # from the record: YouTube itself was not asked
+        return "on YouTube, private until " + when if when else "on YouTube"
     if not (folder / "video.mp4").exists():
         return held + "being made (script, voice, pictures, render)"
     verdict = (meta.get("review") or {}).get("verdict")
@@ -49,7 +57,7 @@ def build(now: dt.datetime | None = None) -> dict:
             continue
         rows.append((m.stat().st_mtime, m.parent, meta))
     rows.sort(key=lambda r: r[0], reverse=True)
-    videos = [{"slug": f.name, "title": (d.get("title") or f.name)[:120], "format": d.get("format") or "short", "stage": stage(f, d)} for _, f, d in rows[:SHOWN]]
+    videos = [{"slug": f.name, "title": (d.get("title") or f.name)[:120], "format": d.get("format") or "short", "stage": stage(f, d, now)} for _, f, d in rows[:SHOWN]]
     try:
         cap, spent = llm.load_config()["daily_budget_usd"], llm.spent_today(now)
         money = {"spent_today": round(spent, 2), "cap": cap, "left": round(cap - spent, 2)}
