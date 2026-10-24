@@ -11,7 +11,7 @@ def test_valid_config_passes_through():
 
 
 @pytest.mark.parametrize("bad", [
-    {"uploads_per_day": 0}, {"uploads_per_day": 6}, {"review_window_hours": 2}, {"review_window_hours": 500},
+    {"uploads_per_day": 0}, {"uploads_per_day": 6}, {"review_window_hours": 1}, {"review_window_hours": 500},
     {"enabled": "yes"}, {"surprise": 1}, {"slots": []}, {"slots": [{"day": "xyz", "time": "18:00"}]},
     {"slots": [{"day": "fri", "time": "25:00"}]}, {"slots": [{"day": "fri", "time": "18"}]},
 ])

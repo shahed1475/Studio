@@ -234,7 +234,7 @@ def validate_autopilot_config(raw: dict) -> dict:
     """Accepts a partial settings dict; raises ValueError for anything out of range."""
     import scheduler
 
-    rules = {"uploads_per_day": (1, 2), "review_window_hours": (6, 168), "upload_lead_hours": (1, 12),
+    rules = {"uploads_per_day": (1, 2), "review_window_hours": (2, 168), "upload_lead_hours": (1, 12),
              "min_queue": (1, 20), "prepare_hours": (0, 72), "max_waiting": (1, 5), "shorts_per_day": (1, 2), "max_waiting_shorts": (1, 10)}
     out = {}
     for k, v in raw.items():
