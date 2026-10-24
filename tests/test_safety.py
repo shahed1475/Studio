@@ -160,3 +160,19 @@ def test_write_scope_is_accepted_only_when_the_owner_turned_title_changes_on(tmp
     (tmp_path / "data").mkdir()
     (tmp_path / "data" / "titletest.json").write_text(json.dumps({"mode": "apply"}))
     assert {c["name"]: c for c in safety.local_audit(tmp_path, use_git=False)}["token_scopes"]["ok"]
+
+
+def test_health_check_keeps_a_key_written_while_it_was_asking_youtube(tmp_path, monkeypatch):
+    import records
+
+    monkeypatch.setattr(config, "OUT", tmp_path)
+    folder = make(tmp_path, "v", video_id="v1", publish_at=iso(NOW - timedelta(hours=9)), uploaded_at=iso(NOW - timedelta(hours=10)))
+
+    class SlowYT(FakeYT):
+        def execute(self):
+            records.merge(folder, {"hold_note": "written meanwhile"})  # the dashboard saves while the check waits for YouTube
+            return super().execute()
+
+    safety.check(NOW, yt=SlowYT([item("v1")]))
+    saved = records.read(folder)
+    assert saved["hold_note"] == "written meanwhile" and saved["health"]["ok"] is True

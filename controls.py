@@ -12,6 +12,7 @@ import re
 import sys
 
 import config
+import records
 
 SLUG = re.compile(r"[a-z0-9][a-z0-9_-]{0,120}")
 TS = "%Y-%m-%dT%H:%M:%SZ"
@@ -161,10 +162,12 @@ def release(slug: str) -> dict:
         recheck._merge(folder, {"hold": False})
         return {"slug": slug, "held": False, "note": "released in the studio, but the video is still private on YouTube if it was pulled back: "
                                                        "publish or schedule it yourself in YouTube Studio"}
-    fresh = json.loads((folder / "meta.json").read_text())
-    fresh.pop("publish_at", None)  # a released draft gets a fresh slot instead of a stale or shared one
-    fresh.update(hold=False, autopilot_fails=0)
-    (folder / "meta.json").write_text(json.dumps(fresh, indent=2))
+
+    def fresh_slot(d):
+        d.pop("publish_at", None)  # a released draft gets a fresh slot instead of a stale or shared one
+        d.update(hold=False, autopilot_fails=0)
+
+    records.update(folder, fresh_slot)
     return {"slug": slug, "held": False, "note": "released: Autopilot may work on it again"}
 
 

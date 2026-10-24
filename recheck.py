@@ -13,6 +13,7 @@ import json
 
 import agentlog
 import config
+import records
 
 TS = "%Y-%m-%dT%H:%M:%SZ"
 META_ONLY = {"title_matches", "duplicate_title", "title", "description", "tags", "hashtags", "metadata_valid", "title_style"}
@@ -55,9 +56,7 @@ def heal() -> list[str]:
         if not meta.get("approved"):
             changes["approved"] = True
         if changes:
-            meta.update(changes)
-            meta["healed"] = {"fields": sorted(changes), "why": "uploaded video had lost its slot or approval; restored from the upload read-back"}
-            m.write_text(json.dumps(meta, indent=2))
+            records.merge(m.parent, {**changes, "healed": {"fields": sorted(changes), "why": "uploaded video had lost its slot or approval; restored from the upload read-back"}})
             healed.append(m.parent.name)
     return healed
 
@@ -193,10 +192,7 @@ def repair_metadata(folder, meta: dict, bad: list[str], chat=None) -> list[str]:
 
 def _merge(folder, changes: dict) -> None:
     """Write only these keys into the video's current record: the review took minutes, and the title test, the dashboard or a hold may have written the file meanwhile."""
-    p = folder / "meta.json"
-    fresh = json.loads(p.read_text())
-    fresh.update(changes)
-    p.write_text(json.dumps(fresh, indent=2))
+    records.merge(folder, changes)
 
 
 def _changed(before: dict, after: dict) -> dict:

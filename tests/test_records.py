@@ -75,3 +75,20 @@ def test_lock_file_is_private(tmp_path):
     f = tmp_path / "v"
     records.create(f, {})
     assert oct(os.stat(f / ".meta.lock").st_mode & 0o777) == "0o600"
+
+
+def test_controls_release_and_recheck_heal_use_the_record_writer(tmp_path, monkeypatch):
+    import config
+    import controls
+    import recheck
+
+    monkeypatch.setattr(config, "OUT", tmp_path)
+    f = tmp_path / "draft"
+    records.create(f, {"hold": True, "publish_at": "2026-01-01T00:00:00Z", "autopilot_fails": 2, "keep": 1})
+    controls.release("draft")
+    assert records.read(f) == {"hold": False, "autopilot_fails": 0, "keep": 1}  # a released draft loses its stale slot
+    g = tmp_path / "up"
+    records.create(g, {"video_id": "x", "upload_check": {"ok": True, "publishAt": "2026-02-02T00:00:00Z"}, "extra": 5})
+    assert recheck.heal() == ["up"]
+    healed = records.read(g)
+    assert healed["publish_at"] == "2026-02-02T00:00:00Z" and healed["approved"] is True and healed["extra"] == 5 and "healed" in healed

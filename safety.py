@@ -13,6 +13,7 @@ from pathlib import Path
 import agentlog
 import autopilot
 import config
+import records
 
 TS = "%Y-%m-%dT%H:%M:%SZ"
 GRACE = dt.timedelta(minutes=15)      # YouTube needs a moment to flip a scheduled video to public
@@ -98,8 +99,7 @@ def check(now: dt.datetime | None = None, yt=None) -> dict:
     for path, meta in due:
         published = _parse(meta.get("publish_at") or meta["uploaded_at"]) <= now - GRACE
         issues = judge(found.get(meta["video_id"]), published)
-        meta["health"] = {"ok": not issues, "checked_at": now.strftime(TS), "problems": issues}
-        path.write_text(json.dumps(meta, indent=2))
+        records.merge(path.parent, {"health": {"ok": not issues, "checked_at": now.strftime(TS), "problems": issues}})
         problems += [f"{path.parent.name}: {i}" for i in issues]
     paused = False
     if problems:
