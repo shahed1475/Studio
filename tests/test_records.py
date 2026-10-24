@@ -92,3 +92,17 @@ def test_controls_release_and_recheck_heal_use_the_record_writer(tmp_path, monke
     assert recheck.heal() == ["up"]
     healed = records.read(g)
     assert healed["publish_at"] == "2026-02-02T00:00:00Z" and healed["approved"] is True and healed["extra"] == 5 and "healed" in healed
+
+
+def test_autopilot_writers_keep_keys_saved_by_others(tmp_path, monkeypatch):
+    import autopilot
+    import config
+
+    monkeypatch.setattr(config, "OUT", tmp_path)
+    f = tmp_path / "v"
+    records.create(f, {"format": "short", "title": "T", "other": 1})
+    records.merge(f, {"added_by_dashboard": True})
+    monkeypatch.setattr(autopilot, "visually_ok", lambda slug: True)
+    autopilot._approve("v")
+    now = records.read(f)
+    assert now["approved"] is True and now["approved_by"] == "reviewer-agent" and now["added_by_dashboard"] is True and now["other"] == 1

@@ -10,6 +10,7 @@ import config
 import llm
 import planner
 import prelaunch
+import records
 import scheduler
 
 CONFIG_FILE = config.ROOT / "autopilot.json"
@@ -276,10 +277,8 @@ def read_pictures(slug: str) -> dict | None:
     n_pics = (pics["detail"].count(" s: ") if pics and not pics["ok"] else 0)
     garbled = bool(caps and not caps["ok"] and re.search(r"garbl|gibberish|stray|nonsens", caps["detail"], re.I))
     bad = n_pics >= WRONG_PICTURES or garbled
-    p, meta = _meta(slug)
-    meta["visual_check"] = {"at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "ok": not bad, "rows": [r["name"] + ": " + r["detail"][:120] for r in rows if not r["ok"]],
-                            "wrong_at": (pics or {}).get("times", []) if pics and not pics["ok"] else []}
-    p.write_text(json.dumps(meta, indent=2))
+    records.merge(config.OUT / slug, {"visual_check": {"at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "ok": not bad, "rows": [r["name"] + ": " + r["detail"][:120] for r in rows if not r["ok"]],
+                                                      "wrong_at": (pics or {}).get("times", []) if pics and not pics["ok"] else []}})
     return {"bad": bad, "rows": rows}
 
 
@@ -288,20 +287,19 @@ def visually_ok(slug: str) -> bool:
     seen = read_pictures(slug)
     if seen is None or not seen["bad"]:
         return True
-    p, meta = _meta(slug)
-    review = meta.setdefault("review", {"checks": []})
-    review["checks"].append({"name": "visual_review", "ok": False, "severity": "human", "detail": " | ".join(r["detail"] for r in seen["rows"] if not r["ok"])[:400]})
-    review["verdict"] = "needs_human"
-    meta["approved"] = False
-    p.write_text(json.dumps(meta, indent=2))
+    def hold_for_human(meta):
+        review = meta.setdefault("review", {"checks": []})
+        review["checks"].append({"name": "visual_review", "ok": False, "severity": "human", "detail": " | ".join(r["detail"] for r in seen["rows"] if not r["ok"])[:400]})
+        review["verdict"] = "needs_human"
+        meta["approved"] = False
+
+    records.update(config.OUT / slug, hold_for_human)
     return False
 
 
 def _approve(slug: str) -> None:
     if visually_ok(slug):
-        p, meta = _meta(slug)
-        meta.update(approved=True, approved_by="reviewer-agent")
-        p.write_text(json.dumps(meta, indent=2))
+        records.merge(config.OUT / slug, {"approved": True, "approved_by": "reviewer-agent"})
 
 
 def do_review(slug, cfg, now):
@@ -320,9 +318,7 @@ def do_polish(slug, cfg, now):
     try:
         out = fixer.polish(slug, now=now)
     except (Exception, SystemExit) as e:
-        p, meta = _meta(slug)
-        meta["polish_done"] = {"at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "result": f"stopped by an error: {e}"[:300]}
-        p.write_text(json.dumps(meta, indent=2))
+        records.merge(config.OUT / slug, {"polish_done": {"at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "result": f"stopped by an error: {e}"[:300]}})
         return {"skipped": "error"}
     if out.get("verdict") == "pass" and cfg["auto_approve"]:
         _approve(slug)
@@ -353,13 +349,12 @@ def do_prelaunch(slug, cfg, now):
         if seen and seen["bad"]:
             agentlog.event("error", f"Pictures may not fit: {mine.get('title', slug)}", "; ".join(r["detail"] for r in seen["rows"] if not r["ok"])[:300] + " You approved it, so it stays scheduled until you decide.", notify=True, now=now)
     res = prelaunch.check(slug, now)
-    p, meta = _meta(slug)
-    meta["prelaunch"] = {"at": res["at"], "ok": res["ok"], "problems": res["problems"]}
-    if not res["ok"]:
-        title = meta.get("title", slug)
-        if meta.get("approved_by") == "you":  # your approval is never withdrawn by the agent
-            agentlog.event("error", f"Final check found a problem: {title}", "; ".join(res["problems"][:2]) + " You approved it, so it stays scheduled until you decide.", notify=True, now=now)
-        else:
+    seen_by = {}
+
+    def apply(meta):
+        meta["prelaunch"] = {"at": res["at"], "ok": res["ok"], "problems": res["problems"]}
+        seen_by["title"], seen_by["approved_by"] = meta.get("title", slug), meta.get("approved_by")
+        if not res["ok"] and meta.get("approved_by") != "you":  # your approval is never withdrawn by the agent
             review = meta.setdefault("review", {"checks": []})
             review["checks"] = [c for c in review.get("checks", []) if c["name"] != "prelaunch"] + [
                 {"name": "prelaunch", "ok": False, "severity": "block", "detail": "; ".join(res["problems"])[:400]}]
@@ -369,8 +364,14 @@ def do_prelaunch(slug, cfg, now):
             meta.pop("publish_at", None)
             meta["fix_attempts"] = 0
             meta.pop("fix_gave_up", None)
+
+    records.update(config.OUT / slug, apply)
+    if not res["ok"]:
+        title = seen_by["title"]
+        if seen_by["approved_by"] == "you":
+            agentlog.event("error", f"Final check found a problem: {title}", "; ".join(res["problems"][:2]) + " You approved it, so it stays scheduled until you decide.", notify=True, now=now)
+        else:
             agentlog.event("error", f"Pulled back for repair: {title}", "The final check found: " + "; ".join(res["problems"][:2]) + ". Autopilot repairs it before its slot.", notify=True, now=now)
-    p.write_text(json.dumps(meta, indent=2))
 
 
 def do_schedule(slug, cfg, now):
@@ -382,8 +383,7 @@ def do_schedule(slug, cfg, now):
         if m.parent.name != slug and d.get("format", "short") == fmt and d.get("publish_at") and not d.get("hold"):
             taken.append(_parse(d["publish_at"]))
     slots = cfg["short_slots"] if fmt == "short" else cfg["slots"]
-    meta["publish_at"] = scheduler.to_rfc3339(scheduler.next_slot(now, slots, taken, cfg["review_window_hours"]))
-    p.write_text(json.dumps(meta, indent=2))
+    records.merge(config.OUT / slug, {"publish_at": scheduler.to_rfc3339(scheduler.next_slot(now, slots, taken, cfg["review_window_hours"]))})
 
 
 def do_upload(slug, cfg, now):
@@ -420,9 +420,8 @@ def finish_video(folder: Path) -> None:
         meta["title"] = packaging.rank_titles(titles, (meta.get("seo") or {}).get("core", ""), others)[0]  # the best-scoring option, not just the first
     import seo
 
-    meta["tags"] = fixer.clean_tags(meta)
-    meta["title"] = seo.polish_title(meta["title"])
-    p.write_text(json.dumps(meta, indent=2))
+    tags = fixer.clean_tags(meta)
+    records.merge(folder, {"title": seo.polish_title(meta["title"]), "tags": tags})
 
 
 def do_make(slug, cfg, now):
@@ -455,9 +454,8 @@ def do_cost_stop(slug, cfg, now):
     """A video that has used up its money limit is no longer repaired: say so once, with the real number."""
     import agentlog
 
-    p, meta = _meta(slug)
-    meta["cost_alerted"] = True
-    p.write_text(json.dumps(meta, indent=2))
+    _, meta = _meta(slug)
+    records.merge(config.OUT / slug, {"cost_alerted": True})
     agentlog.event("error", f"Stopped spending on: {meta.get('title', slug)}", f"It has cost ${llm.video_cost(slug):.2f} so far (limit for a "
                    f"{'documentary' if meta.get('format') == 'doc' else 'Short'}: ${(cfg.get('max_video_cost_usd') or MAX_VIDEO_COST).get(meta.get('format', 'short'), 2.5):.2f}). "
                    "It waits for you: approve it as it is, ask for one more try, or set it aside.", notify=True, now=now)
@@ -509,9 +507,7 @@ def tick(now: dt.datetime | None = None) -> dict:
                     if a["do"] in ("fix", "polish"):
                         worked.add(a["slug"])
                     if a["slug"] and counts_as_failure(e):
-                        p, meta = _meta(a["slug"])
-                        meta["autopilot_fails"] = meta.get("autopilot_fails", 0) + 1
-                        p.write_text(json.dumps(meta, indent=2))
+                        records.update(config.OUT / a["slug"], lambda d: d.__setitem__("autopilot_fails", d.get("autopilot_fails", 0) + 1))
             if stop or not progressed:
                 break
         for a in plan_actions(build_state(now, cfg), cfg, now, skip=worked):  # the finishing pass: whatever the repairs just approved is scheduled and uploaded now, not 30 minutes later
