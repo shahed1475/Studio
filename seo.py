@@ -6,6 +6,7 @@ import urllib.request
 from pathlib import Path
 
 import config
+import records
 import reviewer
 import scriptgen
 
@@ -145,10 +146,12 @@ def make(folder: Path) -> dict:
     intro = re.sub(r"[—–]", "-", str(data["description_intro"]).strip())
     chapters = meta["description"].partition("Chapters:")[2]
     seo = {"core": core, "keywords": kws[:30], "titles": titles, "old_description": meta["description"], "old_tags": meta.get("tags", [])}
-    meta["seo"] = seo
-    meta["tags"] = tags
-    meta["description"] = rebuild_description(meta["description"], intro)
-    reviewer.invalidate(meta)
-    p.write_text(json.dumps(meta, indent=2))
+    new_description = rebuild_description(meta["description"], intro)
+
+    def apply(d):
+        d["seo"], d["tags"], d["description"] = seo, tags, new_description
+        reviewer.invalidate(d)
+
+    records.update(folder, apply)
     print("\n".join(f"- {t}" for t in titles))
     return seo

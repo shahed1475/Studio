@@ -2,6 +2,7 @@
 import datetime as dt
 import difflib
 import json
+import records
 import re
 import subprocess
 from pathlib import Path
@@ -368,18 +369,24 @@ def review(folder: Path, existing_titles: list[str] | None = None, use_llm: bool
               "at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
     if not persist:
         return result
-    apply_verdict(meta, result)
-    if result["verdict"] == "unreviewed":
-        meta.pop("review", None)  # no stored verdict means Autopilot reviews it again on its next look
-        meta["unreviewed_tries"] = meta.get("unreviewed_tries", 0) + 1
-        if meta["unreviewed_tries"] == UNREVIEWED_ALERT:  # the model keeps failing on this video: the owner is told once
-            import agentlog
+    alert = []
 
-            agentlog.event("error", f"The AI review keeps failing: {meta.get('title', folder.name)}",
-                           f"{UNREVIEWED_ALERT} tries in a row got no usable answer from the review model. Check the OpenRouter balance and the daily cap.", notify=True)
-    else:
-        meta.pop("unreviewed_tries", None)
-    meta_path.write_text(json.dumps(meta, indent=2))
+    def apply(d):
+        apply_verdict(d, result)
+        if result["verdict"] == "unreviewed":
+            d.pop("review", None)  # no stored verdict means Autopilot reviews it again on its next look
+            d["unreviewed_tries"] = d.get("unreviewed_tries", 0) + 1
+            if d["unreviewed_tries"] == UNREVIEWED_ALERT:  # the model keeps failing on this video: the owner is told once
+                alert.append(d.get("title", folder.name))
+        else:
+            d.pop("unreviewed_tries", None)
+
+    meta = records.update(folder, apply)  # the review took minutes: change the CURRENT record, not the copy read at the start
+    if alert:
+        import agentlog
+
+        agentlog.event("error", f"The AI review keeps failing: {alert[0]}",
+                       f"{UNREVIEWED_ALERT} tries in a row got no usable answer from the review model. Check the OpenRouter balance and the daily cap.", notify=True)
     try:
         import ledger
 

@@ -40,6 +40,7 @@ from pathlib import Path
 
 import archive_video
 import config
+import records
 import editprofile
 import footage
 import llm
@@ -188,7 +189,7 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
     data["subtitles"] = "burned"
     data["credits"] = credits
     data["approved"] = False
-    (folder / "meta.json").write_text(json.dumps(data, indent=2))
+    records.save(folder, data)  # the producer owns the record until it is finished: one atomic whole save
     print(f"\nDone: {folder / 'video.mp4'}\nTitle: {data['title']}\nWatch it, then: python run.py approve {folder.name}")
     return folder
 
@@ -346,7 +347,7 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
     data["credits"] = credits
     data["subtitles"] = "burned" if config.DOC_SUBTITLES else "srt"
     data["approved"] = False
-    (folder / "meta.json").write_text(json.dumps(data, indent=2))
+    records.save(folder, data)
     PENDING_DOC.unlink(missing_ok=True)
     print(f"\nDone: {folder / 'video.mp4'}\nTitle: {data['title']}\nWatch it, then: python run.py approve {folder.name}")
     return folder
@@ -377,18 +378,13 @@ def cmd_thumbs(name: str, hook: str | None = None) -> None:
     import thumbnail
 
     folder = config.OUT / name
-    meta = json.loads((folder / "meta.json").read_text())
     if hook:
-        meta["thumb_hook"] = hook
-        (folder / "meta.json").write_text(json.dumps(meta, indent=2))
+        records.merge(folder, {"thumb_hook": hook})
     thumbnail.make(folder, hook)
 
 
 def cmd_approve(name: str) -> None:
-    p = config.OUT / name / "meta.json"
-    meta = json.loads(p.read_text())
-    meta["approved"] = True
-    p.write_text(json.dumps(meta, indent=2))
+    records.merge(config.OUT / name, {"approved": True})
     print(f"approved {name}")
 
 

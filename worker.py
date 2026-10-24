@@ -12,6 +12,7 @@ from pathlib import Path
 
 import agentlog
 import config
+import records
 
 STATE = config.ROOT / "data" / "worker_state.json"
 HEARTBEAT = config.ROOT / "data" / "worker_heartbeat"
@@ -140,8 +141,7 @@ def prune_uploaded(out: Path, days: int, now: dt.datetime) -> int:
             if meta.get("video_id") and str(meta.get("uploaded_at", "9")) < cutoff and video.exists():
                 freed += video.stat().st_size
                 video.unlink()
-                meta["local_video_removed"] = True
-                m.write_text(json.dumps(meta, indent=2))
+                records.merge(m.parent, {"local_video_removed": True})
         except (OSError, ValueError):
             continue
     return freed

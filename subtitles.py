@@ -1,5 +1,6 @@
 """Subtitles from word timings: cues, SRT text and an ASS style for 16:9 documentaries."""
 import json
+import records
 from pathlib import Path
 
 import keywords
@@ -158,6 +159,8 @@ def burn_into_video(folder: Path) -> None:
     finally:
         ass.unlink(missing_ok=True)
     write_files(folder, words)
-    meta["subtitles"] = "burned"
-    reviewer.invalidate(meta)
-    meta_path.write_text(json.dumps(meta, indent=2))
+    def apply(d):
+        d["subtitles"] = "burned"
+        reviewer.invalidate(d)
+
+    records.update(folder, apply)

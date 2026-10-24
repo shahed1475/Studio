@@ -17,6 +17,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import config
+import records
 import llm
 import webauth
 
@@ -809,8 +810,7 @@ class H(BaseHTTPRequestHandler):
             d = json.loads(p.read_text())
             if d.get("video_id") and b["hold"]:
                 raise ValueError("already uploaded: change or delete it in YouTube Studio")
-            set_hold(d, bool(b["hold"]))
-            p.write_text(json.dumps(d, indent=2))
+            records.update(p.parent, lambda r: set_hold(r, bool(b["hold"])))
             return {"ok": True}
         if path == "/api/llm/config":
             import llm
@@ -874,33 +874,35 @@ class H(BaseHTTPRequestHandler):
         if path == "/api/video/approve":
             p = config.OUT / safe_slug(b["slug"]) / "meta.json"
             d = json.loads(p.read_text())
-            d["approved"] = True
-            d["approved_by"] = "you"
-            p.write_text(json.dumps(d, indent=2))
+            records.merge(p.parent, {"approved": True, "approved_by": "you"})
             return {"ok": True}
         if path == "/api/thumbs/choose":
             p = config.OUT / safe_slug(b["slug"]) / "meta.json"
             d = json.loads(p.read_text())
             if f"thumbs/thumb-{int(b['n'])}.jpg" not in d.get("thumbnails", []):
                 raise ValueError("no such thumbnail")
-            d["thumbnail"] = f"thumbs/thumb-{int(b['n'])}.jpg"
+            chosen = f"thumbs/thumb-{int(b['n'])}.jpg"
             import reviewer
 
-            reviewer.invalidate(d)
-            p.write_text(json.dumps(d, indent=2))
+            def pick_thumb(r):
+                r["thumbnail"] = chosen
+                reviewer.invalidate(r)
+
+            records.update(p.parent, pick_thumb)
             return {"ok": True}
         if path == "/api/video/update":
             p = config.OUT / safe_slug(b["slug"]) / "meta.json"
             d = json.loads(p.read_text())
             if d.get("video_id"):
                 raise ValueError("already uploaded")
-            for k in ("title", "description"):
-                if k in b:
-                    d[k] = b[k]
+            edits = {k: b[k] for k in ("title", "description") if k in b}
             import reviewer
 
-            reviewer.invalidate(d)
-            p.write_text(json.dumps(d, indent=2))
+            def apply_edits(r):
+                r.update(edits)
+                reviewer.invalidate(r)
+
+            records.update(p.parent, apply_edits)
             return {"ok": True}
         if path == "/api/key/save":
             which, value = str(b.get("which", "")), str(b.get("value", "")).strip()

@@ -7,6 +7,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageStat
 
 import config
+import records
 import llm
 import reviewer
 
@@ -261,10 +262,10 @@ def make(folder: Path, hook: str | None = None) -> list[str]:
     for p in work.glob("*"):
         p.unlink()
     work.rmdir()
-    meta["thumb_hook"] = hook
-    meta["thumbnails"] = names
-    meta["thumbnail"] = names[0]
-    reviewer.invalidate(meta)
-    (folder / "meta.json").write_text(json.dumps(meta, indent=2))
+    def apply(d):
+        d["thumb_hook"], d["thumbnails"], d["thumbnail"] = hook, names, names[0]
+        reviewer.invalidate(d)
+
+    records.update(folder, apply)
     print(f"hook: {hook}\n" + "\n".join(names))
     return names
