@@ -29,3 +29,6 @@ Every video is checked against a catalog of YouTube rules before it is approved,
 
 ## Limits
 The thumbnail judgement reads the thumbnail's text, not its pixels. Copy detection catches near-verbatim runs, not paraphrase. A model review varies between runs.
+
+## Re-verification log
+- 2026-10-24: the Spam, deceptive practices and scams page (policy watch, 06:10 UTC) gained two sentences: creators should disclose AI-generated or meaningfully altered content, and the disclosure is not a free pass to break policies. Nothing was removed. Our uploads set `containsSyntheticMedia` and add an AI-narration line, so `title_matches` and `thumbnail_matches` keep their rules; `verified` moved to 2026-10-24 for both.
