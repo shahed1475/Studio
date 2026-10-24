@@ -41,17 +41,22 @@ import editprofile
 import footage
 import llm
 import subtitles
+import packaging
 import render
 import scriptgen
 import topicqueue
 import tts
 
-STALE = {"approved", "approved_by", "review", "publish_at", "autopilot_fails", "prelaunch", "visual_check"}
+STALE = {"approved", "approved_by", "review", "publish_at", "autopilot_fails", "prelaunch", "visual_check",
+         "video_id", "uploaded_at", "upload_started", "upload_check", "thumbnail_uploaded", "recheck", "healed", "playlists", "health", "title_test"}
 
 
 def reset_for_rerender(data: dict) -> dict:
     """A re-rendered video is a new video: drop approval, review and schedule from the old render."""
-    return {k: v for k, v in data.items() if k not in STALE}
+    out = {k: v for k, v in data.items() if k not in STALE}
+    if data.get("video_id"):
+        out["replaces_video"] = data["video_id"]  # the old upload stays on YouTube until the owner approves deleting it
+    return out
 
 
 def unique_folder(base: Path) -> Path:
@@ -143,6 +148,12 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
     folder = folder or unique_folder(config.OUT / slug)
     work = folder / "work"
     folder.mkdir(parents=True, exist_ok=True)
+    if scriptgen.thin_script(data["lines"]):  # refuse before a voice and pictures are paid for
+        if requeue:
+            topicqueue.requeue_failed(topic)
+        if not in_place:
+            shutil.rmtree(folder, ignore_errors=True)
+        raise SystemExit("the Short's script admits its sources say little; not made")
     print("Voice + captions...")
     prof = editprofile.load()
     narration, ass, durations = tts.narrate([l["text"] for l in data["lines"]], work, prof["sentence_pause_ms"] / 1000, prof["motion"], prof["caption_pos"])
@@ -183,6 +194,7 @@ def cmd_doc(topic: str | None = None) -> Path:
     return _charged(_cmd_doc, topic)
 
 
+MIN_VARIETY = 0.55  # share of a documentary's scenes that must show a different picture (Pied Piper showed 28%, Delphi 100%)
 PENDING_DOC = config.ROOT / "data" / "pending_doc.json"  # a paid script whose video is not finished: the next pass renders it instead of paying for a new one
 MAX_RESUMES = 3
 
@@ -227,6 +239,12 @@ def _cmd_doc(topic: str | None = None) -> Path:
     for attempt in range(4):
         try:
             data = scriptgen.doc_script(topic, grounded=src[1] if src else None)
+            if scriptgen.thin_script(data["lines"]):
+                raise ValueError("the script admits its sources say little")
+            pairs = packaging.script_repeats([l["text"] for l in data["lines"]])  # a chapter that retells the opening: drop the retelling
+            if pairs:
+                data["lines"], data["chapters"] = scriptgen.remove_lines(data["lines"], data["chapters"], {j for _, j in pairs})
+                print(f"  removed {len(pairs)} retold line(s)")
             if src:
                 data["sources"] = [f"Wikipedia: {a['title']} (CC BY-SA 4.0), retold in our own words" for a in arts] + [a["url"] for a in arts]
             data["anchors"] = anchor_terms(topic, data.get("anchors", []), src[0] if src else "")
@@ -259,7 +277,9 @@ def _image_judge(topic: str):
         out = scriptgen._chat(
             f"A documentary about: {topic}. Below are archive image file names. Return the numbers of the ones that "
             "plausibly show that subject (its place, people, artwork, objects or maps). Reject anything about a "
-            "different subject that merely shares a word (a space mission, an aircraft, a castle elsewhere, a flag).\n"
+            "different subject that merely shares a word (a space mission, an aircraft, a castle elsewhere, a flag). Also reject file names that describe a "
+            "modern snapshot of ordinary people or soldiers, a brand, shop or advertisement, a street party, a Halloween or costume scene, or a medical or "
+            "military operation, unless the documentary is about exactly that.\n"
             + "\n".join(f"{i}: {t}" for i, t in enumerate(titles)) + '\n\nReturn JSON: {"keep": [numbers]}'
         )
         keep = {int(n) for n in out.get("keep", []) if str(n).isdigit()}
@@ -290,9 +310,11 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
     import aiart
 
     art = lambda l: aiart.generate(l["text"], l.get("visual", ""), data["topic"])
-    clips, credits, stats = footage.scene_images(data["lines"], data["topic"], anchors, judge=_image_judge(data["topic"]),
-                                                 art=art, art_limit=aiart.MAX_PER_VIDEO["doc"], art_first=bool(data.get("art_first")),
-                                                 force_art=set(data.get("redraw_lines") or []))
+    pics = dict(judge=_image_judge(data["topic"]), art=art, art_first=bool(data.get("art_first")), force_art=set(data.get("redraw_lines") or []))
+    clips, credits, stats = footage.scene_images(data["lines"], data["topic"], anchors, art_limit=aiart.MAX_PER_VIDEO["doc"], **pics)
+    if stats["unique"] < MIN_VARIETY * stats["scenes"] and aiart.enabled():  # the same few pictures again and again: draw illustrations for the scenes that would repeat
+        print(f"  only {stats['unique']} different pictures for {stats['scenes']} scenes: drawing more")
+        clips, credits, stats = footage.scene_images(data["lines"], data["topic"], anchors, art_limit=aiart.MAX_PER_VIDEO["doc"] + aiart.EXTRA_FOR_VARIETY, **pics)
     if stats["missing"] or stats["unique"] < 6:
         shutil.rmtree(folder, ignore_errors=True)
         raise SystemExit(f"only {stats['unique']} on-topic images found ({stats['missing']} scenes without one); "

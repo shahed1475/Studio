@@ -52,6 +52,26 @@ def heal() -> list[str]:
     return healed
 
 
+def enforce_holds(yt, now: dt.datetime) -> list[str]:
+    """A video on hold must not go public by itself. The hold used to stop only Autopilot: a video already scheduled on YouTube would still publish. For every
+    uploaded video on hold whose time has not come, make sure YouTube shows it private with no time; YouTube's read-back can lag, so a second look follows
+    next hour. Returns the folders it had to change."""
+    changed = []
+    for m in config.OUT.glob("*/meta.json"):
+        try:
+            meta = json.loads(m.read_text())
+        except ValueError:
+            continue
+        if not (meta.get("video_id") and meta.get("hold") and meta.get("publish_at")) or _parse(meta["publish_at"]) <= now:
+            continue
+        st = yt.videos().list(part="status", id=meta["video_id"]).execute()["items"][0]["status"]
+        if st.get("publishAt") or st.get("privacyStatus") != "private":
+            take_back(yt, meta["video_id"])
+            agentlog.event("applied", f"A video on hold was still scheduled on YouTube: made private ({meta['title'][:50]})", "A hold now stops the upload's own schedule too.", notify=True, now=now)
+            changed.append(m.parent.name)
+    return changed
+
+
 def _when(meta: dict) -> str:
     """When the video is (or became) public: its scheduled time, or for one uploaded straight to public the upload time."""
     return meta.get("publish_at") or meta.get("uploaded_at") or ""
@@ -199,6 +219,11 @@ def run(now: dt.datetime | None = None, yt=None, review=None, chat=None, may_edi
     try:
         for slug in heal():
             agentlog.event("applied", f"Restored the schedule and approval of an uploaded video ({slug[:40]})", "An edit had cleared them; YouTube still held the video.", now=now)
+        if may_edit is None:
+            may_edit = titletest.mode() == "apply" and titletest.can_write()
+        if may_edit:
+            yt = yt or titletest._service()
+            enforce_holds(yt, now)
         import llm
 
         if llm.spent_today(now) > llm.load_config()["daily_budget_usd"] - KEEP_FREE:
@@ -212,8 +237,6 @@ def run(now: dt.datetime | None = None, yt=None, review=None, chat=None, may_edi
 
             def review(f):
                 return reviewer.review(f, use_llm=True, persist=False)
-        if may_edit is None:
-            may_edit = titletest.mode() == "apply" and titletest.can_write()
         yt = yt or titletest._service()
         with llm.cost_scope(folder.name):
             r = check_one(now, folder, meta, yt, review, chat, may_edit)

@@ -19,8 +19,18 @@ import llm
 MODEL = "google/gemini-3.1-flash-lite-image"
 STYLE = ("Antique storybook illustration, muted watercolour and ink, warm candlelit palette, soft paper texture, painterly, "
          "no text, no letters, no captions, no watermark")
+STYLES = [  # one per video, chosen by its topic: every video no longer looks like the same template
+    STYLE,
+    ("Black and white woodcut engraving, fine cross-hatching, aged cream paper, dramatic light and shadow, antique book plate, "
+     "no text, no letters, no captions, no watermark"),
+    ("Soft gouache and pastel illustration, dusty teal and ochre palette, gentle grain, hand-painted, calm and still, "
+     "no text, no letters, no captions, no watermark"),
+    ("Dark sepia ink wash and charcoal drawing, moody twilight, rough paper, sketchbook feel, "
+     "no text, no letters, no captions, no watermark"),
+]
 CREDIT = "Illustration: AI-generated storybook art (Google Gemini image model via OpenRouter)"
 MAX_PER_VIDEO = {"doc": 16, "short": 6}
+EXTRA_FOR_VARIETY = 12  # more drawings allowed when a documentary would otherwise show the same pictures again and again
 PRICE_EACH = 0.034  # dollars per picture, measured 20 Oct 2026: $3.19 for 95 pictures
 _off_until: dict = {}  # a failed call (no credit) pauses drawing for the rest of the day
 
@@ -41,9 +51,13 @@ TEXTY = re.compile(r"inscription|manuscript|\bmaps?\b|letter|document|\bsigns?\b
 NO_WRITING = " Show it at an angle or from a distance with no legible writing, letters, symbols or map labels: any writing is only a texture."
 
 
+def style_for(topic: str) -> str:
+    return STYLES[int(hashlib.md5(str(topic).lower().encode()).hexdigest(), 16) % len(STYLES)]
+
+
 def prompt_for(line: str, visual: str, topic: str, vertical: bool) -> str:
     shape = "vertical 9:16 composition" if vertical else "16:9 widescreen composition"
-    text = f"{STYLE}, {shape}. Story: {_clean(topic, 120)}. Scene: {_clean(line)}. Show: {_clean(visual, 80) or 'the setting of the scene'}."
+    text = f"{style_for(topic)}, {shape}. Story: {_clean(topic, 120)}. Scene: {_clean(line)}. Show: {_clean(visual, 80) or 'the setting of the scene'}."
     return text + (NO_WRITING if TEXTY.search(f"{visual} {line}") else "")
 
 

@@ -102,6 +102,12 @@ def audit(meta: dict) -> list[dict]:
     if pairs:
         out.append(_row("script_retells", False, "the script tells the same thing twice: lines " + ", ".join(f"{i + 1} and {j + 1}" for i, j in pairs[:3])
                         + " (a viewer who hears it again may leave)"))
+    fp = meta.get("footage") or {}
+    if meta.get("format") == "doc" and fp.get("scenes"):
+        share = fp.get("unique", 0) / fp["scenes"]
+        ok = share >= 0.55
+        out.append(_row("picture_variety", ok, f"{fp.get('unique', 0)} different pictures for {fp['scenes']} scenes ({share:.0%})" if ok
+                        else f"only {fp.get('unique', 0)} different pictures for {fp['scenes']} scenes ({share:.0%}): the same few pictures repeat, which viewers leave on"))
     if len(title) > 70:
         out.append(_row("seo_title_length", False, f"{len(title)} characters: YouTube cuts titles over about 70 on a phone"))
     return out

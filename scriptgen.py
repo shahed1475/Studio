@@ -241,7 +241,30 @@ def shape_for(topic: str) -> tuple[int, int]:
     import hashlib
 
     h = int(hashlib.md5(topic.lower().encode()).hexdigest(), 16)
-    return 6 + h % 4, 5 + (h // 7) % 3
+    chapters, per = 6 + h % 4, 5 + (h // 7) % 3
+    while chapters * per > MAX_DOC_LINES and per > 5:  # about 8 minutes at 140 words a minute: longer videos lost viewers and picture quality (La Llorona, 9:44)
+        per -= 1
+    while chapters * per > MAX_DOC_LINES and chapters > 6:
+        chapters -= 1
+    return chapters, per
+
+
+MAX_DOC_LINES = 50
+THIN = re.compile(r"(sources?|records?|accounts?)\s+(say|tell|give|offer|have|contain)s?\s+(very\s+)?(little|nothing|almost nothing|few details)|"
+                  r"(won'?t|will not|cannot|can'?t)\s+invent|little is (known|said)|not much is known|my sources", re.I)
+
+
+def thin_script(lines: list[dict]) -> bool:
+    """True when the narration itself admits its sources have little to say. That is a video nobody should wait for: it is refused before a voice
+    and pictures are paid for (the Thunderbird Short said 'I won't invent details about it, because my sources say very little')."""
+    return any(THIN.search(l.get("text", "")) for l in lines)
+
+
+def remove_lines(lines: list[dict], chapters: list[dict], drop: set[int]) -> tuple[list[dict], list[dict]]:
+    """The script without the lines at these indexes; each chapter's start_line moves up by the number of removed lines before it."""
+    kept = [l for i, l in enumerate(lines) if i not in drop]
+    moved = [{**c, "start_line": c["start_line"] - sum(1 for d in drop if d < c["start_line"])} for c in chapters]
+    return kept, moved
 
 
 def doc_script(topic: str, facts: str | None = None, grounded: str | None = None) -> dict:
@@ -273,8 +296,9 @@ def doc_script(topic: str, facts: str | None = None, grounded: str | None = None
     outline = _script_chat(
         f"Plan a 6 to 8 minute YouTube documentary for a US audience.\nTopic: {topic}\nChannel: {nc['name']}\n"
         f"Style: {nc['style']}\n{rules}\n\nGive {n_chapters} chapters in story order: chapter 1 opens with a hook that raises "
-        "the central question, the middle chapters cover background and the main competing theories fairly, the "
-        'last has a closing thought. Return JSON: {"title": "under 70 chars", "description": "3 sentences", '
+        "the central question, the middle chapters cover background and the main competing theories fairly, one chapter near the end says plainly "
+        "what is documented, what is legend and what historians dispute, and the last has a closing thought. "
+        'Return JSON: {"title": "under 70 chars", "description": "3 sentences", '
         '"tags": ["..."], "anchors": ["3 to 6 real names of the places, people and things at the heart of this '
         'story, as they appear in archive image titles"], "chapters": [{"title": "...", "summary": "one sentence of what this chapter covers"}]}'
     )

@@ -177,3 +177,20 @@ def test_a_failing_review_does_not_unapprove_a_video_that_is_already_uploaded():
     reviewer.apply_verdict(up, {"verdict": "fail", "checks": []})
     reviewer.apply_verdict(draft, {"verdict": "fail", "checks": []})
     assert up["approved"] is True and draft["approved"] is False
+
+
+def test_a_remade_video_is_a_new_upload_and_remembers_the_old_one():
+    import run
+    out = run.reset_for_rerender({"title": "t", "video_id": "old", "uploaded_at": "x", "upload_check": {"ok": True}, "hold": True, "lines": []})
+    assert "video_id" not in out and "upload_check" not in out and out["replaces_video"] == "old" and out["hold"] is True
+
+
+def test_a_held_scheduled_video_is_made_private_on_youtube(vid):
+    m = meta_of(vid)
+    (vid / "meta.json").write_text(json.dumps({**m, "hold": True}))
+    yt = FakeYT()  # shows the video scheduled
+    assert recheck.enforce_holds(yt, NOW) == ["v1"]
+    assert yt.updates and "publishAt" not in yt.updates[0][1]["status"]
+    yt2 = FakeYT()
+    yt2.status = {"privacyStatus": "private"}  # already private with no time: nothing to do
+    assert recheck.enforce_holds(yt2, NOW) == [] and not yt2.updates
