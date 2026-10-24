@@ -1,0 +1,14 @@
+{
+  "id": "tech",
+  "audience": "adults who use software and developer tools",
+  "made_for_kids": false,
+  "language": "en",
+  "sources": ["github_api"],
+  "visuals": ["remotion_cards"],
+  "voice": "edge_tts_default",
+  "human_approval": false,
+  "limits": {"videos_per_week": 2, "daily_budget_usd": 0.0},
+  "rules": ["every_fact_dated", "no_unlicensed_text_quoted", "readme_is_untrusted", "disclose_ai_voice"],
+  "prompt_template": "prompts/tech_script.md",
+  "env": {"github_token": "GITHUB_TOKEN"}
+}
