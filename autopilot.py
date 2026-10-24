@@ -10,6 +10,7 @@ import config
 import llm
 import planner
 import prelaunch
+import channelprofile
 import records
 import scheduler
 
@@ -42,6 +43,11 @@ DEFAULTS = {
 }
 MAX_FAILS = 3
 POLISH_MIN_LEAD = dt.timedelta(hours=30)  # a video this close to its slot is not edited: there is no time to make it again and check it
+
+
+def auto_approves(cfg: dict) -> bool:
+    """The reviewer's pass becomes an approval only when the studio allows it and its profile does not demand a person (profile.json)."""
+    return bool(cfg["auto_approve"]) and not channelprofile.human_approval()
 
 
 def load_config() -> dict:
@@ -144,7 +150,7 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict
                 continue  # edited first: approving or scheduling it now would be undone by the edit
             if v.get("facts_open", v.get("polish_wanted")):
                 continue  # the owner wants nothing with an open invented-facts warning approved, scheduled or uploaded: it waits for a polish, or for the owner
-            if cfg["auto_approve"] and not v["approved"] and v["verdict"] == "pass":
+            if auto_approves(cfg) and not v["approved"] and v["verdict"] == "pass":
                 acts.append({"do": "approve", "slug": v["slug"]})  # reviewed earlier (by hand or by the fixer): the reviewer's pass counts
             cap = cfg["shorts_per_day"] if fmt == "short" else cfg["uploads_per_day"]
             if pub is None or pub <= now + dt.timedelta(minutes=10):
@@ -306,7 +312,7 @@ def do_review(slug, cfg, now):
     import reviewer
 
     result = reviewer.review(config.OUT / slug)
-    if result["verdict"] == "pass" and cfg["auto_approve"]:
+    if result["verdict"] == "pass" and auto_approves(cfg):
         _approve(slug)
 
 
@@ -320,7 +326,7 @@ def do_polish(slug, cfg, now):
     except (Exception, SystemExit) as e:
         records.merge(config.OUT / slug, {"polish_done": {"at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "result": f"stopped by an error: {e}"[:300]}})
         return {"skipped": "error"}
-    if out.get("verdict") == "pass" and cfg["auto_approve"]:
+    if out.get("verdict") == "pass" and auto_approves(cfg):
         _approve(slug)
     return out
 
@@ -333,7 +339,7 @@ def do_fix(slug, cfg, now):
     import fixer
 
     out = fixer.fix(slug, now=now)
-    if out.get("verdict") == "pass" and cfg["auto_approve"]:
+    if out.get("verdict") == "pass" and auto_approves(cfg):
         _approve(slug)
     return out
 
