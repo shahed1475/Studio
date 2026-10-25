@@ -138,11 +138,14 @@ def competitors(core: str, yt=None, now: float | None = None, directory: Path | 
         vids = yt.videos().list(part="snippet,statistics", id=",".join(ids)).execute().get("items", []) if ids else []
         out = [{"title": v["snippet"]["title"], "channel": v["snippet"]["channelTitle"], "views": int(v["statistics"].get("viewCount", 0)),
                 "url": f"https://www.youtube.com/watch?v={v['id']}", "published": v["snippet"]["publishedAt"]} for v in vids]
-        d.mkdir(parents=True, exist_ok=True)
-        f.write_text(json.dumps({"at": now, "core": core, "videos": out}, indent=1))
-        return out
     except Exception:
         return []
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps({"at": now, "core": core, "videos": out}, indent=1))
+    except OSError:
+        pass  # the cache is only a saving of quota: videos that were read are still used
+    return out
 
 
 INSTRUCTION_WORDS = re.compile(r"\b(ignore|disregard|forget|system|prompt|instructions?|assistant|override|jailbreak|developer mode|you must|you are)\b", re.I)
@@ -254,7 +257,10 @@ def repair(folder: Path, chat=None) -> list[str]:
     before = dict(title=meta.get("title"), description=meta.get("description"))
     changed = enforce(meta, chat, ask=True)
     if changed:
-        records.update(folder, lambda d: d.update(title=meta["title"], description=meta["description"]))
+        try:
+            records.update(folder, lambda d: d.update(title=meta["title"], description=meta["description"]))
+        except OSError as e:
+            raise RuntimeError(f"cannot save {folder / 'meta.json'}: {e}") from e
     return [k for k in ("description", "title") if meta.get(k) != before[k]]
 
 

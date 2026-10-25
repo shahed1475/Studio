@@ -154,3 +154,29 @@ def test_repair_of_a_missing_or_corrupt_record_is_a_clear_error_not_a_traceback(
     (tmp_path / "meta.json").write_text("{not json")
     with pytest.raises(RuntimeError, match="cannot read"):
         seo.repair(tmp_path)
+
+
+def test_a_cache_that_cannot_be_written_still_returns_the_rivals_that_were_read(tmp_path):
+    class Req:
+        def __init__(self, v): self.v = v
+        def execute(self): return self.v
+
+    class YT:
+        def search(self): return type("S", (), {"list": lambda s, **k: Req({"items": [{"id": {"videoId": "a"}}]})})()
+        def videos(self): return type("V", (), {"list": lambda s, **k: Req({"items": [{"id": "a", "snippet": {"title": "Mami Wata Explained", "channelTitle": "C", "publishedAt": "2026-01-01T00:00:00Z"}, "statistics": {"viewCount": "5"}}]})})()
+
+    blocker = tmp_path / "file"
+    blocker.write_text("x")  # a file where the cache folder should be: mkdir fails
+    got = seo.competitors(CORE, yt=YT(), directory=blocker / "cache")
+    assert got and got[0]["title"] == "Mami Wata Explained"
+
+
+def test_repair_that_cannot_save_says_so_plainly(tmp_path, monkeypatch):
+    import pytest
+    (tmp_path / "meta.json").write_text(json.dumps({"title": "Water Spirit of the Coast", "description": "A spirit.", "seo": {"core": CORE}}))
+
+    def boom(folder, fn):
+        raise OSError("disk full")
+    monkeypatch.setattr(seo.records, "update", boom)
+    with pytest.raises(RuntimeError, match="cannot save"):
+        seo.repair(tmp_path, chat=lambda p: {})
