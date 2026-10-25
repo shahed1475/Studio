@@ -140,10 +140,10 @@ def _release(cfg: dict, run, usd: float | None = None) -> None:
     """Give a reservation back, exactly once. The amount is CLAIMED from the run record in one locked step (so a run and a resume cannot both give it back); `usd`
     is passed only when the record never got the amount. If the give-back fails after the day total was already changed, the claim is kept (restoring it would
     let a later resume give the same money back again)."""
+    before = _spent(cfg)  # read first: if this fails, nothing has been claimed yet
     amount = run.take_cost() if usd is None else usd
     if amount <= 0:
         return
-    before = _spent(cfg)
     try:
         _book(cfg, -amount)
     except ClipError:
@@ -379,14 +379,17 @@ def _await_and_save(cfg, auth, http, sleep, job, prompt_sha256, run, today) -> d
 
 def generate(cfg: dict, key: str, prompt: str, run, http=requests, sleep=time.sleep, today: str | None = None) -> dict:
     """One clip. Records its progress in `run` (a footagestore.Run). Raises ClipError; the run record then says why."""
-    run.update(status="running", model=cfg["model"], prompt_preview=_snip(prompt, 200), prompt_sha256=hashlib.sha256(prompt.encode()).hexdigest(), files={"log": "run.log"}, pid=os.getpid())
+    run.update(status="running", model=cfg["model"], prompt_preview=_snip(prompt, 200), prompt_sha256=hashlib.sha256(prompt.encode()).hexdigest(), files={"log": "run.log"}, pid=os.getpid(), pid_start=_proc_start(os.getpid()))
     _say(f"run: {run.dir.parent.name} {run.dir.name}")
     run.log(f"start: model {cfg['model']}, {cfg['duration_s']} s, {cfg['resolution']}")
     state: dict = {}  # what had happened when an interrupt arrives: {"est": reserved cost, "posted": the submit was started}
     try:
         result = _generate(cfg, key, prompt, run, http, sleep, today, state)
     except KeyboardInterrupt:
-        msg = _interrupted(cfg, run, state)
+        try:
+            msg = _interrupted(cfg, run, state)
+        except BaseException:  # a second interrupt, or any failure, while giving the cost back: the record must still say failed
+            msg = "interrupted while giving back the reserved cost; the cost may stay booked (check the day total)"
         run.update(status="failed", error=msg, finished_at=_utc())
         run.log(msg)
         raise
@@ -448,6 +451,7 @@ def _generate(cfg, key, prompt, run, http, sleep, today, state) -> dict:
     if 400 <= reply.status_code < 500 and reply.status_code != 408:
         _release(cfg, run)
         state["est"] = 0
+        state["posted"] = False  # refused: no job exists
         raise ClipError(f"submit refused HTTP {reply.status_code}: {_snip(reply.text)}; the reserved cost was released")
     if reply.status_code >= 300:
         raise ClipError(f"submit failed HTTP {reply.status_code} ({_snip(reply.text)}); a job may exist, so ${est:.2f} stays booked")
@@ -481,19 +485,20 @@ def _generate(cfg, key, prompt, run, http, sleep, today, state) -> dict:
     return {**result, "run_id": run.dir.name, "booked_usd": booked, "measured_cost": measured, "balance_after": after, "balance_note": note}
 
 
-def resume(cfg: dict, key: str, run, http=requests, sleep=time.sleep) -> dict:
-    """Fetch the clip of a job that was already sent and booked (a lost connection, a kill). Books nothing new."""
+def resume(cfg: dict, key: str, run, http=requests, sleep=time.sleep, force: bool = False) -> dict:
+    """Fetch the clip of a job that was already sent and booked (a lost connection, a kill). Books nothing new. `force` skips the "still going" check (for a
+    process id that a restarted container has given to something else)."""
     job = run.read().get("job")
     if not isinstance(job, str) or not JOB_ID.fullmatch(job):
         raise ClipError("this run has no job to resume")
     rec = run.read()
     if rec.get("status") == "done":
         raise ClipError("this run already finished; nothing to resume")  # a done run must never be failed or refunded by a later resume
-    if rec.get("status") == "running" and _alive(rec.get("pid")):
-        raise ClipError(f"this run is still going (process {rec.get('pid')}); wait for it, then check the run on the dashboard")
+    if rec.get("status") == "running" and not force and _alive(rec.get("pid"), rec.get("pid_start")):
+        raise ClipError(f"this run is still going (process {rec.get('pid')}); wait for it, check the run on the dashboard, or use --resume --force if the process is not ours")
     if not key:
         raise Refused("no OpenRouter key in the studio")
-    run.update(status="running", error=None, pid=os.getpid())
+    run.update(status="running", error=None, pid=os.getpid(), pid_start=_proc_start(os.getpid()))
     run.log(f"resuming job {job}")
     try:
         result = _await_and_save(cfg, {"Authorization": f"Bearer {key}"}, http, sleep, job, run.read().get("prompt_sha256", ""), run, None)
@@ -515,8 +520,17 @@ def resume(cfg: dict, key: str, run, http=requests, sleep=time.sleep) -> dict:
     return {**result, "run_id": run.dir.name}
 
 
-def _alive(pid) -> bool:
-    """Is another process of this container still working on the run? (A pid that is not ours and answers a signal 0.)"""
+def _proc_start(pid: int) -> str | None:
+    """When the process started (field 22 of /proc/<pid>/stat, in clock ticks since boot): with the pid it tells our process from a new one that got the same number."""
+    try:
+        return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[19]
+    except (OSError, IndexError):
+        return None
+
+
+def _alive(pid, start=None) -> bool:
+    """Is another process of this container still working on the run? (A pid that is not ours, answers signal 0, and, when we stored its start time, started
+    at that time.)"""
     if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0 or pid == os.getpid():
         return False
     try:
@@ -525,7 +539,8 @@ def _alive(pid) -> bool:
         return False
     except PermissionError:
         return True
-    return True
+    now = _proc_start(pid)
+    return not (start and now and start != now)
 
 
 def _stop(signum, frame):
@@ -542,10 +557,12 @@ def main(argv=None) -> int:
 
         cfg = load_config(os.environ.get("FOOTAGE_CONFIG", CONFIG))
         if argv[:1] == ["--resume"]:
-            run = footagestore.open_run(*argv[1:3]) if len(argv) == 3 else None
+            force = "--force" in argv
+            rest = [a for a in argv[1:] if a != "--force"]
+            run = footagestore.open_run(*rest) if len(rest) == 2 else None
             if run is None:
-                raise ClipError("usage: --resume <scope> <run_id>")
-            res = resume(cfg, llm.api_key(), run)
+                raise ClipError("usage: --resume [--force] <scope> <run_id>")
+            res = resume(cfg, llm.api_key(), run, force=force)
         else:
             open_jobs = [r["run_id"] for r in footagestore.runs() if r.get("scope") == cfg["cost_scope"] and r.get("status") == "running" and r.get("job")]
             if open_jobs:

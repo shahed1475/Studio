@@ -686,13 +686,13 @@ def test_resume_refuses_a_run_another_process_is_still_working_on(cfg):
     r = fails(dict(cfg, max_polls=1), Http(polls=["pending"]), "not done")
     other = subprocess.Popen(["sleep", "30"])
     try:
-        r.update(status="running", pid=other.pid)
+        r.update(status="running", pid=other.pid, pid_start=clipgen._proc_start(other.pid))
         with pytest.raises(clipgen.ClipError, match="still going"):
             clipgen.resume(cfg, "k", r, http=Http(), sleep=lambda s: None)
     finally:
         other.kill()
         other.wait()
-    r.update(status="running", pid=other.pid)  # the process is gone now: the resume may go ahead
+    r.update(status="running", pid=other.pid, pid_start=clipgen._proc_start(os.getpid()))  # a dead process: the resume may go ahead
     out = clipgen.resume(cfg, "k", r, http=Http(), sleep=lambda s: None)
     assert r.read()["status"] == "done" and Path(out["clip"]).exists()
 
@@ -733,3 +733,98 @@ def test_a_full_disk_in_resume_leaves_the_money_booked(cfg, money, monkeypatch):
 def test_the_run_id_is_printed_for_the_runner(cfg, capsys):
     out, r = run(cfg, Http())
     assert f"run: footage-test {r.dir.name}" in capsys.readouterr().out
+
+
+# ---- fourth review ----
+def test_a_pid_that_now_belongs_to_another_process_does_not_block_a_resume(cfg):
+    r = fails(dict(cfg, max_polls=1), Http(polls=["pending"]), "not done")
+    other = subprocess.Popen(["sleep", "30"])
+    try:
+        r.update(status="running", pid=other.pid, pid_start="1")  # the stored start time is not this process's: the pid was reused
+        assert not clipgen._alive(other.pid, "1") and clipgen._alive(other.pid, clipgen._proc_start(other.pid)) and clipgen._alive(other.pid)
+        out = clipgen.resume(cfg, "k", r, http=Http(), sleep=lambda s: None)
+        assert r.read()["status"] == "done" and Path(out["clip"]).exists()
+    finally:
+        other.kill()
+        other.wait()
+
+
+def test_force_resumes_a_run_that_looks_alive(cfg):
+    r = fails(dict(cfg, max_polls=1), Http(polls=["pending"]), "not done")
+    other = subprocess.Popen(["sleep", "30"])
+    try:
+        r.update(status="running", pid=other.pid, pid_start=clipgen._proc_start(other.pid))
+        with pytest.raises(clipgen.ClipError, match="--force"):
+            clipgen.resume(cfg, "k", r, http=Http(), sleep=lambda s: None)
+        clipgen.resume(cfg, "k", r, http=Http(), sleep=lambda s: None, force=True)
+        assert r.read()["status"] == "done"
+    finally:
+        other.kill()
+        other.wait()
+
+
+def test_main_passes_force_to_resume(cfg, monkeypatch, capsys):
+    monkeypatch.setenv("FOOTAGE_CONFIG", str(config.ROOT / "config" / "footage.json"))
+    import llm
+    monkeypatch.setattr(llm, "api_key", lambda: "k")
+    seen = {}
+    monkeypatch.setattr(clipgen, "resume", lambda c, k, run, force=False, **kw: seen.setdefault("force", force) and {"clip": "x"} or {"clip": "x"})
+    r = footagestore.create("footage-test")
+    clipgen.main(["--resume", "--force", "footage-test", r.dir.name])
+    assert seen["force"] is True
+    assert clipgen.main(["--resume", "footage-test"]) == 1 and "usage" in capsys.readouterr().err
+
+
+def test_a_failed_spend_read_in_release_claims_nothing(cfg, money, monkeypatch):
+    r = footagestore.create("footage-test")
+    clipgen._book(cfg, 0.24)
+    r.update(cost_booked=0.24)
+    monkeypatch.setattr(clipgen, "_spent", lambda c: (_ for _ in ()).throw(clipgen.ClipError("cannot read today's spend")))
+    with pytest.raises(clipgen.ClipError):
+        clipgen._release(cfg, r)
+    assert r.read()["cost_booked"] == 0.24  # still there for a later try
+
+
+def test_an_interrupt_inside_the_give_back_still_leaves_a_failed_record(cfg, money, monkeypatch):
+    class Boom(Http):
+        def post(self, *a, **k):
+            raise KeyboardInterrupt
+    monkeypatch.setattr(clipgen, "_interrupted", lambda c, r, s: (_ for _ in ()).throw(KeyboardInterrupt()))
+    r = footagestore.create("footage-test")
+    with pytest.raises(KeyboardInterrupt):
+        clipgen.generate(cfg, "k", "p", r, http=Boom(), sleep=lambda s: None)
+    assert r.read()["status"] == "failed" and "interrupted" in r.read()["error"]
+
+
+def test_a_refused_submit_does_not_claim_a_job_may_exist(cfg, money):
+    http = Http(submit=Resp(status=400, data={"error": "bad"}))
+    r = fails(cfg, http, "submit refused HTTP 400.*released")
+    assert "may exist" not in r.read()["error"] and money.spent_today() == 0
+
+
+def test_restore_cost_survives_a_garbage_record_value(cfg):
+    r = footagestore.create("footage-test")
+    data = r.read()
+    data["cost_booked"] = "lots"
+    r.record_path.write_text(json.dumps(data))
+    r.restore_cost(0.24)
+    assert r.read()["cost_booked"] == 0.24
+
+
+def test_the_runner_hint_quotes_paths_and_ignores_a_hostile_run_line(fakes, tmp_path):
+    _, env = fakes
+    key = tmp_path / "my key"
+    key.write_text("k")
+    ssh = (tmp_path / "bin" / "ssh")
+    ssh.write_text('#!/usr/bin/env bash\ncase "$*" in *"python3 -"*) cat >/dev/null; echo "run: scope1; touch /tmp/pwned x"; echo "job: abc123 (paid from here on)"; exit 255;; esac\nexit 0\n')
+    r = subprocess.run(["bash", RUNNER], env={**env, "FOOTAGE_SSH_KEY": str(key)}, capture_output=True, text=True)
+    assert "my\\ key" in r.stdout and "<scope> <run_id>" in r.stdout and "touch" not in r.stdout.split("--resume")[1].split("<")[0]
+
+
+def test_after_a_refused_submit_the_state_says_nothing_was_sent(cfg, money):
+    state = {}
+    r = footagestore.create("footage-test")
+    with pytest.raises(clipgen.ClipError, match="submit refused"):
+        clipgen._generate(cfg, "k", "p", r, Http(submit=Resp(status=400, data={"error": "bad"})), lambda s: None, "2026-10-25", state)
+    assert state["posted"] is False and state["est"] == 0
+    assert "interrupted before" in clipgen._interrupted(cfg, r, state) or "anything was reserved" in clipgen._interrupted(cfg, r, state)
