@@ -33,3 +33,12 @@ def test_the_studio_setting_comes_from_its_own_profile_file(tmp_path, monkeypatc
     assert channelsview.build()["studio_human_approval"] is False
     (tmp_path / "profile.json").write_text(json.dumps({"human_approval": True}))
     assert channelsview.build()["studio_human_approval"] is True
+
+
+def test_an_unreadable_profile_file_is_listed_as_invalid_not_raised(tmp_path, monkeypatch):
+    from pathlib import Path
+    (tmp_path / "locked.json").write_text("{}")
+    monkeypatch.setattr(channelconfig, "DIR", tmp_path)
+    monkeypatch.setattr(Path, "read_text", lambda self, *a, **k: (_ for _ in ()).throw(PermissionError("no")))
+    row = channelsview.build()["channels"][0]
+    assert row["id"] == "locked" and "cannot be read" in row["error"]

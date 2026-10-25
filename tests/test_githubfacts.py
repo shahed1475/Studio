@@ -8,7 +8,7 @@ import requests
 import githubfacts
 
 NOW = dt.datetime(2026, 10, 25, 12, 0, tzinfo=dt.timezone.utc)
-TOKEN = "ghp_" + "a1B2c3D4e5" * 3
+TOKEN = "fake-test-value-" + "0" * 24  # obviously not a real credential; only its shape matters
 
 
 class Reply:

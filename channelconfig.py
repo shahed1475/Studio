@@ -40,6 +40,8 @@ def load(channel_id: str) -> dict:
         raise ChannelConfigError(f"no channel profile named {channel_id}")
     try:
         data = json.loads(p.read_text())
+    except OSError as e:
+        raise ChannelConfigError(f"{channel_id}: cannot be read ({type(e).__name__})")
     except ValueError as e:
         raise ChannelConfigError(f"{channel_id}: not valid JSON ({e})")
     return validate(data, channel_id)
