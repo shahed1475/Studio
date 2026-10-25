@@ -621,19 +621,19 @@ class H(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b)
         elif u.path == "/now":
-            self.send_bytes((config.ROOT / "now.html").read_bytes(), "text/html; charset=utf-8")
+            self.send_page_file("now.html")
         elif u.path == "/api/now":
             import nowview
 
             self.send_json(nowview.build())
         elif u.path == "/channels":
-            self.send_bytes((config.ROOT / "channels.html").read_bytes(), "text/html; charset=utf-8")
+            self.send_page_file("channels.html")
         elif u.path == "/api/channels":
             import channelsview
 
             self.send_json(channelsview.build())
         elif u.path == "/footage":
-            self.send_bytes((config.ROOT / "footage.html").read_bytes(), "text/html; charset=utf-8")
+            self.send_page_file("footage.html")
         elif u.path == "/api/footage":
             import footageview
 
@@ -721,6 +721,14 @@ class H(BaseHTTPRequestHandler):
         if not out.exists():
             return self.send_error(404)
         self.send_bytes(out.read_bytes(), "image/jpeg")
+
+    def send_page_file(self, name):
+        """One of the small pages (now, footage, channels): a file that cannot be read is a clean 500, not a dropped connection."""
+        try:
+            data = (config.ROOT / name).read_bytes()
+        except OSError:
+            return self.send_error(500, "page file missing")
+        self.send_bytes(data, "text/html; charset=utf-8")
 
     def send_bytes(self, b, kind):
         self.send_response(200)

@@ -123,3 +123,9 @@ def test_with_a_password_set_only_the_health_check_and_the_login_page_open(serve
             assert status in (303, 401), f"{path} answered {status} without a login"
     for sample in PREFIX_SAMPLES.values():
         assert get(port, sample)[0] in (303, 401, 404) and get(port, sample)[0] != 200, sample
+
+
+def test_a_missing_page_file_is_a_clean_500(server, monkeypatch):
+    port, tmp = server
+    monkeypatch.setattr(config, "ROOT", tmp)  # no channels.html here
+    assert get(port, "/channels")[0] == 500
