@@ -6,6 +6,7 @@ description: "Use when judging or improving a video's search packaging: title sc
 # Search packaging (Story Studio)
 
 What the code already does, so do not repeat it by hand:
+- Order in `autopilot.finish_video`: research (`seo.make`: phrase, autocomplete plus question variants, `seo.competitors` = top YouTube results for the phrase, cached 7 days) -> title (`ensure_title_front`) -> description (`ensure_lead`: phrase inside the first 150 characters) -> tags -> thumbnail text against the final title. Existing video with a warning: `python run.py seo-fix <slug>`.
 - `seo.make` finds the 2 to 4 word search phrase, pulls real YouTube autocomplete, writes 5 titles, the description intro and tags.
 - `packaging.py` scores titles (`title_score`, `rank_titles`): phrase inside the first 40 characters, 40 to 62 characters, search words, a proper name, no vague "what do ... actually ...?" question, no shouting, not a near-copy of another title. `autopilot.finish_video` takes the best score.
 - `reviewer.metadata_checks` adds warnings `seo_title_front`, `seo_description_150`, `seo_thumbnail_text`, `seo_title_length` (warnings never block).

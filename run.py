@@ -426,6 +426,10 @@ def main() -> None:
         import seo
 
         seo.make(config.OUT / a[1])
+    elif a[0] == "seo-fix":
+        import seo
+
+        print("changed: " + (", ".join(seo.repair(config.OUT / a[1])) or "nothing"))
     elif a[0] == "branding":
         import branding
 

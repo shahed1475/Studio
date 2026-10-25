@@ -412,9 +412,7 @@ def finish_video(folder: Path) -> None:
 
     p = folder / "meta.json"
     meta = json.loads(p.read_text())
-    if meta.get("format") == "doc":  # Shorts use a frame YouTube picks; custom thumbnails are for long videos
-        thumbnail.make(folder)
-    seo.make(folder)
+    seo.make(folder)  # research first (search phrase, rivals, autocomplete), then the title; the thumbnail text is written against the final title
     meta = json.loads(p.read_text())
     import fixer
 
@@ -427,7 +425,10 @@ def finish_video(folder: Path) -> None:
     import seo
 
     tags = fixer.clean_tags(meta)
-    records.merge(folder, {"title": seo.polish_title(meta["title"]), "tags": tags})
+    core = (meta.get("seo") or {}).get("core", "")
+    records.merge(folder, {"title": seo.ensure_title_front(meta["title"], core) if core else seo.polish_title(meta["title"]), "tags": tags})
+    if meta.get("format") == "doc":  # Shorts use a frame YouTube picks; custom thumbnails are for long videos
+        thumbnail.make(folder)
 
 
 def do_make(slug, cfg, now):

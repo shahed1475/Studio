@@ -101,6 +101,9 @@ def sanitize(meta: dict) -> list[str]:
             tags.pop()
         meta["tags"] = tags
         changes.append("dropped the last tags that did not fit")
+    import seo
+
+    changes += seo.enforce(meta)  # the search phrase up front, whichever repair path last wrote the title or the description
     desc = meta.get("description", "")
     room = DESCRIPTION_MAX_BYTES - (len(final_description(meta).encode()) - len(desc.encode()))  # what is added around ours when it is sent
     if len(desc.encode()) > room:

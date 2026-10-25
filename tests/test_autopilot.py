@@ -123,7 +123,7 @@ def test_do_make_finishes_video_with_thumbnails_and_seo_title(tmp_path, monkeypa
         (f / "meta.json").write_text(json.dumps(m))
     monkeypatch.setattr(seo, "make", fake_seo)
     autopilot.do_make(None, CFG, NOW)
-    assert order == ["doc", "thumbs", "seo"]
+    assert order == ["doc", "seo", "thumbs"]  # research and title first, thumbnail text against the final title
     assert json.loads((folder / "meta.json").read_text())["title"] == "Better Title: What Happened?"
 
 

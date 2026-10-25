@@ -173,6 +173,10 @@ def run(now: dt.datetime | None = None, yt=None, pick=None, quality=None) -> dic
         new = pick(meta, fixer.other_titles(path.parent))
         if not new:
             continue
+        import seo
+
+        core = (meta.get("seo") or {}).get("core", "")
+        new = seo.ensure_title_front(new, core) if core else new  # a test title must keep the words people search for
         views = int(found[vid]["statistics"].get("viewCount", 0))
         apply_now = write and not changed_today
         tt = {"original": meta["title"], "proposed": new, "changed_at": now.strftime(TS), "views_at_change": views, "rate_before": round(rates[vid], 2), "applied": apply_now}
