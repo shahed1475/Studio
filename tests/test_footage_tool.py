@@ -962,3 +962,14 @@ def test_a_release_after_midnight_goes_back_to_the_day_that_was_charged(cfg, mon
     monkeypatch.setattr(money, "_now", lambda: day2)
     clipgen._release(cfg, r)
     assert money.spent_today(day1) == 0.0 and money.spent_today(day2) == 0.0  # the refund cancelled day 1's charge, day 2 was never touched
+
+
+def test_the_balance_floor_holds_after_the_clip_is_paid(cfg, money):
+    low = Http(credits=[Resp(data={"data": {"total_credits": 10, "total_usage": 6.9}})])  # 3.10 left, floor 3.0, clip 0.24 -> 2.86
+    r = footagestore.create("footage-test")
+    with pytest.raises(clipgen.Refused, match="would be under"):
+        clipgen.generate(cfg, "k", "a lantern", r, http=low, sleep=lambda s: None)
+    assert not [c for c in low.calls if c[0] == "POST"] and money.spent_today() == 0.0
+    ok = Http(polls=[completed(0.24)], credits=[Resp(data={"data": {"total_credits": 10, "total_usage": 6.5}}), Resp(data={"data": {"total_credits": 10, "total_usage": 6.74}})])  # 3.50 -> 3.26
+    res, _ = run(cfg, ok)
+    assert res["booked_usd"] == 0.24

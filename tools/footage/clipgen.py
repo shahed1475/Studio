@@ -498,6 +498,9 @@ def _generate(cfg, key, prompt, run, http, sleep, today, state) -> dict:
         raise Refused(f"balance {before} is under {cfg['min_balance']}, stopping")
     cfg = _with_live_price(cfg, auth, http, sleep, run)
     check_daily_cap(cfg)  # again, now with the price the provider will charge
+    est = estimated_cost(cfg)
+    if round(before - est, 4) < cfg["min_balance"]:  # the floor holds AFTER this clip is paid, not only before
+        raise Refused(f"balance {before} minus this clip's ${est:.2f} would be under {cfg['min_balance']}; nothing was bought")
     run.update(balance_before=before)
     est = reserve(cfg, state)  # booked before the job is sent: a crash, a timeout or a kill can no longer lose it
     run.update(cost_booked=est)
