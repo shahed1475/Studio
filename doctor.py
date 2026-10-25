@@ -140,15 +140,18 @@ def fixes_for(agent: str, job: str, jobs=None, runner=None, busy=None) -> dict:
 
     def dirs():
         made = [p.name for p in (config.ROOT / "data" / "agent", config.ROOT / "logs", config.OUT) if not p.exists()]
-        for p in (config.ROOT / "data" / "agent", config.ROOT / "logs", config.OUT):
-            p.mkdir(parents=True, exist_ok=True)
+        try:
+            for p in (config.ROOT / "data" / "agent", config.ROOT / "logs", config.OUT):
+                p.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            return False, f"cannot create a folder ({type(e).__name__})"
         return bool(made), ("created " + ", ".join(made)) if made else "nothing missing"
 
     return {"rerun_job": (f"run the {job} job again now", rerun), "fix_permissions": ("make the secret files private again", perms),
             "create_folders": ("create a missing data, logs or output folder", dirs)}
 
 
-def propose(agent: str, problem: str, evidence: str, now: dt.datetime, chat=None, may_spend: bool = True, directory: Path | None = None) -> Path:
+def propose(agent: str, problem: str, evidence: str, now: dt.datetime, chat=None, may_spend: bool = True, directory: Path | None = None) -> Path | None:
     """A post-mortem for the owner: what failed, what is suspected, what change to the agent's playbook or code might help. A proposal only."""
     import seo
 
@@ -162,11 +165,14 @@ def propose(agent: str, problem: str, evidence: str, now: dt.datetime, chat=None
         except Exception:
             pass
     d = directory or PROPOSALS
-    d.mkdir(parents=True, exist_ok=True)
     f = d / f"postmortem-{agent}-{now.strftime('%Y%m%d-%H%M')}.md"
-    f.write_text(f"# Post-mortem: {agent}\n\nProblem: {seo.plain(problem)[:200]}\n\nEvidence: {seo.plain(evidence)[:600]}\n\n"
-                 f"Suspected cause: {'(' + ('not asked: the budget is spent' if not may_spend else 'no model answered') + ')' if not cause else cause}\n\n"
-                 f"Suggested change: {change or '(none)'}\n\nStatus: a proposal. Nothing was changed. The owner or a Claude session decides.\n")
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        f.write_text(f"# Post-mortem: {agent}\n\nProblem: {seo.plain(problem)[:200]}\n\nEvidence: {seo.plain(evidence)[:600]}\n\n"
+                     f"Suspected cause: {'(' + ('not asked: the budget is spent' if not may_spend else 'no model answered') + ')' if not cause else cause}\n\n"
+                     f"Suggested change: {change or '(none)'}\n\nStatus: a proposal. Nothing was changed. The owner or a Claude session decides.\n")
+    except OSError:
+        return None  # no proposal can be saved; the owner task and the activity feed still carry the problem
     return f
 
 
@@ -193,14 +199,20 @@ def draft_skill(family: dict, now: dt.datetime, chat=None, directory: Path | Non
     if not desc or not steps or seo.linky(desc):
         return None
     folder = (directory or PROPOSALS) / "skills" / name
-    folder.mkdir(parents=True, exist_ok=True)
     verdict = "not scanned"
-    (folder / "SKILL.md").write_text(f"---\nname: {name}\ndescription: \"{desc.replace(chr(34), chr(39))}\"\n---\n\n# {name}\n" + "\n".join(f"{i}. {s}" for i, s in enumerate(steps, 1)) + "\n")
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "SKILL.md").write_text(f"---\nname: {name}\ndescription: \"{desc.replace(chr(34), chr(39))}\"\n---\n\n# {name}\n" + "\n".join(f"{i}. {s}" for i, s in enumerate(steps, 1)) + "\n")
+    except OSError:
+        return None
     try:
         verdict = "vetskill counts " + json.dumps(vetskill.scan(folder)["counts"])
     except Exception:
         pass
-    (folder / "STATUS.txt").write_text(f"Draft written {now.strftime(TS)} for the problem '{seo.plain(family['example'])[:100]}'. {verdict}. Not installed.\n")
+    try:
+        (folder / "STATUS.txt").write_text(f"Draft written {now.strftime(TS)} for the problem '{seo.plain(family['example'])[:100]}'. {verdict}. Not installed.\n")
+    except OSError:
+        return None
     return folder
 
 
@@ -235,9 +247,12 @@ def run(now: dt.datetime | None = None, chat=None, get=None, state=None, lines=N
             agentbus.post("skill_draft", "doctor", "owner", f.name, reason=f"A skill draft for a problem seen {fam[0]['count']} times: {fam[0]['example'][:100]}", now=now,
                           commands=[f"python vetskill.py {f}", f"python extend.py add {f}"])
     rf = report or REPORT
-    rf.parent.mkdir(parents=True, exist_ok=True)
-    with filelock.locked(rf):
-        filelock.write_atomic(rf, json.dumps(result, indent=1))
+    try:
+        rf.parent.mkdir(parents=True, exist_ok=True)
+        with filelock.locked(rf):
+            filelock.write_atomic(rf, json.dumps(result, indent=1))
+    except OSError:
+        result["saved"] = False  # the result is still returned and the feed still hears of it
     if sick or result["needs"]:
         agentlog.event("found", f"Doctor: {len(sick)} agent(s) unhealthy, {len(result['needs'])} setup item(s) missing",
                        "; ".join([f"{r['agent']} {r['status']}" for r in sick] + result["needs"])[:300], now=now)

@@ -103,7 +103,10 @@ def reissue(folder: Path, meta: dict, now: dt.datetime) -> bool:
         d["guardian"] = g
         d.pop("review", None)
 
-    records.update(folder, apply)
+    try:
+        records.update(folder, apply)
+    except OSError:
+        return False  # not saved: nothing was changed, the held video stays held
     return True
 
 
@@ -122,7 +125,11 @@ def run(now: dt.datetime | None = None, yt=None, may_edit: bool | None = None, o
         if may_edit is None:
             may_edit = titletest.mode() == "apply" and titletest.can_write()
         result = {"actions": [], "watching": 0, "rule_changes": 0}
-        for c in newswatch.recent_policy_changes(now, days=2):
+        try:
+            changes = newswatch.recent_policy_changes(now, days=2)
+        except (OSError, ValueError, KeyError):
+            changes = []  # an unreadable rule log is read again next hour
+        for c in changes:
             result["rule_changes"] += 1
             agentbus.post("verify_rule", "guardian", "owner", c["page"], reason=f"YouTube changed its page '{c['page']}'",
                           evidence=(c["added"] or c["removed"] or [""])[0], now=now)
@@ -140,49 +147,52 @@ def run(now: dt.datetime | None = None, yt=None, may_edit: bool | None = None, o
                 meta = json.loads(m.read_text())
             except ValueError:
                 continue
-            folder, slug = m.parent, m.parent.name
-            if meta.get("superseded") and meta.get("video_id"):
-                agentbus.close_for(slug, "re-uploaded as a new private copy", kind="repair_video", now=now)
-            found = problems(meta)
-            if not found:
-                agentbus.close_for(slug, "no problem found now", now=now)
-                continue
-            result["watching"] += 1
-            title = meta.get("title", slug)[:50]
-            if _public(meta, now):
-                agentbus.post("public_video_problem", "guardian", "owner", slug, reason=f"A public video has a problem: {title}",
-                              evidence="; ".join(f"{f['name']}: {f['detail']}" for f in found[:4]), now=now)
-                continue
-            g = meta.get("guardian") or {}
-            kinds = {f["kind"] for f in found}
-            if "metadata" in kinds and g.get("edits", 0) < EDIT_LIMIT:
-                done = fix_metadata(folder, meta, get_yt() if meta.get("video_id") else None, now)
-                if done:
-                    result["actions"].append({"slug": slug, "did": done})
-                    agentlog.event("applied", f"Guardian repaired the metadata of {title}", "; ".join(done), now=now)
-            if "thumbnail" in kinds and g.get("thumb_edits", 0) < 1 and len(result["actions"]) < MAX_ACTIONS:
-                try:
-                    hook = fix_thumbnail(folder, json.loads(m.read_text()), get_yt() if meta.get("video_id") else None, now)
-                except Exception as e:  # a thumbnail that cannot be made today is tried again by nobody: the owner hears of it
-                    hook = None
-                    agentlog.event("found", f"Guardian could not change the thumbnail of {title}", type(e).__name__, now=now)
-                if hook:
-                    result["actions"].append({"slug": slug, "did": [f"thumbnail text: {hook}"]})
-                    agentlog.event("applied", f"Guardian rewrote the thumbnail text of {title}", hook, now=now)
-            if "content" in kinds and meta.get("hold"):
-                if reissue(folder, meta, now):
-                    agentbus.post("repair_video", "guardian", "autopilot", slug, reason=f"Content problem: {', '.join(f['name'] for f in found if f['kind'] == 'content')}",
-                                  evidence="held on YouTube; reissued as a draft", now=now)
-                    old = (json.loads(m.read_text()).get("superseded") or ["?"])[-1]
-                    agentlog.event("applied", f"Guardian sent {title} back to Autopilot for repair", f"It will be uploaded again as a new private copy. The old private copy "
-                                   f"({old}) is still on your channel: delete it in YouTube Studio when you see the new one.", notify=True, now=now)
-                    result["actions"].append({"slug": slug, "did": ["reissued"]})
-                else:
-                    agentbus.post("content_problem_held", "guardian", "owner", slug, reason=f"Held video with a content problem: {title}",
+            try:
+                folder, slug = m.parent, m.parent.name
+                if meta.get("superseded") and meta.get("video_id"):
+                    agentbus.close_for(slug, "re-uploaded as a new private copy", kind="repair_video", now=now)
+                found = problems(meta)
+                if not found:
+                    agentbus.close_for(slug, "no problem found now", now=now)
+                    continue
+                result["watching"] += 1
+                title = meta.get("title", slug)[:50]
+                if _public(meta, now):
+                    agentbus.post("public_video_problem", "guardian", "owner", slug, reason=f"A public video has a problem: {title}",
+                                  evidence="; ".join(f"{f['name']}: {f['detail']}" for f in found[:4]), now=now)
+                    continue
+                g = meta.get("guardian") or {}
+                kinds = {f["kind"] for f in found}
+                if "metadata" in kinds and g.get("edits", 0) < EDIT_LIMIT:
+                    done = fix_metadata(folder, meta, get_yt() if meta.get("video_id") else None, now)
+                    if done:
+                        result["actions"].append({"slug": slug, "did": done})
+                        agentlog.event("applied", f"Guardian repaired the metadata of {title}", "; ".join(done), now=now)
+                if "thumbnail" in kinds and g.get("thumb_edits", 0) < 1 and len(result["actions"]) < MAX_ACTIONS:
+                    try:
+                        hook = fix_thumbnail(folder, json.loads(m.read_text()), get_yt() if meta.get("video_id") else None, now)
+                    except Exception as e:  # a thumbnail that cannot be made today is tried again by nobody: the owner hears of it
+                        hook = None
+                        agentlog.event("found", f"Guardian could not change the thumbnail of {title}", type(e).__name__, now=now)
+                    if hook:
+                        result["actions"].append({"slug": slug, "did": [f"thumbnail text: {hook}"]})
+                        agentlog.event("applied", f"Guardian rewrote the thumbnail text of {title}", hook, now=now)
+                if "content" in kinds and meta.get("hold"):
+                    if reissue(folder, meta, now):
+                        agentbus.post("repair_video", "guardian", "autopilot", slug, reason=f"Content problem: {', '.join(f['name'] for f in found if f['kind'] == 'content')}",
+                                      evidence="held on YouTube; reissued as a draft", now=now)
+                        old = (json.loads(m.read_text()).get("superseded") or ["?"])[-1]
+                        agentlog.event("applied", f"Guardian sent {title} back to Autopilot for repair", f"It will be uploaded again as a new private copy. The old private copy "
+                                       f"({old}) is still on your channel: delete it in YouTube Studio when you see the new one.", notify=True, now=now)
+                        result["actions"].append({"slug": slug, "did": ["reissued"]})
+                    else:
+                        agentbus.post("content_problem_held", "guardian", "owner", slug, reason=f"Held video with a content problem: {title}",
+                                      evidence="; ".join(f['name'] for f in found if f['kind'] == 'content'), now=now)
+                elif "content" in kinds:
+                    agentbus.post("content_problem", "guardian", "autopilot", slug, reason=f"Content problem on a video not public yet: {title}",
                                   evidence="; ".join(f['name'] for f in found if f['kind'] == 'content'), now=now)
-            elif "content" in kinds:
-                agentbus.post("content_problem", "guardian", "autopilot", slug, reason=f"Content problem on a video not public yet: {title}",
-                              evidence="; ".join(f['name'] for f in found if f['kind'] == 'content'), now=now)
+            except Exception as e:  # one video (a YouTube refusal, a full disk) must not stop the others
+                agentlog.event("found", f"Guardian could not finish checking {m.parent.name[:40]}", f"{type(e).__name__}: {str(e)[:120]}", now=now)
         return result
     finally:
         lock.close()

@@ -72,7 +72,10 @@ def solve(agent: str, problem: str, evidence: str, fixes: dict, slug: str = "", 
                 if attempt(name):
                     return done(name, cause)
     summary = "; ".join(f"{t['fix']} ({'worked' if t['ok'] else 'did not work'})" for t in tried) or ("nothing could be tried: " + ("no model answered or offered a fix" if may_spend else "the budget is spent"))
-    task = agentbus.post("needs_owner", agent, "owner", slug, reason=problem, evidence=f"{cause} | tried: {summary}", now=now, file=bus_file)
-    agentbus.to_owner(task["id"], summary, now=now, file=bus_file)
-    agentlog.event("found", f"{agent} needs you: {seo.plain(problem)[:70]}", f"Tried: {summary}. Cause it suspects: {cause or 'unknown'}.", notify=notify, now=now)
+    try:
+        task = agentbus.post("needs_owner", agent, "owner", slug, reason=problem, evidence=f"{cause} | tried: {summary}", now=now, file=bus_file)
+        agentbus.to_owner(task["id"], summary, now=now, file=bus_file)
+        agentlog.event("found", f"{agent} needs you: {seo.plain(problem)[:70]}", f"Tried: {summary}. Cause it suspects: {cause or 'unknown'}.", notify=notify, now=now)
+    except OSError:
+        pass  # the notice could not be written (disk full, folder gone): the answer below still says the owner is needed
     return {"solved": False, "fix": None, "cause": cause, "tried": tried, "owner": True}

@@ -2,6 +2,7 @@ import datetime as dt
 import json
 
 import agentbus
+import agentlog
 import agenteval
 import escalate
 import lessons
@@ -266,3 +267,61 @@ def test_the_scope_case_starts_from_a_clean_scope_even_when_the_command_set_an_a
     finally:
         playbook.set_agent(None)
     assert ok, why
+
+
+def _blocked(tmp_path):
+    f = tmp_path / "file"
+    f.write_text("x")
+    return f / "sub"  # a path whose parent is a file: every mkdir and write under it fails
+
+
+def test_the_guardian_goes_on_to_the_next_video_when_one_fails(monkeypatch):
+    import guardian
+    with agenteval.sandbox() as root:
+        a = agenteval._video(root, "a-first", video_id="V1", publish_at=agenteval.FUTURE)
+        b = agenteval._video(root, "b-second", video_id="V2", publish_at=agenteval.FUTURE)
+
+        class YT(agenteval.FakeYT):
+            def videos(self):
+                v = super().videos()
+                orig = v.update
+                yt = self
+
+                def update(**k):
+                    if k["body"]["id"] == "V1":
+                        raise RuntimeError("YouTube refused")
+                    return orig(**k)
+                v.update = update
+                return v
+        res = agenteval._guard(root, YT())
+        assert agenteval._meta(b)["title"].lower().startswith("mami wata") and [x["slug"] for x in res["actions"]] == ["b-second"]
+        assert any("could not finish checking a-first" in e["title"] for e in agentlog.recent(10))
+
+
+def test_unwritable_places_never_crash_an_agent(tmp_path, monkeypatch):
+    import doctor
+    import guardian
+    import records
+    bad = _blocked(tmp_path)
+    assert doctor.propose("recheck", "p", "e", NOW, chat=lambda p, r: {}, may_spend=True, directory=bad) is None
+    fam = {"example": "A real problem", "detail": "d", "count": 5}
+    assert doctor.draft_skill(fam, NOW, chat=lambda p, r: {"name": "studio-ok-name", "description": "Use when X.", "steps": ["Do Y"]}, directory=bad) is None
+    assert lessons.record("fixer", "some problem", "fix", True, NOW, file=bad / "l.jsonl") is None
+    assert lessons.prune(bad / "l.jsonl") == 0
+    with agenteval.sandbox():
+        res = doctor.run(NOW, chat=lambda p, r: {}, get=lambda u: 200, state={}, lines=[], may_spend=False, busy=lambda: [], report=bad / "d.json", triage_file=tmp_path / "x.json", proposals=bad)
+        assert res["saved"] is False
+        owner = escalate.solve("fixer", "unknown problem", "e", {"a": ("a", lambda: (False, "no"))}, may_spend=False, bus_file=bad / "t.json", now=NOW)
+        assert owner["owner"] is True and not owner["solved"]
+        rep = tracetriage.triage(7, NOW, [], report=bad / "t.json", post=False)
+        assert rep["saved"] is False
+        assert agenteval.run(write=True, result=bad / "e.json")["saved"] is False
+        f = agenteval._video(tmp_path, "held", video_id="V", publish_at=agenteval.FUTURE, hold=True)
+
+        def boom(folder, fn):
+            raise OSError("disk full")
+        monkeypatch.setattr(records, "update", boom)
+        assert guardian.reissue(f, agenteval._meta(f), NOW) is False
+        stuck = {"verdict": "fail", "checks": [{"name": "facts", "ok": False, "severity": "block"}]}
+        agenteval._video(tmp_path, "d9", review=stuck, fix_attempts=2)
+        assert unstick.run(NOW, out=tmp_path / "out", lock_file=tmp_path / "lock") == {"skipped": "could not save the video record"}

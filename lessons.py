@@ -52,6 +52,13 @@ def record(agent: str, problem: str, tried: str, worked: bool, now: dt.datetime 
     if not fam or not tried_c:
         return None
     now = now or dt.datetime.now(dt.timezone.utc)
+    try:
+        return _record(file, agent, fam, tried_c, worked, now)
+    except OSError:
+        return None  # a lesson that cannot be saved is lost, not a crash
+
+
+def _record(file: Path, agent: str, fam: str, tried_c: str, worked: bool, now: dt.datetime) -> dict:
     with filelock.locked(file):
         rows = _rows(file)
         row = next((r for r in rows if r["agent"] == agent and r["family"] == fam and r["tried"] == tried_c), None)
@@ -94,9 +101,12 @@ def brief(agent: str, problem: str, n: int = 3, file: Path | None = None) -> str
 def prune(file: Path | None = None) -> int:
     """Drop attempts that failed 3 or more times and never worked. Returns how many were dropped."""
     file = file or FILE
-    with filelock.locked(file):
-        rows = _rows(file)
-        keep = [r for r in rows if not (r["wins"] == 0 and r["losses"] >= 3)]
-        if len(keep) != len(rows):
-            filelock.write_atomic(file, "".join(json.dumps(r) + "\n" for r in keep))
-    return len(rows) - len(keep)
+    try:
+        with filelock.locked(file):
+            rows = _rows(file)
+            keep = [r for r in rows if not (r["wins"] == 0 and r["losses"] >= 3)]
+            if len(keep) != len(rows):
+                filelock.write_atomic(file, "".join(json.dumps(r) + "\n" for r in keep))
+        return len(rows) - len(keep)
+    except OSError:
+        return 0

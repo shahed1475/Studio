@@ -65,7 +65,10 @@ def triage(days: int = 7, now: dt.datetime | None = None, events: list[dict] | N
         for f in [f for f in out if f["state"] != "known"][:TOP]:
             agentbus.post("triage_family", "triage", "trainer", f["signature"][:60], reason=f"{f['count']}x in {days} days: {f['example']}", evidence=f["detail"], now=now, file=bus_file)
     rf = report or REPORT
-    rf.parent.mkdir(parents=True, exist_ok=True)
-    with filelock.locked(rf):
-        filelock.write_atomic(rf, json.dumps(data, indent=1))
+    try:
+        rf.parent.mkdir(parents=True, exist_ok=True)
+        with filelock.locked(rf):
+            filelock.write_atomic(rf, json.dumps(data, indent=1))
+    except OSError:
+        data["saved"] = False  # the list is still returned; a full disk must not stop the daily review
     return data

@@ -268,6 +268,9 @@ def run(write: bool = True, result: Path | None = None) -> dict:
     res = {"at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "passed": sum(c["ok"] for c in out), "failed": sum(not c["ok"] for c in out), "cases": out}
     if write:
         f = result or RESULT
-        f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(json.dumps(res, indent=1))
+        try:
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(json.dumps(res, indent=1))
+        except OSError:
+            res["saved"] = False  # the result is still returned and printed
     return res

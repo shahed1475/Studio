@@ -58,7 +58,10 @@ def fixes_for(folder: Path, chat=None, review=None) -> dict:
         meta["fix_attempts"] = 0  # the repaired draft gets its normal tries again
         meta.pop("fix_gave_up", None)
         reviewer.invalidate(meta)
-        records.save(folder, meta)
+        try:
+            records.save(folder, meta)
+        except OSError as e:
+            return False, f"could not save the change ({type(e).__name__})"
         ok = verdict()
         return ok, note + ("; the review now passes" if ok else "; the review still does not pass")
 
@@ -110,8 +113,11 @@ def run(now: dt.datetime | None = None, out: Path | None = None, chat=None, revi
 def _run(now, out, chat, review, ladder_chat) -> dict:
     for folder, meta in candidates(out):
         slug, fmt = folder.name, meta.get("format") or "doc"
-        records.update(folder, lambda d: d.__setitem__("ladder", {**(d.get("ladder") or {}), "tries": (d.get("ladder") or {}).get("tries", 0) + 1,
+        try:
+            records.update(folder, lambda d: d.__setitem__("ladder", {**(d.get("ladder") or {}), "tries": (d.get("ladder") or {}).get("tries", 0) + 1,
                                                                      "at": now.strftime("%Y-%m-%dT%H:%M:%SZ")}))
+        except OSError:
+            return {"skipped": "could not save the video record"}  # nothing was tried; the next run starts again
         checks = [c for c in (meta.get("review") or {}).get("checks", []) if not c["ok"] and c["severity"] in ("block", "human")]
         problem = f"video {fmt} repair failed: " + ", ".join(c["name"] for c in checks)
         evidence = " | ".join(f"{c['name']}: {c.get('detail', '')[:160]}" for c in checks[:5])
