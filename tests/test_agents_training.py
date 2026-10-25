@@ -146,14 +146,14 @@ def test_guardian_thumbnail_text_and_reissue_leave_the_old_video_alone(monkeypat
 def test_the_risks_card_row_for_agents_follows_the_evaluation(tmp_path):
     import risk
     with agenteval.sandbox() as root:
-        assert risk.agents_row(NOW, tmp_path / "none.json")["level"] == "watch"
+        assert risk.agents_row(NOW, tmp_path / "none.json", None, tmp_path / "nodoc.json")["level"] == "watch"
         ok = tmp_path / "ev.json"
         ok.write_text(json.dumps({"at": "2026-10-26T06:00:00Z", "passed": 9, "failed": 0, "cases": []}))
-        assert risk.agents_row(NOW, ok)["level"] == "ok"
+        assert risk.agents_row(NOW, ok, None, tmp_path / "nodoc.json")["level"] == "ok"
         ok.write_text(json.dumps({"at": "2026-10-26T06:00:00Z", "passed": 8, "failed": 1, "cases": [{"case": "x", "ok": False}]}))
-        assert risk.agents_row(NOW, ok)["level"] == "act"
+        assert risk.agents_row(NOW, ok, None, tmp_path / "nodoc.json")["level"] == "act"
         ok.write_text(json.dumps({"at": "2026-10-20T06:00:00Z", "passed": 9, "failed": 0, "cases": []}))
-        assert risk.agents_row(NOW, ok)["level"] == "watch"
+        assert risk.agents_row(NOW, ok, None, tmp_path / "nodoc.json")["level"] == "watch"
 
 
 def test_the_worker_runs_the_guardian_unstick_and_the_daily_agent_review():
