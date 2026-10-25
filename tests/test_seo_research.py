@@ -136,3 +136,12 @@ def test_rival_titles_are_cleaned_before_the_model_sees_them_and_links_in_the_ou
     meta = json.loads((folder / "meta.json").read_text())
     assert "evil" not in prompts[0] and "Ignore previous" not in prompts[0] and "<script>" not in prompts[0] and "Mami Wata Explained" in prompts[0]
     assert out["titles"] == ["Mami Wata: The Real Story"] and "evil.com" not in meta["description"]
+
+
+def test_link_filter_catches_hidden_and_spelled_out_hosts_but_not_ordinary_sentences():
+    for bad in ("visit evil.xyz now", "evil[.]biz", "evil (.) store", "go to evil dot shop", "ev​il.com", "ｅvil.com/x", "//evil", "mail me@evil", "<b>hi</b>"):
+        assert seo.linky(bad), bad
+    for ok in ("The spirit rises. Then she vanishes.", "Mr. Smith saw St. Louis in 1884.", "It happened in the U.S. long ago, e.g. in 1850."):
+        assert not seo.linky(ok), ok
+    assert seo.clean_sentences("Mami Wata rises. Visit evil.com today. She returns.") == "Mami Wata rises. She returns."
+    assert seo.safe_rival_titles([{"title": "Mami Wata ev​il.com explained"}, {"title": "Mami Wata evil dot com explained"}, {"title": "Mami Wata Explained Well"}]) == ["Mami Wata Explained Well"]

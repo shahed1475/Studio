@@ -1,6 +1,7 @@
 """Search-driven title, description and tags: YouTube autocomplete shows what people really type, the local model writes from it."""
 import json
 import re
+import unicodedata
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -101,7 +102,7 @@ def keywords(core: str) -> list[str]:
     found: list[str] = []
     for q in [core, f"{core} story", f"{core} real story", f"{core} history", f"{core} explained", *config.search_seeds(SEEDS)]:
         for s in suggest(q):
-            if s not in found and not OFF_TOPIC.search(s):
+            if s not in found and not OFF_TOPIC.search(s) and not linky(s) and not INSTRUCTION_WORDS.search(s):
                 found.append(s)
     return found
 
@@ -145,7 +146,23 @@ def competitors(core: str, yt=None, now: float | None = None, directory: Path | 
 
 
 INSTRUCTION_WORDS = re.compile(r"\b(ignore|disregard|forget|system|prompt|instructions?|assistant|override|jailbreak|developer mode|you must|you are)\b", re.I)
-URL_LIKE = re.compile(r"https?:|www\.|\b[a-z0-9-]+\.(com|net|org|io|co|ly|me|tv|xyz|info)\b|@\w|<|>", re.I)
+_HOST = re.compile(r"https?|ftp|www\b|//|[a-z0-9-]+(?:\.|\s*\[\.\]\s*|\s*\(\.\)\s*|\s+dot\s+)[a-z]{2,}\b|@\w|[<>]", re.I)
+
+
+def plain(text) -> str:
+    """NFKC-normalised, without zero-width and other format characters, so look-alike and hidden characters cannot slip past the checks below."""
+    t = unicodedata.normalize("NFKC", str(text))
+    return re.sub(r"\s+", " ", "".join(c for c in t if unicodedata.category(c) not in ("Cf", "Cc") or c == " ")).strip()
+
+
+def linky(text) -> bool:
+    """True when the text, raw or normalised, holds anything that looks like a link, a host name, an address or markup."""
+    return bool(_HOST.search(str(text)) or _HOST.search(plain(text)))
+
+
+def clean_sentences(text: str) -> str:
+    """Keep the sentences without a link or host; the model writes none, so a sentence with one is dropped whole, never half-stripped."""
+    return " ".join(p for p in re.split(r"(?<=[.!?])\s+", plain(text)) if p and not linky(p))
 
 
 def safe_rival_titles(rivals: list[dict], limit: int = 8) -> list[str]:
@@ -153,8 +170,9 @@ def safe_rival_titles(rivals: list[dict], limit: int = 8) -> list[str]:
     holds a link, an address, markup or words that read like an order to the model. The model only sees what is left, as data."""
     out = []
     for r in rivals:
-        t = re.sub(r"\s+", " ", re.sub(r"[^A-Za-z0-9 ,.'!?:&()-]", "", str(r.get("title", "")))).strip()[:100]
-        if len(t) >= 8 and not URL_LIKE.search(str(r.get("title", ""))) and not INSTRUCTION_WORDS.search(t):
+        raw = plain(r.get("title", ""))
+        t = re.sub(r"\s+", " ", re.sub(r"[^A-Za-z0-9 ,.'!?:&()-]", "", raw)).strip()[:100]
+        if len(t) >= 8 and not linky(r.get("title", "")) and not linky(t) and not INSTRUCTION_WORDS.search(t) and not INSTRUCTION_WORDS.search(raw):
             out.append(t)
     return out[:limit]
 
@@ -164,7 +182,7 @@ def expand_suggestions(core: str, limit: int = 12) -> list[str]:
     found: list[str] = []
     for q in [f"{core} {w}" for w in ("who", "what", "is", "why", "origin", "meaning", "real")][:limit]:
         for s in suggest(q):
-            if s not in found and not OFF_TOPIC.search(s) and all(w in s.lower() for w in _core_key(core)[:2]):
+            if s not in found and not OFF_TOPIC.search(s) and not linky(s) and not INSTRUCTION_WORDS.search(s) and all(w in s.lower() for w in _core_key(core)[:2]):
                 found.append(s)
     return found
 
@@ -274,13 +292,13 @@ def make(folder: Path) -> dict:
         "no question it does not answer, no debate, reveal or verdict it lacks.\n"
         "- tags: 12 search phrases people would type, taken from or close to the suggestions above, each under 30 characters.\n"
         'Return JSON: {"titles": ["..."], "description_intro": "...", "tags": ["..."]}')
-    titles = [polish_title(t) for t in data["titles"] if 8 < len(str(t)) <= 70 and not URL_LIKE.search(str(t))][:5]  # a link in a title is never ours
+    titles = [polish_title(t) for t in data["titles"] if 8 < len(str(t)) <= 70 and not linky(t)][:5]  # a link in a title is never ours
     tags, total = [], 0
-    for t in relevant_tags([str(x).strip().lower() for x in data["tags"]] + [core] + kws[:6], corpus_of(meta)):
+    for t in relevant_tags([str(x).strip().lower() for x in data["tags"] if not linky(x)] + [core] + kws[:6], corpus_of(meta)):
         if total + len(t) < 450:
             tags.append(t)
             total += len(t)
-    intro = ensure_lead(URL_LIKE.sub("", str(data["description_intro"])), core)  # the model writes no links or addresses: the playlist link and sources are added by code
+    intro = ensure_lead(clean_sentences(data["description_intro"]) or f"{core.strip().title()}: a calm, sourced retelling.", core)  # no links or addresses from the model: sources and the playlist link are added by code
     chapters = meta["description"].partition("Chapters:")[2]
     seo = {"core": core, "keywords": kws[:30], "titles": titles, "old_description": meta["description"], "old_tags": meta.get("tags", []),
            "rivals": [{k: r.get(k) for k in ("title", "channel", "views", "url")} for r in rivals[:8]]}
