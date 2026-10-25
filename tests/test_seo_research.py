@@ -134,5 +134,5 @@ def test_rival_titles_are_cleaned_before_the_model_sees_them_and_links_in_the_ou
     monkeypatch.setattr(scriptgen, "_chat", chat)
     out = seo.make(folder)
     meta = json.loads((folder / "meta.json").read_text())
-    assert "evil" not in prompts[0] and "Ignore previous" not in prompts[0] and "script" not in prompts[0]
+    assert "evil" not in prompts[0] and "Ignore previous" not in prompts[0] and "<script>" not in prompts[0] and "Mami Wata Explained" in prompts[0]
     assert out["titles"] == ["Mami Wata: The Real Story"] and "evil.com" not in meta["description"]
