@@ -424,12 +424,23 @@ def backups(now: dt.datetime | None = None, dest: Path | None = None) -> dict:
     import backup
 
     age = backup.newest_age_hours(now, dest)
-    controls = "a nightly copy of every video's record, the settings, the schedule and the claim ledger (no secrets, no videos); seven are kept in backups/"
+    pushed = backup.pushed_age_hours(now, dest)
+    controls = "a nightly copy of every video's record, the settings, the schedule and the claim ledger (no secrets, no videos); seven are kept in backups/; deploy/backup_push.sh copies the newest two to a private repo"
     owner = "Copy the newest one off the server now and then: scp deploy@<server>:studio/backups/backup-<date>.tar.gz . (the server's own disk is the only other copy)."
     if age is None:
         return ind("backup", "Losing the records", "watch", "no backup has been made yet", controls, owner)
     level = "ok" if age < 36 else "watch"
-    return ind("backup", "Losing the records", level, f"newest backup is {age:.0f} hours old", controls, owner if level != "ok" else "")
+    ev = f"newest backup is {age:.0f} hours old"
+    if pushed is None:  # never pushed, or the marker cannot be read
+        level, ev = "watch", ev + "; no copy has been pushed off the server yet (the server's own disk is the only copy)"
+        owner = "Create a private GitHub repo for the records and give the server its deploy key (BACKUP_REPO_URL, BACKUP_SSH_KEY_FILE in .env), then run deploy/backup_push.sh once; until then " + owner[0].lower() + owner[1:]
+    else:
+        ev += f"; the off-server copy is {pushed:.0f} hours old"
+        if pushed > 72:
+            level = "act"
+        elif pushed > 30 and level == "ok":  # the push runs after the 03:30 backup, so a copy a day old is normal
+            level = "watch"
+    return ind("backup", "Losing the records", level, ev, controls, owner if level != "ok" else "")
 
 
 def assess(now: dt.datetime | None = None, out: Path | None = None, left: float | None = -1.0, running: list[str] | None = None) -> list[dict]:

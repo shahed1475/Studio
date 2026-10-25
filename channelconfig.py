@@ -40,9 +40,22 @@ def load(channel_id: str) -> dict:
         raise ChannelConfigError(f"no channel profile named {channel_id}")
     try:
         data = json.loads(p.read_text())
+    except OSError as e:
+        raise ChannelConfigError(f"{channel_id}: cannot be read ({type(e).__name__})")
     except ValueError as e:
         raise ChannelConfigError(f"{channel_id}: not valid JSON ({e})")
     return validate(data, channel_id)
+
+
+def load_all() -> list[dict]:
+    """Every profile file, sorted by name. A broken one is returned as {"id": name, "error": reason}, never raised, so a page listing them cannot fail on one bad file."""
+    rows = []
+    for p in sorted(DIR.glob("*.json")):
+        try:
+            rows.append(load(p.stem))
+        except ChannelConfigError as e:
+            rows.append({"id": p.stem, "error": str(e)})
+    return rows
 
 
 def prompt(data: dict, **values) -> str:

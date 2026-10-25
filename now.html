@@ -14,7 +14,7 @@ pre{background:var(--card);border:1px solid var(--line);border-radius:8px;paddin
 <div class="card" id="top"></div>
 <h2>Where each video stands</h2><div id="videos"></div>
 <h2>Last lines of the Autopilot log</h2><pre id="log"></pre>
-<p class="muted"><a href="/">Back to the dashboard</a> · refreshes every 10 seconds</p>
+<p class="muted"><a href="/footage">Footage clips</a> · <a href="/channels">Channels</a> · <a href="/">Back to the dashboard</a> · refreshes every 10 seconds</p>
 <script>
 const $=id=>document.getElementById(id);
 function line(t,v,cls){const d=document.createElement("div");d.className="row";const a=document.createElement("span");a.textContent=t;const b=document.createElement("span");b.textContent=v;if(cls)b.className=cls;d.append(a,b);return d}
@@ -28,6 +28,7 @@ async function load(){
       line("A pass is running",d.pass_running?"yes":"no"),
       line("A dashboard job is running",d.dashboard_job?"yes":"no"),
       line("Spent today / daily cap",d.money?("$"+d.money.spent_today.toFixed(2)+" / $"+d.money.cap.toFixed(2)+(d.money.left<0?" (over: new work is paused until tomorrow UTC)":" ($"+d.money.left.toFixed(2)+" left)")):"unknown"),
+      line("Footage clips",d.footage?(d.footage.runs_total?("last run "+d.footage.last_status+", "+d.footage.runs_today+" started today"):"no runs yet"):"unknown"),
       line("Working on",d.working_on?(d.working_on.title+" (repair try "+d.working_on.tries+")"):"nothing is being repaired"));
     const v=$("videos");v.replaceChildren(...d.videos.map(x=>{const c=document.createElement("div");c.className="card";const a=document.createElement("div");a.textContent=x.title;const b=document.createElement("div");b.className="tag";b.textContent=x.format+" · "+x.stage;c.append(a,b);return c}));
     $("log").textContent=d.log.join("\n")||"(no log lines yet)";

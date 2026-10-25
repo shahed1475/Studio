@@ -27,4 +27,5 @@ git init -q -b main
 git add .
 git -c user.name=studio-backup -c user.email=backup@localhost commit -q -m "records backup, newest $(basename "$NEWEST")"
 GIT_SSH_COMMAND="ssh -i $KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$KNOWN" git push -q --force "$REPO" main
+printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(basename "$NEWEST")" > "$SRC/backups/.last_push.tmp" && mv "$SRC/backups/.last_push.tmp" "$SRC/backups/last_push.txt" || echo "backup_push: pushed, but the marker could not be written (the dashboard will show no off-server copy)" >&2   # the dashboard reads this to show how old the off-server copy is
 echo "backup_push: pushed ${#ARCHIVES[@]} archive(s), newest $(basename "$NEWEST"), $AGE_H h old"

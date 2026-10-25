@@ -44,6 +44,20 @@ def _tail(path, n: int = LOG_LINES) -> list[str]:
         return []
 
 
+def footage_status(now: dt.datetime) -> dict | None:
+    """The newest footage run (status and age) and how many started today (UTC); None when the footage store cannot be read. Never raises."""
+    try:
+        import footagestore
+
+        runs = footagestore.runs()
+    except Exception:
+        return None
+    today = now.strftime("%Y-%m-%d")
+    newest = runs[0] if runs else None
+    return {"last_status": newest.get("status") if newest else None, "last_at": (newest.get("created_at") if newest else None),
+            "runs_today": sum(1 for r in runs if str(r.get("created_at") or "").startswith(today)), "runs_total": len(runs)}
+
+
 def build(now: dt.datetime | None = None) -> dict:
     import autopilot
     import llm
@@ -73,4 +87,4 @@ def build(now: dt.datetime | None = None) -> dict:
     except Exception:
         enabled, running = None, None
     return {"at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "autopilot_on": enabled, "pass_running": running, "dashboard_job": autopilot.JOB_FILE.exists(),
-            "working_on": focus, "videos": videos, "money": money, "log": _tail(autopilot.LOG)}
+            "working_on": focus, "videos": videos, "money": money, "footage": footage_status(now), "log": _tail(autopilot.LOG)}

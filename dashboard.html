@@ -175,6 +175,7 @@ body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:1;opac
 h1{font-size:30px;letter-spacing:-.035em}
 .head .sub{font-size:15.5px}
 .panel{transition:border-color .2s,box-shadow .2s}
+.pagelinks{margin:8px 10px 0;font-size:12px;color:var(--ink3,var(--ink2))}.pagelinks a{color:inherit}
 nav button{transition:background .15s,color .15s,transform .15s}
 nav button:active{transform:scale(.98)}
 nav button.on{box-shadow:inset 3px 0 0 var(--accent)}
@@ -241,6 +242,7 @@ button.wd{cursor:pointer}button.wd:hover{transform:translateY(-2px);border-color
     <div class="side-foot">
       <div class="runbox" id="runbox" aria-live="polite"></div>
       <nav id="nav2" aria-label="Settings"></nav>
+      <p class="pagelinks"><a href="/now">Right now</a> · <a href="/footage">Footage</a> · <a href="/channels">Channels</a></p>
     </div>
   </aside>
   <main id="main"><div class="stack"><div class="skel" style="height:34px;width:40%"></div><div class="skel" style="height:110px"></div><div class="skel" style="height:90px"></div></div></main>
@@ -300,7 +302,7 @@ function chrome(){
   document.getElementById("nav2").innerHTML+=au?`<button class="logout" onclick="logout()">${ico("sign-out")}<span class="t">Sign out</span></button>`:"";
   const nv=S.autopilot.needs_you,gv=S.agent&&S.agent.unread,more=["growth","activity","youtube","settings"].includes(tab);
   document.getElementById("tabbar").innerHTML=NAV.slice(0,4).map(([k,l,i])=>bt(k,l,i,k==="videos"&&c?`<span class="count">${c}</span>`:k==="autopilot"&&nv?`<span class="count">${nv}</span>`:"")).join("")+`<button class="${more?"on":""}" onclick="sheet()" aria-haspopup="true">${ico("dots-three")}<span class="t">More</span>${gv?`<span class="count">${gv}</span>`:""}</button>`;
-  document.getElementById("sheetcard").innerHTML=`<div class="state"><b>${r||S.autopilot.busy?"Working":"Idle"}</b>${r?esc(r.cmd):S.autopilot.busy?"Autopilot or a repair is running":"Nothing is running"}</div>`+[...NAV.slice(4),SET].map(([k,l,i])=>bt(k,l,i,k==="growth"&&gv?`<span class="count">${gv}</span>`:"")).join("")+(au?`<button onclick="logout()">${ico("sign-out")}<span class="t">Sign out</span></button>`:"");
+  document.getElementById("sheetcard").innerHTML=`<div class="state"><b>${r||S.autopilot.busy?"Working":"Idle"}</b>${r?esc(r.cmd):S.autopilot.busy?"Autopilot or a repair is running":"Nothing is running"}</div>`+[...NAV.slice(4),SET].map(([k,l,i])=>bt(k,l,i,k==="growth"&&gv?`<span class="count">${gv}</span>`:"")).join("")+[["/now","Right now","pulse"],["/footage","Footage clips","film-strip"],["/channels","Channels","squares-four"]].map(([h,l,i])=>`<button onclick="location.href='${h}'">${ico(i)}<span class="t">${l}</span></button>`).join("")+(au?`<button onclick="logout()">${ico("sign-out")}<span class="t">Sign out</span></button>`:"");
   document.documentElement.classList.toggle("busy",!!r);
   document.getElementById("runbox").className="runbox"+(r?" busy":"");
   const lockBusy=!r&&S.autopilot&&S.autopilot.busy;
