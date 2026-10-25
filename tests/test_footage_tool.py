@@ -15,6 +15,7 @@ from tools.footage import clipgen
 
 MP4 = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 64
 CREDITS = {"data": {"total_credits": 10, "total_usage": 1}}
+MODELS = {"data": [{"id": "google/veo-3.1-lite", "pricing_skus": {"per-video-second": "0.03"}}]}
 
 
 class Resp:
@@ -31,7 +32,8 @@ class Resp:
 class Http:
     """Fake requests. `credits`: replies for /credits (the last repeats). `polls`: statuses or whole replies (the last repeats). `content`: a reply, or a list of replies."""
 
-    def __init__(self, credits=None, submit=None, polls=("completed",), content=None):
+    def __init__(self, credits=None, submit=None, polls=("completed",), content=None, models=None):
+        self.models = models or Resp(data=MODELS)
         self.credits = credits or [Resp(data=CREDITS), Resp(data={"data": {"total_credits": 10, "total_usage": 1.24}})]
         self.submit = submit or Resp(data={"id": "job1"})
         self.polls, self.contents, self.calls = list(polls), content if isinstance(content, list) else [content or Resp(content=MP4)], []
@@ -41,6 +43,8 @@ class Http:
 
     def get(self, url, **kw):
         self.calls.append(("GET", url))
+        if url.endswith("/videos/models"):
+            return self.models
         if url.endswith("/credits"):
             item = self._next(self.credits)
         elif url.endswith("/content"):
@@ -183,7 +187,8 @@ def test_a_hostile_job_id_is_refused_before_anything_is_saved(cfg, bad):
 
 # ---- polling ----
 def test_a_failed_job_releases_the_cost(cfg, money):
-    r = fails(cfg, Http(polls=["failed"]), "ended: failed.*released")
+    still = [Resp(data=CREDITS)]  # the balance does not move: the failed job was not billed
+    r = fails(cfg, Http(polls=["failed"], credits=still), "ended: failed.*balance did not move.*released")
     assert money.spent_today() == 0.0 and money.video_cost(cfg["cost_scope"]) == 0.0 and r.read()["cost_booked"] == 0.0
 
 
@@ -828,3 +833,88 @@ def test_after_a_refused_submit_the_state_says_nothing_was_sent(cfg, money):
         clipgen._generate(cfg, "k", "p", r, Http(submit=Resp(status=400, data={"error": "bad"})), lambda s: None, "2026-10-25", state)
     assert state["posted"] is False and state["est"] == 0
     assert "interrupted before" in clipgen._interrupted(cfg, r, state) or "anything was reserved" in clipgen._interrupted(cfg, r, state)
+
+
+# ---- plan task A1/A2/A3 (OpenRouter documentation, 25 Oct 2026) ----
+def completed(cost):
+    return Resp(data={"status": "completed", "usage": {"cost": cost, "is_byok": False}})
+
+
+def priced(cfg, price):
+    return Resp(data={"data": [{"id": cfg["model"], "pricing_skus": {"per-video-second": price}}]})
+
+
+@pytest.mark.parametrize("charged,booked", [(0.31, 0.31), (9.0, 1.0), (0.10, 0.10)])  # above the estimate, far above (clip cap), below (difference given back)
+def test_the_provider_cost_is_booked_instead_of_the_estimate(cfg, money, charged, booked):
+    res, r = run(dict(cfg, max_clip_cost_usd=1.0), Http(polls=[completed(charged)]))
+    assert res["booked_usd"] == booked and r.read()["cost_booked"] == booked and r.read()["provider_cost"] == charged
+    assert money.spent_today() == booked and money.video_cost("footage-test") == booked
+
+
+@pytest.mark.parametrize("bad", [None, "x", -1, float("nan"), float("inf"), {"a": 1}])
+def test_a_missing_or_odd_usage_cost_is_ignored(cfg, money, bad):
+    res, r = run(cfg, Http(polls=[Resp(data={"status": "completed", "usage": {"cost": bad}})]))
+    assert res["booked_usd"] == 0.24 and "provider_cost" not in r.read() and money.spent_today() == 0.24
+
+
+def test_usage_cost_reads_only_sane_numbers():
+    assert clipgen._usage_cost({"usage": {"cost": "0.5"}}) == 0.5 and clipgen._usage_cost({}) is None and clipgen._usage_cost({"usage": None}) is None
+
+
+def test_the_live_price_replaces_the_config_price(cfg, money):
+    fall = [Resp(data=CREDITS), Resp(data={"data": {"total_credits": 10, "total_usage": 1.16}})]  # the balance falls by 0.16, as the live price says
+    res, r = run(cfg, Http(credits=fall, models=priced(cfg, "0.02")))
+    assert res["booked_usd"] == 0.16 and "live price $0.0200" in (r.dir / "run.log").read_text()
+
+
+def test_a_live_price_over_the_clip_cap_buys_nothing(cfg, money):
+    h = Http(models=priced(cfg, "0.50"))
+    r = fails(cfg, h, "at the live price.*over the per-clip cap")
+    assert post_count(h) == 0 and money.spent_today() == 0 and r.read()["decision"] == "blocked"
+
+
+def test_a_price_for_the_chosen_resolution_wins_over_the_base_price(cfg):
+    skus = {"per-video-second": "0.50", "per-video-second-720p": "0.04"}
+    assert clipgen.live_price(cfg, {}, Http(models=Resp(data={"data": [{"id": cfg["model"], "pricing_skus": skus}]})), lambda s: None) == 0.04
+
+
+@pytest.mark.parametrize("models", [Resp(500), Resp(data={"data": []}), Resp(data={"data": [{"id": "google/veo-3.1-lite"}]}),
+                                    Resp(data={"data": [{"id": "google/veo-3.1-lite", "pricing_skus": {"per-video-second-1080p": "0.1"}}]}),
+                                    Resp(data={"data": [{"id": "google/veo-3.1-lite", "pricing_skus": {"per-video-second": "free"}}]}),
+                                    Resp(data={"data": [{"id": "google/veo-3.1-lite", "pricing_skus": {"per-video-second": "0"}}]}), Resp(data={"oops": 1})])
+def test_an_unreadable_price_list_fails_closed_with_nothing_bought(cfg, money, models):
+    h = Http(models=models)
+    r = fails(cfg, h, "nothing was bought")
+    assert post_count(h) == 0 and money.spent_today() == 0 and r.read()["cost_booked"] == 0.0
+
+
+def test_price_source_config_keeps_the_settings_price(cfg, money):
+    h = Http(models=Resp(500))
+    res, _ = run(dict(cfg, price_source="config"), h)
+    assert res["booked_usd"] == 0.24 and not [c for c in h.calls if c[1].endswith("/videos/models")]
+
+
+def test_a_bad_price_source_is_refused_when_the_settings_load(cfg, tmp_path):
+    (tmp_path / "c.json").write_text(json.dumps({**cfg, "price_source": "guess"}))
+    with pytest.raises(clipgen.ClipError, match="price_source must be"):
+        clipgen.load_config(tmp_path / "c.json")
+
+
+def test_a_failed_job_whose_balance_fell_stays_booked(cfg, money):
+    h = Http(polls=["failed"], credits=[Resp(data=CREDITS), Resp(data={"data": {"total_credits": 10, "total_usage": 1.24}})])
+    r = fails(cfg, h, "balance fell to 8.76")
+    assert money.spent_today() == 0.24 and r.read()["cost_booked"] == 0.24
+
+
+def test_a_failed_job_with_an_unreadable_balance_stays_booked(cfg, money):
+    h = Http(polls=["failed"], credits=[Resp(data=CREDITS), Resp(500)])
+    fails(cfg, h, "could not be read")
+    assert money.spent_today() == 0.24
+
+
+def test_resume_of_a_failed_job_whose_balance_fell_keeps_the_money(cfg, money):
+    r = fails(dict(cfg, max_polls=1), Http(polls=["pending"]), "not done")
+    drop = Http(polls=["failed"], credits=[Resp(data={"data": {"total_credits": 10, "total_usage": 1.5}})])
+    with pytest.raises(clipgen.ClipError, match="stays booked"):
+        clipgen.resume(cfg, "k", r, http=drop, sleep=lambda s: None)
+    assert money.spent_today() == 0.24 and r.read()["cost_booked"] == 0.24

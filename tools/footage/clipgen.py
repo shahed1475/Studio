@@ -25,7 +25,7 @@ JOB_ID = re.compile(r"[A-Za-z0-9_-]{1,80}")
 NUMBERS = ("duration_s", "max_duration_s", "max_clip_bytes", "price_per_second_usd", "max_clip_cost_usd", "poll_seconds", "max_polls", "http_timeout_s",
            "download_timeout_s", "tool_timeout_s", "cost_warn_factor", "duration_tolerance_s", "aspect_tolerance")
 NUMBERS_ZERO_OK = ("min_balance", "retries", "backoff_s")
-TEXTS = ("base_url", "model", "resolution", "aspect_ratio", "cost_scope")
+TEXTS = ("base_url", "model", "resolution", "aspect_ratio", "cost_scope", "price_source")
 LISTS = ("success_statuses", "failed_statuses", "allowed_containers")
 
 
@@ -81,6 +81,8 @@ def load_config(path=CONFIG) -> dict:
             raise ClipError(f"{path}: {k} must be a list of texts")
     if not isinstance(cfg["generate_audio"], bool):
         raise ClipError(f"{path}: generate_audio must be true or false")
+    if cfg["price_source"] not in ("live", "config"):
+        raise ClipError(f"{path}: price_source must be live or config")
     if urlparse(cfg["base_url"]).scheme != "https":
         raise ClipError(f"{path}: base_url must be https")
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", cfg["cost_scope"]):
@@ -96,6 +98,41 @@ def load_config(path=CONFIG) -> dict:
 def estimated_cost(cfg: dict) -> float:
     """List price per second times the length: what the studio books and checks against its daily cap."""
     return round(cfg["price_per_second_usd"] * cfg["duration_s"], 4)
+
+
+def live_price(cfg: dict, headers: dict, http=requests, sleep=time.sleep) -> float:
+    """The provider's own price per second for this model, from its price list. Fails closed: no readable price, nothing is bought."""
+    r = _get(cfg, http, f"{cfg['base_url']}/videos/models", headers, cfg["http_timeout_s"], sleep)
+    if r.status_code >= 300:
+        raise Refused(f"the price list is unavailable (HTTP {r.status_code}); nothing was bought")
+    try:
+        models = r.json()["data"]
+        entry = next(m for m in models if isinstance(m, dict) and m.get("id") == cfg["model"])
+        skus = entry["pricing_skus"]
+    except (ValueError, KeyError, TypeError, StopIteration):
+        raise Refused(f"{cfg['model']} has no readable price in the provider's list; nothing was bought")
+    if not isinstance(skus, dict):
+        raise Refused(f"{cfg['model']} has no readable price in the provider's list; nothing was bought")
+    for key in (f"per-video-second-{cfg['resolution']}", "per-video-second"):  # a price for this resolution first, then the base price
+        try:
+            price = float(skus[key])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if price > 0 and price != float("inf"):
+            return price
+    raise Refused(f"{cfg['model']} has no usable price for {cfg['resolution']} in the provider's list; nothing was bought")
+
+
+def _with_live_price(cfg: dict, headers: dict, http, sleep, run) -> dict:
+    """The settings with the provider's live price in them (when price_source is live), checked against the per-clip cap."""
+    if cfg["price_source"] != "live":
+        return cfg
+    price = live_price(cfg, headers, http, sleep)
+    out = {**cfg, "price_per_second_usd": price}
+    run.log(f"live price ${price:.4f} a second (the settings said ${cfg['price_per_second_usd']:.4f})")
+    if estimated_cost(out) > out["max_clip_cost_usd"]:
+        raise Refused(f"at the live price this clip costs ${estimated_cost(out):.2f}, over the per-clip cap of ${out['max_clip_cost_usd']:.2f}; nothing was bought")
+    return out
 
 
 def _studio_money():
@@ -194,6 +231,15 @@ def _get(cfg: dict, http, url: str, headers: dict, timeout: float, sleep, **kw):
     if resp is None:
         raise ClipError(f"request failed after {cfg['retries'] + 1} tries: {_snip(last_err)}")
     return resp
+
+
+def _usage_cost(poll: dict) -> float | None:
+    """The provider's own charge for a finished job (`usage.cost`), or None when it is missing or not a sane number."""
+    try:
+        cost = float(poll["usage"]["cost"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return round(cost, 4) if 0 <= cost < float("inf") else None
 
 
 def _json(resp) -> dict:
@@ -318,13 +364,14 @@ def _download(cfg, http, base, job, auth, sleep) -> bytes:
 def _await_and_save(cfg, auth, http, sleep, job, prompt_sha256, run, today) -> dict:
     """Wait for the job, download the clip, verify it, write the ledger row and the pictures. Everything lands in run.dir."""
     base = cfg["base_url"]
-    last = ""
+    last, provider_cost = "", None
     for i in range(1, cfg["max_polls"] + 1):
         poll = _get(cfg, http, f"{base}/videos/{job}", auth, cfg["http_timeout_s"], sleep)
         status = _json(poll).get("status") if poll.status_code < 300 else None
         last = _snip(status) if status else f"http-{poll.status_code}"
         _say(f"poll {i}: {last}")
         if last in cfg["success_statuses"]:
+            provider_cost = _usage_cost(_json(poll))
             break
         if last in cfg["failed_statuses"]:
             raise JobNotCharged(f"ended: {last}")
@@ -374,7 +421,7 @@ def _await_and_save(cfg, auth, http, sleep, job, prompt_sha256, run, today) -> d
             run.update(files={kind: name})
         else:
             run.log(f"{kind} picture could not be made (the clip itself is fine)")
-    return {"clip": str(dest), "ledger": str(ledger), "job": job, "bytes": len(content)}
+    return {"clip": str(dest), "ledger": str(ledger), "job": job, "bytes": len(content), "provider_cost": provider_cost}
 
 
 def generate(cfg: dict, key: str, prompt: str, run, http=requests, sleep=time.sleep, today: str | None = None) -> dict:
@@ -437,6 +484,9 @@ def _generate(cfg, key, prompt, run, http, sleep, today, state) -> dict:
     before = balance(cfg, auth, http, sleep)
     if before < cfg["min_balance"]:
         raise Refused(f"balance {before} is under {cfg['min_balance']}, stopping")
+    cfg = _with_live_price(cfg, auth, http, sleep, run)
+    check_daily_cap(cfg)  # again, now with the price the provider will charge
+    run.update(balance_before=before)
     est = reserve(cfg, state)  # booked before the job is sent: a crash, a timeout or a kill can no longer lose it
     run.update(cost_booked=est)
     state["recorded"] = True
@@ -464,8 +514,11 @@ def _generate(cfg, key, prompt, run, http, sleep, today, state) -> dict:
     try:
         result = _await_and_save(cfg, auth, http, sleep, job, hashlib.sha256(prompt.encode()).hexdigest(), run, today)
     except JobNotCharged as e:
+        after, note = _balance_or_note(cfg, auth, http, sleep)
+        if after is None or after < before - 0.0001:  # the provider does not say whether a failed job is billed: believe the balance, not the status
+            raise ClipError(f"job {job}: {e}; the balance {'fell to ' + str(after) if after is not None else 'could not be read'} (was {before}), so ${est:.2f} stays booked") from e
         _release(cfg, run)
-        raise ClipError(f"job {job}: {e}; the reserved cost was released") from e
+        raise ClipError(f"job {job}: {e}; the balance did not move, so the reserved cost was released") from e
     except (ClipError, OSError, ValueError, AttributeError, TypeError) as e:
         after, note = _balance_or_note(cfg, auth, http, sleep)
         raise ClipError(f"job {job}: {e}; ${est:.2f} stays booked; balance now {after if after is not None else 'unknown (' + note + ')'}") from e
@@ -473,16 +526,37 @@ def _generate(cfg, key, prompt, run, http, sleep, today, state) -> dict:
     measured = round(before - after, 4) if after is not None else None
     run.update(balance_before=before, balance_after=after, balance_cost=measured)
     booked = est
-    if measured is not None and measured > est * cfg["cost_warn_factor"]:
+    if result.get("provider_cost") is not None:
+        booked = _settle(cfg, run, est, result["provider_cost"])
+    elif measured is not None and measured > est * cfg["cost_warn_factor"]:
         extra = round(min(measured, cfg["max_clip_cost_usd"]) - est, 4)
         try:
-            _book(cfg, extra)  # the real fall in the balance is what counts against the cap, even if other spending is in it
+            _book(cfg, extra)  # no provider figure: the real fall in the balance counts against the cap, even if other spending is in it
             booked = round(est + extra, 4)
             run.update(cost_booked=booked)
             run.log(f"the balance fell by ${measured:.2f}, more than the ${est:.2f} booked: booked ${extra:.2f} more (other spending, or the price in the settings is too low)")
         except ClipError as e:
             run.log(f"the balance fell by ${measured:.2f} but ${est:.2f} was booked, and booking the difference failed: {e}")
     return {**result, "run_id": run.dir.name, "booked_usd": booked, "measured_cost": measured, "balance_after": after, "balance_note": note}
+
+
+def _settle(cfg: dict, run, booked: float, provider_cost: float | None) -> float:
+    """Make the booking equal to what the provider says it charged (`usage.cost`), up to the per-clip cap; returns the amount now booked."""
+    if provider_cost is None:
+        return booked
+    target = round(min(provider_cost, cfg["max_clip_cost_usd"]), 4)
+    delta = round(target - booked, 4)
+    if abs(delta) < 0.0001:
+        run.update(provider_cost=provider_cost)
+        return booked
+    try:
+        _book(cfg, delta)
+    except ClipError as e:
+        run.log(f"the provider says ${provider_cost:.4f} but ${booked:.4f} is booked, and booking the difference failed: {e}")
+        return booked
+    run.update(cost_booked=target, provider_cost=provider_cost)
+    run.log(f"the provider's own charge is ${provider_cost:.4f}: the booking is now ${target:.4f} (was ${booked:.4f})")
+    return target
 
 
 def resume(cfg: dict, key: str, run, http=requests, sleep=time.sleep, force: bool = False) -> dict:
@@ -507,12 +581,17 @@ def resume(cfg: dict, key: str, run, http=requests, sleep=time.sleep, force: boo
         raise
     except Exception as e:
         msg = str(e) if isinstance(e, ClipError) else f"unexpected {type(e).__name__}: {_snip(e)}"
-        if isinstance(e, JobNotCharged):  # the provider ended the job without a clip: give back what was reserved
-            try:
-                _release(cfg, run)
-                msg += "; the reserved cost was released"
-            except ClipError as be:
-                msg += f"; giving back the reserved cost failed ({be})"
+        if isinstance(e, JobNotCharged):  # the provider ended the job without a clip: give back what was reserved, but only if the balance did not move
+            before = rec.get("balance_before")
+            after, _note = _balance_or_note(cfg, {"Authorization": f"Bearer {key}"}, http, sleep)
+            if not isinstance(before, (int, float)) or after is None or after < before - 0.0001:
+                msg += "; the balance fell or could not be compared, so the cost stays booked"
+            else:
+                try:
+                    _release(cfg, run)
+                    msg += "; the balance did not move, so the reserved cost was released"
+                except ClipError as be:
+                    msg += f"; giving back the reserved cost failed ({be})"
         run.update(status="failed", error=msg, finished_at=_utc())
         run.log(f"FAILED: {msg}")
         raise ClipError(msg) from e

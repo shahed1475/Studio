@@ -15,6 +15,7 @@
   "price_per_second_usd": 0.03,
   "max_clip_cost_usd": 1.0,
   "cost_scope": "footage-test",
+  "price_source": "live",
   "retries": 3,
   "backoff_s": 2,
   "tool_timeout_s": 120,
