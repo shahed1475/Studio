@@ -308,6 +308,8 @@ def _probe_check(path: Path, cfg: dict) -> dict:
         raise ClipError("ffprobe is missing, so the clip's size and length cannot be verified")
     except (subprocess.TimeoutExpired, ValueError, KeyError, IndexError, TypeError):
         raise ClipError("the clip's size and length could not be read")
+    if w <= 0 or h <= 0 or not math.isfinite(dur):
+        raise ClipError("the clip's size and length could not be read")
     problems = []
     if abs(dur - cfg["duration_s"]) > cfg["duration_tolerance_s"]:
         problems.append(f"length {dur:.1f} s, asked for {cfg['duration_s']} s")

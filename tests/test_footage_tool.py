@@ -973,3 +973,12 @@ def test_the_balance_floor_holds_after_the_clip_is_paid(cfg, money):
     ok = Http(polls=[completed(0.24)], credits=[Resp(data={"data": {"total_credits": 10, "total_usage": 6.5}}), Resp(data={"data": {"total_credits": 10, "total_usage": 6.74}})])  # 3.50 -> 3.26
     res, _ = run(cfg, ok)
     assert res["booked_usd"] == 0.24
+
+
+@pytest.mark.parametrize("w,h,dur", [(1280, 0, "8.0"), (0, 720, "8.0"), (1280, 720, "nan")])
+def test_a_probe_with_a_zero_size_or_nan_length_is_a_clean_rejection(cfg, tmp_path, monkeypatch, w, h, dur):
+    monkeypatch.undo()  # the autouse fixture mocks the probe; this wants the real function with a fake ffprobe
+    out = json.dumps({"streams": [{"width": w, "height": h}], "format": {"duration": dur}})
+    monkeypatch.setattr(clipgen.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, out, ""))
+    with pytest.raises(clipgen.ClipError, match="could not be read"):
+        clipgen._probe_check(tmp_path / "x.mp4", cfg)
