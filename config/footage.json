@@ -1,0 +1,19 @@
+{
+  "base_url": "https://openrouter.ai/api/v1",
+  "model": "google/veo-3.1-lite",
+  "duration_s": 8,
+  "resolution": "720p",
+  "aspect_ratio": "16:9",
+  "generate_audio": false,
+  "min_balance": 3.0,
+  "max_duration_s": 10,
+  "max_clip_bytes": 50000000,
+  "poll_seconds": 10,
+  "max_polls": 60,
+  "http_timeout_s": 60,
+  "download_timeout_s": 180,
+  "price_per_second_usd": 0.03,
+  "max_clip_cost_usd": 1.0,
+  "cost_scope": "footage-test",
+  "test_prompt": "Slow cinematic dolly forward along a misty river bank at dusk, a single small lantern glowing on the muddy shore, old willow trees, 19th-century rural countryside, no people, painterly film look, soft fog drifting over the water"
+}
