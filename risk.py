@@ -443,6 +443,28 @@ def backups(now: dt.datetime | None = None, dest: Path | None = None) -> dict:
     return ind("backup", "Losing the records", level, ev, controls, owner if level != "ok" else "")
 
 
+def agents_row(now: dt.datetime | None = None, result: Path | None = None, bus: Path | None = None) -> dict:
+    """The agents' own health: the daily evaluation (rules that must never break) and the tasks that waited for the owner."""
+    import agentbus
+    import agenteval
+
+    now = now or dt.datetime.now(dt.timezone.utc)
+    controls = ("a written playbook for every agent, lessons from earlier cases, an escalation ladder with two model opinions before the owner, the channel guardian "
+                "(never public, never delete), trace triage and a daily behaviour evaluation (docs/AGENT_TRAINING_PLAN_2026-10-26.md)")
+    owner_tasks = agentbus.summary(bus).get("owner", 0)
+    try:
+        ev = json.loads((result or agenteval.RESULT).read_text())
+        age = (now - dt.datetime.strptime(ev["at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)).total_seconds() / 3600
+    except (OSError, ValueError, KeyError):
+        return ind("agents", "Agents", "watch", "the agent evaluation has not run yet", controls, "Run: python run.py agent-review")
+    if ev.get("failed"):
+        bad = ", ".join(c["case"] for c in ev["cases"] if not c["ok"])
+        return ind("agents", "Agents", "act", f"{ev['failed']} agent rule check(s) failed: {bad}", controls, "Tell me; an agent rule is broken until this passes.")
+    ev_txt = f"{ev['passed']} behaviour checks passed {age:.0f} hours ago; {owner_tasks} task(s) wait for you"
+    level = "watch" if age > 72 or owner_tasks else "ok"
+    return ind("agents", "Agents", level, ev_txt, controls, "Open the Activity feed: the agents list what they tried." if owner_tasks else ("The daily evaluation did not run: check the worker." if age > 72 else ""))
+
+
 def assess(now: dt.datetime | None = None, out: Path | None = None, left: float | None = -1.0, running: list[str] | None = None) -> list[dict]:
     """All indicators. left=-1 means: read the balance live."""
     import llm
@@ -453,7 +475,7 @@ def assess(now: dt.datetime | None = None, out: Path | None = None, left: float 
         key = llm.api_key()
         left = credit_left(key) if key else None
     run = running_jobs() if running is None else running
-    rows = [facts(vs), rights(vs), pattern(vs, now), money(left, daily_spend()), process(run, worker_starts(now)), skills(), access(), publishing(vs, now), supply(now), rules(vs, now), login(now), backups(now)]
+    rows = [facts(vs), rights(vs), pattern(vs, now), money(left, daily_spend()), process(run, worker_starts(now)), skills(), access(), publishing(vs, now), supply(now), rules(vs, now), login(now), backups(now), agents_row(now)]
     t = tenants(now)
     if t:
         rows.append(t)

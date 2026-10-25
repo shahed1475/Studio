@@ -65,6 +65,9 @@ Up to 5 other people can run their own studio on this server (`deploy/tenant.sh`
 ## Adding GitHub projects and skills (2026-10-22)
 Owner guide: docs/EXTENSIONS.md. Skills (a folder with SKILL.md) are added only with `python extend.py add <folder>` (scan with `vetskill.py`, copy, pin hashes, `extend.py verify` is a test and part of the Risks card). Code libraries and apps are never copied in blind: plan, build, test. Third-party skills are advice; this file, the `studio-*` skills and the reviewer checks win. After adding anything, update the list in docs/EXTENSIONS.md.
 
+## Agent training and the Channel Guardian (2026-10-26)
+Plan and limits: docs/AGENT_TRAINING_PLAN_2026-10-26.md. Every agent has a playbook (`playbooks/<agent>.md`, loaded by `playbook.py`), lessons (`lessons.py`), an escalation ladder (`escalate.py`, used by `unstick.py` for stuck drafts), an inbox (`agentbus.py`), trace triage (`tracetriage.py`) and behaviour checks (`agenteval.py`, daily `python run.py agent-review`, the Agents row of the Risks card). The guardian (`guardian.py`, hourly) holds, repairs and reissues videos that are not public; it never makes anything public, never deletes, never edits a public video, never flips an owner switch. A change to an agent needs its playbook, a new `agenteval` case and a mutation check. Skills: `studio-agent-trainer`, `studio-agent-eval`, `studio-trace-triage`, `studio-channel-guardian`.
+
 ## Controls that exist (and their limits)
 Source-grounded scripts (up to two Wikipedia articles); claim ledger; claims checked against the source article, then against the web with citations; AI review that sees the source; fixer agent (two tries, then the owner); script, license, video and caption checks; visual review from sampled frames; upload read-back.
 Limits: Wikipedia is a secondary source; the web check is a model with search, not a historian; a vision reading covers only the frames sampled; passing checks are evidence, not proof.

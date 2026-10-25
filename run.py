@@ -426,6 +426,39 @@ def main() -> None:
         import seo
 
         seo.make(config.OUT / a[1])
+    elif a[0] == "guardian":
+        import guardian
+
+        res = guardian.run()
+        print(res.get("skipped") and f"guardian skipped: {res['skipped']}" or f"guardian: {res['watching']} videos with findings, {len(res['actions'])} actions, {res['rule_changes']} rule page changes")
+    elif a[0] == "unstick":
+        import unstick
+
+        res = unstick.run()
+        print(json.dumps({k: v for k, v in res.items() if k != "tried"}, default=str) if res.get("skipped") else f"unstick: {res['slug']} solved={res['solved']} fix={res['fix']} owner={res['owner']}")
+    elif a[0] == "agent-review":
+        import agenteval
+        import agentlog
+        import lessons
+        import tracetriage
+
+        ev, tr, dropped = agenteval.run(), tracetriage.triage(), lessons.prune()
+        new = [f for f in tr["families"] if f["state"] != "known"]
+        print(f"agent evaluation: {ev['passed']} passed, {ev['failed']} failed; triage: {len(tr['families'])} families ({len(new)} not solved before), {tr['stuck_drafts']} stuck drafts; lessons pruned: {dropped}")
+        if ev["failed"]:
+            agentlog.event("error", "Agent evaluation failed", "; ".join(f"{c['case']}: {c['detail'][:80]}" for c in ev["cases"] if not c["ok"]), notify=True)
+    elif a[0] == "agents":
+        import agenteval
+        import agentbus
+        import playbook
+
+        try:
+            ev = json.loads(agenteval.RESULT.read_text())
+            print(f"last evaluation {ev['at']}: {ev['passed']} passed, {ev['failed']} failed")
+        except (OSError, ValueError):
+            print("no evaluation has run yet (python run.py agent-review)")
+        print("playbooks: " + ", ".join(playbook.agents()))
+        print("inbox: " + json.dumps(agentbus.summary()))
     elif a[0] == "seo-fix":
         import seo
 

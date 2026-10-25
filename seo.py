@@ -7,6 +7,8 @@ import urllib.request
 from pathlib import Path
 
 import config
+import lessons
+import playbook
 import records
 import reviewer
 import scriptgen
@@ -285,6 +287,7 @@ def make(folder: Path) -> dict:
     outline = " ".join(f"[{c.get('title', '')}] {meta['lines'][c['start_line']]['text']}" for c in meta.get("chapters", []) if c["start_line"] < len(meta["lines"]))
     story = (outline if starts and len(outline) > 200 else " ".join(l["text"] for l in meta["lines"][:10]))[:2200]
     data = scriptgen._chat(
+        f"{playbook.brief('seo', max_chars=1300)}\n{lessons.brief('seo', core)}\n"
         f"You write YouTube metadata for {config.channel_blurb() if not config._owner_niche() else 'a calm storytelling channel (history, legends, mysteries)'} for US viewers.\n"
         f"Video topic: {meta['topic']}\nMain search phrase: {core}\nStory so far: {story}\n\n"
         f"Real search suggestions from YouTube: {json.dumps(kws[:30])}\n"
