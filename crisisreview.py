@@ -81,7 +81,8 @@ def numbers_sourced(video: dict, sources: dict, official_domains) -> dict:
             else:
                 sourced.add(token)
     for field in ("title", "description"):
-        for token in sorted(nums(str(video.get(field, "")))):
+        text = str(video.get(field, ""))
+        for token in sorted(nums(text)) + sorted({m.group(0).lower() for m in WORD_NUMBER.finditer(text)}):
             if token not in sourced:
                 bad.append(f"{field}: '{token}' is not backed by a sourced line")
     return check("numbers_sourced", not bad, "; ".join(bad[:5]))
@@ -102,7 +103,11 @@ def footage_ok(video: dict, ledger_rows: list[dict], file_hashes) -> dict:
                 bad.append(f"{f['file']}: real footage needs a verified date, place and publisher")
     if not isinstance(file_hashes, dict):
         bad.append("file hashes were not computed by the pipeline")
-    bad += assetledger.problems(ledger_rows, [f for f in manifest if isinstance(f, str)], file_hashes if isinstance(file_hashes, dict) else None)
+    footage_files = [f["file"] for f in video.get("footage", []) if isinstance(f, dict) and isinstance(f.get("file"), str) and f["file"]]
+    bad += [f"{f}: footage file is not in the render manifest" for f in footage_files if f not in manifest]
+    if not isinstance(file_hashes, dict):
+        bad.append("file hashes were not computed by the pipeline")
+    bad += assetledger.problems(ledger_rows, [f for f in manifest if isinstance(f, str)] + [f for f in footage_files if f not in manifest], file_hashes if isinstance(file_hashes, dict) else None)
     return check("footage_and_licences", not bad, "; ".join(bad[:5]))
 
 

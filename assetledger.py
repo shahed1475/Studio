@@ -1,7 +1,9 @@
 """Every picture, clip, sound and font in a video needs a ledger row: where it came from, its licence, its date and a file hash. A missing row blocks the upload."""
 import hashlib
+import re
 from pathlib import Path
 
+HEX64 = re.compile(r"[0-9a-f]{64}")
 ALLOWED = {"public domain", "cc0", "cc by", "cc by-sa", "own work", "ai-generated", "stock licence"}
 NEEDS_ATTRIBUTION = {"cc by", "cc by-sa", "ai-generated"}
 
@@ -21,8 +23,10 @@ def problems(rows: list[dict], files: list[str], hashes: dict | None = None) -> 
         if not r:
             out.append(f"{f}: no ledger row")
             continue
-        if hashes is not None and hashes.get(f) != r.get("sha256"):
-            out.append(f"{f}: the file does not match the hash in its ledger row")
+        if hashes is not None:
+            h, want = hashes.get(f), r.get("sha256")
+            if not (isinstance(want, str) and HEX64.fullmatch(want)) or not (isinstance(h, str) and HEX64.fullmatch(h)) or h != want:
+                out.append(f"{f}: the file does not match a valid 64-hex hash in its ledger row")
         if r.get("licence") not in ALLOWED:
             out.append(f"{f}: licence '{r.get('licence')}' is not allowed (no non-commercial, no-derivatives, unknown)")
         if not r.get("source") or not r.get("fetched"):
