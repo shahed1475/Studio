@@ -28,7 +28,7 @@ No, not for a studio only you use: Google's own list of exceptions includes "the
 Two scopes only, both justified above; the login file is owner-only (mode 600) and never committed; "Disconnect" deletes it; `PRIVACY.md` states the use, the Limited Use commitment and how to revoke (myaccount.google.com/permissions); nothing from Google is sent to an AI provider.
 
 ## Open items
-- The private-upload rule for unaudited API projects is **CONFLICTING** (search results say uploads are locked private; the official videos page says they are not). The first video that reaches its public time settles it (Bell Witch, Wed 21 Oct 22:00 UTC); the safety check reports it if it stays private.
+- The private-upload rule for unaudited API projects does **not apply here**: on 25 Oct 2026 YouTube's own status read (videos.list) showed 7 uploads from this project public after their scheduled time (Bell Witch, Pied Piper, Delphi, Hong Gildong doc, Korean, Skinwalker, Minotaur). A video that stays private after its slot was changed in Studio (an edit can clear the schedule), blocked, or limited.
 - Phone verification for custom thumbnails and videos over 15 minutes comes from third-party guides only (UNVERIFIED). A refused thumbnail is recorded and reported.
 
 ## Title changes (24 Oct 2026)

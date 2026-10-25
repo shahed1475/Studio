@@ -10,7 +10,7 @@ Every video is checked against a catalog of YouTube rules before it is approved,
 | `template_variety` (templated, repetitive videos) | existing variety checks and the Risks card | the fixer varies the script |
 | `kids_signals` (kid-directed wording may make YouTube treat it as made for kids) | deterministic words in title, description, tags | warn; you decide |
 | `ai_disclosure` | upload sets `containsSyntheticMedia`; a test keeps the art style an illustration | n/a |
-| `api_private_lock` CONFLICTING | `safety.check` reports a video still private after its slot and names the possibility | Autopilot pauses and tells you; the first public video settles it |
+| `api_private_lock` NOT APPLICABLE (settled 25 Oct 2026: 7 API uploads went public on schedule) | `safety.check` still reports a video that is private after its slot, naming a Studio edit as the usual cause | Autopilot pauses and tells you; fix it in YouTube Studio |
 | `phone_verification` UNVERIFIED | the upload survives a refused thumbnail, records `thumbnail_error` and tells you | add the thumbnail in YouTube Studio |
 
 ## Thumbnails and chapter titles
