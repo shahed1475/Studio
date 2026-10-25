@@ -15,7 +15,7 @@ NOW = agenteval.NOW
 def test_every_behaviour_check_of_the_agents_passes():
     res = agenteval.run(write=False)
     assert res["failed"] == 0, [c for c in res["cases"] if not c["ok"]]
-    assert res["passed"] >= 9
+    assert res["passed"] >= 14
 
 
 def test_each_playbook_is_complete_and_the_brief_is_capped_and_ordered():
@@ -177,3 +177,70 @@ def test_the_seo_prompt_carries_the_playbook_and_a_remembered_lesson(tmp_path, m
         lessons.record("seo", "mami wata", "name first then twist titles", True, NOW)
         seo.make(folder)
     assert "Playbook of the seo agent" in prompts[0] and "name first then twist titles" in prompts[0]
+
+
+def test_every_command_and_autopilot_action_maps_to_an_agent_with_a_playbook():
+    import agents
+    assert agents.for_command("recheck") == "recheck" and agents.for_command("doc") == "creator" and agents.for_command("nonsense") is None
+    assert agents.for_action("make_clip") == "clipper" and agents.for_action("upload") == "publisher" and agents.for_action("cost_stop") == "autopilot"
+    assert all(agents.for_action(a) in agents.AGENTS for a in agents.ACTIONS)
+    assert agents.problems() == []
+
+
+def test_a_model_call_under_an_agent_carries_its_role_and_limits_and_one_outside_does_not(monkeypatch, tmp_path):
+    import json as _json
+
+    import llm
+    monkeypatch.setattr(llm, "CONFIG_FILE", tmp_path / "llm.json")
+    monkeypatch.setattr(llm, "USAGE_FILE", tmp_path / "usage.json")
+    monkeypatch.setattr(llm, "SETTINGS_FILE", tmp_path / "settings.json")
+    llm.save_config({**llm.DEFAULTS, "enabled": True, "models": {"script": "v/w", "review": "v/c", "cheap": "v/s"}})
+    llm.SETTINGS_FILE.write_text(_json.dumps({"openrouter_key": "sk-test"}))
+    sent = []
+    monkeypatch.setattr(llm, "_post", lambda payload, key: sent.append(payload) or {"choices": [{"message": {"content": '{"ok": 1}'}}], "usage": {"prompt_tokens": 1, "completion_tokens": 1, "cost": 0.0}})
+    import playbook
+    llm.chat("plain prompt", "cheap", now=NOW)
+    with playbook.acting_as("publisher"):
+        llm.chat("plain prompt", "cheap", now=NOW)
+    text = lambda p: p["messages"][-1]["content"] if "messages" in p else str(p)
+    assert text(sent[0]).startswith("plain prompt") and "Playbook of the publisher agent" in text(sent[1]) and "Never upload twice" not in text(sent[0]) and text(sent[1]).endswith("plain prompt")
+
+
+def test_doctor_scan_reads_results_from_the_worker_log_and_a_new_install_is_not_a_fault():
+    import doctor
+    import worker
+    ts = lambda h: (NOW - dt.timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    lines = [f"{ts(5)} recheck recheck -> exit 0", f"{ts(4)} recheck recheck -> exit 3", f"{ts(3)} recheck recheck timed out after 900s", f"{ts(1)} health health -> exit 0"]
+    assert doctor.log_results("recheck", lines) == [True, False, False]
+    rows = {r["agent"]: r["status"] for r in doctor.scan(NOW, {"recheck": ts(1), "health": ts(1)}, lines, worker.JOBS)}
+    assert rows["recheck"] == "failing" and rows["health"] == "ok" and rows["guardian"] == "not_yet"
+    assert doctor.scan(NOW, {}, [], worker.JOBS) and {r["status"] for r in doctor.scan(NOW, {}, [], worker.JOBS)} == {"not_yet"}
+
+
+def test_doctor_cannot_restart_the_main_loop_or_run_a_job_while_a_render_runs(monkeypatch):
+    import doctor
+    import risk
+    import worker
+    ran = []
+    f = doctor.fixes_for("autopilot", "autopilot", worker.JOBS, runner=lambda j: ran.append(j) or 0)
+    assert f["rerun_job"][1]()[0] is False and ran == []
+    g = doctor.fixes_for("recheck", "recheck", worker.JOBS, runner=lambda j: ran.append(j["name"]) or 0)
+    monkeypatch.setattr(risk, "running_jobs", lambda: ["run.py doc"])
+    assert g["rerun_job"][1]() == (False, "a render is running: not now") and ran == []
+    monkeypatch.setattr(risk, "running_jobs", lambda: [])
+    assert g["rerun_job"][1]()[0] is True and ran == ["recheck"]
+
+
+def test_setup_requests_keep_exact_commands_for_the_owner_and_the_risk_row_shows_the_doctor(tmp_path):
+    import risk
+    with agenteval.sandbox() as root:
+        t = agentbus.post("setup_request", "doctor", "owner", "dashboard", reason="x", now=NOW, commands=["docker compose restart dashboard", "python run.py agents"])
+        assert t["commands"] == ["docker compose restart dashboard", "python run.py agents"]
+        ev = root / "ev.json"
+        ev.write_text(json.dumps({"at": "2026-10-26T06:00:00Z", "passed": 14, "failed": 0, "cases": []}))
+        doc = root / "doc.json"
+        doc.write_text(json.dumps({"agents": [{"agent": "recheck", "status": "stale"}], "needs": ["dashboard"]}))
+        row = risk.agents_row(NOW, ev, root / "none.json", doc)
+        assert row["level"] == "watch" and "recheck unhealthy" in row["evidence"] and "missing setup: dashboard" in row["evidence"]
+        doc.write_text(json.dumps({"agents": [{"agent": "recheck", "status": "ok"}], "needs": []}))
+        assert risk.agents_row(NOW, ev, root / "none.json", doc)["level"] == "ok"

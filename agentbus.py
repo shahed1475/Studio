@@ -40,8 +40,10 @@ def _text(t, cap: int) -> str:
     return "" if seo.linky(s) else s
 
 
-def post(kind: str, source: str, target: str, slug: str = "", reason: str = "", evidence: str = "", now=None, file: Path | None = None) -> dict:
-    """Ask `target` to do `kind` for a video. An open task with the same kind, target and video is returned instead of a second one."""
+def post(kind: str, source: str, target: str, slug: str = "", reason: str = "", evidence: str = "", now=None, file: Path | None = None,
+         commands: list[str] | None = None) -> dict:
+    """Ask `target` to do `kind` for a video. An open task with the same kind, target and video is returned instead of a second one.
+    `commands` are exact lines for the owner to run, written by our own code only (never from outside text): kept as given, 5 lines of 200 characters at most."""
     file = file or FILE
     with filelock.locked(file):
         rows = _load(file)
@@ -52,7 +54,7 @@ def post(kind: str, source: str, target: str, slug: str = "", reason: str = "", 
                 return r
         n = max([int(r["id"][1:]) for r in rows] + [0]) + 1
         t = {"id": f"t{n:05d}", "kind": kind, "source": source, "target": target, "slug": slug, "reason": _text(reason, 300), "evidence": _text(evidence, 600),
-             "state": "open", "at": _stamp(now), "seen": 1, "history": [f"{_stamp(now)} posted by {source}"]}
+             "commands": [str(c)[:200] for c in (commands or [])[:5]], "state": "open", "at": _stamp(now), "seen": 1, "history": [f"{_stamp(now)} posted by {source}"]}
         rows.append(t)
         _save(file, rows)
         return t

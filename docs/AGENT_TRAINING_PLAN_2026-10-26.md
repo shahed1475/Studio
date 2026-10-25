@@ -28,3 +28,12 @@ A playbooks + loader; B lessons; C bus; D escalation; E guardian + reissue; F tr
 - *Owner switches stay owner's*: `titletest` mode (apply), `human_approval`, public/private. The code never flips them.
 - *Concurrent session*: `fixer.py` is not edited; the guardian and the ladder call its public functions.
 - Limits: a ladder fix is a try, not a proof; a model can diagnose wrongly; evaluation proves the rules hold on test cases, not that every future problem is solved.
+
+## Stage 2: every agent, and the doctor (26 Oct 2026)
+- **Every agent trained**: `agents.py` registers 23 agents (autopilot, research, growth, news, creator, clipper, seo, qa, compliance, reviewer, fixer, publisher, recheck, titletest, guardian, health, reporter, monetization, backup, triage, trainer, evaluator, doctor). Each has a playbook; `llm.chat` puts the acting agent's role and limits (650 characters) in front of every model call made under its command or Autopilot action.
+- **Doctor** (`doctor.py`, every 6 hours): the "agent that fixes agents". Researched against the request: what is built is the safe part of it.
+  - Finds problems: stale (no run for 2.5 periods) or failing (2 failed runs in a row) agents; dashboard not answering; missing setup.
+  - Fixes: only the registered job again (never autopilot, never during a render), file permissions, missing folders, through the escalation ladder with two model opinions (OpenRouter roles; MCP servers exist only in Claude sessions).
+  - Learns: every attempt is a lesson; post-mortems and skill drafts are written to `data/agent/proposals/`.
+  - Not built, on purpose: installing software (supply-chain rule, and the container has no rights), putting a skill into service by itself (`vetskill.py` then `extend.py add` stay the owner's), a browser on the worker (none installed; browser checks are done in a Claude session), changing playbooks or code by itself.
+- **Checks**: 14 behaviour cases in `agenteval.py` (the doctor never restarts the main loop or runs a job during a render, writes only proposals, drafts skills only in quarantine with a safe name; the registry lines up; the scope injection is capped and once), each mutation-checked.

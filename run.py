@@ -405,6 +405,11 @@ def cmd_list() -> None:
 
 def main() -> None:
     a = sys.argv[1:]
+    if a:
+        import agents
+        import playbook
+
+        playbook.set_agent(agents.for_command(a[0]))  # model calls of this command carry its agent's role and limits
     if not a:
         print(__doc__)
     elif a[0] == "ideas":
@@ -447,6 +452,13 @@ def main() -> None:
         print(f"agent evaluation: {ev['passed']} passed, {ev['failed']} failed; triage: {len(tr['families'])} families ({len(new)} not solved before), {tr['stuck_drafts']} stuck drafts; lessons pruned: {dropped}")
         if ev["failed"]:
             agentlog.event("error", "Agent evaluation failed", "; ".join(f"{c['case']}: {c['detail'][:80]}" for c in ev["cases"] if not c["ok"]), notify=True)
+    elif a[0] == "doctor":
+        import doctor
+
+        res = doctor.run()
+        bad = [f"{r['agent']} {r['status']}" for r in res["agents"] if r["status"] in ("stale", "failing")]
+        print(f"doctor: {len(res['agents'])} agents checked, unhealthy: {', '.join(bad) or 'none'}; fixed: {len(res['solved'])}; for the owner: {len(res['owner'])}; "
+              f"setup items missing: {', '.join(res['needs']) or 'none'}; skill drafts: {len(res['drafts'])}")
     elif a[0] == "agents":
         import agenteval
         import agentbus
@@ -458,6 +470,13 @@ def main() -> None:
         except (OSError, ValueError):
             print("no evaluation has run yet (python run.py agent-review)")
         print("playbooks: " + ", ".join(playbook.agents()))
+        import doctor
+
+        try:
+            d = json.loads(doctor.REPORT.read_text())
+            print(f"doctor {d['at']}: " + (", ".join(f"{x['agent']} {x['status']}" for x in d["agents"] if x["status"] in ("stale", "failing")) or "all agents with a job are healthy") + f"; setup missing: {', '.join(d['needs']) or 'none'}")
+        except (OSError, ValueError, KeyError):
+            print("the doctor has not run yet (python run.py doctor)")
         print("inbox: " + json.dumps(agentbus.summary()))
     elif a[0] == "seo-fix":
         import seo

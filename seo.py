@@ -274,6 +274,11 @@ def rebuild_description(old: str, intro: str) -> str:
 
 
 def make(folder: Path) -> dict:
+    with playbook.acting_as("seo"):
+        return _make(folder)
+
+
+def _make(folder: Path) -> dict:
     p = folder / "meta.json"
     meta = json.loads(p.read_text())
     core = core_phrase(meta)

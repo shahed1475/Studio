@@ -25,6 +25,7 @@ JOBS = [
     {"name": "recheck", "every": 3600, "cmds": [["recheck"]], "timeout": 900},
     {"name": "guardian", "every": 3600, "cmds": [["guardian"]], "timeout": 900},
     {"name": "unstick", "every": 10800, "cmds": [["unstick"]], "timeout": 1800},
+    {"name": "doctor", "every": 21600, "cmds": [["doctor"]], "timeout": 1800},
     {"name": "agent-review", "at": "05:30", "cmds": [["agent-review"]], "timeout": 900},
     {"name": "health", "every": 3600, "cmds": [["health"]], "timeout": 600},
     {"name": "titletest", "at": "08:00", "cmds": [["titletest"]], "timeout": 900},

@@ -6,9 +6,11 @@ import re
 import os
 from pathlib import Path
 
+import agents
 import config
 import llm
 import planner
+import playbook
 import prelaunch
 import channelprofile
 import records
@@ -499,7 +501,7 @@ def tick(now: dt.datetime | None = None) -> dict:
                 seen.add(key)
                 progressed = True
                 try:
-                    with llm.cost_scope(a["slug"]):  # what a review, repair or picture check spends is charged to its video
+                    with llm.cost_scope(a["slug"]), playbook.acting_as(agents.for_action(a["do"])):  # what a review, repair or picture check spends is charged to its video
                         res = EXECUTORS[a["do"]](a["slug"], cfg, now)
                     actions.append(a)
                     _log(f"ok {a['do']} {a['slug'] or ''}")
@@ -523,7 +525,8 @@ def tick(now: dt.datetime | None = None) -> dict:
                 continue
             seen.add(key)
             try:
-                EXECUTORS[a["do"]](a["slug"], cfg, now)
+                with playbook.acting_as(agents.for_action(a["do"])):
+                    EXECUTORS[a["do"]](a["slug"], cfg, now)
                 actions.append(a)
                 _log(f"ok {a['do']} {a['slug'] or ''}")
             except (Exception, SystemExit) as e:

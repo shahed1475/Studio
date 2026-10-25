@@ -443,7 +443,7 @@ def backups(now: dt.datetime | None = None, dest: Path | None = None) -> dict:
     return ind("backup", "Losing the records", level, ev, controls, owner if level != "ok" else "")
 
 
-def agents_row(now: dt.datetime | None = None, result: Path | None = None, bus: Path | None = None) -> dict:
+def agents_row(now: dt.datetime | None = None, result: Path | None = None, bus: Path | None = None, doctor_report: Path | None = None) -> dict:
     """The agents' own health: the daily evaluation (rules that must never break) and the tasks that waited for the owner."""
     import agentbus
     import agenteval
@@ -462,6 +462,16 @@ def agents_row(now: dt.datetime | None = None, result: Path | None = None, bus: 
         return ind("agents", "Agents", "act", f"{ev['failed']} agent rule check(s) failed: {bad}", controls, "Tell me; an agent rule is broken until this passes.")
     ev_txt = f"{ev['passed']} behaviour checks passed {age:.0f} hours ago; {owner_tasks} task(s) wait for you"
     level = "watch" if age > 72 or owner_tasks else "ok"
+    try:
+        import doctor
+
+        d = json.loads((doctor_report or doctor.REPORT).read_text())
+        sick = [x["agent"] for x in d["agents"] if x["status"] in ("stale", "failing")]
+        ev_txt += f"; doctor: {', '.join(sick) + ' unhealthy' if sick else 'all agents with a job healthy'}" + (f", missing setup: {', '.join(d['needs'])}" if d["needs"] else "")
+        if sick or d["needs"]:
+            level = "watch"
+    except (OSError, ValueError, KeyError):
+        ev_txt += "; the doctor has not run yet"
     return ind("agents", "Agents", level, ev_txt, controls, "Open the Activity feed: the agents list what they tried." if owner_tasks else ("The daily evaluation did not run: check the worker." if age > 72 else ""))
 
 

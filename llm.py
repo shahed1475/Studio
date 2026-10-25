@@ -374,6 +374,9 @@ def _free_chat(prompt: str, role: str, cfg: dict, key: str, now: dt.datetime) ->
 
 def chat(prompt: str, role: str = "cheap", fallback=None, now: dt.datetime | None = None) -> dict:
     """JSON from the model assigned to this role, or from the local fallback when that is not possible."""
+    import playbook
+
+    prompt = playbook.inject(prompt)  # the acting agent's role and limits ride along with every call it makes
     now = now or _now()
     cfg, key = load_config(), api_key()
     model = cfg["models"].get(role, "")

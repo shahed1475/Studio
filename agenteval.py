@@ -17,10 +17,11 @@ import playbook
 import records
 
 RESULT = config.ROOT / "data" / "agent" / "eval.json"
-REQUIRED_AGENTS = ("seo", "growth", "fixer", "reviewer", "guardian", "autopilot", "triage", "trainer", "evaluator")
+REQUIRED_AGENTS = tuple(__import__("agents").AGENTS)
 FORBIDDEN = ('.videos().delete(', '"privacyStatus": "public"', "'privacyStatus': 'public'", '["privacyStatus"] = "public"', ".channels().update(", ".playlists().delete(",
              ".subscriptions().delete(")
-AGENT_FILES = ("guardian.py", "escalate.py", "unstick.py", "tracetriage.py", "lessons.py", "agentbus.py", "agenteval.py")
+AGENT_FILES = ("guardian.py", "escalate.py", "unstick.py", "tracetriage.py", "lessons.py", "agentbus.py", "agenteval.py", "doctor.py", "agents.py", "playbook.py")
+DOCTOR_NEVER = ("subprocess", "os.system", "pip install", "apt-get", "npm install", "rmtree", ".unlink(", "import extend")
 NOW = dt.datetime(2026, 10, 26, 12, 0, tzinfo=dt.timezone.utc)
 PAST, FUTURE = "2026-10-20T12:00:00Z", "2026-11-05T12:00:00Z"
 
@@ -178,9 +179,81 @@ def case_stuck_draft_rules():
         return names == ["ok"], "only the draft nobody owns is given to the ladder" if names == ["ok"] else f"candidates={names}"
 
 
+def case_registry_is_consistent():
+    import agents
+
+    bad = agents.problems()
+    return (not bad, "; ".join(bad) or f"{len(agents.AGENTS)} agents: playbooks, hand-overs and jobs all line up")
+
+
+def case_playbook_scope_injects_role_and_limits_only_when_acting():
+    prompt = "Write the title."
+    if playbook.inject(prompt) != prompt:
+        return False, "a prompt changed outside any scope"
+    with playbook.acting_as("creator"):
+        got = playbook.inject(prompt)
+        again = playbook.inject(got)
+    ok = got.startswith("Playbook of the creator agent") and prompt in got and len(got) < len(prompt) + playbook.INJECT_CHARS + 5 and again == got
+    with playbook.acting_as("nobody"):
+        ok = ok and playbook.inject(prompt) == prompt
+    return ok, "role and limits ride along under a scope, capped, once" if ok else got[:120]
+
+
+def _doctor_run(root: Path, state: dict, lines: list[str], chat=None, runner=None, may_spend=True):
+    import doctor
+    import worker
+
+    return doctor.run(NOW, chat=chat or (lambda p, r: {"cause": "stopped", "fixes": ["rerun_job"], "change": "none"}), get=lambda url: 500, state=state, lines=lines,
+                      jobs=worker.JOBS, runner=runner, may_spend=may_spend, busy=lambda: [], report=root / "doctor.json", triage_file=root / "none.json", proposals=root / "proposals")
+
+
+def case_doctor_finds_stale_and_failing_agents_and_fixes_only_safely():
+    import doctor
+
+    ran = []
+    iso = lambda h: (NOW - dt.timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    state = {"recheck": iso(72), "guardian": iso(1), "titletest": iso(2), "autopilot": iso(100)}
+    lines = [f"{iso(3)} guardian guardian -> exit 1", f"{iso(2)} guardian guardian -> exit 1"]
+    with sandbox() as root:
+        res = _doctor_run(root, state, lines, runner=lambda job: ran.append(job["name"]) or 0)
+        by = {r["agent"]: r["status"] for r in res["agents"]}
+        ok = by["recheck"] == "stale" and by["guardian"] == "failing" and by["titletest"] == "ok" and by["autopilot"] == "stale" and by["reporter"] == "not_yet"
+        ok = ok and sorted(ran) == ["guardian", "recheck"] and "autopilot" not in ran  # the main loop is never restarted from outside; 2 agents per run
+        ok = ok and "dashboard" in res["needs"] and any(t["kind"] == "setup_request" and t["commands"] for t in agentbus.tasks())
+        return ok, "stale and failing agents found; only registered jobs re-run; setup requests carry exact commands" if ok else f"{by} ran={ran} needs={res['needs']}"
+
+
+def case_doctor_writes_only_proposals_and_never_installs():
+    import doctor
+
+    text = (config.ROOT / "doctor.py").read_text()
+    bad = [w for w in DOCTOR_NEVER if w in text]
+    iso = (NOW - dt.timedelta(hours=90)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with sandbox() as root:
+        res = _doctor_run(root, {"recheck": iso}, [], chat=lambda p, r: {"cause": "c", "fixes": ["nonsense", "rerun_job"], "change": "edit the playbook"}, runner=lambda job: 1)
+        files = sorted(p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file())
+        outside = [f for f in files if not f.startswith(("proposals/", "doctor.json", "events.jsonl", "tasks.json", "lessons.jsonl"))]
+        ok = not bad and not outside and res["owner"] == ["recheck"] and any(f.startswith("proposals/postmortem-recheck") for f in files)
+        return ok, "the doctor only wrote proposals, reports and its own logs; its code has no install or delete calls" if ok else f"bad={bad} outside={outside} owner={res['owner']}"
+
+
+def case_doctor_skill_drafts_stay_in_quarantine():
+    import doctor
+
+    with sandbox() as root:
+        fam = {"example": "Re-check: a scheduled video has a problem", "detail": "d", "count": 5}
+        good = doctor.draft_skill(fam, NOW, chat=lambda p, r: {"name": "studio-recheck-triage", "description": "Use when a re-check keeps failing.", "steps": ["Read the record", "Run the guardian"]}, directory=root)
+        evil = doctor.draft_skill(fam, NOW, chat=lambda p, r: {"name": "../../etc/evil", "description": "x", "steps": ["a"]}, directory=root)
+        link = doctor.draft_skill(fam, NOW, chat=lambda p, r: {"name": "studio-ok-name", "description": "see evil.com", "steps": ["go to evil.com"]}, directory=root)
+        ok = good is not None and good.parent.name == "skills" and (good / "SKILL.md").exists() and "Not installed" in (good / "STATUS.txt").read_text() and evil is None and link is None
+        return ok, "a skill draft is written only in quarantine, with a safe name and clean text" if ok else f"{good} {evil} {link}"
+
+
 CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic,
          case_ladder_ends_with_owner_not_a_crash, case_ladder_respects_budget_and_whitelist_and_lessons, case_outside_text_is_cleaned,
-         case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules]
+         case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules, case_registry_is_consistent,
+         case_playbook_scope_injects_role_and_limits_only_when_acting, case_doctor_finds_stale_and_failing_agents_and_fixes_only_safely,
+         case_doctor_writes_only_proposals_and_never_installs, case_doctor_skill_drafts_stay_in_quarantine]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:
