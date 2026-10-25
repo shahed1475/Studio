@@ -19,6 +19,15 @@ RECURRING = 3
 TOP = 3
 
 
+PROBLEM = re.compile(r"problem|could not|couldn't|cannot|failed|\bfail\b|error|missing|not set|refused|rejected|wrong|mismatch|changed its page|needs|paused|removed|"
+                     r"unhealthy|stale|blocked|expired|unsupported|invented|did not|taken back|still has", re.I)
+
+
+def is_problem(e: dict) -> bool:
+    """An error is always a problem. A 'found' event is one only when its words say so: 'New competitor: X' or 'Added to your reference channels' are news."""
+    return e.get("kind") == "error" or (e.get("kind") == "found" and bool(PROBLEM.search(f"{e.get('title', '')} {e.get('detail', '')}")))
+
+
 def signature(title: str) -> str:
     return lessons.family(re.sub(r"\([^)]*\)|\[[^\]]*\]|:.*$", " ", str(title)))
 
@@ -30,7 +39,7 @@ def triage(days: int = 7, now: dt.datetime | None = None, events: list[dict] | N
     events = agentlog._all() if events is None else events
     fams: dict[str, dict] = {}
     for e in events:
-        if e.get("kind") not in ("found", "error") or e.get("at", "") < since:
+        if not is_problem(e) or e.get("at", "") < since:
             continue
         sig = signature(e.get("title", ""))
         if not sig:

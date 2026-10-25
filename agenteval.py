@@ -188,8 +188,9 @@ def case_registry_is_consistent():
 
 def case_playbook_scope_injects_role_and_limits_only_when_acting():
     prompt = "Write the title."
-    if playbook.inject(prompt) != prompt:
-        return False, "a prompt changed outside any scope"
+    with playbook.acting_as(None):  # a command line run sets its own agent for the whole process: start from a clean scope
+        if playbook.inject(prompt) != prompt:
+            return False, "a prompt changed outside any scope"
     with playbook.acting_as("creator"):
         got = playbook.inject(prompt)
         again = playbook.inject(got)

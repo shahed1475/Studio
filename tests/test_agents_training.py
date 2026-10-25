@@ -244,3 +244,25 @@ def test_setup_requests_keep_exact_commands_for_the_owner_and_the_risk_row_shows
         assert row["level"] == "watch" and "recheck unhealthy" in row["evidence"] and "missing setup: dashboard" in row["evidence"]
         doc.write_text(json.dumps({"agents": [{"agent": "recheck", "status": "ok"}], "needs": []}))
         assert risk.agents_row(NOW, ev, root / "none.json", doc)["level"] == "ok"
+
+
+def test_triage_counts_problems_and_not_routine_news():
+    ev = lambda kind, title, detail="d": {"at": "2026-10-25T10:00:00Z", "kind": kind, "title": title, "detail": detail}
+    events = [ev("found", "New competitor: Ancient Explain", "63,400 subscribers"), ev("found", "Added to your reference channels: X", "15 videos in the last year"),
+              ev("found", "Re-check: a scheduled video has a problem (A)"), ev("found", "YouTube changed its page: Spam", "Creators should disclose"),
+              ev("error", "Needs your eyes: Delphi", "reviewer says fail"), ev("applied", "Guardian repaired the metadata of A"), ev("info", "Started")]
+    import tempfile
+    from pathlib import Path
+    with agenteval.sandbox(), tempfile.TemporaryDirectory() as d:
+        rep = tracetriage.triage(7, NOW, events, report=Path(d) / "t.json", post=False)
+    assert {f["example"][:12] for f in rep["families"]} == {"Re-check: a ", "YouTube chan", "Needs your e"}
+
+
+def test_the_scope_case_starts_from_a_clean_scope_even_when_the_command_set_an_agent():
+    import playbook
+    playbook.set_agent("evaluator")
+    try:
+        ok, why = agenteval.case_playbook_scope_injects_role_and_limits_only_when_acting()
+    finally:
+        playbook.set_agent(None)
+    assert ok, why
