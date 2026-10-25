@@ -10,5 +10,6 @@
   "limits": {"videos_per_week": 1, "daily_budget_usd": 0.0},
   "rules": ["every_number_has_dated_official_source", "no_graphic_violence", "no_real_footage_unless_verified", "evergreen_topics_only", "context_inside_the_video", "disclose_synthetic_content"],
   "prompt_template": "prompts/tech_script.md",
+  "official_domains": [],
   "env": {}
 }
