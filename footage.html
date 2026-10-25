@@ -1,0 +1,56 @@
+<!doctype html>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Footage clips</title>
+<style>
+:root{--bg:#f5f4f0;--fg:#1d2420;--muted:#5d6762;--card:#fff;--line:#d9d6cc;--ok:#1b6b50;--warn:#a5521b;--bad:#a02828}
+@media (prefers-color-scheme:dark){:root{--bg:#141a17;--fg:#e8ece9;--muted:#a1aca6;--card:#1d2521;--line:#303b36;--ok:#5fc7a0;--warn:#e29a62;--bad:#f08080}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif;padding:16px;max-width:980px;margin-inline:auto}
+h1{font-size:1.4rem;margin:0 0 4px}h2{font-size:1.05rem;margin:22px 0 6px}.muted{color:var(--muted)}a{color:inherit}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:10px}
+.row{display:flex;gap:10px;justify-content:space-between;flex-wrap:wrap}.tag{font-size:.8rem;color:var(--muted)}
+.badge{font-size:.8rem;font-weight:600;border:1px solid currentColor;border-radius:99px;padding:0 8px}
+.done,.used{color:var(--ok)}.running,.queued,.fallback{color:var(--warn)}.failed,.blocked{color:var(--bad)}
+video,img{max-width:100%;border-radius:6px;background:#000}.media{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0}.media>*{flex:1 1 280px;min-width:0}
+dl{display:grid;grid-template-columns:max-content 1fr;gap:2px 12px;margin:8px 0;font-size:.9rem}dt{color:var(--muted)}dd{margin:0;word-break:break-all}
+pre{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px;overflow-x:auto;font-size:12px;white-space:pre-wrap;word-break:break-word;max-height:260px}
+.err{color:var(--bad);font-weight:600}
+</style>
+<h1>Footage clips</h1><p class="muted" id="at">loading…</p>
+<div class="card" id="money"></div>
+<div id="videos"></div>
+<p class="muted"><a href="/now">Right now</a> · <a href="/">Back to the dashboard</a> · refreshes every 15 seconds</p>
+<script>
+const $=id=>document.getElementById(id);
+function el(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e}
+function row(a,b,cls){const d=el("div",undefined,"row");d.append(el("span",a),el("span",b,cls));return d}
+function usd(x){return "$"+Number(x).toFixed(2)}
+function runCard(r){
+  const c=el("div",undefined,"card"),head=el("div",undefined,"row");
+  head.append(el("span",r.run_id),el("span",r.status,"badge "+r.status));c.append(head);
+  if(r.error)c.append(el("div",r.error,"err"));
+  c.append(el("div",(r.decision?"Decision: "+r.decision:"No decision yet")+(r.reason?" · "+r.reason:""),"tag"+(r.decision?" "+r.decision:"")));
+  const m=el("div",undefined,"media");
+  if(r.clip_url){const v=document.createElement("video");v.controls=true;v.preload="none";v.src=r.clip_url;if(r.thumb_url)v.poster=r.thumb_url;m.append(v)}
+  if(r.contact_url){const i=document.createElement("img");i.src=r.contact_url;i.alt="Contact sheet of the clip";i.loading="lazy";m.append(i)}
+  if(m.children.length)c.append(m);
+  const dl=el("dl");
+  const add=(k,v)=>{if(v){dl.append(el("dt",k),el("dd",v))}};
+  if(r.ledger){add("Source",r.ledger.source);add("Author / model",r.ledger.author);add("Licence",r.ledger.licence);add("Fetched",r.ledger.fetched);add("File hash",r.ledger.sha256)}
+  else dl.append(el("dt","Ledger"),el("dd","no ledger row for this run"));
+  add("Cost booked",usd(r.cost));add("Started",r.created_at);add("Finished",r.finished_at);add("Job",r.job);add("Model",r.model);
+  c.append(dl);
+  const d=el("details");d.append(el("summary","Last "+r.log.length+" log lines"),el("pre",r.log.join("\n")||"(no log lines)"));c.append(d);
+  return c;
+}
+async function load(){
+  try{
+    const r=await fetch("/api/footage");if(r.status===401){location.href="/login";return}
+    const d=await r.json();
+    $("at").textContent="Updated "+d.at+" (UTC)";
+    $("money").replaceChildren(row("Spent today / daily cap",usd(d.money.spent_today)+" / "+usd(d.money.cap)+(d.money.left<0?" (over the cap: new paid work is blocked until tomorrow UTC)":" ("+usd(d.money.left)+" left)"),d.money.left<0?"err":""));
+    const v=$("videos");
+    if(!d.videos.length){v.replaceChildren(el("p","No footage runs yet.","muted"));return}
+    v.replaceChildren(...d.videos.map(x=>{const s=el("section");s.append(el("h2",x.title+" — total "+usd(x.total_cost)),...x.runs.map(runCard));return s}));
+  }catch(e){$("at").textContent="Could not load: "+e}
+}
+load();setInterval(load,15000);
+</script>

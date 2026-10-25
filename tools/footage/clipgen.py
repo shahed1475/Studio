@@ -1,39 +1,90 @@
-"""One paid AI clip through OpenRouter's video API, with every I/O step checked and an asset-ledger row written next to the clip.
-Runs inside a studio worker container (`python3 - < clipgen.py`) so the studio's own saved key is used; the key is never printed."""
+"""One paid AI clip through a video API, with every I/O step checked, the cost booked before the job is sent, and an asset-ledger row next to the clip.
+Runs inside a studio worker container (`python3 - < clipgen.py`) so the studio's own saved key is used; the key is never printed or logged.
+Everything it makes goes into one run folder (footagestore.py) that the dashboard's "Footage clips" page reads."""
 import hashlib
 import json
 import os
 import re
+import signal
+import subprocess
 import sys
 import time
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 import requests
 
+import assetledger  # imported up front: a missing module must show before anything is bought, not after the job is sent
+import filelock
+
 CONFIG = Path("config/footage.json")
-REQUIRED = ("base_url", "model", "duration_s", "resolution", "aspect_ratio", "generate_audio", "min_balance", "max_duration_s",
-            "max_clip_bytes", "price_per_second_usd", "max_clip_cost_usd", "cost_scope", "poll_seconds", "max_polls", "http_timeout_s", "download_timeout_s")
-FAILED_STATUSES = ("failed", "cancelled", "expired")
+ROLE = "footage"
+LICENCE = "ai-generated"
 JOB_ID = re.compile(r"[A-Za-z0-9_-]{1,80}")
+NUMBERS = ("duration_s", "max_duration_s", "max_clip_bytes", "price_per_second_usd", "max_clip_cost_usd", "poll_seconds", "max_polls", "http_timeout_s",
+           "download_timeout_s", "tool_timeout_s", "cost_warn_factor", "duration_tolerance_s", "aspect_tolerance")
+NUMBERS_ZERO_OK = ("min_balance", "retries", "backoff_s")
+TEXTS = ("base_url", "model", "resolution", "aspect_ratio", "cost_scope")
+LISTS = ("success_statuses", "failed_statuses", "allowed_containers")
 
 
 class ClipError(Exception):
     pass
 
 
+class Refused(ClipError):
+    """The studio's own rules said no before anything was bought (daily cap, low balance, per-clip cap)."""
+
+
 class JobNotCharged(ClipError):
-    """The provider ended the job without delivering (failed, cancelled, expired): the studio books no cost for it."""
+    """The provider ended the job without delivering: the studio releases the cost it had reserved."""
 
 
+def _snip(text, n=160) -> str:
+    """Server text for a message or log line: printable characters only (no newline can forge a line), short."""
+    return "".join(ch if ch.isprintable() else " " for ch in str(text))[:n]
+
+
+def _say(text: str) -> None:
+    """Progress line for the caller. A dropped ssh connection must not end the wait for a job that is already paid for."""
+    try:
+        print(text, flush=True)
+    except OSError:
+        pass
+
+
+def _utc() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# ---- config ----
 def load_config(path=CONFIG) -> dict:
     try:
         cfg = json.loads(Path(path).read_text())
     except (OSError, ValueError) as e:
         raise ClipError(f"cannot read {path}: {e}")
-    missing = [k for k in REQUIRED if k not in cfg]
+    if not isinstance(cfg, dict):
+        raise ClipError(f"{path} is not a settings object")
+    missing = [k for k in NUMBERS + NUMBERS_ZERO_OK + TEXTS + LISTS + ("generate_audio",) if k not in cfg]
     if missing:
         raise ClipError(f"{path} lacks: {', '.join(missing)}")
+    for k in NUMBERS + NUMBERS_ZERO_OK:
+        v = cfg[k]
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0 or (k in NUMBERS and v == 0):
+            raise ClipError(f"{path}: {k} must be a positive number" + (" (or 0)" if k in NUMBERS_ZERO_OK else ""))
+    for k in TEXTS:
+        if not isinstance(cfg[k], str) or not cfg[k].strip():
+            raise ClipError(f"{path}: {k} must be a non-empty text")
+    for k in LISTS:
+        if not isinstance(cfg[k], list) or not all(isinstance(x, str) and x for x in cfg[k]):
+            raise ClipError(f"{path}: {k} must be a list of texts")
+    if not isinstance(cfg["generate_audio"], bool):
+        raise ClipError(f"{path}: generate_audio must be true or false")
+    if urlparse(cfg["base_url"]).scheme != "https":
+        raise ClipError(f"{path}: base_url must be https")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", cfg["cost_scope"]):
+        raise ClipError(f"{path}: cost_scope must be a plain word")
     if cfg["duration_s"] > cfg["max_duration_s"]:
         raise ClipError(f"duration {cfg['duration_s']} s is over the cap of {cfg['max_duration_s']} s")
     if estimated_cost(cfg) > cfg["max_clip_cost_usd"]:
@@ -41,54 +92,85 @@ def load_config(path=CONFIG) -> dict:
     return cfg
 
 
+# ---- money: reserve before the job is sent, release if it was never charged ----
 def estimated_cost(cfg: dict) -> float:
-    """List price per second times the length: this is what the studio books and checks against its daily cap."""
+    """List price per second times the length: what the studio books and checks against its daily cap."""
     return round(cfg["price_per_second_usd"] * cfg["duration_s"], 4)
 
 
+def _studio_money():
+    import llm
+
+    try:
+        return llm, llm.load_config()["daily_budget_usd"]
+    except (OSError, ValueError, KeyError) as e:
+        raise ClipError(f"cannot read the studio's spending settings: {e}")
+
+
 def check_daily_cap(cfg: dict) -> None:
-    """Same money guard as every other paid call: today's spend plus this clip must stay inside the daily budget."""
-    import llm
-
-    cap, spent, est = llm.load_config()["daily_budget_usd"], llm.spent_today(), estimated_cost(cfg)
+    """The early, cheap refusal: today's spend plus this clip must stay inside the daily budget."""
+    llm, cap = _studio_money()
+    try:
+        spent, est = llm.spent_today(), estimated_cost(cfg)
+    except (OSError, ValueError) as e:
+        raise ClipError(f"cannot read today's spend: {e}")
     if spent + est > cap:
-        raise ClipError(f"daily cap: ${spent:.2f} spent today + ${est:.2f} for this clip is over the ${cap:.2f} cap; nothing was bought")
+        raise Refused(f"daily cap: ${spent:.2f} spent today + ${est:.2f} for this clip is over the ${cap:.2f} cap; nothing was bought")
 
 
-def book_cost(cfg: dict) -> float:
-    """Record the clip's cost in the day's total (the daily guard) and under cost_scope in data/video_costs.json."""
-    import llm
-
-    usd = estimated_cost(cfg)
-    with llm.cost_scope(cfg["cost_scope"]):
-        llm.record(llm._now(), "footage", cfg["model"], 0, 0, usd)
-    return usd
-
-
-def balance(cfg: dict, headers: dict, http=requests) -> float:
+def _book(cfg: dict, usd: float) -> None:
+    """Add usd (negative to release) to the day total and to data/video_costs.json under cost_scope."""
+    llm, _ = _studio_money()
     try:
-        r = http.get(f"{cfg['base_url']}/credits", headers=headers, timeout=cfg["http_timeout_s"])
-    except requests.RequestException as e:
-        raise ClipError(f"balance check failed: {e}")
-    if r.status_code >= 300:
-        raise ClipError(f"balance check failed: HTTP {r.status_code} {_snip(r.text)}")
+        with llm.cost_scope(cfg["cost_scope"]):
+            llm.record(llm._now(), ROLE, cfg["model"], 0, 0, usd)
+    except (OSError, ValueError) as e:
+        raise ClipError(f"cannot record the cost ${usd:.2f}: {e}")
+
+
+def _release(cfg: dict, run, usd: float) -> None:
+    """Give a reservation back. The record says 0 first, so an interrupt in between can only leave the money booked (the safe side), never given back twice."""
+    run.update(cost_booked=0.0)
     try:
-        d = r.json()["data"]
-        return round(d["total_credits"] - d["total_usage"], 4)
-    except (ValueError, KeyError, TypeError):
-        raise ClipError(f"balance reply not understood (HTTP {r.status_code}): {_snip(r.text)}")
+        _book(cfg, -usd)
+    except ClipError:
+        run.update(cost_booked=usd)
+        raise
 
 
-def _get(http, url, headers, timeout):
-    try:
-        return http.get(url, headers=headers, timeout=timeout)
-    except requests.RequestException as e:
-        raise ClipError(f"request failed: {e}")
+def reserve(cfg: dict, state: dict | None = None) -> float:
+    """Book the estimate FIRST, then check the cap against the total that now includes it. Two runs at once cannot both slip under the cap: at least one
+    sees the other's booking and gives its own back."""
+    est = estimated_cost(cfg)
+    _book(cfg, est)
+    if state is not None:
+        state["est"] = est  # set at once, so an interrupt right after the booking still knows about it
+    llm, cap = _studio_money()
+    if llm.spent_today() > cap:
+        _book(cfg, -est)
+        if state is not None:
+            state["est"] = 0
+        raise Refused(f"daily cap: this clip (${est:.2f}) would take today's spend over the ${cap:.2f} cap; nothing was bought")
+    return est
 
 
-def _snip(text, n=160) -> str:
-    """Server text for an error message: printable characters only, short."""
-    return "".join(ch if ch.isprintable() else " " for ch in str(text))[:n]
+# ---- network ----
+def _get(cfg: dict, http, url: str, headers: dict, timeout: float, sleep, **kw):
+    """GET with retries and doubling waits on connection errors, 429 and 5xx. Returns the last response, or raises ClipError when only errors came back."""
+    last_err, resp = None, None
+    for attempt in range(cfg["retries"] + 1):
+        try:
+            resp = http.get(url, headers=headers, timeout=timeout, **kw)
+            last_err = None
+            if resp.status_code != 429 and resp.status_code < 500:
+                return resp
+        except requests.RequestException as e:
+            last_err, resp = e, None
+        if attempt < cfg["retries"]:
+            sleep(cfg["backoff_s"] * 2 ** attempt)
+    if resp is None:
+        raise ClipError(f"request failed after {cfg['retries'] + 1} tries: {_snip(last_err)}")
+    return resp
 
 
 def _json(resp) -> dict:
@@ -99,100 +181,343 @@ def _json(resp) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def generate(cfg: dict, key: str, prompt: str, out_dir, http=requests, sleep=time.sleep, today: str | None = None) -> dict:
-    import assetledger
-
-    if not key:
-        raise ClipError("no OpenRouter key in the studio")
-    if not prompt:
-        raise ClipError("empty prompt")
-    auth, base = {"Authorization": f"Bearer {key}"}, cfg["base_url"]
-    check_daily_cap(cfg)
-    before = balance(cfg, auth, http)
-    if before < cfg["min_balance"]:
-        raise ClipError(f"balance {before} is under {cfg['min_balance']}, stopping")
-    body = {"model": cfg["model"], "prompt": prompt, "duration": cfg["duration_s"], "resolution": cfg["resolution"],
-            "aspect_ratio": cfg["aspect_ratio"], "generate_audio": cfg["generate_audio"]}
+def balance(cfg: dict, headers: dict, http=requests, sleep=time.sleep) -> float:
+    r = _get(cfg, http, f"{cfg['base_url']}/credits", headers, cfg["http_timeout_s"], sleep)
+    if r.status_code >= 300:
+        raise ClipError(f"balance check failed: HTTP {r.status_code} {_snip(r.text)}")
     try:
-        reply = http.post(f"{base}/videos", headers=auth, json=body, timeout=cfg["http_timeout_s"])
-    except requests.RequestException as e:
-        raise ClipError(f"submit failed: {e}")
-    if reply.status_code >= 300:
-        raise ClipError(f"submit failed HTTP {reply.status_code}: {_snip(reply.text)}")
-    job = _json(reply).get("id")
-    if not isinstance(job, str) or not JOB_ID.fullmatch(job):
-        raise ClipError(f"no usable job id in the reply: {_snip(reply.text)}")
-    print(f"job: {job} (paid from here on)", flush=True)
+        d = r.json()["data"]
+        return round(d["total_credits"] - d["total_usage"], 4)
+    except (ValueError, KeyError, TypeError):
+        raise ClipError(f"balance reply not understood (HTTP {r.status_code}): {_snip(r.text)}")
+
+
+def _balance_or_note(cfg, headers, http, sleep):
     try:
-        result = _finish(cfg, auth, http, sleep, job, before, prompt, Path(out_dir), today)
-    except (ClipError, OSError, ValueError, AttributeError, TypeError) as e:
-        booked = 0.0 if isinstance(e, JobNotCharged) else book_cost(cfg)  # a job that may have run is charged until the provider says otherwise
-        raise ClipError(f"job {job}: {e}; booked ${booked:.2f}; balance now {_safe_balance(cfg, auth, http)}") from e
-    result["booked_usd"] = book_cost(cfg)
-    return result
+        return balance(cfg, headers, http, sleep), ""
+    except ClipError as e:
+        return None, _snip(e)
 
 
-def _finish(cfg, auth, http, sleep, job, before, prompt, out, today) -> dict:
-    import assetledger
+# ---- files and checks ----
+def _ffmpeg(args: list[str], timeout: float) -> subprocess.CompletedProcess:
+    return subprocess.run(["ffmpeg", "-v", "error", "-y", *args], capture_output=True, text=True, timeout=timeout)
 
+
+def _decode_check(path: Path, cfg: dict) -> None:
+    """A full decode (CLAUDE.md D): a header and a size say nothing about whether the whole clip plays."""
+    try:
+        r = _ffmpeg(["-i", str(path), "-f", "null", "-"], cfg["tool_timeout_s"])
+    except FileNotFoundError:
+        raise ClipError("ffmpeg is missing, so the clip cannot be verified")
+    except subprocess.TimeoutExpired:
+        raise ClipError("the full decode of the clip timed out")
+    if r.returncode != 0 or r.stderr.strip():
+        raise ClipError(f"the clip does not decode cleanly: {_snip(r.stderr)}")
+
+
+def _probe_check(path: Path, cfg: dict) -> dict:
+    """Duration, size and shape against what was asked for (CLAUDE.md D). A mismatch is not a clip the studio may use."""
+    try:
+        r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height:format=duration", "-of", "json", str(path)],
+                           capture_output=True, text=True, timeout=cfg["tool_timeout_s"])
+        info = json.loads(r.stdout)
+        w, h, dur = int(info["streams"][0]["width"]), int(info["streams"][0]["height"]), float(info["format"]["duration"])
+    except FileNotFoundError:
+        raise ClipError("ffprobe is missing, so the clip's size and length cannot be verified")
+    except (subprocess.TimeoutExpired, ValueError, KeyError, IndexError, TypeError):
+        raise ClipError("the clip's size and length could not be read")
+    problems = []
+    if abs(dur - cfg["duration_s"]) > cfg["duration_tolerance_s"]:
+        problems.append(f"length {dur:.1f} s, asked for {cfg['duration_s']} s")
+    m = re.fullmatch(r"(\d{3,4})p", cfg["resolution"])
+    if m and h != int(m.group(1)):
+        problems.append(f"height {h}, asked for {cfg['resolution']}")
+    a = re.fullmatch(r"(\d+):(\d+)", cfg["aspect_ratio"])
+    if a and abs(w / h - int(a.group(1)) / int(a.group(2))) > cfg["aspect_tolerance"] * int(a.group(1)) / int(a.group(2)):
+        problems.append(f"shape {w}x{h}, asked for {cfg['aspect_ratio']}")
+    if problems:
+        raise ClipError("the clip is not what was asked for: " + "; ".join(problems))
+    return {"width": w, "height": h, "duration_s": round(dur, 2)}
+
+
+def _make_picture(path: Path, out: Path, vf: str, cfg: dict, extra=()) -> bool:
+    """A contact sheet or a thumbnail. These are for the dashboard only, so a failure is reported by the caller and never stops the run."""
+    try:
+        r = _ffmpeg(["-i", str(path), "-vf", vf, "-frames:v", "1", *extra, str(out)], cfg["tool_timeout_s"])
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return False
+    return r.returncode == 0 and out.is_file() and out.stat().st_size > 0
+
+
+def _read_body(got, cap: int) -> bytes:
+    """The body, stopping as soon as it passes the size cap (a streamed reply is never held whole first)."""
+    chunks = getattr(got, "iter_content", None)
+    if chunks is None:
+        return got.content
+    buf = bytearray()
+    for chunk in chunks(chunk_size=1 << 20):
+        buf += chunk
+        if len(buf) > cap:
+            raise ClipError(f"clip is over the cap of {cap} bytes; download stopped")
+    return bytes(buf)
+
+
+def _download(cfg, http, base, job, auth, sleep) -> bytes:
+    """The clip bytes. A body shorter than the server announced is a truncated download: it is fetched again, within the retry limit."""
+    last, cap = "no attempt", cfg["max_clip_bytes"]
+    for attempt in range(cfg["retries"] + 1):
+        got = _get(cfg, http, f"{base}/videos/{job}/content", {**auth, "Accept-Encoding": "identity"}, cfg["download_timeout_s"], sleep, stream=True)
+        try:
+            if got.status_code >= 300:
+                raise ClipError(f"download failed HTTP {got.status_code} (the job was charged)")
+            declared = getattr(got, "headers", {}).get("Content-Length")
+            declared = int(declared) if declared and declared.isdigit() else None
+            if declared is not None and declared > cap:
+                raise ClipError(f"clip is announced as {declared} bytes, over the cap of {cap}")
+            body = _read_body(got, cap)
+        except requests.RequestException as e:
+            last = f"download interrupted: {_snip(e)}"
+            body = None
+        finally:
+            if hasattr(got, "close"):
+                got.close()
+        if body is not None and (declared is None or declared == len(body)):
+            return body
+        if body is not None:
+            last = f"truncated download: {len(body)} of {declared} bytes"
+        if attempt < cfg["retries"]:
+            sleep(cfg["backoff_s"] * 2 ** attempt)
+    raise ClipError(last)
+
+
+# ---- one run ----
+def _await_and_save(cfg, auth, http, sleep, job, prompt_sha256, run, today) -> dict:
+    """Wait for the job, download the clip, verify it, write the ledger row and the pictures. Everything lands in run.dir."""
     base = cfg["base_url"]
+    last = ""
     for i in range(1, cfg["max_polls"] + 1):
-        poll = _get(http, f"{base}/videos/{job}", auth, cfg["http_timeout_s"])
+        poll = _get(cfg, http, f"{base}/videos/{job}", auth, cfg["http_timeout_s"], sleep)
         status = _json(poll).get("status") if poll.status_code < 300 else None
-        status = status or f"http-{poll.status_code}"
-        print(f"poll {i}: {status}", flush=True)
-        if status == "completed":
+        last = _snip(status) if status else f"http-{poll.status_code}"
+        _say(f"poll {i}: {last}")
+        if last in cfg["success_statuses"]:
             break
-        if status in FAILED_STATUSES:
-            raise JobNotCharged(f"ended: {status}")
+        if last in cfg["failed_statuses"]:
+            raise JobNotCharged(f"ended: {last}")
         sleep(cfg["poll_seconds"])
     else:
-        raise ClipError(f"not done after {cfg['max_polls']} polls; it may still finish and be charged")
-    got = _get(http, f"{base}/videos/{job}/content", auth, cfg["download_timeout_s"])
-    if got.status_code >= 300:
-        raise ClipError(f"download failed HTTP {got.status_code} (it was charged)")
-    if got.content[4:8] != b"ftyp":
-        raise ClipError(f"downloaded file is not an MP4: {got.content[:80]!r}")
-    if len(got.content) > cfg["max_clip_bytes"]:
-        raise ClipError(f"clip is {len(got.content)} bytes, over the cap of {cfg['max_clip_bytes']}")
-    out.mkdir(parents=True, exist_ok=True)
-    dest, part = (out / f"{job}.mp4").resolve(), (out / f"{job}.mp4.part").resolve()
+        raise ClipError(f"not done after {cfg['max_polls']} polls (last status: {last}); it may still finish and be charged; resume it with --resume")
+    content = _download(cfg, http, base, job, auth, sleep)
+    if content[4:8] != b"ftyp":
+        raise ClipError(f"downloaded file is not an MP4: {content[:80]!r}")
+    if len(content) > cfg["max_clip_bytes"]:
+        raise ClipError(f"clip is {len(content)} bytes, over the cap of {cfg['max_clip_bytes']}")
+    dest, part = (run.dir / f"{job}.mp4").resolve(), (run.dir / f"{job}.mp4.part").resolve()
     try:
-        part.write_bytes(got.content)
+        part.write_bytes(content)
         part.replace(dest)
     finally:
         part.unlink(missing_ok=True)
-    row = assetledger.row(dest, f"{base}/videos/{job}", "ai-generated", today or date.today().isoformat(), author=cfg["model"])
-    row.update({"ai_label": True, "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(), "job": job})
-    bad = assetledger.problems([row], [dest.name], {dest.name: row["sha256"]})
+    run.update(files={"clip": dest.name})
+    try:
+        _decode_check(dest, cfg)
+    except ClipError:
+        dest.unlink(missing_ok=True)  # an unplayable file is not kept as if it were a clip
+        run.update(files={"clip": None})
+        raise
+    try:
+        run.update(probe=_probe_check(dest, cfg))
+    except ClipError as e:
+        raise ClipError(f"{e}; the paid clip is kept at {dest} but is not accepted")
+    row = assetledger.row(dest, f"{base}/videos/{job}", LICENCE, today or date.today().isoformat(), author=cfg["model"])
+    if row["sha256"] != hashlib.sha256(content).hexdigest():
+        dest.unlink(missing_ok=True)
+        raise ClipError("the saved clip does not match the downloaded bytes (disk error?)")
+    row.update({"ai_label": True, "prompt_sha256": prompt_sha256, "job": job,
+                "source_note": "the provider's job for this clip; opening it needs the studio's key"})
+    bad = assetledger.problems([row], [dest.name], {dest.name: hashlib.sha256(dest.read_bytes()).hexdigest()})
     if bad:
         raise ClipError(f"the ledger row is not accepted ({'; '.join(bad)}); the paid clip is kept at {dest}")
     ledger = dest.with_suffix(".ledger.json")
     try:
-        ledger.write_text(json.dumps(row, indent=1))
+        filelock.write_atomic(ledger, json.dumps(row, indent=2))
     except OSError as e:
+        ledger.with_name(ledger.name + ".tmp").unlink(missing_ok=True)
         raise ClipError(f"cannot save the ledger row ({e}); the paid clip is kept at {dest} and must not be used without one")
-    after = _safe_balance(cfg, auth, http)
-    return {"clip": str(dest), "ledger": str(ledger), "job": job, "bytes": len(got.content), "cost": round(before - after, 4) if isinstance(after, float) else None, "balance_after": after}
+    run.update(files={"ledger": ledger.name})
+    for kind, name, vf, extra in (("contact", f"{job}.contact.jpg", "fps=1/2,scale=320:-1,tile=4x2", ()), ("thumb", f"{job}.thumb.jpg", "scale=480:-1", ("-ss", "0.5"))):
+        if _make_picture(dest, run.dir / name, vf, cfg, extra):
+            run.update(files={kind: name})
+        else:
+            run.log(f"{kind} picture could not be made (the clip itself is fine)")
+    return {"clip": str(dest), "ledger": str(ledger), "job": job, "bytes": len(content)}
 
 
-def _safe_balance(cfg, auth, http):
-    """The balance as a float, or a string saying why it is unknown (an error message must still be written)."""
+def generate(cfg: dict, key: str, prompt: str, run, http=requests, sleep=time.sleep, today: str | None = None) -> dict:
+    """One clip. Records its progress in `run` (a footagestore.Run). Raises ClipError; the run record then says why."""
+    run.update(status="running", model=cfg["model"], prompt_preview=_snip(prompt, 200), prompt_sha256=hashlib.sha256(prompt.encode()).hexdigest(), files={"log": "run.log"})
+    run.log(f"start: model {cfg['model']}, {cfg['duration_s']} s, {cfg['resolution']}")
+    state: dict = {}  # what had happened when an interrupt arrives: {"est": reserved cost, "posted": the submit was started}
     try:
-        return balance(cfg, auth, http)
+        result = _generate(cfg, key, prompt, run, http, sleep, today, state)
+    except KeyboardInterrupt:
+        msg = _interrupted(cfg, run, state)
+        run.update(status="failed", error=msg, finished_at=_utc())
+        run.log(msg)
+        raise
+    except Refused as e:
+        run.update(status="failed", error=str(e), decision="blocked", reason=str(e), finished_at=_utc())
+        run.log(f"asset: decision=blocked reason={e}")
+        raise
     except ClipError as e:
-        return f"unknown ({e})"
+        run.update(status="failed", error=str(e), finished_at=_utc())
+        run.log(f"FAILED: {e}")
+        raise
+    except Exception as e:  # nothing may leave a record at "running"; the job id (if any) is already on disk for --resume
+        msg = f"unexpected {type(e).__name__}: {_snip(e)}" + ("; the paid job can be resumed" if run.read().get("job") else "")
+        run.update(status="failed", error=msg, finished_at=_utc())
+        run.log(f"FAILED: {msg}")
+        raise ClipError(msg) from e
+    reason = f"ledger accepted: {LICENCE}, author {cfg['model']}"
+    run.update(status="done", decision="used", reason=reason, finished_at=_utc())
+    run.log(f"asset {Path(result['clip']).name}: source=provider job {result['job']} licence={LICENCE} decision=used reason={reason}")
+    return result
+
+
+def _interrupted(cfg: dict, run, state: dict) -> str:
+    """What to say, and what to do with the money, for an interrupt at this moment."""
+    if run.read().get("job"):
+        return "interrupted after the job was sent; the cost stays booked; fetch it with --resume"
+    if state.get("posted"):
+        return "interrupted while the job was being sent; a job may exist, so the cost stays booked"
+    if state.get("est"):
+        try:
+            _release(cfg, run, state["est"])
+        except ClipError as e:
+            return f"interrupted before a job was sent, but giving back the reserved cost failed ({e})"
+        return "interrupted before a job was sent; the reserved cost was released"
+    return "interrupted before anything was reserved"
+
+
+def _generate(cfg, key, prompt, run, http, sleep, today, state) -> dict:
+    if not key:
+        raise Refused("no OpenRouter key in the studio")
+    if not prompt or not prompt.strip():
+        raise Refused("empty prompt")
+    auth, base = {"Authorization": f"Bearer {key}"}, cfg["base_url"]
+    check_daily_cap(cfg)
+    before = balance(cfg, auth, http, sleep)
+    if before < cfg["min_balance"]:
+        raise Refused(f"balance {before} is under {cfg['min_balance']}, stopping")
+    est = reserve(cfg, state)  # booked before the job is sent: a crash, a timeout or a kill can no longer lose it
+    run.update(cost_booked=est)
+    run.log(f"reserved ${est:.2f} (balance {before})")
+    body = {"model": cfg["model"], "prompt": prompt, "duration": cfg["duration_s"], "resolution": cfg["resolution"],
+            "aspect_ratio": cfg["aspect_ratio"], "generate_audio": cfg["generate_audio"]}
+    state["posted"] = True
+    try:
+        reply = http.post(f"{base}/videos", headers=auth, json=body, timeout=cfg["http_timeout_s"])  # never retried: a second POST could buy a second clip
+    except requests.RequestException as e:
+        raise ClipError(f"the submit got no answer ({_snip(e)}); a job may exist, so ${est:.2f} stays booked")
+    if 400 <= reply.status_code < 500 and reply.status_code != 408:
+        _release(cfg, run, est)
+        state["est"] = 0
+        raise ClipError(f"submit refused HTTP {reply.status_code}: {_snip(reply.text)}; the reserved cost was released")
+    if reply.status_code >= 300:
+        raise ClipError(f"submit failed HTTP {reply.status_code} ({_snip(reply.text)}); a job may exist, so ${est:.2f} stays booked")
+    job = _json(reply).get("id")
+    if not isinstance(job, str) or not JOB_ID.fullmatch(job):
+        raise ClipError(f"no usable job id in the reply ({_snip(reply.text)}); a job may exist, so ${est:.2f} stays booked")
+    run.update(job=job)  # the id is on disk before anything else can fail
+    run.log(f"job {job} sent (paid from here on)")
+    _say(f"job: {job} (paid from here on)")
+    try:
+        result = _await_and_save(cfg, auth, http, sleep, job, hashlib.sha256(prompt.encode()).hexdigest(), run, today)
+    except JobNotCharged as e:
+        _release(cfg, run, est)
+        raise ClipError(f"job {job}: {e}; the reserved cost was released") from e
+    except (ClipError, OSError, ValueError, AttributeError, TypeError) as e:
+        after, note = _balance_or_note(cfg, auth, http, sleep)
+        raise ClipError(f"job {job}: {e}; ${est:.2f} stays booked; balance now {after if after is not None else 'unknown (' + note + ')'}") from e
+    after, note = _balance_or_note(cfg, auth, http, sleep)
+    measured = round(before - after, 4) if after is not None else None
+    run.update(balance_before=before, balance_after=after, balance_cost=measured)
+    booked = est
+    if measured is not None and measured > est * cfg["cost_warn_factor"]:
+        extra = round(min(measured, cfg["max_clip_cost_usd"]) - est, 4)
+        try:
+            _book(cfg, extra)  # the real fall in the balance is what counts against the cap, even if other spending is in it
+            booked = round(est + extra, 4)
+            run.update(cost_booked=booked)
+            run.log(f"the balance fell by ${measured:.2f}, more than the ${est:.2f} booked: booked ${extra:.2f} more (other spending, or the price in the settings is too low)")
+        except ClipError as e:
+            run.log(f"the balance fell by ${measured:.2f} but ${est:.2f} was booked, and booking the difference failed: {e}")
+    return {**result, "run_id": run.dir.name, "booked_usd": booked, "measured_cost": measured, "balance_after": after, "balance_note": note}
+
+
+def resume(cfg: dict, key: str, run, http=requests, sleep=time.sleep) -> dict:
+    """Fetch the clip of a job that was already sent and booked (a lost connection, a kill). Books nothing new."""
+    job = run.read().get("job")
+    if not isinstance(job, str) or not JOB_ID.fullmatch(job):
+        raise ClipError("this run has no job to resume")
+    if run.read().get("status") == "done":
+        raise ClipError("this run already finished; nothing to resume")  # a done run must never be failed or refunded by a later resume
+    if not key:
+        raise Refused("no OpenRouter key in the studio")
+    run.update(status="running", error=None)
+    run.log(f"resuming job {job}")
+    try:
+        result = _await_and_save(cfg, {"Authorization": f"Bearer {key}"}, http, sleep, job, run.read().get("prompt_sha256", ""), run, None)
+    except KeyboardInterrupt:
+        run.update(status="failed", error="interrupted while resuming; the cost stays booked; fetch it with --resume", finished_at=_utc())
+        raise
+    except Exception as e:
+        msg = str(e) if isinstance(e, ClipError) else f"unexpected {type(e).__name__}: {_snip(e)}"
+        if isinstance(e, JobNotCharged):  # the provider ended the job without a clip: give back what was reserved
+            booked = run.read().get("cost_booked") or 0.0
+            try:
+                if booked > 0:
+                    _release(cfg, run, booked)
+                msg += "; the reserved cost was released"
+            except ClipError as be:
+                msg += f"; giving back the reserved cost failed ({be})"
+        run.update(status="failed", error=msg, finished_at=_utc())
+        run.log(f"FAILED: {msg}")
+        raise ClipError(msg) from e
+    run.update(status="done", decision="used", reason=f"ledger accepted: {LICENCE}, author {cfg['model']}", finished_at=_utc())
+    return {**result, "run_id": run.dir.name}
+
+
+def _stop(signum, frame):
+    raise KeyboardInterrupt
 
 
 def main(argv=None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, _stop)
     try:
+        import footagestore
         import llm
 
         cfg = load_config(os.environ.get("FOOTAGE_CONFIG", CONFIG))
-        out_dir = os.environ.get("FOOTAGE_OUT_DIR", "cache/footage")
-        res = generate(cfg, llm.api_key(), (argv or sys.argv[1:] or [cfg.get("test_prompt", "")])[0], out_dir)
-    except ClipError as e:
-        print(f"FAILED: {e}", file=sys.stderr)
+        if argv[:1] == ["--resume"]:
+            run = footagestore.open_run(*argv[1:3]) if len(argv) == 3 else None
+            if run is None:
+                raise ClipError("usage: --resume <scope> <run_id>")
+            res = resume(cfg, llm.api_key(), run)
+        else:
+            open_jobs = [r["run_id"] for r in footagestore.runs() if r.get("scope") == cfg["cost_scope"] and r.get("status") == "running" and r.get("job")]
+            if open_jobs:
+                raise Refused(f"run {open_jobs[0]} has a paid job whose outcome is not known; fetch it with --resume {cfg['cost_scope']} {open_jobs[0]} first")
+            run = footagestore.create(cfg["cost_scope"], status="running", model=cfg["model"])
+            res = generate(cfg, llm.api_key(), argv[0] if argv else cfg.get("test_prompt", ""), run)
+        res["scope"] = cfg["cost_scope"]
+        res["run_dir"] = str(run.dir)
+        res["files"] = {k: str(run.dir / v) for k, v in run.read().get("files", {}).items() if v}
+    except (ClipError, OSError, ValueError) as e:
+        print(f"FAILED: {_snip(e, 400)}", file=sys.stderr)
         return 1
     print("RESULT " + json.dumps(res))
     return 0

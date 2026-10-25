@@ -626,6 +626,14 @@ class H(BaseHTTPRequestHandler):
             import nowview
 
             self.send_json(nowview.build())
+        elif u.path == "/footage":
+            self.send_bytes((config.ROOT / "footage.html").read_bytes(), "text/html; charset=utf-8")
+        elif u.path == "/api/footage":
+            import footageview
+
+            self.send_json(footageview.build())
+        elif u.path.startswith("/footage/file/"):
+            self.serve_footage(u.path[len("/footage/file/"):])
         elif u.path == "/api/state":
             self.send_json(state())
         elif u.path == "/api/autopilot":
@@ -716,21 +724,46 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b)
 
+    def serve_footage(self, rest):
+        """/footage/file/<scope>/<run_id>/<kind>: only a file that the run's own record lists, and only of a known kind."""
+        import footagestore
+
+        parts = rest.split("/")
+        p = footagestore.file_path(*parts) if len(parts) == 3 else None
+        if p is None:
+            return self.send_error(404)
+        kind = {".mp4": "video/mp4", ".jpg": "image/jpeg", ".json": "application/json", ".log": "text/plain; charset=utf-8"}.get(p.suffix, "application/octet-stream")
+        self.send_ranged(p, kind)
+
     def serve_video(self, slug):
         p = (config.OUT / safe_slug(slug) / "video.mp4")
         if not p.exists():
             return self.send_error(404)
+        self.send_ranged(p, "video/mp4")
+
+    def send_ranged(self, p, content_type):
         size = p.stat().st_size
         start, end = 0, size - 1
         m = re.match(r"bytes=(\d*)-(\d*)", self.headers.get("Range", ""))
+        if m and not (m.group(1) or m.group(2)):
+            m = None
         if m:
-            if m.group(1):
+            if not m.group(1):  # bytes=-N: the last N bytes
+                start = max(size - int(m.group(2)), 0)
+            else:
                 start = int(m.group(1))
-            if m.group(2):
-                end = min(int(m.group(2)), size - 1)
+                if m.group(2):
+                    end = min(int(m.group(2)), size - 1)
+            if start >= size or start > end:
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
         self.send_response(206 if m else 200)
-        self.send_header("Content-Type", "video/mp4")
+        self.send_header("Content-Type", content_type)
         self.send_header("Accept-Ranges", "bytes")
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Length", str(end - start + 1))
         if m:
             self.send_header("Content-Range", f"bytes {start}-{end}/{size}")

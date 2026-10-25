@@ -15,5 +15,21 @@
   "price_per_second_usd": 0.03,
   "max_clip_cost_usd": 1.0,
   "cost_scope": "footage-test",
+  "retries": 3,
+  "backoff_s": 2,
+  "tool_timeout_s": 120,
+  "cost_warn_factor": 1.25,
+  "duration_tolerance_s": 1.5,
+  "aspect_tolerance": 0.03,
+  "success_statuses": [
+    "completed"
+  ],
+  "failed_statuses": [
+    "failed",
+    "cancelled"
+  ],
+  "allowed_containers": [
+    "studio-test-worker"
+  ],
   "test_prompt": "Slow cinematic dolly forward along a misty river bank at dusk, a single small lantern glowing on the muddy shore, old willow trees, 19th-century rural countryside, no people, painterly film look, soft fog drifting over the water"
 }
