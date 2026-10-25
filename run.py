@@ -429,7 +429,10 @@ def main() -> None:
     elif a[0] == "seo-fix":
         import seo
 
-        print("changed: " + (", ".join(seo.repair(config.OUT / a[1])) or "nothing"))
+        try:
+            print("changed: " + (", ".join(seo.repair(config.OUT / a[1])) or "nothing"))
+        except RuntimeError as e:
+            print(f"seo-fix stopped: {e}")
     elif a[0] == "branding":
         import branding
 

@@ -244,7 +244,10 @@ def enforce(meta: dict, chat=None, ask: bool = False) -> list[str]:
 
 def repair(folder: Path, chat=None) -> list[str]:
     """For a video already made: enforce() with the model allowed one rewrite of the description opening. Saved atomically. Returns what changed."""
-    meta = json.loads((folder / "meta.json").read_text())
+    try:
+        meta = json.loads((folder / "meta.json").read_text())
+    except (OSError, ValueError) as e:
+        raise RuntimeError(f"cannot read {folder / 'meta.json'}: {e}") from e
     meta.setdefault("seo", {})
     if not meta["seo"].get("core"):
         meta["seo"]["core"] = core_phrase(meta)  # only asked when the video never had its search phrase worked out

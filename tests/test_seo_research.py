@@ -145,3 +145,12 @@ def test_link_filter_catches_hidden_and_spelled_out_hosts_but_not_ordinary_sente
         assert not seo.linky(ok), ok
     assert seo.clean_sentences("Mami Wata rises. Visit evil.com today. She returns.") == "Mami Wata rises. She returns."
     assert seo.safe_rival_titles([{"title": "Mami Wata ev​il.com explained"}, {"title": "Mami Wata evil dot com explained"}, {"title": "Mami Wata Explained Well"}]) == ["Mami Wata Explained Well"]
+
+
+def test_repair_of_a_missing_or_corrupt_record_is_a_clear_error_not_a_traceback(tmp_path):
+    import pytest
+    with pytest.raises(RuntimeError, match="cannot read"):
+        seo.repair(tmp_path)
+    (tmp_path / "meta.json").write_text("{not json")
+    with pytest.raises(RuntimeError, match="cannot read"):
+        seo.repair(tmp_path)
