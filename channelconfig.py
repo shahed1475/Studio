@@ -45,5 +45,16 @@ def load(channel_id: str) -> dict:
     return validate(data, channel_id)
 
 
+def load_all() -> list[dict]:
+    """Every profile file, sorted by name. A broken one is returned as {"id": name, "error": reason}, never raised, so a page listing them cannot fail on one bad file."""
+    rows = []
+    for p in sorted(DIR.glob("*.json")):
+        try:
+            rows.append(load(p.stem))
+        except ChannelConfigError as e:
+            rows.append({"id": p.stem, "error": str(e)})
+    return rows
+
+
 def prompt(data: dict, **values) -> str:
     return (config.ROOT / data["prompt_template"]).read_text().format(**values)

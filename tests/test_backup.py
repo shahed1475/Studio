@@ -1,3 +1,4 @@
+import pytest
 import datetime as dt
 import json
 import tarfile
@@ -58,8 +59,37 @@ def test_the_risk_card_has_a_backup_row_that_turns_to_watch_when_none_is_recent(
     assert risk.backups(NOW, tmp_path / "b")["level"] == "watch"
     build(tmp_path)
     backup.run(NOW, root=tmp_path, dest=tmp_path / "b")
+    (tmp_path / "b" / backup.PUSH_MARKER).write_text(NOW.strftime("%Y-%m-%dT%H:%M:%SZ") + " backup-20261030.tar.gz\n")
     assert risk.backups(NOW + dt.timedelta(hours=5), tmp_path / "b")["level"] == "ok"
     assert risk.backups(NOW + dt.timedelta(hours=60), tmp_path / "b")["level"] == "watch"
+
+
+def test_a_backup_never_pushed_off_the_server_is_a_watch_and_says_so(tmp_path):
+    import risk
+    build(tmp_path)
+    backup.run(NOW, root=tmp_path, dest=tmp_path / "b")
+    row = risk.backups(NOW + dt.timedelta(hours=5), tmp_path / "b")
+    assert row["level"] == "watch" and "off the server yet" in row["evidence"]
+
+
+def test_the_off_server_copy_turns_to_watch_after_30_hours_and_to_act_after_72(tmp_path):
+    import risk
+    build(tmp_path)
+    b = tmp_path / "b"
+    backup.run(NOW + dt.timedelta(days=5), root=tmp_path, dest=b)  # the local copy stays fresh; only the push ages
+    (b / backup.PUSH_MARKER).write_text(NOW.strftime("%Y-%m-%dT%H:%M:%SZ") + " backup-20261030.tar.gz\n")
+    fresh = NOW + dt.timedelta(hours=20)
+    assert backup.pushed_age_hours(fresh, b) == 20.0
+    (b / backup.PUSH_MARKER).write_text((NOW - dt.timedelta(hours=40)).strftime("%Y-%m-%dT%H:%M:%SZ") + " x\n")
+    assert risk.backups(NOW, b)["level"] != "ok" and "40 hours old" in risk.backups(NOW, b)["evidence"]
+    (b / backup.PUSH_MARKER).write_text((NOW - dt.timedelta(hours=80)).strftime("%Y-%m-%dT%H:%M:%SZ") + " x\n")
+    assert risk.backups(NOW, b)["level"] == "act"
+
+
+@pytest.mark.parametrize("text", ["", "garbage", "2026-13-45T00:00:00Z x", "2099-01-01T00:00:00Z x"])
+def test_an_unreadable_or_future_push_marker_counts_as_never_pushed(tmp_path, text):
+    (tmp_path / backup.PUSH_MARKER).write_text(text)
+    assert backup.pushed_age_hours(NOW, tmp_path) is None
 
 
 def test_the_archive_and_its_folder_are_private(tmp_path):

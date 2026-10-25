@@ -626,6 +626,12 @@ class H(BaseHTTPRequestHandler):
             import nowview
 
             self.send_json(nowview.build())
+        elif u.path == "/channels":
+            self.send_bytes((config.ROOT / "channels.html").read_bytes(), "text/html; charset=utf-8")
+        elif u.path == "/api/channels":
+            import channelsview
+
+            self.send_json(channelsview.build())
         elif u.path == "/footage":
             self.send_bytes((config.ROOT / "footage.html").read_bytes(), "text/html; charset=utf-8")
         elif u.path == "/api/footage":

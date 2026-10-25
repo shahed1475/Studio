@@ -1,0 +1,33 @@
+<!doctype html>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Channels</title>
+<style>
+:root{--bg:#f5f4f0;--fg:#1d2420;--muted:#5d6762;--card:#fff;--line:#d9d6cc;--ok:#1b6b50;--warn:#a5521b}
+@media (prefers-color-scheme:dark){:root{--bg:#141a17;--fg:#e8ece9;--muted:#a1aca6;--card:#1d2521;--line:#303b36;--ok:#5fc7a0;--warn:#e29a62}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif;padding:16px;max-width:900px;margin-inline:auto}
+h1{font-size:1.4rem;margin:0 0 4px}h2{font-size:1rem;margin:20px 0 8px}.muted{color:var(--muted)}a{color:inherit}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px}
+.row{display:flex;gap:10px;justify-content:space-between;flex-wrap:wrap}.tag{font-size:.8rem;color:var(--muted)}
+.on{color:var(--ok);font-weight:600}.off{color:var(--warn);font-weight:600}
+</style>
+<h1>Channels</h1><p class="muted" id="at">loading…</p>
+<div class="card" id="top"></div>
+<h2>Channel profiles</h2><div id="list"></div>
+<p class="muted"><a href="/now">Right now</a> · <a href="/footage">Footage clips</a> · <a href="/">Back to the dashboard</a> · read-only</p>
+<script>
+const $=id=>document.getElementById(id);
+function line(t,v,cls){const d=document.createElement("div");d.className="row";const a=document.createElement("span");a.textContent=t;const b=document.createElement("span");b.textContent=v;if(cls)b.className=cls;d.append(a,b);return d}
+async function load(){
+  try{
+    const r=await fetch("/api/channels");if(r.status===401){location.href="/login";return}
+    const d=await r.json();
+    $("at").textContent="These are the templates in config/channels/. A studio's own switch is in data/profile.json.";
+    $("top").replaceChildren(line("This studio asks a person to approve every video",d.studio_human_approval?"yes":"no (the owner's studio, as before)",d.studio_human_approval?"on":"off"));
+    $("list").replaceChildren(...d.channels.map(c=>{const k=document.createElement("div");k.className="card";
+      if(c.error){k.append(line(c.id,"invalid: "+c.error,"off"));return k}
+      k.append(line(c.id,c.audience),line("Daily budget","$"+Number(c.daily_budget_usd).toFixed(2)),line("Videos per week",String(c.videos_per_week)),
+        line("Made for kids",c.made_for_kids?"yes":"no"),line("Person approves each video",c.human_approval?"yes":"no",c.human_approval?"on":"off"),
+        line("Sources / pictures / voice",c.sources.join(", ")+" / "+c.visuals.join(", ")+" / "+c.voice));return k}));
+  }catch(e){$("at").textContent="Could not load: "+e}
+}
+load();setInterval(load,30000);
+</script>

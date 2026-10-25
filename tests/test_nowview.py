@@ -49,3 +49,19 @@ def test_build_reports_videos_money_and_log(tmp_path, monkeypatch):
     assert r["money"] == {"spent_today": 0.4, "cap": 1.5, "left": 1.1}
     assert r["log"][-1] == "line 39" and len(r["log"]) == nowview.LOG_LINES
     assert r["pass_running"] is False and r["dashboard_job"] is False
+
+
+def test_the_footage_block_reports_the_newest_run_and_todays_count(tmp_path, monkeypatch):
+    import footagestore
+    monkeypatch.setattr(footagestore, "ROOT", tmp_path / "store")
+    assert nowview.footage_status(NOW) == {"last_status": None, "last_at": None, "runs_today": 0, "runs_total": 0}
+    r = footagestore.create("footage-test")
+    r.update(status="failed")
+    got = nowview.footage_status(dt.datetime.now(dt.timezone.utc))
+    assert got["last_status"] == "failed" and got["runs_today"] == 1 and got["runs_total"] == 1
+
+
+def test_an_unreadable_footage_store_is_none_not_an_error(monkeypatch):
+    import footagestore
+    monkeypatch.setattr(footagestore, "runs", lambda *a, **k: (_ for _ in ()).throw(OSError("disk")))
+    assert nowview.footage_status(NOW) is None

@@ -78,3 +78,18 @@ def newest_age_hours(now: dt.datetime | None = None, dest: Path | None = None) -
         return None
     made = dt.datetime.strptime(names[-1].stem.removesuffix(".tar").split("-")[1], "%Y%m%d").replace(tzinfo=dt.timezone.utc, hour=3, minute=30)
     return round((now - made).total_seconds() / 3600, 1)
+
+
+PUSH_MARKER = "last_push.txt"   # written by deploy/backup_push.sh after a successful push: "<UTC time> <archive name>"
+
+
+def pushed_age_hours(now: dt.datetime | None = None, dest: Path | None = None) -> float | None:
+    """Hours since the newest backup was pushed off the server (from the marker the push script writes), None when it never was or the marker is unreadable."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    try:
+        first = (dest or config.ROOT / "backups").joinpath(PUSH_MARKER).read_text().split()[0]
+        at = dt.datetime.strptime(first, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)
+    except (OSError, ValueError, IndexError):
+        return None
+    hours = (now - at).total_seconds() / 3600
+    return round(hours, 1) if hours >= -1 else None   # a time in the future is not believed
