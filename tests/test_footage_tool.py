@@ -615,13 +615,13 @@ def test_a_release_zeroes_the_record_first_and_restores_it_if_booking_fails(cfg,
     seen = []
     real = clipgen._book
 
-    def spy(c, usd):
+    def spy(c, usd, at=None):
         seen.append(r.read()["cost_booked"])
-        return real(c, usd)
+        return real(c, usd, at)
     monkeypatch.setattr(clipgen, "_book", spy)
     clipgen._release(cfg, r)
     assert seen == [0.0] and r.read()["cost_booked"] == 0.0 and money.spent_today() == 0
-    monkeypatch.setattr(clipgen, "_book", lambda c, u: (_ for _ in ()).throw(clipgen.ClipError("disk")))
+    monkeypatch.setattr(clipgen, "_book", lambda c, u, at=None: (_ for _ in ()).throw(clipgen.ClipError("disk")))
     r.update(cost_booked=0.24)
     with pytest.raises(clipgen.ClipError):
         clipgen._release(cfg, r)
@@ -851,7 +851,7 @@ def test_the_provider_cost_is_booked_instead_of_the_estimate(cfg, money, charged
     assert money.spent_today() == booked and money.video_cost("footage-test") == booked
 
 
-@pytest.mark.parametrize("bad", [None, "x", -1, float("nan"), float("inf"), {"a": 1}])
+@pytest.mark.parametrize("bad", [None, "x", -1, 0, float("nan"), float("inf"), {"a": 1}])
 def test_a_missing_or_odd_usage_cost_is_ignored(cfg, money, bad):
     res, r = run(cfg, Http(polls=[Resp(data={"status": "completed", "usage": {"cost": bad}})]))
     assert res["booked_usd"] == 0.24 and "provider_cost" not in r.read() and money.spent_today() == 0.24
@@ -918,3 +918,47 @@ def test_resume_of_a_failed_job_whose_balance_fell_keeps_the_money(cfg, money):
     with pytest.raises(clipgen.ClipError, match="stays booked"):
         clipgen.resume(cfg, "k", r, http=drop, sleep=lambda s: None)
     assert money.spent_today() == 0.24 and r.read()["cost_booked"] == 0.24
+
+
+# ---- independent review (26 Oct): NaN settings, a zero provider cost, a give-back after midnight ----
+@pytest.mark.parametrize("key", ["max_clip_cost_usd", "price_per_second_usd", "min_balance", "duration_s"])
+@pytest.mark.parametrize("bad", ["NaN", "Infinity", "-Infinity"])
+def test_nan_and_infinity_in_the_settings_are_refused(tmp_path, key, bad):
+    raw = (config.ROOT / "config" / "footage.json").read_text()
+    data = json.loads(raw)
+    text = json.dumps({**data, key: 0}).replace(f'"{key}": 0', f'"{key}": {bad}')
+    p = tmp_path / "f.json"
+    p.write_text(text)
+    with pytest.raises(clipgen.ClipError, match=key):
+        clipgen.load_config(p)
+
+
+def test_a_zero_provider_cost_is_not_believed():
+    assert clipgen._usage_cost({"usage": {"cost": 0}}) is None and clipgen._usage_cost({"usage": {"cost": 0.0}}) is None
+    assert clipgen._usage_cost({"usage": {"cost": 0.01}}) == 0.01
+
+
+def test_a_zero_provider_cost_does_not_wipe_the_booking_when_the_balance_fell(cfg, money):
+    h = Http(polls=[completed(0)], credits=[Resp(data=CREDITS), Resp(data={"data": {"total_credits": 10, "total_usage": 1.24}})])
+    res, r = run(cfg, h)
+    assert money.spent_today() >= 0.24 and res["booked_usd"] >= 0.24 and "provider_cost" not in r.read()
+
+
+def test_a_nan_balance_is_unreadable_not_zero_spend(cfg):
+    h = Http(credits=[Resp(data={"data": {"total_credits": float("nan"), "total_usage": 0}})])
+    with pytest.raises(clipgen.ClipError, match="not understood"):
+        clipgen.balance(cfg, {}, h, lambda s: None)
+
+
+def test_a_release_after_midnight_goes_back_to_the_day_that_was_charged(cfg, money, monkeypatch):
+    import datetime as dt
+    day1 = dt.datetime(2026, 10, 25, 23, 59, 0, tzinfo=dt.timezone.utc)
+    day2 = dt.datetime(2026, 10, 26, 0, 1, 0, tzinfo=dt.timezone.utc)
+    r = footagestore.create("footage-test")
+    r.update(created_at="2026-10-25T23:59:00Z")
+    monkeypatch.setattr(money, "_now", lambda: day1)
+    clipgen._book(cfg, 0.24)
+    r.update(cost_booked=0.24)
+    monkeypatch.setattr(money, "_now", lambda: day2)
+    clipgen._release(cfg, r)
+    assert money.spent_today(day1) == 0.0 and money.spent_today(day2) == 0.0  # the refund cancelled day 1's charge, day 2 was never touched

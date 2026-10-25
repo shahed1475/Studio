@@ -3,6 +3,7 @@ Runs inside a studio worker container (`python3 - < clipgen.py`) so the studio's
 Everything it makes goes into one run folder (footagestore.py) that the dashboard's "Footage clips" page reads."""
 import hashlib
 import json
+import math
 import os
 import re
 import signal
@@ -71,7 +72,7 @@ def load_config(path=CONFIG) -> dict:
         raise ClipError(f"{path} lacks: {', '.join(missing)}")
     for k in NUMBERS + NUMBERS_ZERO_OK:
         v = cfg[k]
-        if isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0 or (k in NUMBERS and v == 0):
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0 or (k in NUMBERS and v == 0):
             raise ClipError(f"{path}: {k} must be a positive number" + (" (or 0)" if k in NUMBERS_ZERO_OK else ""))
     for k in TEXTS:
         if not isinstance(cfg[k], str) or not cfg[k].strip():
@@ -155,12 +156,20 @@ def check_daily_cap(cfg: dict) -> None:
         raise Refused(f"daily cap: ${spent:.2f} spent today + ${est:.2f} for this clip is over the ${cap:.2f} cap; nothing was bought")
 
 
-def _book(cfg: dict, usd: float) -> None:
-    """Add usd (negative to release) to the day total and to data/video_costs.json under cost_scope."""
+def _booked_at(run):
+    """When the reservation was made (the run's creation time, UTC), so a give-back or a correction lands on the day that was charged, not on a later day."""
+    try:
+        return datetime.strptime(run.read().get("created_at") or "", "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def _book(cfg: dict, usd: float, at=None) -> None:
+    """Add usd (negative to release) to the day total and to data/video_costs.json under cost_scope. `at` is the day to book on (default: now)."""
     llm, _ = _studio_money()
     try:
         with llm.cost_scope(cfg["cost_scope"]):
-            llm.record(llm._now(), ROLE, cfg["model"], 0, 0, usd)
+            llm.record(at or llm._now(), ROLE, cfg["model"], 0, 0, usd)
     except (OSError, ValueError) as e:
         raise ClipError(f"cannot record the cost ${usd:.2f}: {e}")
 
@@ -182,7 +191,7 @@ def _release(cfg: dict, run, usd: float | None = None) -> None:
     if amount <= 0:
         return
     try:
-        _book(cfg, -amount)
+        _book(cfg, -amount, _booked_at(run))
     except ClipError:
         try:
             unchanged = abs(_spent(cfg) - before) < 1e-9
@@ -234,12 +243,12 @@ def _get(cfg: dict, http, url: str, headers: dict, timeout: float, sleep, **kw):
 
 
 def _usage_cost(poll: dict) -> float | None:
-    """The provider's own charge for a finished job (`usage.cost`), or None when it is missing or not a sane number."""
+    """The provider's own charge for a finished job (`usage.cost`), or None when it is missing, zero or not a sane number."""
     try:
         cost = float(poll["usage"]["cost"])
     except (KeyError, TypeError, ValueError):
         return None
-    return round(cost, 4) if 0 <= cost < float("inf") else None
+    return round(cost, 4) if 0 < cost < float("inf") else None  # 0 is not believed: a zero (BYOK, a field not yet filled) must not wipe the booking while the balance fell
 
 
 def _json(resp) -> dict:
@@ -256,7 +265,10 @@ def balance(cfg: dict, headers: dict, http=requests, sleep=time.sleep) -> float:
         raise ClipError(f"balance check failed: HTTP {r.status_code} {_snip(r.text)}")
     try:
         d = r.json()["data"]
-        return round(d["total_credits"] - d["total_usage"], 4)
+        left = round(d["total_credits"] - d["total_usage"], 4)
+        if not math.isfinite(left):
+            raise ValueError("balance is not a finite number")
+        return left
     except (ValueError, KeyError, TypeError):
         raise ClipError(f"balance reply not understood (HTTP {r.status_code}): {_snip(r.text)}")
 
@@ -550,7 +562,7 @@ def _settle(cfg: dict, run, booked: float, provider_cost: float | None) -> float
         run.update(provider_cost=provider_cost)
         return booked
     try:
-        _book(cfg, delta)
+        _book(cfg, delta, _booked_at(run))
     except ClipError as e:
         run.log(f"the provider says ${provider_cost:.4f} but ${booked:.4f} is booked, and booking the difference failed: {e}")
         return booked
