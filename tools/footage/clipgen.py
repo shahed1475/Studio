@@ -128,13 +128,31 @@ def _book(cfg: dict, usd: float) -> None:
         raise ClipError(f"cannot record the cost ${usd:.2f}: {e}")
 
 
-def _release(cfg: dict, run, usd: float) -> None:
-    """Give a reservation back. The record says 0 first, so an interrupt in between can only leave the money booked (the safe side), never given back twice."""
-    run.update(cost_booked=0.0)
+def _spent(cfg: dict) -> float:
+    llm, _ = _studio_money()
     try:
-        _book(cfg, -usd)
+        return llm.spent_today()
+    except (OSError, ValueError) as e:
+        raise ClipError(f"cannot read today's spend: {e}")
+
+
+def _release(cfg: dict, run, usd: float | None = None) -> None:
+    """Give a reservation back, exactly once. The amount is CLAIMED from the run record in one locked step (so a run and a resume cannot both give it back); `usd`
+    is passed only when the record never got the amount. If the give-back fails after the day total was already changed, the claim is kept (restoring it would
+    let a later resume give the same money back again)."""
+    amount = run.take_cost() if usd is None else usd
+    if amount <= 0:
+        return
+    before = _spent(cfg)
+    try:
+        _book(cfg, -amount)
     except ClipError:
-        run.update(cost_booked=usd)
+        try:
+            unchanged = abs(_spent(cfg) - before) < 1e-9
+        except ClipError:
+            unchanged = False  # cannot tell: leave the record at 0, never risk a second give-back
+        if unchanged and usd is None:
+            run.restore_cost(amount)
         raise
 
 
@@ -147,9 +165,14 @@ def reserve(cfg: dict, state: dict | None = None) -> float:
         state["est"] = est  # set at once, so an interrupt right after the booking still knows about it
     llm, cap = _studio_money()
     if llm.spent_today() > cap:
-        _book(cfg, -est)
         if state is not None:
-            state["est"] = 0
+            state["est"] = 0  # zeroed first: an interrupt during the give-back can then not give it back a second time
+        try:
+            _book(cfg, -est)
+        except ClipError:
+            if state is not None:
+                state["est"] = est
+            raise
         raise Refused(f"daily cap: this clip (${est:.2f}) would take today's spend over the ${cap:.2f} cap; nothing was bought")
     return est
 
@@ -356,7 +379,8 @@ def _await_and_save(cfg, auth, http, sleep, job, prompt_sha256, run, today) -> d
 
 def generate(cfg: dict, key: str, prompt: str, run, http=requests, sleep=time.sleep, today: str | None = None) -> dict:
     """One clip. Records its progress in `run` (a footagestore.Run). Raises ClipError; the run record then says why."""
-    run.update(status="running", model=cfg["model"], prompt_preview=_snip(prompt, 200), prompt_sha256=hashlib.sha256(prompt.encode()).hexdigest(), files={"log": "run.log"})
+    run.update(status="running", model=cfg["model"], prompt_preview=_snip(prompt, 200), prompt_sha256=hashlib.sha256(prompt.encode()).hexdigest(), files={"log": "run.log"}, pid=os.getpid())
+    _say(f"run: {run.dir.parent.name} {run.dir.name}")
     run.log(f"start: model {cfg['model']}, {cfg['duration_s']} s, {cfg['resolution']}")
     state: dict = {}  # what had happened when an interrupt arrives: {"est": reserved cost, "posted": the submit was started}
     try:
@@ -393,7 +417,7 @@ def _interrupted(cfg: dict, run, state: dict) -> str:
         return "interrupted while the job was being sent; a job may exist, so the cost stays booked"
     if state.get("est"):
         try:
-            _release(cfg, run, state["est"])
+            _release(cfg, run, None if state.get("recorded") else state["est"])
         except ClipError as e:
             return f"interrupted before a job was sent, but giving back the reserved cost failed ({e})"
         return "interrupted before a job was sent; the reserved cost was released"
@@ -412,6 +436,7 @@ def _generate(cfg, key, prompt, run, http, sleep, today, state) -> dict:
         raise Refused(f"balance {before} is under {cfg['min_balance']}, stopping")
     est = reserve(cfg, state)  # booked before the job is sent: a crash, a timeout or a kill can no longer lose it
     run.update(cost_booked=est)
+    state["recorded"] = True
     run.log(f"reserved ${est:.2f} (balance {before})")
     body = {"model": cfg["model"], "prompt": prompt, "duration": cfg["duration_s"], "resolution": cfg["resolution"],
             "aspect_ratio": cfg["aspect_ratio"], "generate_audio": cfg["generate_audio"]}
@@ -421,7 +446,7 @@ def _generate(cfg, key, prompt, run, http, sleep, today, state) -> dict:
     except requests.RequestException as e:
         raise ClipError(f"the submit got no answer ({_snip(e)}); a job may exist, so ${est:.2f} stays booked")
     if 400 <= reply.status_code < 500 and reply.status_code != 408:
-        _release(cfg, run, est)
+        _release(cfg, run)
         state["est"] = 0
         raise ClipError(f"submit refused HTTP {reply.status_code}: {_snip(reply.text)}; the reserved cost was released")
     if reply.status_code >= 300:
@@ -435,7 +460,7 @@ def _generate(cfg, key, prompt, run, http, sleep, today, state) -> dict:
     try:
         result = _await_and_save(cfg, auth, http, sleep, job, hashlib.sha256(prompt.encode()).hexdigest(), run, today)
     except JobNotCharged as e:
-        _release(cfg, run, est)
+        _release(cfg, run)
         raise ClipError(f"job {job}: {e}; the reserved cost was released") from e
     except (ClipError, OSError, ValueError, AttributeError, TypeError) as e:
         after, note = _balance_or_note(cfg, auth, http, sleep)
@@ -461,11 +486,14 @@ def resume(cfg: dict, key: str, run, http=requests, sleep=time.sleep) -> dict:
     job = run.read().get("job")
     if not isinstance(job, str) or not JOB_ID.fullmatch(job):
         raise ClipError("this run has no job to resume")
-    if run.read().get("status") == "done":
+    rec = run.read()
+    if rec.get("status") == "done":
         raise ClipError("this run already finished; nothing to resume")  # a done run must never be failed or refunded by a later resume
+    if rec.get("status") == "running" and _alive(rec.get("pid")):
+        raise ClipError(f"this run is still going (process {rec.get('pid')}); wait for it, then check the run on the dashboard")
     if not key:
         raise Refused("no OpenRouter key in the studio")
-    run.update(status="running", error=None)
+    run.update(status="running", error=None, pid=os.getpid())
     run.log(f"resuming job {job}")
     try:
         result = _await_and_save(cfg, {"Authorization": f"Bearer {key}"}, http, sleep, job, run.read().get("prompt_sha256", ""), run, None)
@@ -475,10 +503,8 @@ def resume(cfg: dict, key: str, run, http=requests, sleep=time.sleep) -> dict:
     except Exception as e:
         msg = str(e) if isinstance(e, ClipError) else f"unexpected {type(e).__name__}: {_snip(e)}"
         if isinstance(e, JobNotCharged):  # the provider ended the job without a clip: give back what was reserved
-            booked = run.read().get("cost_booked") or 0.0
             try:
-                if booked > 0:
-                    _release(cfg, run, booked)
+                _release(cfg, run)
                 msg += "; the reserved cost was released"
             except ClipError as be:
                 msg += f"; giving back the reserved cost failed ({be})"
@@ -487,6 +513,19 @@ def resume(cfg: dict, key: str, run, http=requests, sleep=time.sleep) -> dict:
         raise ClipError(msg) from e
     run.update(status="done", decision="used", reason=f"ledger accepted: {LICENCE}, author {cfg['model']}", finished_at=_utc())
     return {**result, "run_id": run.dir.name}
+
+
+def _alive(pid) -> bool:
+    """Is another process of this container still working on the run? (A pid that is not ours and answers a signal 0.)"""
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0 or pid == os.getpid():
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 def _stop(signum, frame):

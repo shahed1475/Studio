@@ -465,7 +465,7 @@ def test_runner_refuses_a_path_outside_the_footage_store(fakes, evil):
 def test_runner_explains_an_ssh_drop_after_a_paid_job_was_sent(fakes):
     _, env = fakes
     r = subprocess.run(["bash", RUNNER], env={**env, "FAKE_SSH_FAIL": "1"}, capture_output=True, text=True)
-    assert r.returncode == 1 and "no RESULT line (ssh exit 255)" in r.stdout and "job: abc123" in r.stdout and "python3 - --resume <scope> <run_id>" in r.stdout and "ssh " in r.stdout and "/clipgen.py" in r.stdout
+    assert r.returncode == 1 and "no RESULT line (ssh exit 255)" in r.stdout and "job: abc123" in r.stdout and "python3 - --resume <scope> <run_id>" in r.stdout and "ssh -i " not in r.stdout and "ssh " in r.stdout and "/clipgen.py" in r.stdout
 
 
 def test_runner_needs_clip_and_ledger_in_the_result(fakes):
@@ -614,13 +614,13 @@ def test_a_release_zeroes_the_record_first_and_restores_it_if_booking_fails(cfg,
         seen.append(r.read()["cost_booked"])
         return real(c, usd)
     monkeypatch.setattr(clipgen, "_book", spy)
-    clipgen._release(cfg, r, 0.24)
+    clipgen._release(cfg, r)
     assert seen == [0.0] and r.read()["cost_booked"] == 0.0 and money.spent_today() == 0
     monkeypatch.setattr(clipgen, "_book", lambda c, u: (_ for _ in ()).throw(clipgen.ClipError("disk")))
     r.update(cost_booked=0.24)
     with pytest.raises(clipgen.ClipError):
-        clipgen._release(cfg, r, 0.24)
-    assert r.read()["cost_booked"] == 0.24
+        clipgen._release(cfg, r)
+    assert r.read()["cost_booked"] == 0.24  # nothing was written, so the claim is put back
 
 
 def test_an_interrupt_right_after_the_booking_still_gives_it_back(cfg, money, monkeypatch):
@@ -637,3 +637,99 @@ def test_an_interrupt_right_after_the_booking_still_gives_it_back(cfg, money, mo
     with pytest.raises(KeyboardInterrupt):
         clipgen.reserve(cfg, state)
     assert state["est"] == 0.24
+
+
+# ---- third review: money can only come back once ----
+def test_two_claims_of_the_same_booked_cost_get_it_once(cfg):
+    r = footagestore.create("footage-test")
+    r.update(cost_booked=0.24)
+    assert [r.take_cost(), r.take_cost()] == [0.24, 0.0] and r.read()["cost_booked"] == 0.0
+
+
+def test_a_second_release_of_the_same_run_gives_nothing_back(cfg, money):
+    r = footagestore.create("footage-test")
+    clipgen._book(cfg, 0.24)
+    r.update(cost_booked=0.24)
+    clipgen._release(cfg, r)
+    clipgen._release(cfg, r)  # the resume that arrives after the run already gave it back
+    assert money.spent_today() == 0
+
+
+def test_a_half_written_booking_is_not_given_back_twice(cfg, money, monkeypatch):
+    r = footagestore.create("footage-test")
+    clipgen._book(cfg, 0.24)
+    r.update(cost_booked=0.24)
+    real = money.record
+
+    def half(now, role, model, tin, tout, usd):  # the day total changes, then the cost file fails
+        money._save_day(now, lambda day: day.__setitem__("usd", round(day["usd"] + usd, 6)))
+        raise OSError(28, "No space left on device")
+    monkeypatch.setattr(money, "record", half)
+    with pytest.raises(clipgen.ClipError):
+        clipgen._release(cfg, r)
+    monkeypatch.setattr(money, "record", real)
+    assert r.read()["cost_booked"] == 0.0 and money.spent_today() == 0  # kept at 0: no second refund can follow
+    clipgen._release(cfg, r)
+    assert money.spent_today() == 0
+
+
+def test_a_failed_resume_after_a_failed_run_refunds_only_once(cfg, money):
+    r = fails(dict(cfg, max_polls=1), Http(polls=["pending"]), "not done")
+    with pytest.raises(clipgen.ClipError, match="released"):
+        clipgen.resume(cfg, "k", r, http=Http(polls=["failed"]), sleep=lambda s: None)
+    r.update(status="failed")
+    clipgen._release(cfg, r)  # what a run that also saw "failed" would try
+    assert money.spent_today() == 0
+
+
+def test_resume_refuses_a_run_another_process_is_still_working_on(cfg):
+    r = fails(dict(cfg, max_polls=1), Http(polls=["pending"]), "not done")
+    other = subprocess.Popen(["sleep", "30"])
+    try:
+        r.update(status="running", pid=other.pid)
+        with pytest.raises(clipgen.ClipError, match="still going"):
+            clipgen.resume(cfg, "k", r, http=Http(), sleep=lambda s: None)
+    finally:
+        other.kill()
+        other.wait()
+    r.update(status="running", pid=other.pid)  # the process is gone now: the resume may go ahead
+    out = clipgen.resume(cfg, "k", r, http=Http(), sleep=lambda s: None)
+    assert r.read()["status"] == "done" and Path(out["clip"]).exists()
+
+
+def test_alive_is_false_for_ourselves_nothing_and_a_dead_pid():
+    assert not clipgen._alive(os.getpid()) and not clipgen._alive(None) and not clipgen._alive(True) and not clipgen._alive(-3) and not clipgen._alive("7")
+
+
+def test_a_refused_reserve_zeroes_the_state_before_giving_back(cfg, money, monkeypatch):
+    (money.USAGE_FILE.parent / "llm_usage.json").write_text(json.dumps({clipgen_today(): {"usd": 1.4, "calls": 0, "by_role": {}, "fallbacks": []}}))
+    state = {}
+    seen = []
+    real = clipgen._book
+
+    def spy(c, usd):
+        seen.append((usd, state.get("est")))
+        return real(c, usd)
+    monkeypatch.setattr(clipgen, "_book", spy)
+    with pytest.raises(clipgen.Refused):
+        clipgen.reserve(cfg, state)
+    assert seen[1] == (-0.24, 0)  # while the cost is given back, the state already says 0
+    assert state["est"] == 0
+
+
+def clipgen_today():
+    import llm
+    return llm._day(llm._now())
+
+
+def test_a_full_disk_in_resume_leaves_the_money_booked(cfg, money, monkeypatch):
+    r = fails(dict(cfg, max_polls=1), Http(polls=["pending"]), "not done")
+    monkeypatch.setattr(clipgen, "_decode_check", lambda p, c: (_ for _ in ()).throw(OSError(28, "No space left on device")))
+    with pytest.raises(clipgen.ClipError, match="unexpected OSError"):
+        clipgen.resume(cfg, "k", r, http=Http(), sleep=lambda s: None)
+    assert money.spent_today() == 0.24 and r.read()["cost_booked"] == 0.24  # an unknown failure never gives money back
+
+
+def test_the_run_id_is_printed_for_the_runner(cfg, capsys):
+    out, r = run(cfg, Http())
+    assert f"run: footage-test {r.dir.name}" in capsys.readouterr().out

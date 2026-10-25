@@ -61,6 +61,27 @@ class Run:
             filelock.write_atomic(self.record_path, json.dumps(data, indent=2))
             return data
 
+    def take_cost(self) -> float:
+        """Claim the booked cost for giving it back: returns it and writes 0 in ONE locked step, so two processes (a run and a resume of the same job) can never both
+        claim it."""
+        with filelock.locked(self.record_path):
+            data = self.read()
+            try:
+                amount = float(data.get("cost_booked") or 0.0)
+            except (TypeError, ValueError):
+                amount = 0.0
+            if amount > 0:
+                data["cost_booked"] = 0.0
+                filelock.write_atomic(self.record_path, json.dumps(data, indent=2))
+            return max(amount, 0.0)
+
+    def restore_cost(self, amount: float) -> None:
+        """Put a claimed cost back (the give-back failed and nothing was written)."""
+        with filelock.locked(self.record_path):
+            data = self.read()
+            data["cost_booked"] = round(float(data.get("cost_booked") or 0.0) + amount, 4)
+            filelock.write_atomic(self.record_path, json.dumps(data, indent=2))
+
     def log(self, line) -> None:
         """One line to the run log, with the time. Never pass a key: callers log what happened, not what they sent."""
         with filelock.locked(self.dir / LOG):

@@ -177,6 +177,7 @@ def test_odd_record_shapes_do_not_break_the_page(stores):
     b = footagestore.create("footage-test")
     b.record_path.write_text(json.dumps({"status": "done", "files": ["a"], "created_at": None, "log": 3}))
     assert len(footageview.build(NOW)["videos"][0]["runs"]) == 3
+    assert [r["files"] for r in footagestore.runs() if r["run_id"] in (a.dir.name, b.dir.name)] == [{}, {}]
     assert footagestore.file_path("footage-test", a.dir.name, "clip") is None
 
 

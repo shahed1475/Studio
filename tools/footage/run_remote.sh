@@ -28,8 +28,9 @@ RC=${PIPESTATUS[0]}
 RES="$(sed -n 's/^RESULT //p' "$LOG" | tail -1)"
 if [ -z "$RES" ]; then
   JOBLINE="$(grep -m1 '^job: ' "$LOG" || true)"
+  RUNLINE="$(sed -n 's/^run: //p' "$LOG" | head -1)"; RUNLINE="${RUNLINE:-<scope> <run_id>}"
   echo "no RESULT line (ssh exit $RC): the run did not finish."
-  [ -z "$JOBLINE" ] || echo "A paid job was sent ($JOBLINE) and its cost is booked. Fetch it with: ssh $FOOTAGE_SSH_TARGET \"docker exec -i $FOOTAGE_CONTAINER python3 - --resume <scope> <run_id>\" < $HERE/clipgen.py (the run is on the dashboard's Footage clips page)."
+  [ -z "$JOBLINE" ] || echo "A paid job was sent ($JOBLINE) and its cost is booked. If the run is still going it will say so; otherwise fetch it with: ssh ${FOOTAGE_SSH_KEY:+-i $FOOTAGE_SSH_KEY }$FOOTAGE_SSH_TARGET \"docker exec -i $FOOTAGE_CONTAINER python3 - --resume $RUNLINE\" < $HERE/clipgen.py (the run is on the dashboard's Footage clips page)."
   exit 1
 fi
 field() { python3 -c 'import json,sys;d=json.loads(sys.argv[1]);print(d["files"].get(sys.argv[2],""))' "$RES" "$1" 2>/dev/null; }
