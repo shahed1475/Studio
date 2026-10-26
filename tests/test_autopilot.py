@@ -531,3 +531,24 @@ def test_no_new_video_is_planned_while_a_user_studios_storage_is_full():
     assert ("make", None) not in plan(state([], storage_full=True)) and ("make_short", None) not in plan(state([], storage_full=True))
     near = vid(verdict="pass", approved=True, publish_at=iso(NOW + timedelta(hours=1)))
     assert ("upload", "v") in plan(state([near], storage_full=True))  # what exists still goes out
+
+
+def test_finish_video_that_cannot_save_its_record_is_an_error_in_the_tick_not_a_crash(tmp_path, monkeypatch):
+    """finish_video writes the final title with records.merge; the tick's per-action guard turns a failed save (disk full) into a logged error and goes on."""
+    import records
+    import seo
+    monkeypatch.setattr(autopilot, "STATE_FILE", tmp_path / "state.json")
+    monkeypatch.setattr(autopilot, "LOCK_FILE", tmp_path / "lock")
+    monkeypatch.setattr(autopilot, "CONFIG_FILE", tmp_path / "cfg.json")
+    autopilot.save_config({**CFG})
+    folder = tmp_path / "doc-x"
+    folder.mkdir()
+    (folder / "meta.json").write_text(json.dumps({"title": "Old", "format": "short", "seo": {"core": "x thing", "titles": ["X Thing: A Story"]}}))
+    monkeypatch.setattr(seo, "make", lambda f: None)
+    monkeypatch.setattr(records, "merge", lambda *a, **k: (_ for _ in ()).throw(OSError("disk full")))
+    monkeypatch.setattr(autopilot, "build_state", lambda now, cfg: state([vid()]))
+    ran = []
+    monkeypatch.setattr(autopilot, "EXECUTORS", {"review": lambda slug, cfg, now: ran.append("review"), "make": lambda slug, cfg, now: autopilot.finish_video(folder),
+                                                 "ideas": lambda slug, cfg, now: ran.append("ideas")})
+    res = autopilot.tick(NOW)
+    assert any("disk full" in e for e in res["errors"]) and "review" in ran
