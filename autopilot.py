@@ -27,6 +27,7 @@ JOB_FILE = config.ROOT / "job.pid"   # written by the dashboard while one of its
 
 DEFAULTS = {
     "enabled": False,            # master switch, off until the user turns it on
+    "pace_guard": True,          # read the Risks card's 'inauthentic content' level: at watch, no new Shorts; at act, nothing new is made or scheduled until it falls
     "max_videos_per_week": 0,    # 0 = no limit. Otherwise no new video is made for a slot that would be the Nth video out or scheduled in the 7 days before it
     "auto_approve": True,        # reviewer-agent "pass" counts as approval
     "uploads_per_day": 1,
@@ -116,6 +117,41 @@ def focus_rank(v: dict) -> tuple:
     return (0 if (v.get("format") or "doc") == "doc" else 1, 0 if v.get("fix_attempts", 0) > 0 else 1, v.get("blocking", 9), v["slug"])
 
 
+NEW_WORK = ("make", "make_short", "make_clip", "make_news")
+
+
+def pace_filter(acts: list[dict], state: dict, cfg: dict) -> list[dict]:
+    """Autopilot reads YouTube's template-content risk (the Risks card row) before it makes or schedules anything new.
+    watch: no new Short is made or scheduled; the documentary schedule goes on as it is. act: nothing new is made or scheduled until the count falls.
+    Videos already scheduled or uploaded, reviews, repairs, final checks and uploads of what is already planned are never held back."""
+    level = state.get("platform_level")
+    if not cfg.get("pace_guard", True) or level not in ("watch", "act"):
+        return acts
+    fmt = {v["slug"]: (v.get("format") or "doc") for v in state.get("videos", [])}
+    keep, held = [], []
+    for a in acts:
+        shorts = a["do"] in ("make_short", "make_clip") or (a["do"] == "schedule" and fmt.get(a["slug"]) == "short")
+        new = a["do"] in NEW_WORK or a["do"] == "schedule"
+        (held if (level == "act" and new) or (level == "watch" and shorts) else keep).append(a)
+    if held:
+        _note_pace(level, state, held)
+    return keep
+
+
+def _note_pace(level: str, state: dict, held: list[dict]) -> None:
+    """One plain notice a day in the activity feed. Never raises."""
+    try:
+        import agentlog
+
+        title = f"Autopilot is holding back new {'Shorts' if level == 'watch' else 'videos'} ({dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%d')})"
+        if any(e.get("title") == title for e in agentlog.recent(60)):
+            return
+        agentlog.event("info", title, f"{state.get('platform_why', '')} Held: {', '.join(sorted({a['do'] for a in held}))}. "
+                       "It continues by itself when the count of videos in the 7-day window falls; switch it off with pace_guard in autopilot.json.")
+    except Exception:
+        pass
+
+
 def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict]:
     """skip: videos already worked on in this tick."""
     if not cfg["enabled"] or state["busy"]:
@@ -188,7 +224,7 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict
                 acts.append({"do": "make_news", "slug": None})
             elif state["queue_len"] > 0:
                 acts.append({"do": "make", "slug": None})
-    return acts
+    return pace_filter(acts, state, cfg)
 
 
 def _storage_full() -> bool:
@@ -257,7 +293,15 @@ def build_state(now: dt.datetime, cfg: dict) -> dict:
             by_fmt[d.get("format", "short")] = by_fmt.get(d.get("format", "short"), 0) + 1
     queue = json.loads(config.TOPICS_FILE.read_text()) if config.TOPICS_FILE.exists() else []
     news = json.loads(NEWS_QUEUE.read_text()) if NEWS_QUEUE.exists() else []
+    try:
+        import risk
+
+        platform = risk.pattern(risk.videos(config.OUT), now)  # the same reading the Risks card shows for YouTube's template-content rule
+        platform_level, platform_why = platform["level"], platform["evidence"]
+    except Exception:  # a risk that cannot be read does not stop the studio: it works as before
+        platform_level, platform_why = "ok", ""
     return {
+        "platform_level": platform_level, "platform_why": platform_why,
         "queue_len": len(queue), "connected": upload.SECRET.exists() and upload.TOKEN.exists(), "busy": dashboard_busy(),
         "uploads_today": upload.uploads_today(config.OUT, now), "uploads_by_format": by_fmt,
         "news_pending": sum(1 for n in news if n.get("status") == "queued"), "videos": videos,

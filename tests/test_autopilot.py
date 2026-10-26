@@ -552,3 +552,36 @@ def test_finish_video_that_cannot_save_its_record_is_an_error_in_the_tick_not_a_
                                                  "ideas": lambda slug, cfg, now: ran.append("ideas")})
     res = autopilot.tick(NOW)
     assert any("disk full" in e for e in res["errors"]) and "review" in ran
+
+
+def _plan_with(level, videos=(), **kw):
+    return autopilot.plan_actions(state(videos, platform_level=level, platform_why="16 videos out or scheduled in a 7-day window (watch at 10, act at 15)", spend_ok=True,
+                                        credit_left=50.0, cap_left=3.0, clippable=2, **kw), {**CFG, "make_videos": True, "shorts": True}, NOW)
+
+
+def test_the_pace_guard_slows_shorts_at_watch_and_stops_anything_new_at_act_but_not_what_is_planned(monkeypatch, tmp_path):
+    import agentlog
+    monkeypatch.setattr(agentlog, "FILE", tmp_path / "events.jsonl")
+    ready_doc = vid("ready-doc", format="doc", verdict="pass", approved=True, prelaunch_ok=True, publish_at=None)
+    ready_short = vid("ready-short", format="short", verdict="pass", approved=True, publish_at=None)
+    scheduled = vid("sched", format="doc", verdict="pass", approved=True, prelaunch_ok=True, publish_at="2026-10-19T13:00:00Z")
+    base = {(a["do"], a["slug"]) for a in _plan_with("ok", [ready_doc, ready_short, scheduled])}
+    assert ("schedule", "ready-doc") in base and ("schedule", "ready-short") in base and any(d.startswith("make") for d, _ in base)
+    watch = {(a["do"], a["slug"]) for a in _plan_with("watch", [ready_doc, ready_short, scheduled])}
+    assert ("schedule", "ready-doc") in watch and ("schedule", "ready-short") not in watch              # the documentary schedule goes on, the Short waits
+    assert not any(d in ("make_short", "make_clip") for d, _ in watch)
+    act = {(a["do"], a["slug"]) for a in _plan_with("act", [ready_doc, ready_short, scheduled])}
+    assert not any(d.startswith("make") or d == "schedule" for d, _ in act)                           # nothing new is made or scheduled
+    planned = vid("planned", format="doc", verdict="pass", approved=True, publish_at="2026-10-19T14:00:00Z")           # already has its slot, two hours away
+    assert ("upload", "planned") in {(a["do"], a["slug"]) for a in _plan_with("act", [planned])}                      # a video that already has its slot is still uploaded on time
+    _plan_with("act", [ready_doc, ready_short])
+    assert sum("holding back new videos" in e["title"] for e in agentlog.recent(20)) == 1                              # one notice a day, not one per pass
+
+
+def test_the_pace_guard_can_be_switched_off_and_an_unreadable_risk_changes_nothing():
+    d = vid("ready-short", format="short", verdict="pass", approved=True, publish_at=None)
+    cfg = {**CFG, "make_videos": True, "shorts": True, "pace_guard": False}
+    off = autopilot.plan_actions(state([d], platform_level="act", spend_ok=True, credit_left=50.0, cap_left=3.0), cfg, NOW)
+    assert ("schedule", "ready-short") in {(a["do"], a["slug"]) for a in off}
+    none = autopilot.plan_actions(state([d], spend_ok=True, credit_left=50.0, cap_left=3.0), {**CFG, "make_videos": True, "shorts": True}, NOW)   # no platform_level in the state at all
+    assert ("schedule", "ready-short") in {(a["do"], a["slug"]) for a in none}
