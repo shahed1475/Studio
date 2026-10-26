@@ -430,3 +430,25 @@ def test_lines_at_picks_the_line_that_starts_at_the_flagged_second_even_when_the
     assert fixer.lines_at(meta, tmp_path, [203.1]) == ["two"]   # was "one": the rounded second sat a hair before the line's own start
     assert fixer.lines_at(meta, tmp_path, [211.6]) == ["three"]  # within the slack of the next start; a second well before the start stays with the earlier line
     assert fixer.lines_at(meta, tmp_path, [200.0]) == ["one"]
+
+
+def test_the_reviewer_reads_the_source_paragraphs_that_back_the_narration_not_just_the_first_characters():
+    import reviewer
+    maya = "\n\n".join(f"The Maya lowland city number {i} shifted its trade routes during the ninth century drought and its rulers changed." for i in range(160))
+    teo = ("Teotihuacan lies about 40 kilometres northeast of Mexico City.\n\nAt its height around 450 CE the city held perhaps 100,000 people, one of the largest in the world.\n\n"
+           + "\n\n".join(f"A filler paragraph about pottery workshops of Teotihuacan barrio number {i}." for i in range(160)))
+    source = maya + "\n\n" + teo
+    narration = "Teotihuacan lies about 40 kilometres northeast of Mexico City. At its height around 450 CE it held perhaps 100,000 people."
+    assert len(source) > 20000 and "100,000 people" not in source[:12000]                      # what the old cut showed the reviewer: no Teotihuacan at all
+    got = reviewer.relevant_source(source, narration, 12000)
+    assert len(got) <= 12000 and "100,000 people" in got and "40 kilometres northeast of Mexico City" in got
+    assert got.index("40 kilometres") < got.index("100,000 people")                                   # original order is kept
+    short = "A short article.\n\nWith two paragraphs."
+    assert reviewer.relevant_source(short, "anything", 12000) == short                                # a short source is untouched
+    assert reviewer.relevant_source(source, "Teotihuacan pottery", 300).count("\n\n") <= 3 and len(reviewer.relevant_source(source, "x", 50)) <= 50
+
+
+def test_a_claim_with_no_supporting_paragraph_is_still_not_in_the_excerpt():
+    import reviewer
+    source = "\n\n".join(f"Paragraph {i} about copper mining in a valley with several named workshops and traders." for i in range(300))
+    assert "Atlantis" not in reviewer.relevant_source(source, "The city of Atlantis sank in a single night with 9,000 people.", 6000)
