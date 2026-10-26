@@ -399,3 +399,25 @@ def test_an_unreadable_feed_is_an_empty_feed(tmp_path, monkeypatch):
     d.mkdir()  # reading a directory raises an OSError
     monkeypatch.setattr(agentlog, "FILE", d)
     assert agentlog._all() == [] and agentlog.recent(5) == [] and agentlog.unread() == 0
+
+
+def test_a_video_deleted_in_studio_is_reported_once_and_does_not_break_the_guardian():
+    with agenteval.sandbox() as root:
+        f = agenteval._video(root, "gone", video_id="V404", publish_at=agenteval.FUTURE)
+        before = agenteval._meta(f)
+
+        class Empty(agenteval.FakeYT):
+            def videos(self):
+                v = super().videos()
+
+                def lst(**k):
+                    self.calls.append(("list", k))
+                    return type("R", (), {"execute": lambda s: {"items": []}})()
+                v.list = lst
+                return v
+        yt = Empty()
+        res = agenteval._guard(root, yt)
+        assert not yt.writes() and agenteval._meta(f)["title"] == before["title"] and res["actions"] == []
+        tasks = [t for t in agentbus.tasks() if t["kind"] == "video_missing"]
+        assert len(tasks) == 1 and "V404" in tasks[0]["reason"]
+        assert not any("could not finish checking" in e["title"] for e in agentlog.recent(10))

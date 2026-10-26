@@ -63,7 +63,12 @@ def fix_metadata(folder: Path, meta: dict, yt, now: dt.datetime) -> list[str]:
     if not done:
         return []
     if meta.get("video_id") and yt is not None:
-        recheck.push_metadata(yt, work)
+        try:
+            recheck.push_metadata(yt, work)
+        except IndexError:  # YouTube lists no such video: it was deleted in Studio. Nothing to push; the owner is told once and the record is left as it was.
+            agentbus.post("video_missing", "guardian", "owner", folder.name, reason=f"The video {meta['video_id']} is no longer on YouTube",
+                          evidence="The guardian could not find it to update its title or description. Deleted in YouTube Studio?", now=now)
+            return []
     keep = {k: work[k] for k in ("title", "description", "tags") if work.get(k) != meta.get(k)}
     g = dict(meta.get("guardian") or {})
     g["edits"] = g.get("edits", 0) + 1
