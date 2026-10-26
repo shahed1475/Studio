@@ -262,7 +262,7 @@ def test_the_deploy_script_has_a_preview_that_stops_before_it_pulls():
 def test_deploy_safe_mode_previews_first_and_stops_on_a_dirty_preview():
     from pathlib import Path
     text = (Path(__file__).parent.parent / "deploy" / "deploy.sh").read_text()
-    safe = text[text.index('if [[ "${1:-}" == "safe" ]]'):text.index('[[ "${1:-}" == "dry" ]] && DRY=1')]
+    safe = text[text.index('if [[ "${1:-}" == "dry-run-first" || "${1:-}" == "safe" ]]'):text.index('[[ "${1:-}" == "dry" ]] && DRY=1')]
     assert '"$0" dry' in safe and "Fast-forward: yes" in safe and "No render is running" in safe and safe.index('"$0" dry') < safe.index('exec "$0"') and "exit 2" in safe and "exit 3" in safe
 
 
