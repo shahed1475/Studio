@@ -46,7 +46,7 @@ def catalogue(out: Path | None = None) -> list[dict]:
     return rows
 
 
-def counts(row: dict) -> bool:
+def takes_its_story(row: dict) -> bool:
     return not row["hold"]  # a video set aside, or pulled back to private, will not go public by itself: parked, a style demo or a duplicate already dealt with
 
 
@@ -56,7 +56,7 @@ def conflict(subj: frozenset, fmt: str, rows: list[dict], slug: str | None = Non
     if not subj:
         return None
     for r in rows:
-        if r["slug"] == slug or not counts(r) or not same_subject(subj, r["subject"]):
+        if r["slug"] == slug or not takes_its_story(r) or not same_subject(subj, r["subject"]):
             continue
         if r["format"] == fmt or (fmt == "short" and r["format"] == "doc" and clip_of != r["slug"]):
             return r
@@ -80,7 +80,7 @@ def taken_by(slug: str, rows: list[dict] | None = None, out: Path | None = None)
         return None
     mine = (me["at"] if me["scheduled"] or me["live"] else "9999", slug)
     for r in rows:
-        if r["slug"] == slug or not counts(r) or r["format"] != me["format"] or not (r["live"] or r["scheduled"]) or not same_subject(me["subject"], r["subject"]):
+        if r["slug"] == slug or not takes_its_story(r) or r["format"] != me["format"] or not (r["live"] or r["scheduled"]) or not same_subject(me["subject"], r["subject"]):
             continue
         if r["live"] or (r["at"], r["slug"]) < mine:
             return r
