@@ -323,6 +323,8 @@ def make(folder: Path, hook: str | None = None) -> list[str]:
         d["thumb_hook"], d["thumbnails"], d["thumbnail"] = hook, names, names[0]
         if thumb_scores:
             d["thumb_scores"] = thumb_scores
+        else:
+            d.pop("thumb_scores", None)  # scores of an earlier run would describe a different order
         if art:
             import aiart
 

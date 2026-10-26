@@ -111,3 +111,4 @@ def test_make_puts_the_best_scored_thumbnail_first_and_remembers_the_scores(monk
     assert names[0] == "thumbs/thumb-2.jpg" and meta["thumbnail"] == "thumbs/thumb-2.jpg" and meta["thumb_scores"]["thumbs/thumb-2.jpg"] == 9.1
     monkeypatch.setattr(thumbscore, "score", lambda *a, **k: None)
     assert thumbnail.make(folder, hook="HOOK")[0] == "thumbs/thumb-1.jpg"  # no score: the studio's own order
+    assert "thumb_scores" not in json.loads((folder / "meta.json").read_text())  # and the old scores are not kept: they would describe a different order (27 Oct, Mami Wata v2)
