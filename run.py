@@ -474,6 +474,27 @@ def main() -> None:
         print(f"agent evaluation: {ev['passed']} passed, {ev['failed']} failed; triage: {len(tr['families'])} families ({len(new)} not solved before), {tr['stuck_drafts']} stuck drafts; lessons pruned: {dropped}")
         if ev["failed"]:
             agentlog.event("error", "Agent evaluation failed", "; ".join(f"{c['case']}: {c['detail'][:80]}" for c in ev["cases"] if not c["ok"]), notify=True)
+    elif a[0] == "analyze-video":
+        import videoinspect
+
+        res = videoinspect.gemini_analyze(config.OUT / a[1])
+        if "error" in res:
+            raise SystemExit(f"analysis not done: {res['error']}")
+        print(f"analysis of {a[1]} by {res['model']}: {res['summary']}")
+        for p in res["problems"]:
+            print(f"  {p['at_s'] // 60}:{p['at_s'] % 60:02d} [{p['severity']}] {p['what']}")
+        print(f"{len(res['problems'])} problem(s). {res['coverage']}" + (f" Cost ${res['cost']:.3f}." if isinstance(res.get('cost'), (int, float)) else ""))
+    elif a[0] == "score-thumbnails":
+        import thumbscore
+
+        meta = json.loads((config.OUT / a[1] / "meta.json").read_text())
+        names = [n for n in meta.get("thumbnails", []) if (config.OUT / a[1] / n).is_file()]
+        got = thumbscore.score([config.OUT / a[1] / n for n in names], meta.get("title", ""), meta.get("thumb_hook", ""))
+        if not got:
+            raise SystemExit("no score: no model could read the thumbnails, or the daily cap is used up")
+        for g in sorted(got, key=lambda g: -g["total"]):
+            print(f"  {g['total']:>4}  {names[g['index']]}  " + " ".join(f"{k}={v:g}" for k, v in g["parts"].items()))
+        print(f"best: {names[max(got, key=lambda g: g['total'])['index']]} (the record was not changed)")
     elif a[0] == "script-review":
         import reviewer
         import scriptreview

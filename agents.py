@@ -11,7 +11,7 @@ AGENTS = {
     "scriptreview": {"job": None, "cmds": ["script-review"], "hands_to": ["creator", "doctor"]},
     "clipper": {"job": None, "cmds": ["clip"], "hands_to": ["reviewer"]},
     "seo": {"job": None, "cmds": ["seo", "seo-fix"], "hands_to": ["reviewer"]},
-    "qa": {"job": None, "cmds": ["inspect"], "hands_to": []},
+    "qa": {"job": None, "cmds": ["inspect", "analyze-video", "score-thumbnails"], "hands_to": []},
     "compliance": {"job": None, "cmds": [], "hands_to": []},
     "reviewer": {"job": None, "cmds": ["review"], "hands_to": ["compliance", "qa", "fixer", "publisher"]},
     "fixer": {"job": "unstick", "cmds": ["repair", "unstick"], "hands_to": ["reviewer"]},
