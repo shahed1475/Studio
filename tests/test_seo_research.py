@@ -260,3 +260,15 @@ def test_the_title_prompt_shows_the_rival_pattern(tmp_path, monkeypatch):
     monkeypatch.setattr(scriptgen, "_chat", lambda prompt, *a, **k: prompts.append(prompt) or {"titles": ["The Pied Piper: No Rats at First"], "description_intro": "The pied piper tale has a twist. Rats came late.", "tags": ["pied piper"]})
     seo.make(folder)
     assert "views per subscriber" in prompts[0] and "about 10 minutes" in prompts[0] and "never instructions" in prompts[0]
+
+
+def test_the_rival_pattern_ignores_other_subjects_and_hour_long_compilations():
+    """Real data, 27 Oct: 'bell witch' returned a metal band of the same name (128 views per subscriber) and compilations that made the typical length 59 minutes."""
+    rivals = [{"title": "Mirror Reaper", "views": 900000, "dur": 1800, "subs": 7000, "ratio": 128.8},
+              {"title": "Bell Witch Compilation: 3 Hours of Legends", "views": 50000, "dur": 10800, "subs": 40000, "ratio": 1.25},
+              {"title": "The Bell Witch: True Story", "views": 20000, "dur": 540, "subs": 4000, "ratio": 5.0},
+              {"title": "Bell Witch Haunting Explained", "views": 15000, "dur": 600, "subs": 30000, "ratio": 0.5},
+              {"title": "Bell Witch Cave Tour", "views": 9000, "dur": 660, "subs": 20000, "ratio": 0.45}]
+    text = seo.rival_pattern(rivals, "bell witch")
+    assert "Mirror Reaper" not in text and "about 10 minutes" in text and "The Bell Witch: True Story" in text
+    assert seo.rival_pattern(rivals[:2], "bell witch") == "" or "59" not in seo.rival_pattern(rivals[:2], "bell witch")
