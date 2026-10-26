@@ -75,7 +75,7 @@ def _render_ungated(clips, durations, narration: Path, ass: Path | None, work: P
             _ff("-loop", "1", "-i", str(clip), "-vf", _picture_filter(w, h, frames, shot, i), *enc, cwd=work)
         elif clip:
             vf = (f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},"
-                  f"fps={config.FPS},setsar=1,eq=brightness=-0.08")
+                  f"fps={config.FPS},setsar=1" + ("" if Path(clip).parent.name == "anim" else ",eq=brightness=-0.08"))  # stock clips are darkened a little; generated animation keeps its light
             _ff("-stream_loop", "-1", "-i", str(clip), "-vf", vf, *enc, cwd=work)
         else:
             _ff("-f", "lavfi", "-i", f"color=c={PALETTE[i % len(PALETTE)]}:s={w}x{h}:r={config.FPS}", *enc, cwd=work)

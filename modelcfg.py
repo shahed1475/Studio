@@ -12,6 +12,7 @@ FILE = config.ROOT / "config" / "models.json"
 DEFAULTS = {
     "thumbnail_art": "google/gemini-3.1-flash-image",        # draws the thumbnail picture: $0.067 each, the clearest of three tested (Pro $0.140 no better, Lite $0.034 too dim)
     "scene_art": "google/gemini-3.1-flash-lite-image",       # draws in-video storybook scenes (many per video: the cheap one)
+    "scene_art_3d": "google/gemini-3.1-flash-image",          # the 3D-look scenes that become first frames of animated clips: the clearer model (27 Oct spike)
     "thumbnail_score": "anthropic/claude-sonnet-5.5",        # reads candidate thumbnails and scores them (vision)
     "video_analysis": "google/gemini-3.1-pro-preview",       # watches one of our own videos through video_url
     "video_generation": "google/veo-3.1-lite",               # the footage tool's clip model

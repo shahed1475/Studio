@@ -336,7 +336,7 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
     anchors = data.get("anchors") or []
     import aiart
 
-    art = lambda l: aiart.generate(l["text"], l.get("visual", ""), data["topic"])
+    art = lambda l: aiart.generate(l["text"], l.get("visual", ""), data["topic"], style=data.get("art_style"))  # style "3d": a 3D animated-film look
     pics = dict(judge=_image_judge(data["topic"]), art=art, art_first=bool(data.get("art_first")), force_art=set(data.get("redraw_lines") or []))
     clips, credits, stats = footage.scene_images(data["lines"], data["topic"], anchors, art_limit=aiart.MAX_PER_VIDEO["doc"], **pics)
     if stats["unique"] < MIN_VARIETY * stats["scenes"] and aiart.enabled():  # the same few pictures again and again: draw illustrations for the scenes that would repeat
@@ -346,6 +346,10 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
         shutil.rmtree(folder, ignore_errors=True)
         raise SystemExit(f"only {stats['unique']} on-topic images found ({stats['missing']} scenes without one); "
                          "not rendering a video of unrelated pictures")
+    clips, credits, anim = _animate(data, clips, credits)  # some drawn scenes become short moving clips when the video asks for it
+    if anim:
+        data["animation"] = anim
+        print(f"  animation: {anim['animated']} new clip(s), {anim['cached']} from the cache, {anim['failed']} failed, ${anim['spent']:.2f} spent")
     music = sorted(Path("music").glob("*.mp3")) if Path("music").exists() else []
     print(f"Rendering ({sum(c is not None for c in clips)}/{len(clips)} scenes have footage)...")
     words = subtitles.with_punctuation(subtitles.load_words(work / "words.json"), [l["text"] for l in data["lines"]])
@@ -387,6 +391,36 @@ def cmd_redo_short(name: str) -> None:
     _refuse_if_uploaded(name)
     data = reset_for_rerender(json.loads((config.OUT / name / "meta.json").read_text()))
     _produce_short(data, data["topic"], requeue=False, folder=config.OUT / name)
+
+
+def _animate(data: dict, clips: list, credits: list) -> tuple[list, list, dict | None]:
+    """Animate some drawn scenes when the video asks for it (data["animate"] = how many clips, data["animate_budget"] = dollars, default 3). Returns
+    (clips, credits with the AI-video credit added, stats) or the inputs and None when not asked."""
+    n = int(data.get("animate") or 0)
+    if n <= 0:
+        return clips, credits, None
+    import animate
+    import modelcfg
+
+    new, stats = animate.animate_scenes(clips, data["lines"], n, float(data.get("animate_budget", 3.0)), animate.clip_generator())
+    if stats["animated"] or stats["cached"]:
+        credits = [*credits, animate.credit(modelcfg.get("video_generation"))]
+    return new, credits, stats
+
+
+def cmd_remake(name: str, args: list[str]) -> None:
+    """A NEW video of the same story from a saved documentary script, in its own folder (an uploaded video is never redone in place; its upload stays for the owner to
+    delete). --style 3d draws the scenes in a 3D animated-film look; --animate N turns N drawn scenes into moving clips (about $0.24 each). The new video is held
+    and not approved: nothing about it can go out until the owner says so."""
+    src = json.loads((config.OUT / name / "meta.json").read_text())
+    if src.get("format") != "doc":
+        raise SystemExit(f"{name} is not a documentary: remake works on documentaries")
+    style = args[args.index("--style") + 1] if "--style" in args else "3d"
+    if style != "3d":
+        raise SystemExit(f"unknown style {style!r}: the only style is 3d")
+    data = reset_for_rerender(src)
+    data.update(art_style=style, animate=int(args[args.index("--animate") + 1]) if "--animate" in args else 0, hold=True, remake_of=name)
+    _produce_doc(data)
 
 
 def cmd_redo(name: str) -> None:
@@ -444,6 +478,8 @@ def main() -> None:
         cmd_redo(a[1])
     elif a[0] == "doc":
         cmd_doc(" ".join(a[1:]) or None)
+    elif a[0] == "remake":
+        cmd_remake(a[1], a[2:])
     elif a[0] == "batch":
         for _ in range(int(a[1])):
             cmd_make()

@@ -1023,3 +1023,30 @@ def test_a_model_outside_the_allowed_list_buys_nothing(cfg, money):
     h = Http(models=priced(cfg, "0.03"))
     r = fails({**cfg, "model": "someone/else-video-1"}, h, "not in the allowed list")
     assert post_count(h) == 0 and money.spent_today() == 0
+
+
+# ---- animating one of our own pictures: image to video through frame_images (OpenRouter docs, checked 27 Oct 2026) ----
+FRAME = "data:image/jpeg;base64,/9j/AAAA"
+
+
+def _starts(**k):
+    return Resp(data={"data": [{"id": "google/veo-3.1-lite", "pricing_skus": VEO_LITE, "supported_frame_images": ["first_frame", "last_frame"], **k}]})
+
+
+def test_a_picture_is_sent_as_the_first_frame_and_without_one_nothing_extra_is_sent(cfg):
+    h = Http(models=_starts())
+    r = footagestore.create("footage-test")
+    clipgen.generate(cfg, "k", "The woman lifts her golden comb; mist drifts over the water", r, http=h, sleep=lambda s: None, today="2026-10-25", first_frame=FRAME)
+    body = next(c[2] for c in h.calls if c[0] == "POST")
+    assert body["frame_images"] == [{"type": "image_url", "image_url": {"url": FRAME}, "frame_type": "first_frame"}] and body["model"] == cfg["model"]
+    h2 = Http(models=_starts())
+    run(cfg, h2)
+    assert "frame_images" not in next(c[2] for c in h2.calls if c[0] == "POST")
+
+
+def test_a_model_that_cannot_start_from_a_picture_is_refused_before_any_money_moves(cfg, money):
+    h = Http(models=_starts(supported_frame_images=["last_frame"]))
+    r = footagestore.create("footage-test")
+    with pytest.raises(clipgen.Refused, match="start from a picture"):
+        clipgen.generate(cfg, "k", "motion", r, http=h, sleep=lambda s: None, today="2026-10-25", first_frame=FRAME)
+    assert post_count(h) == 0 and money.spent_today() == 0

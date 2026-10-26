@@ -51,30 +51,35 @@ TEXTY = re.compile(r"inscription|manuscript|\bmaps?\b|letter|document|\bsigns?\b
 NO_WRITING = " Show it at an angle or from a distance with no legible writing, letters, symbols or map labels: any writing is only a texture."
 
 
+STYLE_3D = ("Stylized 3D animated film still, soft CGI render like a modern family animated feature, warm volumetric light, rich colour, expressive but dignified characters, "
+            "detailed environment, no text, no letters, no numbers, no captions, no logos, no watermark")
+
+
 def style_for(topic: str) -> str:
     return STYLES[int(hashlib.md5(str(topic).lower().encode()).hexdigest(), 16) % len(STYLES)]
 
 
-def prompt_for(line: str, visual: str, topic: str, vertical: bool) -> str:
+def prompt_for(line: str, visual: str, topic: str, vertical: bool, style: str | None = None) -> str:
     shape = "vertical 9:16 composition" if vertical else "16:9 widescreen composition"
-    text = f"{style_for(topic)}, {shape}. Story: {_clean(topic, 120)}. Scene: {_clean(line)}. Show: {_clean(visual, 80) or 'the setting of the scene'}."
+    text = f"{STYLE_3D if style == '3d' else style_for(topic)}, {shape}. Story: {_clean(topic, 120)}. Scene: {_clean(line)}. Show: {_clean(visual, 80) or 'the setting of the scene'}."
     return text + (NO_WRITING if TEXTY.search(f"{visual} {line}") else "")
 
 
-def generate(line: str, visual: str, topic: str, vertical: bool = False, now: dt.datetime | None = None):
-    """(file, credit) for a new illustration of this scene, or None when drawing is off, over the dollar cap, or failed."""
+def generate(line: str, visual: str, topic: str, vertical: bool = False, now: dt.datetime | None = None, style: str | None = None):
+    """(file, credit) for a new illustration of this scene, or None when drawing is off, over the dollar cap, or failed. style "3d": a 3D animated-film look
+    (its own, better model: these pictures become the first frames of animated clips)."""
     now = now or llm._now()
     if not enabled(now):
         return None
     cfg = llm.load_config()
     if llm.spent_today(now) >= cfg["daily_budget_usd"]:
         return None
-    prompt = prompt_for(line, visual, topic, vertical)
+    prompt = prompt_for(line, visual, topic, vertical, style)
     dest = config.CACHE / "art" / (hashlib.md5(prompt.encode()).hexdigest()[:16] + ".jpg")
     if dest.exists():
         return dest, CREDIT
     try:
-        model = modelcfg.get("scene_art")
+        model = modelcfg.get("scene_art_3d" if style == "3d" else "scene_art")
         body = llm._post({"model": model, "modalities": ["image", "text"], "messages": [{"role": "user", "content": prompt}]}, llm.api_key())
         url = body["choices"][0]["message"]["images"][0]["image_url"]["url"]
         raw = base64.b64decode(url.split(",", 1)[1])

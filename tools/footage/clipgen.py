@@ -125,6 +125,8 @@ def check_supported(cfg: dict, entry: dict) -> None:
         raise Refused(f"{cfg['model']} supports resolutions {res}, not {cfg['resolution']}; nothing was bought")
     if asp and cfg["aspect_ratio"] not in asp:
         raise Refused(f"{cfg['model']} supports aspect ratios {asp}, not {cfg['aspect_ratio']}; nothing was bought")
+    if cfg.get("uses_first_frame") and "first_frame" not in (entry.get("supported_frame_images") or []):
+        raise Refused(f"{cfg['model']} cannot start from a picture (no first_frame support listed); nothing was bought")
     if cfg.get("generate_audio") and entry.get("generate_audio") is False:
         raise Refused(f"{cfg['model']} does not generate audio; nothing was bought")
 
@@ -470,14 +472,14 @@ def _await_and_save(cfg, auth, http, sleep, job, prompt_sha256, run, today) -> d
     return {"clip": str(dest), "ledger": str(ledger), "job": job, "bytes": len(content), "provider_cost": provider_cost}
 
 
-def generate(cfg: dict, key: str, prompt: str, run, http=requests, sleep=time.sleep, today: str | None = None) -> dict:
+def generate(cfg: dict, key: str, prompt: str, run, http=requests, sleep=time.sleep, today: str | None = None, *, first_frame: str | None = None) -> dict:
     """One clip. Records its progress in `run` (a footagestore.Run). Raises ClipError; the run record then says why."""
     run.update(status="running", model=cfg["model"], prompt_preview=_snip(prompt, 200), prompt_sha256=hashlib.sha256(prompt.encode()).hexdigest(), files={"log": "run.log"}, pid=os.getpid(), pid_start=_proc_start(os.getpid()))
     _say(f"run: {run.dir.parent.name} {run.dir.name}")
     run.log(f"start: model {cfg['model']}, {cfg['duration_s']} s, {cfg['resolution']}")
     state: dict = {}  # what had happened when an interrupt arrives: {"est": reserved cost, "posted": the submit was started}
     try:
-        result = _generate(cfg, key, prompt, run, http, sleep, today, state)
+        result = _generate(cfg, key, prompt, run, http, sleep, today, state, first_frame)
     except KeyboardInterrupt:
         try:
             msg = _interrupted(cfg, run, state)
@@ -520,7 +522,8 @@ def _interrupted(cfg: dict, run, state: dict) -> str:
     return "interrupted before anything was reserved"
 
 
-def _generate(cfg, key, prompt, run, http, sleep, today, state) -> dict:
+def _generate(cfg, key, prompt, run, http, sleep, today, state, first_frame=None) -> dict:
+    cfg = {**cfg, "uses_first_frame": bool(first_frame)}  # live_price checks that the model can start from a picture
     if not key:
         raise Refused("no OpenRouter key in the studio")
     if not prompt or not prompt.strip():
@@ -542,6 +545,8 @@ def _generate(cfg, key, prompt, run, http, sleep, today, state) -> dict:
     run.log(f"reserved ${est:.2f} (balance {before})")
     body = {"model": cfg["model"], "prompt": prompt, "duration": cfg["duration_s"], "resolution": cfg["resolution"],
             "aspect_ratio": cfg["aspect_ratio"], "generate_audio": cfg["generate_audio"]}
+    if first_frame:  # image to video: our own picture is the first frame and the prompt says how it moves
+        body["frame_images"] = [{"type": "image_url", "image_url": {"url": first_frame}, "frame_type": "first_frame"}]
     state["posted"] = True
     try:
         reply = http.post(f"{base}/videos", headers=auth, json=body, timeout=cfg["http_timeout_s"])  # never retried: a second POST could buy a second clip

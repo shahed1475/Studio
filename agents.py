@@ -7,7 +7,7 @@ AGENTS = {
     "research": {"job": "weekly", "cmds": ["ideas", "research", "trends", "channels"], "hands_to": ["creator"]},
     "growth": {"job": "agent", "cmds": ["agent"], "hands_to": ["research"]},
     "news": {"job": "policywatch", "cmds": ["newswatch", "policywatch"], "hands_to": ["creator", "guardian"]},
-    "creator": {"job": None, "cmds": ["doc", "make", "redo", "batch"], "hands_to": ["scriptreview", "seo", "reviewer"]},
+    "creator": {"job": None, "cmds": ["doc", "make", "redo", "remake", "batch"], "hands_to": ["scriptreview", "seo", "reviewer"]},
     "scriptreview": {"job": None, "cmds": ["script-review"], "hands_to": ["creator", "doctor"]},
     "clipper": {"job": None, "cmds": ["clip"], "hands_to": ["reviewer"]},
     "seo": {"job": None, "cmds": ["seo", "seo-fix"], "hands_to": ["reviewer"]},
