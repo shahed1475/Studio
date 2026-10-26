@@ -7,7 +7,8 @@ AGENTS = {
     "research": {"job": "weekly", "cmds": ["ideas", "research", "trends", "channels"], "hands_to": ["creator"]},
     "growth": {"job": "agent", "cmds": ["agent"], "hands_to": ["research"]},
     "news": {"job": "policywatch", "cmds": ["newswatch", "policywatch"], "hands_to": ["creator", "guardian"]},
-    "creator": {"job": None, "cmds": ["doc", "make", "redo", "batch"], "hands_to": ["seo", "reviewer"]},
+    "creator": {"job": None, "cmds": ["doc", "make", "redo", "batch"], "hands_to": ["scriptreview", "seo", "reviewer"]},
+    "scriptreview": {"job": None, "cmds": ["script-review"], "hands_to": ["creator", "doctor"]},
     "clipper": {"job": None, "cmds": ["clip"], "hands_to": ["reviewer"]},
     "seo": {"job": None, "cmds": ["seo", "seo-fix"], "hands_to": ["reviewer"]},
     "qa": {"job": None, "cmds": ["inspect"], "hands_to": []},
@@ -25,7 +26,7 @@ AGENTS = {
     "triage": {"job": None, "cmds": [], "hands_to": ["trainer"]},
     "trainer": {"job": None, "cmds": [], "hands_to": ["evaluator"]},
     "evaluator": {"job": "agent-review", "cmds": ["agent-review", "agents"], "hands_to": ["triage", "doctor"]},
-    "doctor": {"job": "doctor", "cmds": ["doctor"], "hands_to": []},
+    "doctor": {"job": "doctor", "cmds": ["doctor"], "hands_to": ["scriptreview"]},
 }
 # What Autopilot's actions are, in agent terms (an action not listed works under the autopilot playbook).
 ACTIONS = {"review": "reviewer", "fix": "fixer", "polish": "fixer", "prelaunch": "publisher", "schedule": "publisher", "upload": "publisher",

@@ -11,6 +11,7 @@ from googleapiclient.http import MediaFileUpload
 
 import compliance
 import config
+import filelock
 import records
 
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.readonly"]  # same as dashboard.py
@@ -68,13 +69,17 @@ def uploads_today(out_dir: Path, now: dt.datetime) -> int:
 
 def find_interrupted(yt, meta: dict) -> str | None:
     """An earlier attempt may have reached YouTube before this program wrote the video id down (a crash, a lost connection).
-    Look at the channel's ten newest uploads for the same title created after that attempt began, so a retry never sends a second copy."""
+    Look at the channel's ten newest uploads created after that attempt began for the same title or the same description, so a retry never sends a second
+    copy (the fixer may have retitled the video since the crash, so the title alone is not enough)."""
     uploads = yt.channels().list(part="contentDetails", mine=True).execute()["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
     ids = [i["contentDetails"]["videoId"] for i in yt.playlistItems().list(part="contentDetails", playlistId=uploads, maxResults=10).execute().get("items", [])]
     if not ids:
         return None
+    head = compliance.final_description(meta)[:120].strip()
     for v in yt.videos().list(part="snippet", id=",".join(ids)).execute().get("items", []):
-        if v["snippet"].get("title") == meta.get("title") and v["snippet"].get("publishedAt", "") >= meta.get("upload_started", "9"):
+        sn = v["snippet"]
+        same = sn.get("title") == meta.get("title") or (len(head) >= 40 and str(sn.get("description", "")).strip().startswith(head))
+        if same and sn.get("publishedAt", "") >= meta.get("upload_started", "9"):
             return v["id"]
     return None
 
@@ -100,6 +105,16 @@ def verify_upload(yt, video_id: str, expect: dict) -> dict:
 
 
 def upload(folder: Path, privacy: str = "private", publish_at: str | None = None) -> str:
+    """Send one approved video as private (scheduled). Only one process at a time may send a given video: a second caller is refused, and after the
+    first finishes it finds the video id and refuses too."""
+    try:
+        with filelock.try_locked(folder / ".upload"):
+            return _upload(folder, privacy, publish_at)
+    except filelock.Busy:
+        raise SystemExit(f"{folder.name} is being uploaded by another process right now; not sending it twice") from None
+
+
+def _upload(folder: Path, privacy: str, publish_at: str | None) -> str:
     meta = json.loads((folder / "meta.json").read_text())
     if not meta.get("approved"):
         raise SystemExit(f"{folder.name} is not approved. Watch video.mp4, then run: python run.py approve {folder.name}")

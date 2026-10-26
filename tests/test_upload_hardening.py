@@ -145,3 +145,37 @@ def test_metadata_youtube_would_reject_is_never_sent(vid, monkeypatch):
     with pytest.raises(SystemExit, match="title contains"):
         upload.upload(vid, "private", when())
     assert yt.inserted == [] and "upload_started" not in json.loads((vid / "meta.json").read_text())
+
+
+def test_a_retry_finds_the_earlier_copy_even_when_the_title_changed_since(vid, monkeypatch):
+    import compliance
+
+    meta = json.loads((vid / "meta.json").read_text())
+    earlier_description = compliance.final_description(meta)
+    meta.update(upload_started="2026-10-20T10:00:00Z", title="A Repaired Title")  # the fixer retitled the video between the crash and the retry
+    (vid / "meta.json").write_text(json.dumps(meta))
+    earlier = {"id": "OLDID", "snippet": {"title": "The Title", "description": earlier_description, "publishedAt": "2026-10-20T10:03:00Z"}}
+    yt = FakeYT(existing=[earlier])
+    monkeypatch.setattr(upload, "_service", lambda: yt)
+    assert upload.upload(vid, "private", when()) == "OLDID"
+    assert yt.inserted == []
+
+
+def test_two_uploads_of_one_video_at_the_same_moment_send_only_one(vid, monkeypatch):
+    import filelock
+
+    yt = FakeYT()
+    monkeypatch.setattr(upload, "_service", lambda: yt)
+    with filelock.try_locked(vid / ".upload"):  # another process (the dashboard button, a manual command) is sending this video right now
+        with pytest.raises(SystemExit, match="being uploaded"):
+            upload.upload(vid, "private", when())
+    assert yt.inserted == []
+
+
+def test_the_upload_lock_is_free_again_after_a_refusal_or_a_finished_upload(vid, monkeypatch):
+    pub = when()
+    yt = FakeYT(stored={"title": "The Title", "privacy": "private", "publish_at": pub})
+    monkeypatch.setattr(upload, "_service", lambda: yt)
+    assert upload.upload(vid, "private", pub) == "NEWID"
+    with pytest.raises(SystemExit, match="already uploaded"):  # not "being uploaded": the lock was released
+        upload.upload(vid, "private", pub)

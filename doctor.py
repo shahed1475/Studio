@@ -19,6 +19,7 @@ import config
 import escalate
 import filelock
 import playbook
+import scriptreview
 
 REPORT = config.ROOT / "data" / "agent" / "doctor.json"
 PROPOSALS = config.ROOT / "data" / "agent" / "proposals"
@@ -155,6 +156,37 @@ def fixes_for(agent: str, job: str, jobs=None, runner=None, busy=None) -> dict:
             "create_folders": ("create a missing data, logs or output folder", dirs)}
 
 
+def scriptreview_fixes() -> dict:
+    """The only things the doctor may do about the script reviewer: review its saved held scripts again with the rules as they are now (free, read-only) and
+    create a missing folder. A silent model or a rule that holds too much is a problem for the owner (a post-mortem says which rule fires)."""
+    def dirs():
+        try:
+            scriptreview.HELD.mkdir(parents=True, exist_ok=True)
+            scriptreview.FILE.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            return False, f"cannot create a folder ({type(e).__name__})"
+        return False, "folders exist"  # never counts as the cure for a hold streak or a silent model
+
+    return {"recheck_held": ("review the saved held scripts again with the current rules", scriptreview.recheck_held),
+            "create_folders": ("create the script reviewer's data folders", dirs)}
+
+
+def handle_inbox(now: dt.datetime, chat=None, may_spend: bool = True, proposals: Path | None = None) -> list[dict]:
+    """Problems other agents posted to the doctor (kind agent_problem from the script reviewer): the ladder with safe fixes, then the owner. Closes the task."""
+    done = []
+    for t in [t for t in agentbus.open_for("doctor") if t["kind"] == "agent_problem" and t["source"] == "scriptreview"][:MAX_PER_RUN]:
+        agentbus.claim(t["id"], "doctor", now)
+        problem = f"script reviewer: {t['reason']}"
+        res = escalate.solve("doctor", problem, t["evidence"], scriptreview_fixes(), slug=t["slug"], may_spend=may_spend, chat=chat, now=now)
+        if res["solved"]:
+            agentbus.finish(t["id"], f"fixed by {res['fix']}", True, now)
+        else:
+            propose("scriptreview", problem, t["evidence"], now, chat, may_spend, proposals)
+            agentbus.to_owner(t["id"], "the doctor could not fix it; a post-mortem proposal was written", now)
+        done.append({"task": t["id"], "problem": t["slug"], "solved": bool(res["solved"])})
+    return done
+
+
 def propose(agent: str, problem: str, evidence: str, now: dt.datetime, chat=None, may_spend: bool = True, directory: Path | None = None) -> Path | None:
     """A post-mortem for the owner: what failed, what is suspected, what change to the agent's playbook or code might help. A proposal only."""
     import seo
@@ -226,7 +258,7 @@ def run(now: dt.datetime | None = None, chat=None, get=None, state=None, lines=N
     spend = can_spend() if may_spend is None else may_spend
     rows = scan(now, state, lines, jobs)
     sick = sorted((r for r in rows if r["status"] in ("stale", "failing")), key=lambda r: (r["job"] in NEVER_RERUN, r["agent"]))  # what can be fixed first
-    result = {"at": now.strftime(TS), "agents": rows, "solved": [], "owner": [], "needs": [], "drafts": [], "dashboard": None}
+    result = {"at": now.strftime(TS), "agents": rows, "solved": [], "owner": [], "needs": [], "drafts": [], "script_review": [], "dashboard": None}
     for r in sick[:MAX_PER_RUN + sum(r["job"] in NEVER_RERUN for r in sick)]:
         problem = f"agent {r['agent']} is {r['status']}"
         fixable = r["job"] not in NEVER_RERUN  # the main loop cannot be restarted from outside: no model is asked about it, the owner is told
@@ -236,6 +268,7 @@ def run(now: dt.datetime | None = None, chat=None, get=None, state=None, lines=N
         else:
             propose(r["agent"], problem, r["evidence"], now, chat, spend, proposals)
             result["owner"].append(r["agent"])
+    result["script_review"] = handle_inbox(now, chat, spend, proposals)
     result["dashboard"] = probe_dashboard(get)
     for n in needs(result["dashboard"], now):
         agentbus.post("setup_request", "doctor", "owner", n["need"], reason=n["why"], now=now, commands=n["commands"])

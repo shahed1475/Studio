@@ -475,6 +475,13 @@ def agents_row(now: dt.datetime | None = None, result: Path | None = None, bus: 
             level = "watch"
     except (OSError, ValueError, KeyError):
         ev_txt += "; the doctor has not run yet"
+    import scriptreview
+
+    sr = scriptreview.summary()
+    if sr:
+        ev_txt += f"; {sr[0]}" + "".join(f" ({p['problem']})" for p in sr[1])
+        if sr[1]:
+            level = "watch"
     return ind("agents", "Agents", level, ev_txt, controls, "Open the Activity feed: the agents list what they tried." if owner_tasks else ("The daily evaluation did not run: check the worker." if age > 72 else ""))
 
 

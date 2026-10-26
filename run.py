@@ -85,6 +85,19 @@ def cmd_research(n: int = 3) -> None:
     print("\n".join(f"+ {t}" for t in new) or "nothing new")
 
 
+def _script_gate(data: dict, source: str, topic: str) -> dict:
+    """The script reviewer's free check before a voice and pictures are paid for. Safe fixes are applied to `data`; a script still held raises, and the loop asks
+    the writer again. Returns `data` (a loop that ends with no good script must not keep the held one: the caller sets data to None on a raise)."""
+    import scriptreview
+
+    try:
+        scriptreview.gate(data, source, slug=re.sub(r"[^a-z0-9]+", "-", topic.lower()).strip("-")[:50])
+    except ValueError:
+        data.clear()  # the same dict object the caller holds: an empty script is never produced
+        raise
+    return data
+
+
 def _best_topic(fmt: str) -> str | None:
     """The queued topic the research and growth data like best that can be made well; the first in the queue if that ranking cannot run."""
     import topicrank
@@ -140,6 +153,7 @@ def _cmd_make(topic: str | None = None) -> Path:
     for attempt in range(3):
         try:
             data = scriptgen.script(topic, grounded=src[1] if src else None)
+            data = _script_gate(data, src[1] if src else "", topic)
             if src:
                 data["sources"] = [f"Wikipedia: {src[0]} (CC BY-SA 4.0), retold in our own words"]
             data["anchors"] = anchor_terms(topic, data.get("anchors", []), src[0] if src else "")
@@ -256,6 +270,7 @@ def _cmd_doc(topic: str | None = None) -> Path:
             if pairs:
                 data["lines"], data["chapters"] = scriptgen.remove_lines(data["lines"], data["chapters"], {j for _, j in pairs})
                 print(f"  removed {len(pairs)} retold line(s)")
+            data = _script_gate(data, src[1] if src else "", topic)
             if src:
                 data["sources"] = [f"Wikipedia: {a['title']} (CC BY-SA 4.0), retold in our own words" for a in arts] + [a["url"] for a in arts]
             data["anchors"] = anchor_terms(topic, data.get("anchors", []), src[0] if src else "")
@@ -459,6 +474,17 @@ def main() -> None:
         print(f"agent evaluation: {ev['passed']} passed, {ev['failed']} failed; triage: {len(tr['families'])} families ({len(new)} not solved before), {tr['stuck_drafts']} stuck drafts; lessons pruned: {dropped}")
         if ev["failed"]:
             agentlog.event("error", "Agent evaluation failed", "; ".join(f"{c['case']}: {c['detail'][:80]}" for c in ev["cases"] if not c["ok"]), notify=True)
+    elif a[0] == "script-review":
+        import reviewer
+        import scriptreview
+
+        folder = config.OUT / a[1]
+        meta = json.loads((folder / "meta.json").read_text())
+        res = scriptreview.review(meta, reviewer.source_text(meta), use_llm="--llm" in a, may_spend=scriptreview.can_spend())
+        scriptreview.record(a[1], res)
+        for c in res["checks"]:
+            print(f"  {'ok  ' if c['ok'] else c['severity'].upper():5} {c['name']}: {c['detail']}")
+        print(f"script review of {a[1]}: {res['verdict']} (model read: {res['model']}); lines to look at: {res['bad_lines'][:20] or 'none'}")
     elif a[0] == "doctor":
         import doctor
 

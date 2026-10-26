@@ -8,7 +8,8 @@ Every 6 hours (`python run.py doctor`, `python run.py agents` to read the result
 1. **Scan**: each agent with a worker job is compared with its own cadence (`stale` after 2.5 periods) and with the last results in `logs/worker.log` (`failing` after 2 failed runs in a row). `not_yet` = no run recorded, not a fault.
 2. **Fix, safe only** (through `escalate.solve`: lessons, then two model opinions, then the owner): run the registered job again (never `autopilot`, never while a render runs), make secret files private, create missing folders. Nothing else.
 3. **Write up**: a post-mortem in `data/agent/proposals/`; for a problem family seen 3 or more times a skill draft in `data/agent/proposals/skills/<name>/` scanned with `vetskill`. A draft is NOT installed: the owner runs the two commands in the task (`python vetskill.py <folder>`, `python extend.py add <folder>`).
-4. **Setup requests** (inbox, kind `setup_request`, with exact commands): dashboard not answering, no model key, YouTube edit permission missing in apply mode, no off-server backup.
+4. **Inbox**: `agent_problem` tasks from the script reviewer (`doctor.handle_inbox`): review its saved held scripts again after a fix; if still held, post-mortem and the owner.
+5. **Setup requests** (inbox, kind `setup_request`, with exact commands): dashboard not answering, no model key, YouTube edit permission missing in apply mode, no off-server backup.
 ## Adding an agent
 Add it to `agents.py` (job or commands, who it hands work to), a playbook in `playbooks/`, a case in `agenteval.py`; `agents.problems()` must be empty. Model calls made under its command or Autopilot action carry its role and limits automatically (`playbook.acting_as`).
 ## Limits

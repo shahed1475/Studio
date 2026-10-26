@@ -15,6 +15,15 @@ def _isolate_autopilot_log(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_scriptreview(tmp_path, monkeypatch):
+    """The script reviewer keeps results and held scripts under data/agent: a test that goes through the gate must never write the real ones."""
+    import scriptreview
+
+    monkeypatch.setattr(scriptreview, "FILE", tmp_path / "scriptreview.json")
+    monkeypatch.setattr(scriptreview, "HELD", tmp_path / "scriptreview_held")
+
+
+@pytest.fixture(autouse=True)
 def _local_fallback_for_old_tests(monkeypatch):
     """The production default is no local model; most older tests exercise the fallback path, so they opt in here."""
     import llm
