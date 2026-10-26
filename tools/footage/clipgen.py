@@ -101,8 +101,37 @@ def estimated_cost(cfg: dict) -> float:
     return round(cfg["price_per_second_usd"] * cfg["duration_s"], 4)
 
 
+def _sku_price(skus: dict, resolution: str, audio: bool) -> float | None:
+    """The per-second price for this resolution and audio setting from the provider's price fields. OpenRouter names them `duration_seconds[_with|_without_audio][_<res>]`
+    (27 Oct 2026); the older `per-video-second[-<res>]` names are still read. A price for the exact resolution wins over the base price."""
+    a = "with_audio" if audio else "without_audio"
+    for key in (f"duration_seconds_{a}_{resolution}", f"duration_seconds_{a}", f"duration_seconds_{resolution}", "duration_seconds",
+                f"per-video-second-{resolution}", "per-video-second"):
+        try:
+            price = float(skus[key])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if price > 0 and price != float("inf"):
+            return price
+    return None
+
+
+def check_supported(cfg: dict, entry: dict) -> None:
+    """Refuse a clip the model cannot make (duration, resolution, shape, audio) before any money moves. A limit the provider does not list is not checked."""
+    durs, res, asp = entry.get("supported_durations"), entry.get("supported_resolutions"), entry.get("supported_aspect_ratios")
+    if durs and cfg["duration_s"] not in durs:
+        raise Refused(f"{cfg['model']} supports durations {sorted(durs)[:10]}, not {cfg['duration_s']} s; nothing was bought")
+    if res and cfg["resolution"] not in res:
+        raise Refused(f"{cfg['model']} supports resolutions {res}, not {cfg['resolution']}; nothing was bought")
+    if asp and cfg["aspect_ratio"] not in asp:
+        raise Refused(f"{cfg['model']} supports aspect ratios {asp}, not {cfg['aspect_ratio']}; nothing was bought")
+    if cfg.get("generate_audio") and entry.get("generate_audio") is False:
+        raise Refused(f"{cfg['model']} does not generate audio; nothing was bought")
+
+
 def live_price(cfg: dict, headers: dict, http=requests, sleep=time.sleep) -> float:
-    """The provider's own price per second for this model, from its price list. Fails closed: no readable price, nothing is bought."""
+    """The provider's own price per second for this model, from its price list. Fails closed: no readable price, a clip the model cannot make, or a model priced per
+    video token (no per-second price until a clip has been measured) means nothing is bought."""
     r = _get(cfg, http, f"{cfg['base_url']}/videos/models", headers, cfg["http_timeout_s"], sleep)
     if r.status_code >= 300:
         raise Refused(f"the price list is unavailable (HTTP {r.status_code}); nothing was bought")
@@ -114,18 +143,21 @@ def live_price(cfg: dict, headers: dict, http=requests, sleep=time.sleep) -> flo
         raise Refused(f"{cfg['model']} has no readable price in the provider's list; nothing was bought")
     if not isinstance(skus, dict):
         raise Refused(f"{cfg['model']} has no readable price in the provider's list; nothing was bought")
-    for key in (f"per-video-second-{cfg['resolution']}", "per-video-second"):  # a price for this resolution first, then the base price
-        try:
-            price = float(skus[key])
-        except (KeyError, TypeError, ValueError):
-            continue
-        if price > 0 and price != float("inf"):
-            return price
+    check_supported(cfg, entry)
+    price = _sku_price(skus, cfg["resolution"], bool(cfg.get("generate_audio")))
+    if price is not None:
+        return price
+    if any(str(k).startswith("video_tokens") for k in skus):
+        raise Refused(f"{cfg['model']} is priced per video token, not per second; measure one clip before allowing it; nothing was bought")
     raise Refused(f"{cfg['model']} has no usable price for {cfg['resolution']} in the provider's list; nothing was bought")
 
 
 def _with_live_price(cfg: dict, headers: dict, http, sleep, run) -> dict:
     """The settings with the provider's live price in them (when price_source is live), checked against the per-clip cap."""
+    import modelcfg
+
+    if cfg["model"] not in modelcfg.get("video_generation_allowed"):
+        raise Refused(f"{cfg['model']} is not in the allowed list of video models (config/models.json); nothing was bought")
     if cfg["price_source"] != "live":
         return cfg
     price = live_price(cfg, headers, http, sleep)

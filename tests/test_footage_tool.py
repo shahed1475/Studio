@@ -982,3 +982,44 @@ def test_a_probe_with_a_zero_size_or_nan_length_is_a_clean_rejection(cfg, tmp_pa
     monkeypatch.setattr(clipgen.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, out, ""))
     with pytest.raises(clipgen.ClipError, match="could not be read"):
         clipgen._probe_check(tmp_path / "x.mp4", cfg)
+
+
+# ---- OpenRouter's real price fields and per-model limits (checked against /videos/models on 27 Oct 2026) ----
+def _entry(**k):
+    return Resp(data={"data": [{"id": "google/veo-3.1-lite", "supported_durations": [4, 6, 8], "supported_resolutions": ["720p", "1080p"], "supported_aspect_ratios": ["16:9", "9:16"],
+                                "generate_audio": True, **k}]})
+
+
+VEO_LITE = {"duration_seconds_with_audio": "0.08", "duration_seconds_without_audio": "0.05", "duration_seconds_with_audio_720p": "0.05", "duration_seconds_without_audio_720p": "0.03"}
+
+
+def test_the_real_price_fields_are_read_for_the_chosen_resolution_and_audio(cfg):
+    price = lambda **k: clipgen.live_price({**cfg, **k}, {}, Http(models=_entry(pricing_skus=VEO_LITE)), lambda s: None)
+    assert price(resolution="720p", generate_audio=False) == 0.03 and price(resolution="720p", generate_audio=True) == 0.05
+    assert price(resolution="1080p", generate_audio=False) == 0.05 and price(resolution="1080p", generate_audio=True) == 0.08  # no 1080p field: the base price
+
+
+def test_prices_without_an_audio_split_are_read_too():
+    c = {"model": "google/veo-3.1-lite", "resolution": "720p", "generate_audio": False, "base_url": "https://x", "http_timeout_s": 5, "retries": 1, "backoff_s": 0}
+    wan = Resp(data={"data": [{"id": "google/veo-3.1-lite", "pricing_skus": {"duration_seconds_480p": "0.05", "duration_seconds_720p": "0.1", "duration_seconds_1080p": "0.2"}}]})
+    assert clipgen.live_price(c, {}, Http(models=wan), lambda s: None) == 0.1
+    flat = Resp(data={"data": [{"id": "google/veo-3.1-lite", "pricing_skus": {"duration_seconds": "0.1"}}]})
+    assert clipgen.live_price(c, {}, Http(models=flat), lambda s: None) == 0.1
+
+
+def test_a_model_priced_per_video_token_is_refused_until_a_clip_has_been_measured(cfg):
+    tokens = _entry(pricing_skus={"video_tokens": "0.0000035", "video_tokens_without_audio": "0.0000035"})
+    with pytest.raises(clipgen.Refused, match="per video token"):
+        clipgen.live_price(cfg, {}, Http(models=tokens), lambda s: None)
+
+
+@pytest.mark.parametrize("change,message", [({"duration_s": 5}, "supports durations"), ({"resolution": "4K"}, "supports resolutions"), ({"aspect_ratio": "1:1"}, "supports aspect ratios")])
+def test_a_clip_the_model_cannot_make_is_refused_before_any_money_moves(cfg, change, message):
+    with pytest.raises(clipgen.Refused, match=message):
+        clipgen.live_price({**cfg, **change}, {}, Http(models=_entry(pricing_skus=VEO_LITE)), lambda s: None)
+
+
+def test_a_model_outside_the_allowed_list_buys_nothing(cfg, money):
+    h = Http(models=priced(cfg, "0.03"))
+    r = fails({**cfg, "model": "someone/else-video-1"}, h, "not in the allowed list")
+    assert post_count(h) == 0 and money.spent_today() == 0
