@@ -20,3 +20,12 @@ The studio runs in two containers on the VPS (`studio-dashboard`, `studio-worker
 - Delete cache files with glob patterns (the cache holds hash-named images that running jobs need).
 - Type or store the owner's passwords or API keys. They enter them in Settings or the password prompt.
 - Turn Autopilot on or off, approve, hold or release videos without the owner's instruction.
+
+## Hooks that gate these commands (from account plugins, not from this repo) and how to pass them every time
+- **Deploy asks for a dry run first** (cto-toolkit): use `STUDIO_VPS=deploy@vps-ai deploy/deploy.sh safe`. It previews, deploys only when the preview is clean (fast-forward, no render), all in one command.
+- **Push is refused when a commit carries a Python file that does not compile** (candy-plugin, reads the commit, not the disk). Run `deploy/clean_check.sh` before committing: it compiles and tests a clean checkout of HEAD.
+- **Never partly stage a file with a patch built from working-folder line numbers** (`git apply --cached --unidiff-zero` put a hunk in the wrong place and broke the staged file). To commit only your edit of a file another session also changed: `git show HEAD:file > /tmp/x`, apply your edit to that copy, `python3 -I -m py_compile /tmp/x`, then `git update-index --cacheinfo 100644,$(git hash-object -w /tmp/x),file`, and check `git show :file` compiles.
+- **A destructive-pattern hook refuses any command containing the text `rm -rf /`**, even for a temp folder. Do not use `rm -rf`: use `mktemp -d`, `git worktree remove --force`, or `rm -r` on a path you named, in its own command.
+- Do not chain a push, a deploy and ssh checks in one line: the hooks judge the whole line. One step per command, and `deploy.sh safe` for the deploy.
+- ffmpeg and python live inside `studio-worker`, not on the host: `docker exec studio-worker ffmpeg ...`; `docker exec -i` is needed to pipe a script into python.
+- `run_autopilot_pass` through the MCP server may time out while reviews run: the pass still finishes on the server. Check `logs/autopilot.log` before running it again.

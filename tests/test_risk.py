@@ -264,3 +264,14 @@ def test_deploy_safe_mode_previews_first_and_stops_on_a_dirty_preview():
     text = (Path(__file__).parent.parent / "deploy" / "deploy.sh").read_text()
     safe = text[text.index('if [[ "${1:-}" == "safe" ]]'):text.index('[[ "${1:-}" == "dry" ]] && DRY=1')]
     assert '"$0" dry' in safe and "Fast-forward: yes" in safe and "No render is running" in safe and safe.index('"$0" dry') < safe.index('exec "$0"') and "exit 2" in safe and "exit 3" in safe
+
+
+def test_the_clean_checkout_script_never_uses_rm_and_removes_its_worktree_with_git():
+    import subprocess
+    from pathlib import Path
+    path = Path(__file__).parent.parent / "deploy" / "clean_check.sh"
+    text = path.read_text()
+    assert subprocess.run(["bash", "-n", str(path)], capture_output=True).returncode == 0
+    code = "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("#"))
+    assert "rm " not in code and "rm -" not in code and "git worktree remove --force" in code and "git worktree add" in code and "mktemp -d" in code and "set -euo pipefail" in code
+    assert "compileall" in code and "pytest" in code
