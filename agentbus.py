@@ -40,7 +40,7 @@ def _text(t, cap: int) -> str:
     return "" if seo.linky(s) else s
 
 
-def post(kind: str, source: str, target: str, slug: str = "", reason: str = "", evidence: str = "", now=None, file: Path | None = None,
+def _post(kind: str, source: str, target: str, slug: str = "", reason: str = "", evidence: str = "", now=None, file: Path | None = None,
          commands: list[str] | None = None) -> dict:
     """Ask `target` to do `kind` for a video. An open task with the same kind, target and video is returned instead of a second one.
     `commands` are exact lines for the owner to run, written by our own code only (never from outside text): kept as given, 5 lines of 200 characters at most."""
@@ -60,7 +60,24 @@ def post(kind: str, source: str, target: str, slug: str = "", reason: str = "", 
         return t
 
 
+def post(kind: str, source: str, target: str, slug: str = "", reason: str = "", evidence: str = "", now=None, file: Path | None = None,
+         commands: list[str] | None = None) -> dict:
+    """See _post. A task that cannot be saved (disk full, folder gone) is returned with state 'unsaved' instead of raising: an agent's run goes on."""
+    try:
+        return _post(kind, source, target, slug, reason, evidence, now, file, commands)
+    except OSError:
+        return {"id": "", "kind": kind, "source": source, "target": target, "slug": slug, "reason": _text(reason, 300), "evidence": "", "state": "unsaved", "saved": False,
+                "commands": [str(c)[:200] for c in (commands or [])[:5]], "seen": 1, "history": []}
+
+
 def _move(task_id: str, state: str, note: str, now, file: Path | None) -> dict | None:
+    try:
+        return _move_saved(task_id, state, note, now, file)
+    except OSError:
+        return None  # the change of state could not be saved; the task keeps its old state
+
+
+def _move_saved(task_id: str, state: str, note: str, now, file: Path | None) -> dict | None:
     file = file or FILE
     with filelock.locked(file):
         rows = _load(file)

@@ -325,3 +325,18 @@ def test_unwritable_places_never_crash_an_agent(tmp_path, monkeypatch):
         stuck = {"verdict": "fail", "checks": [{"name": "facts", "ok": False, "severity": "block"}]}
         agenteval._video(tmp_path, "d9", review=stuck, fix_attempts=2)
         assert unstick.run(NOW, out=tmp_path / "out", lock_file=tmp_path / "lock") == {"skipped": "could not save the video record"}
+
+
+def test_the_inbox_never_raises_when_it_cannot_save(tmp_path):
+    import doctor
+    import guardian
+    bad = _blocked(tmp_path)
+    with agenteval.sandbox() as root:
+        agentbus.FILE = bad / "tasks.json"
+        t = agentbus.post("setup_request", "doctor", "owner", "x", reason="r", commands=["python run.py agents"], now=NOW)
+        assert t["state"] == "unsaved" and t["saved"] is False and t["commands"] == ["python run.py agents"]
+        assert agentbus.finish("t00001", "done", now=NOW) is None and agentbus.close_for("x", "done", now=NOW) == 0
+        res = doctor.run(NOW, chat=lambda p, r: {}, get=lambda u: 500, state={}, lines=[], may_spend=False, busy=lambda: [], report=root / "d.json", triage_file=root / "n.json", proposals=root / "p")
+        assert res["needs"] and "dashboard" in res["needs"]  # the setup items are found and reported even though the inbox could not take them
+        rep = tracetriage.triage(7, NOW, [{"at": "2026-10-25T10:00:00Z", "kind": "error", "title": "A recurring error", "detail": "d"}] * 3, report=root / "t.json")
+        assert rep["families"][0]["count"] == 3
