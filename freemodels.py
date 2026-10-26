@@ -41,8 +41,11 @@ def _load() -> dict:
 
 
 def _save(d: dict) -> None:
-    FILE.parent.mkdir(parents=True, exist_ok=True)
-    FILE.write_text(json.dumps(d, indent=1))
+    try:
+        FILE.parent.mkdir(parents=True, exist_ok=True)
+        FILE.write_text(json.dumps(d, indent=1))
+    except OSError:
+        pass  # a usage and price cache: a lost save costs one more lookup, and a full disk must not make every model call fail
 
 
 def _free(m: dict) -> bool:

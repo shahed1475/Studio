@@ -501,3 +501,19 @@ def test_a_videos_folder_that_cannot_be_listed_is_a_skipped_run_not_a_crash(tmp_
     monkeypatch.setattr(pathlib.Path, "glob", denied)
     assert guardian.run(NOW, out=tmp_path / "out", lock_file=tmp_path / "lock")["skipped"] == "cannot read the videos folder"
     assert unstick.candidates(tmp_path / "out") == []
+
+
+def test_the_free_model_cache_and_the_login_state_record_never_break_a_model_call_or_the_health_check_on_a_full_disk(tmp_path, monkeypatch):
+    import datetime as dt
+
+    import freemodels
+    import ytlogin
+    bad = _blocked(tmp_path)
+    monkeypatch.setattr(freemodels, "FILE", bad / "free.json")
+    freemodels._save({"x": 1})                                                                  # no exception
+    monkeypatch.setattr(ytlogin, "STATE", bad / "login.json")
+    monkeypatch.setattr(agentlog, "FILE", tmp_path / "events.jsonl")
+    res = ytlogin.check(dt.datetime(2026, 10, 26, 12, 0, tzinfo=dt.timezone.utc), refresh=lambda: (_ for _ in ()).throw(RuntimeError("invalid_grant")))
+    assert res["ok"] is False and res["error"] == "expired"                                    # the check still reports the expired login
+    assert any("login expired" in e["title"] for e in agentlog.recent(5))
+    ytlogin.stamp(dt.datetime(2026, 10, 26, 12, 0, tzinfo=dt.timezone.utc))                     # recording the consent date does not raise either

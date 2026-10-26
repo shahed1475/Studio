@@ -27,8 +27,11 @@ def _load() -> dict:
 
 
 def _save(d: dict) -> None:
-    STATE.parent.mkdir(parents=True, exist_ok=True)
-    STATE.write_text(json.dumps(d, indent=2))
+    try:
+        STATE.parent.mkdir(parents=True, exist_ok=True)
+        STATE.write_text(json.dumps(d, indent=2))
+    except OSError:
+        pass  # advisory record of the last check: a lost save means the alert may repeat next hour, never a crashed health check
 
 
 def stamp(at: dt.datetime, mode: str | None = None, estimate: bool = False) -> None:
