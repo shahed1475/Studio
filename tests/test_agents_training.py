@@ -349,3 +349,11 @@ def test_a_stuck_draft_fix_on_an_unreadable_record_says_so_instead_of_raising(tm
     assert fixes["new_title"][1]() == (False, "could not read the video record (FileNotFoundError)")
     (folder / "meta.json").write_text("{broken")
     assert fixes["one_more_repair"][1]() == (False, "could not read the video record (JSONDecodeError)")
+
+
+def test_the_shared_feed_never_raises_when_it_cannot_write(tmp_path, monkeypatch):
+    bad = _blocked(tmp_path)
+    monkeypatch.setattr(agentlog, "FILE", bad / "events.jsonl")
+    e = agentlog.event("found", "Something happened", "detail", now=NOW)
+    assert e["saved"] is False and e["title"] == "Something happened"
+    agentlog.mark_read()

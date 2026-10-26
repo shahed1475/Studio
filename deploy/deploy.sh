@@ -2,6 +2,7 @@
 # Update the studio on your server. Needs: STUDIO_VPS=user@host (ssh key login), Docker with Compose on the server.
 #   First time:  STUDIO_VPS=deploy@your.host deploy/deploy.sh first   (also copies your secret files by scp, never through git)
 #   Later:       STUDIO_VPS=deploy@your.host deploy/deploy.sh
+#   Safe:        STUDIO_VPS=deploy@your.host deploy/deploy.sh safe   (the preview, then the deploy only if the preview is clean)
 #   Preview:     STUDIO_VPS=deploy@your.host deploy/deploy.sh dry   (says what a real run would do, changes nothing)
 #
 # Render-safe: the code folder is mounted into the containers, so most changes need NO restart (every job starts a fresh Python process).
@@ -10,6 +11,12 @@ set -euo pipefail
 : "${STUDIO_VPS:?set STUDIO_VPS=user@host}"
 REPO="${STUDIO_REPO:-https://github.com/shahed1475/Studio.git}"
 DIR="${STUDIO_DIR:-studio}"
+if [[ "${1:-}" == "safe" ]]; then  # preview first, then deploy only when the preview is clean: one command, so the preview is never skipped
+  out=$("$0" dry) || exit 1; echo "$out"
+  echo "$out" | grep -q "Fast-forward: yes" || { echo "Stopped: the server cannot fast-forward."; exit 2; }
+  if ! echo "$out" | grep -q "No render is running"; then echo "A render is running."; [[ "${FORCE:-0}" == "1" ]] || { echo "Stopped (FORCE=1 overrides)."; exit 3; }; fi
+  exec "$0"
+fi
 [[ "${1:-}" == "dry" ]] && DRY=1  # preview only: say what a real run would do, change nothing
 if [[ "${1:-}" == "first" ]]; then
   ssh "$STUDIO_VPS" "test -d $DIR/.git || git clone $REPO $DIR"

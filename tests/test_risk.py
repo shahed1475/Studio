@@ -257,3 +257,10 @@ def test_the_deploy_script_has_a_preview_that_stops_before_it_pulls():
     dry, pull = text.index('if [[ "${DRY:-0}" == "1" ]]'), text.index("git pull -q --ff-only")
     block = text[dry:pull]
     assert dry < pull and "exit 0" in block and "git pull" not in block and "docker compose" not in block.replace("docker-compose", "") and 'DRY=1' in text
+
+
+def test_deploy_safe_mode_previews_first_and_stops_on_a_dirty_preview():
+    from pathlib import Path
+    text = (Path(__file__).parent.parent / "deploy" / "deploy.sh").read_text()
+    safe = text[text.index('if [[ "${1:-}" == "safe" ]]'):text.index('[[ "${1:-}" == "dry" ]] && DRY=1')]
+    assert '"$0" dry' in safe and "Fast-forward: yes" in safe and "No render is running" in safe and safe.index('"$0" dry') < safe.index('exec "$0"') and "exit 2" in safe and "exit 3" in safe
