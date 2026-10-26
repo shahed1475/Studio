@@ -313,9 +313,16 @@ def make(folder: Path, hook: str | None = None) -> list[str]:
     work.rmdir()
     art = make_art(folder, meta, hook)  # a freshly drawn picture first (one clear subject, strong mood); the frames above stay as the fallback and as options
     names = art + names
+    import thumbscore
+
+    scores = thumbscore.score([folder / n for n in names], meta.get("title", ""), hook)  # a vision model reads every candidate; no answer keeps the order above
+    thumb_scores = {names[s["index"]]: s["total"] for s in scores or []}
+    names = thumbscore.order(names, scores)
 
     def apply(d):
         d["thumb_hook"], d["thumbnails"], d["thumbnail"] = hook, names, names[0]
+        if thumb_scores:
+            d["thumb_scores"] = thumb_scores
         if art:
             import aiart
 
