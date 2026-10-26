@@ -168,6 +168,8 @@ def visual_recheck(folder: Path, meta: dict | None = None) -> bool:
     garbled = bool(caps and not caps["ok"] and re.search(r"garbl|gibberish|stray|nonsens", caps["detail"], re.I))
     return wrong < autopilot.WRONG_PICTURES and not garbled
 
+LINE_START_SLACK = 0.25  # seconds
+
 
 def lines_at(meta: dict, folder: Path, times: list) -> list[str]:
     """The narration lines being spoken at these seconds of the finished video (the voice's word timings say when each line starts)."""
@@ -181,7 +183,7 @@ def lines_at(meta: dict, folder: Path, times: list) -> list[str]:
     texts = [l["text"] for l in meta.get("lines", [])]
     out: list[str] = []
     for t in times:
-        spoken = [i for i, st in start.items() if st <= float(t) and i < len(texts)]
+        spoken = [i for i, st in start.items() if st <= float(t) + LINE_START_SLACK and i < len(texts)]  # the sampled second is rounded to a tenth: a line that starts at it counts
         if spoken and texts[max(spoken)] not in out:
             out.append(texts[max(spoken)])
     return out

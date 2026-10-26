@@ -421,3 +421,12 @@ def test_a_video_deleted_in_studio_is_reported_once_and_does_not_break_the_guard
         tasks = [t for t in agentbus.tasks() if t["kind"] == "video_missing"]
         assert len(tasks) == 1 and "V404" in tasks[0]["reason"]
         assert not any("could not finish checking" in e["title"] for e in agentlog.recent(10))
+
+
+def test_lines_at_picks_the_line_that_starts_at_the_flagged_second_even_when_the_second_is_rounded(tmp_path):
+    import fixer
+    (tmp_path / "words.json").write_text(json.dumps([{"i": 0, "s": 0.0}, {"i": 1, "s": 192.5}, {"i": 2, "s": 203.1000001}, {"i": 2, "s": 203.9}, {"i": 3, "s": 211.7}]))
+    meta = {"lines": [{"text": "zero"}, {"text": "one"}, {"text": "two"}, {"text": "three"}]}
+    assert fixer.lines_at(meta, tmp_path, [203.1]) == ["two"]   # was "one": the rounded second sat a hair before the line's own start
+    assert fixer.lines_at(meta, tmp_path, [211.6]) == ["three"]  # within the slack of the next start; a second well before the start stays with the earlier line
+    assert fixer.lines_at(meta, tmp_path, [200.0]) == ["one"]
