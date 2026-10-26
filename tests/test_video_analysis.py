@@ -119,3 +119,16 @@ def test_the_score_thumbnails_command_scores_the_saved_candidates_without_changi
     out = capsys.readouterr().out
     assert out.index("thumb-1.jpg") < out.index("art-a.jpg") and "8.2" in out and "6.1" in out
     assert (world / "meta.json").read_text() == before
+
+
+def test_the_request_leaves_room_for_the_models_thinking(world):
+    """Real run, 27 Oct 2026: Gemini 3.1 Pro spent the whole 1,500-token limit thinking (finish_reason length) and returned 261 characters of cut-off JSON."""
+    sent = []
+    videoinspect.gemini_analyze(world, post=lambda b, k: sent.append(b) or answer({"summary": "ok", "problems": []}))
+    assert sent[0]["max_tokens"] >= 4000 and sent[0]["reasoning"] == {"effort": "low"}
+
+
+def test_a_reply_cut_off_by_the_output_limit_says_so_instead_of_no_json(world):
+    cut = {"choices": [{"finish_reason": "length", "message": {"content": '```json\n{"summary": "The video'}}]}
+    got = videoinspect.gemini_analyze(world, post=lambda b, k: cut)
+    assert "ran out of output room" in got["error"]
