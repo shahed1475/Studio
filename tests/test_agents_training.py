@@ -357,3 +357,23 @@ def test_the_shared_feed_never_raises_when_it_cannot_write(tmp_path, monkeypatch
     e = agentlog.event("found", "Something happened", "detail", now=NOW)
     assert e["saved"] is False and e["title"] == "Something happened"
     agentlog.mark_read()
+
+
+def test_ordinary_repairs_and_guardian_actions_become_lessons_without_any_escalation(monkeypatch):
+    import autopilot
+    import fixer
+    with agenteval.sandbox() as root:
+        stuck = {"verdict": "fail", "checks": [{"name": "title_matches", "ok": False, "severity": "block"}, {"name": "ok_check", "ok": True, "severity": "block"}]}
+        agenteval._video(root, "v1", review=stuck)
+        monkeypatch.setattr(autopilot.config, "OUT", root / "out")
+        monkeypatch.setattr(fixer, "fix", lambda slug, now=None, **k: {"fixed": ["new title: Mami Wata: The Honest Story", "rewrote the description to match"], "verdict": "pass"})
+        autopilot.do_fix("v1", {"auto_approve": False}, NOW)
+        got = lessons.recall("fixer", "check title_matches failed")
+        assert {g["tried"] for g in got} == {"new title", "rewrote the description to match"} and all(g["wins"] == 1 for g in got)
+        monkeypatch.setattr(fixer, "fix", lambda slug, now=None, **k: {"fixed": [], "verdict": "fail"})
+        autopilot.do_fix("v1", {"auto_approve": False}, NOW)
+        assert any(g["tried"] == "repair pass without a change" and g["losses"] == 1 for g in lessons.recall("fixer", "check title_matches failed"))
+        f = agenteval._video(root, "sched", video_id="V2", publish_at=agenteval.FUTURE)
+        agenteval._guard(root, agenteval.FakeYT())
+        mine = lessons.recall("guardian", "seo_title_front on a video not public yet")
+        assert mine and mine[0]["tried"] == "deterministic metadata repair" and mine[0]["wins"] >= 1

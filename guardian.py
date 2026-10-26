@@ -16,6 +16,7 @@ from pathlib import Path
 import agentbus
 import agentlog
 import config
+import lessons
 import records
 
 EDIT_LIMIT = 2      # metadata repairs by the guardian per video
@@ -166,6 +167,10 @@ def run(now: dt.datetime | None = None, yt=None, may_edit: bool | None = None, o
                 if "metadata" in kinds and g.get("edits", 0) < EDIT_LIMIT:
                     done = fix_metadata(folder, meta, get_yt() if meta.get("video_id") else None, now)
                     if done:
+                        left = [p for p in problems(json.loads(m.read_text())) if p["kind"] == "metadata"]
+                        for f in found:
+                            if f["kind"] == "metadata":
+                                lessons.record("guardian", f"{f['name']} on a video not public yet", "deterministic metadata repair", not left, now)
                         result["actions"].append({"slug": slug, "did": done})
                         agentlog.event("applied", f"Guardian repaired the metadata of {title}", "; ".join(done), now=now)
                 if "thumbnail" in kinds and g.get("thumb_edits", 0) < 1 and len(result["actions"]) < MAX_ACTIONS:
@@ -175,10 +180,12 @@ def run(now: dt.datetime | None = None, yt=None, may_edit: bool | None = None, o
                         hook = None
                         agentlog.event("found", f"Guardian could not change the thumbnail of {title}", type(e).__name__, now=now)
                     if hook:
+                        lessons.record("guardian", "thumbnail text repeats the title", "new thumbnail text naming the subject", True, now)
                         result["actions"].append({"slug": slug, "did": [f"thumbnail text: {hook}"]})
                         agentlog.event("applied", f"Guardian rewrote the thumbnail text of {title}", hook, now=now)
                 if "content" in kinds and meta.get("hold"):
                     if reissue(folder, meta, now):
+                        lessons.record("guardian", "content problem on a held video", "reissue as a new private upload", True, now)
                         agentbus.post("repair_video", "guardian", "autopilot", slug, reason=f"Content problem: {', '.join(f['name'] for f in found if f['kind'] == 'content')}",
                                       evidence="held on YouTube; reissued as a draft", now=now)
                         old = (json.loads(m.read_text()).get("superseded") or ["?"])[-1]

@@ -337,10 +337,30 @@ def do_approve(slug, cfg, now):
     _approve(slug)
 
 
+def learn_from_fix(slug: str, checks: list[str], out: dict, now) -> None:
+    """Self-training from daily work: what the fixer did for each failing check, and whether the video then passed. Never stops the repair."""
+    import lessons
+
+    try:
+        did = [re.sub(r"[:(].*$", "", str(f)).strip()[:60] for f in (out.get("fixed") or [])] or ["repair pass without a change"]
+        worked = out.get("verdict") == "pass"
+        for name in checks[:4]:
+            for step in did[:3]:
+                lessons.record("fixer", f"check {name} failed", step, worked, now)
+    except Exception:  # a lesson that cannot be written is lost, not a failed repair
+        pass
+
+
 def do_fix(slug, cfg, now):
     import fixer
 
+    try:
+        checks = [c["name"] for c in (json.loads((config.OUT / slug / "meta.json").read_text()).get("review") or {}).get("checks", []) if not c["ok"] and c["severity"] in ("block", "human")]
+    except (OSError, ValueError):
+        checks = []
     out = fixer.fix(slug, now=now)
+    if isinstance(out, dict) and not out.get("skipped"):
+        learn_from_fix(slug, checks, out, now)
     if out.get("verdict") == "pass" and auto_approves(cfg):
         _approve(slug)
     return out
