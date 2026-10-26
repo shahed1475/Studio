@@ -108,3 +108,16 @@ def test_make_puts_the_art_first_and_adds_the_credit_once(art, monkeypatch, tmp_
     meta = json.loads((folder / "meta.json").read_text())
     assert names[:2] == ["thumbs/art-a.jpg", "thumbs/art-b.jpg"] and names[2:] == ["thumbs/thumb-1.jpg", "thumbs/thumb-2.jpg", "thumbs/thumb-3.jpg"]
     assert meta["thumbnail"] == "thumbs/art-a.jpg" and meta["credits"].count(aiart.CREDIT) == 1 and meta["thumb_art"] == "ai"
+
+
+def test_the_thumbnail_and_the_scene_pictures_use_their_own_configured_models(art, monkeypatch):
+    """Measured 27 Oct 2026 on two scenes: Flash $0.067 gave the clearest thumbnails (Pro $0.140 was no better, Flash-Lite $0.034 too dim); scenes stay on the cheap one."""
+    import modelcfg
+
+    sent = []
+    monkeypatch.setattr(llm, "_post", lambda body, key: sent.append(body["model"]) or {"choices": [{"message": {"images": [{"image_url": {"url": png_b64()}}]}}]})
+    monkeypatch.setattr(modelcfg, "get", lambda cap: {"thumbnail_art": "google/gemini-3.1-flash-image", "scene_art": "google/gemini-3.1-flash-lite-image"}[cap])
+    aiart.thumbnail_art("a lone farmhouse at night", now=NOW)
+    aiart.generate("A line.", "farmhouse", "Bell Witch", now=NOW)
+    assert sent == ["google/gemini-3.1-flash-image", "google/gemini-3.1-flash-lite-image"]
+    assert modelcfg.DEFAULTS["thumbnail_art"] == "google/gemini-3.1-flash-image" and modelcfg.DEFAULTS["scene_art"] == "google/gemini-3.1-flash-lite-image"

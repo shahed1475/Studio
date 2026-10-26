@@ -273,3 +273,19 @@ def test_the_rival_pattern_ignores_other_subjects_and_hour_long_compilations():
     text = seo.rival_pattern(rivals, "bell witch")
     assert "Mirror Reaper" not in text and "Witches Bells" not in text and "about 10 minutes" in text and "The Bell Witch: True Story" in text
     assert seo.rival_pattern(rivals[:2], "bell witch") == "" or "59" not in seo.rival_pattern(rivals[:2], "bell witch")
+
+
+def test_the_seo_writer_uses_the_writer_model_not_the_cheap_one(tmp_path, monkeypatch):
+    """Titles and descriptions decide the click, so they are written by the script (writer) role, not the cheap helper (27 Oct 2026)."""
+    import scriptgen
+    folder = tmp_path / "v"
+    folder.mkdir()
+    (folder / "meta.json").write_text(json.dumps({"topic": "Pied Piper", "title": "Old", "description": "Old.\n\nSources:\nhttps://x.org\n\nChapters:\n0:00 A",
+                                                  "lines": [{"text": "Rats first appear around 1559."}], "tags": []}))
+    monkeypatch.setattr(seo, "core_phrase", lambda m: "pied piper")
+    monkeypatch.setattr(seo, "suggest", lambda q: ["pied piper story"])
+    monkeypatch.setattr(seo, "competitors", lambda core: [])
+    roles = []
+    monkeypatch.setattr(scriptgen, "_chat", lambda prompt, role="cheap": roles.append(role) or {"titles": ["The Pied Piper: No Rats at First"], "description_intro": "The pied piper tale has a twist. Rats came late.", "tags": ["pied piper"]})
+    seo.make(folder)
+    assert roles == ["script"]

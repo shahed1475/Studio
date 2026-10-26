@@ -15,8 +15,8 @@ import re
 
 import config
 import llm
+import modelcfg
 
-MODEL = "google/gemini-3.1-flash-lite-image"
 STYLE = ("Antique storybook illustration, muted watercolour and ink, warm candlelit palette, soft paper texture, painterly, "
          "no text, no letters, no captions, no watermark")
 STYLES = [  # one per video, chosen by its topic: every video no longer looks like the same template
@@ -74,7 +74,8 @@ def generate(line: str, visual: str, topic: str, vertical: bool = False, now: dt
     if dest.exists():
         return dest, CREDIT
     try:
-        body = llm._post({"model": MODEL, "modalities": ["image", "text"], "messages": [{"role": "user", "content": prompt}]}, llm.api_key())
+        model = modelcfg.get("scene_art")
+        body = llm._post({"model": model, "modalities": ["image", "text"], "messages": [{"role": "user", "content": prompt}]}, llm.api_key())
         url = body["choices"][0]["message"]["images"][0]["image_url"]["url"]
         raw = base64.b64decode(url.split(",", 1)[1])
         from PIL import Image
@@ -82,7 +83,7 @@ def generate(line: str, visual: str, topic: str, vertical: bool = False, now: dt
         im = Image.open(io.BytesIO(raw)).convert("RGB")
         dest.parent.mkdir(parents=True, exist_ok=True)
         im.save(dest, "JPEG", quality=92)
-        llm._account(now, "art", MODEL, body)
+        llm._account(now, "art", model, body)
     except Exception as e:  # no credit (402), a refused prompt, a network error: draw nothing
         if "402" in str(e):
             _off_until["day"] = now.strftime("%Y-%m-%d")
@@ -107,14 +108,15 @@ def thumbnail_art(scene: str, now: dt.datetime | None = None):
     if dest.exists():
         return dest, CREDIT
     try:
-        body = llm._post({"model": MODEL, "modalities": ["image", "text"], "messages": [{"role": "user", "content": prompt}]}, llm.api_key())
+        model = modelcfg.get("thumbnail_art")
+        body = llm._post({"model": model, "modalities": ["image", "text"], "messages": [{"role": "user", "content": prompt}]}, llm.api_key())
         raw = base64.b64decode(body["choices"][0]["message"]["images"][0]["image_url"]["url"].split(",", 1)[1])
         from PIL import Image, ImageOps
 
         im = ImageOps.fit(Image.open(io.BytesIO(raw)).convert("RGB"), (1280, 720), method=Image.LANCZOS, centering=(0.6, 0.5))
         dest.parent.mkdir(parents=True, exist_ok=True)
         im.save(dest, "JPEG", quality=92)
-        llm._account(now, "art", MODEL, body)
+        llm._account(now, "art", model, body)
     except Exception as e:  # no credit (402), a refused prompt, a network error: the thumbnail keeps using the video's own frames
         if "402" in str(e):
             _off_until["day"] = now.strftime("%Y-%m-%d")
