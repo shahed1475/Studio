@@ -28,10 +28,12 @@ def event(kind: str, title: str, detail: str = "", notify: bool = False, now: dt
 
 
 def _all() -> list[dict]:
-    if not FILE.exists():
-        return []
+    try:
+        lines = FILE.read_text().splitlines()
+    except OSError:
+        return []  # no feed yet, or one that cannot be read: an empty feed, not a crash in the dashboard or an agent
     out = []
-    for line in FILE.read_text().splitlines():
+    for line in lines:
         try:
             out.append(json.loads(line))
         except ValueError:

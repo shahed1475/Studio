@@ -377,3 +377,25 @@ def test_ordinary_repairs_and_guardian_actions_become_lessons_without_any_escala
         agenteval._guard(root, agenteval.FakeYT())
         mine = lessons.recall("guardian", "seo_title_front on a video not public yet")
         assert mine and mine[0]["tried"] == "deterministic metadata repair" and mine[0]["wins"] >= 1
+
+
+def test_lessons_that_cannot_be_saved_never_stop_the_guardian_or_the_repair_counter(tmp_path, monkeypatch):
+    import autopilot
+    import fixer
+    with agenteval.sandbox() as root:
+        lessons.FILE = _blocked(tmp_path) / "lessons.jsonl"
+        f = agenteval._video(root, "sched", video_id="V2", publish_at=agenteval.FUTURE)
+        res = agenteval._guard(root, agenteval.FakeYT())
+        assert res["actions"] and agenteval._meta(f)["title"].lower().startswith("mami wata")
+        stuck = {"verdict": "fail", "checks": [{"name": "title_matches", "ok": False, "severity": "block"}]}
+        agenteval._video(root, "v1", review=stuck)
+        monkeypatch.setattr(autopilot.config, "OUT", root / "out")
+        monkeypatch.setattr(fixer, "fix", lambda slug, now=None, **k: {"fixed": ["new title: x"], "verdict": "pass"})
+        assert autopilot.do_fix("v1", {"auto_approve": False}, NOW)["verdict"] == "pass"
+
+
+def test_an_unreadable_feed_is_an_empty_feed(tmp_path, monkeypatch):
+    d = tmp_path / "events.jsonl"
+    d.mkdir()  # reading a directory raises an OSError
+    monkeypatch.setattr(agentlog, "FILE", d)
+    assert agentlog._all() == [] and agentlog.recent(5) == [] and agentlog.unread() == 0
