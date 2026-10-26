@@ -472,3 +472,20 @@ def test_an_unwritable_lock_file_or_a_corrupt_state_time_never_crashes_the_guard
     assert unstick.run(NOW, out=tmp_path / "out", lock_file=bad) == {"skipped": "cannot open the lock file"}
     rows = {r["agent"]: r["status"] for r in doctor.scan(NOW, {"recheck": "not a time", "guardian": 12345}, [], worker.JOBS)}
     assert rows["recheck"] == "stale" and rows["guardian"] == "stale"
+
+
+def test_a_command_that_crashes_ends_with_a_plain_message_a_feed_entry_and_a_failing_exit_code(tmp_path, monkeypatch, capsys):
+    import run
+    monkeypatch.setattr(agentlog, "FILE", tmp_path / "events.jsonl")
+
+    def boom():
+        raise OSError("disk full")
+    assert run.guarded_main(boom, ["guardian"]) == 1
+    assert "run.py guardian failed: OSError: disk full" in capsys.readouterr().out
+    assert any("A command failed: run.py guardian" in e["title"] for e in agentlog.recent(5))
+    assert run.guarded_main(lambda: None, ["agents"]) == 0
+    import pytest
+    with pytest.raises(SystemExit):                                                          # a command's own refusal is not swallowed
+        run.guarded_main(lambda: (_ for _ in ()).throw(SystemExit("not approved")), ["upload"])
+    monkeypatch.setattr(agentlog, "FILE", _blocked(tmp_path) / "e.jsonl")
+    assert run.guarded_main(boom, ["doctor"]) == 1                                           # even with an unwritable feed

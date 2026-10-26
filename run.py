@@ -649,5 +649,26 @@ def main() -> None:
         print(__doc__)
 
 
+def guarded_main(entry=None, argv: list[str] | None = None) -> int:
+    """Run a command. A crash inside it (a full disk, a broken record, YouTube refusing) ends with one plain line, one entry in the activity feed and a non-zero
+    exit code, which the worker log and the doctor read as a failed run. SystemExit (the commands' own refusals) and Ctrl+C pass through untouched."""
+    entry = entry or main
+    cmd = (sys.argv[1:] if argv is None else argv)[:1]
+    try:
+        entry()
+        return 0
+    except (SystemExit, KeyboardInterrupt):
+        raise
+    except Exception as e:
+        print(f"run.py {' '.join(cmd)} failed: {type(e).__name__}: {str(e)[:200]}")
+        try:
+            import agentlog
+
+            agentlog.event("error", f"A command failed: run.py {' '.join(cmd)}", f"{type(e).__name__}: {str(e)[:200]}")
+        except Exception:
+            pass  # the feed is a courtesy here: the message above and the exit code already say it
+        return 1
+
+
 if __name__ == "__main__":
-    main()
+    sys.exit(guarded_main())
