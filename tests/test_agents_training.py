@@ -489,3 +489,15 @@ def test_a_command_that_crashes_ends_with_a_plain_message_a_feed_entry_and_a_fai
         run.guarded_main(lambda: (_ for _ in ()).throw(SystemExit("not approved")), ["upload"])
     monkeypatch.setattr(agentlog, "FILE", _blocked(tmp_path) / "e.jsonl")
     assert run.guarded_main(boom, ["doctor"]) == 1                                           # even with an unwritable feed
+
+
+def test_a_videos_folder_that_cannot_be_listed_is_a_skipped_run_not_a_crash(tmp_path, monkeypatch):
+    import pathlib
+
+    import guardian
+
+    def denied(self, pattern):
+        raise PermissionError("denied")
+    monkeypatch.setattr(pathlib.Path, "glob", denied)
+    assert guardian.run(NOW, out=tmp_path / "out", lock_file=tmp_path / "lock")["skipped"] == "cannot read the videos folder"
+    assert unstick.candidates(tmp_path / "out") == []

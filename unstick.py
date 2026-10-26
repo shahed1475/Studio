@@ -17,7 +17,11 @@ def candidates(out: Path | None = None) -> list[tuple[Path, dict]]:
     import fixer
 
     found = []
-    for m in sorted((out or config.OUT).glob("*/meta.json")):
+    try:
+        metas = sorted((out or config.OUT).glob("*/meta.json"))
+    except OSError:
+        return []  # a folder that cannot be listed has no stuck draft to hand over
+    for m in metas:
         try:
             meta = json.loads(m.read_text())
         except ValueError:

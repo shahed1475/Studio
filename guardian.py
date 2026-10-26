@@ -149,7 +149,11 @@ def run(now: dt.datetime | None = None, yt=None, may_edit: bool | None = None, o
                 client[0] = titletest._service()
             return client[0] if may_edit else None
 
-        for m in sorted((out or config.OUT).glob("*/meta.json")):
+        try:
+            metas = sorted((out or config.OUT).glob("*/meta.json"))
+        except OSError:
+            return {**result, "skipped": "cannot read the videos folder"}
+        for m in metas:
             if len(result["actions"]) >= MAX_ACTIONS:
                 break
             try:
