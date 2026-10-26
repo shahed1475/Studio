@@ -376,6 +376,14 @@ def do_polish(slug, cfg, now):
     except (Exception, SystemExit) as e:
         records.merge(config.OUT / slug, {"polish_done": {"at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "result": f"stopped by an error: {e}"[:300]}})
         return {"skipped": "error"}
+    if isinstance(out, dict) and not out.get("skipped"):
+        try:  # self-training from daily work: did the polish clear the facts warning?
+            import lessons
+
+            lessons.record("fixer", "invented facts warning after a passed review", "polish: rewrite the named lines from the source article",
+                           out.get("verdict") == "pass" and not out.get("held"), now)
+        except Exception:
+            pass
     if out.get("verdict") == "pass" and auto_approves(cfg):
         _approve(slug)
     return out

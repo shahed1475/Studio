@@ -586,3 +586,18 @@ def test_the_pace_guard_can_be_switched_off_and_an_unreadable_risk_changes_nothi
     assert ("schedule", "ready-short") in {(a["do"], a["slug"]) for a in off}
     none = autopilot.plan_actions(state([d], spend_ok=True, credit_left=50.0, cap_left=3.0), {**CFG, "make_videos": True, "shorts": True}, NOW)   # no platform_level in the state at all
     assert ("schedule", "ready-short") in {(a["do"], a["slug"]) for a in none}
+
+
+def test_a_polish_outcome_becomes_a_lesson(tmp_path, monkeypatch):
+    import fixer
+    import lessons
+    monkeypatch.setattr(lessons, "FILE", tmp_path / "lessons.jsonl")
+    monkeypatch.setattr(autopilot, "_approve", lambda slug: None)
+    monkeypatch.setattr(fixer, "polish", lambda slug, now=None, **k: {"changed": ["x"], "verdict": "pass", "held": False})
+    autopilot.do_polish("v", {**CFG}, NOW)
+    monkeypatch.setattr(fixer, "polish", lambda slug, now=None, **k: {"changed": ["x"], "verdict": "pass", "held": True})
+    autopilot.do_polish("v", {**CFG}, NOW)
+    monkeypatch.setattr(fixer, "polish", lambda slug, now=None, **k: {"skipped": "already polished"})
+    autopilot.do_polish("v", {**CFG}, NOW)                                    # a skipped polish teaches nothing
+    got = lessons.recall("fixer", "invented facts warning after a passed review")
+    assert len(got) == 1 and got[0]["wins"] == 1 and got[0]["losses"] == 1
