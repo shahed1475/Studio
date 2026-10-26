@@ -275,3 +275,22 @@ def test_the_clean_checkout_script_never_uses_rm_and_removes_its_worktree_with_g
     code = "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("#"))
     assert "rm " not in code and "rm -" not in code and "git worktree remove --force" in code and "git worktree add" in code and "mktemp -d" in code and "set -euo pipefail" in code
     assert "compileall" in code and "pytest" in code
+
+
+def test_the_platform_row_separates_the_repetition_signals_from_the_count_of_videos():
+    import datetime as dt
+    from pathlib import Path
+    now = dt.datetime(2026, 10, 26, 12, 0, tzinfo=dt.timezone.utc)
+    stamp = (now - dt.timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    openings = ["Nobody remembers the miller's daughter who walked into the fog.", "A bell rang under the harbour long before the town had a church.",
+                "The map shows a river that no traveller ever found.", "Three brothers shared one horse and a single secret.", "In winter the lake keeps a door open for the dead.",
+                "A queen once traded her name for a basket of salt.", "The scribe copied the same page nine times and none agreed.", "Fishermen still tell of a light that counts the boats.",
+                "Under the temple stairs a second stairway waits.", "Her letters stopped in the spring of a year no record names.", "The mountain pass was closed by a story, not by snow.",
+                "Every lantern in the valley went dark on the same night.", "A stranger paid for the bridge with coins nobody could read.", "The oldest tree in the grove was planted on purpose.",
+                "Soldiers found the city empty and the tables still laid.", "A song crossed the sea faster than the ship that carried it."]
+    many = [(Path(f"v{i}"), {"format": "doc", "uploaded_at": stamp, "made_at": stamp, "lines": [{"text": openings[i]}] * (3 + i * 2), "chapters": [{}] * (2 + i % 7)}) for i in range(16)]
+    by_count = risk.pattern(many, now)
+    assert by_count["pace"] == 16 and by_count["level"] == "act" and by_count["content_act"] is False
+    same = [(Path(f"s{i}"), {"format": "doc", "uploaded_at": stamp, "made_at": stamp, "lines": [{"text": "On a quiet night an old story begins again in the same way"}] * 5, "chapters": [{}] * 3}) for i in range(8)]
+    repeated = risk.pattern(same, now)
+    assert repeated["content_act"] is True and repeated["pairs"] >= 3

@@ -121,9 +121,12 @@ def pattern(vs, now: dt.datetime | None = None) -> dict:
             "watch" if pace >= PACE_WATCH or pairs >= 1 or same_structure >= 0.6 else "ok"
     ev = (f"{same_structure:.0%} of the last {len(sigs)} videos share one structure; {pairs} pairs of near-identical openings; {pace} videos out or scheduled in a 7-day window "
           f"(watch at {PACE_WATCH}, act at {PACE_ACT}); {by_you} of {len(vs)} approved by you, the rest by the reviewer agent")
-    return ind("platform", "YouTube 'inauthentic content' (repetitive or mass-produced)", level, ev,
+    content_act = pairs >= 3 or (same_structure >= 0.9 and len(sigs) >= 6)  # the repetition signals alone, apart from how many videos went out
+    row = ind("platform", "YouTube 'inauthentic content' (repetitive or mass-produced)", level, ev,
                "documentary length and chapter count vary per topic; openings and titles compared with recent videos; one new idea per video; review window; daily limit of 2",
                "YouTube says reviewers look at your main theme, most-viewed and newest videos, and titles. Every video should add something a template cannot: a source-based angle, a real question, what is known versus legend. A slower start (3 to 5 videos a week) is safer for a new channel.")
+    row.update(pace=pace, pairs=pairs, same_structure=round(same_structure, 2), content_act=content_act)
+    return row
 
 
 # ---- R4 money ----

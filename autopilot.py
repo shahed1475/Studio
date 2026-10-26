@@ -122,8 +122,9 @@ NEW_WORK = ("make", "make_short", "make_clip", "make_news")
 
 def pace_filter(acts: list[dict], state: dict, cfg: dict) -> list[dict]:
     """Autopilot reads YouTube's template-content risk (the Risks card row) before it makes or schedules anything new.
-    watch: no new Short is made or scheduled; the documentary schedule goes on as it is. act: nothing new is made or scheduled until the count falls.
-    Videos already scheduled or uploaded, reviews, repairs, final checks and uploads of what is already planned are never held back."""
+    Many videos in the 7-day window (watch or act): no new Short is made or scheduled; the documentary schedule goes on as it is (at one documentary and one
+    Short a day the count sits near the line all the time, so holding documentaries too would stop the channel). Repetition signals (near-identical openings,
+    one shared structure): nothing new at all until they clear. Videos already scheduled or uploaded, reviews, repairs, final checks and uploads are never held back."""
     level = state.get("platform_level")
     if not cfg.get("pace_guard", True) or level not in ("watch", "act"):
         return acts
@@ -132,22 +133,25 @@ def pace_filter(acts: list[dict], state: dict, cfg: dict) -> list[dict]:
     for a in acts:
         shorts = a["do"] in ("make_short", "make_clip") or (a["do"] == "schedule" and fmt.get(a["slug"]) == "short")
         new = a["do"] in NEW_WORK or a["do"] == "schedule"
-        (held if (level == "act" and new) or (level == "watch" and shorts) else keep).append(a)
+        (held if shorts or (state.get("platform_content_act") and new) else keep).append(a)
     if held:
-        _note_pace(level, state, held)
+        _note_pace(state, held)
     return keep
 
 
-def _note_pace(level: str, state: dict, held: list[dict]) -> None:
+def _note_pace(state: dict, held: list[dict]) -> None:
     """One plain notice a day in the activity feed. Never raises."""
     try:
         import agentlog
 
-        title = f"Autopilot is holding back new {'Shorts' if level == 'watch' else 'videos'} ({dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%d')})"
+        everything = bool(state.get("platform_content_act"))
+        title = f"Autopilot is holding back new {'videos' if everything else 'Shorts'} ({dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%d')})"
         if any(e.get("title") == title for e in agentlog.recent(60)):
             return
         agentlog.event("info", title, f"{state.get('platform_why', '')} Held: {', '.join(sorted({a['do'] for a in held}))}. "
-                       "It continues by itself when the count of videos in the 7-day window falls; switch it off with pace_guard in autopilot.json.")
+                       + ("Repeated openings or one shared structure were found, so nothing new is made until that clears. " if everything else
+                          "Documentaries go on as scheduled. ") + "Shorts continue by themselves when the count of videos in the 7-day window falls below 10; "
+                       "switch this off with pace_guard in autopilot.json.")
     except Exception:
         pass
 
@@ -297,11 +301,11 @@ def build_state(now: dt.datetime, cfg: dict) -> dict:
         import risk
 
         platform = risk.pattern(risk.videos(config.OUT), now)  # the same reading the Risks card shows for YouTube's template-content rule
-        platform_level, platform_why = platform["level"], platform["evidence"]
+        platform_level, platform_why, platform_content = platform["level"], platform["evidence"], bool(platform.get("content_act"))
     except Exception:  # a risk that cannot be read does not stop the studio: it works as before
-        platform_level, platform_why = "ok", ""
+        platform_level, platform_why, platform_content = "ok", "", False
     return {
-        "platform_level": platform_level, "platform_why": platform_why,
+        "platform_level": platform_level, "platform_why": platform_why, "platform_content_act": platform_content,
         "queue_len": len(queue), "connected": upload.SECRET.exists() and upload.TOKEN.exists(), "busy": dashboard_busy(),
         "uploads_today": upload.uploads_today(config.OUT, now), "uploads_by_format": by_fmt,
         "news_pending": sum(1 for n in news if n.get("status") == "queued"), "videos": videos,

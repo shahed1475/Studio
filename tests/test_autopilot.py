@@ -559,23 +559,24 @@ def _plan_with(level, videos=(), **kw):
                                         credit_left=50.0, cap_left=3.0, clippable=2, **kw), {**CFG, "make_videos": True, "shorts": True}, NOW)
 
 
-def test_the_pace_guard_slows_shorts_at_watch_and_stops_anything_new_at_act_but_not_what_is_planned(monkeypatch, tmp_path):
+def test_a_high_count_holds_new_shorts_but_never_the_documentary_schedule_and_repetition_holds_everything_new(monkeypatch, tmp_path):
     import agentlog
     monkeypatch.setattr(agentlog, "FILE", tmp_path / "events.jsonl")
     ready_doc = vid("ready-doc", format="doc", verdict="pass", approved=True, prelaunch_ok=True, publish_at=None)
     ready_short = vid("ready-short", format="short", verdict="pass", approved=True, publish_at=None)
-    scheduled = vid("sched", format="doc", verdict="pass", approved=True, prelaunch_ok=True, publish_at="2026-10-19T13:00:00Z")
-    base = {(a["do"], a["slug"]) for a in _plan_with("ok", [ready_doc, ready_short, scheduled])}
-    assert ("schedule", "ready-doc") in base and ("schedule", "ready-short") in base and any(d.startswith("make") for d, _ in base)
-    watch = {(a["do"], a["slug"]) for a in _plan_with("watch", [ready_doc, ready_short, scheduled])}
-    assert ("schedule", "ready-doc") in watch and ("schedule", "ready-short") not in watch              # the documentary schedule goes on, the Short waits
-    assert not any(d in ("make_short", "make_clip") for d, _ in watch)
-    act = {(a["do"], a["slug"]) for a in _plan_with("act", [ready_doc, ready_short, scheduled])}
-    assert not any(d.startswith("make") or d == "schedule" for d, _ in act)                           # nothing new is made or scheduled
     planned = vid("planned", format="doc", verdict="pass", approved=True, publish_at="2026-10-19T14:00:00Z")           # already has its slot, two hours away
-    assert ("upload", "planned") in {(a["do"], a["slug"]) for a in _plan_with("act", [planned])}                      # a video that already has its slot is still uploaded on time
-    _plan_with("act", [ready_doc, ready_short])
-    assert sum("holding back new videos" in e["title"] for e in agentlog.recent(20)) == 1                              # one notice a day, not one per pass
+    vids = [ready_doc, ready_short, planned]
+    acts = lambda level, **kw: {(a["do"], a["slug"]) for a in _plan_with(level, vids, **kw)}
+    ok = acts("ok")
+    assert ("schedule", "ready-doc") in ok and ("schedule", "ready-short") in ok and any(d.startswith("make") for d, _ in ok)
+    for level in ("watch", "act"):                                                                                    # by count alone, at either level
+        got = acts(level)
+        assert ("schedule", "ready-doc") in got and ("schedule", "ready-short") not in got and ("upload", "planned") in got
+        assert not any(d in ("make_short", "make_clip") for d, _ in got) and any(d == "make" for d, _ in got)        # a documentary may still be made
+    rep = acts("act", platform_content_act=True)                                                                      # repetition signals: nothing new at all
+    assert not any(d.startswith("make") or d == "schedule" for d, _ in rep) and ("upload", "planned") in rep
+    _plan_with("act", vids)
+    assert sum("holding back new Shorts" in e["title"] for e in agentlog.recent(20)) == 1                             # one notice a day, not one per pass
 
 
 def test_the_pace_guard_can_be_switched_off_and_an_unreadable_risk_changes_nothing():
