@@ -24,6 +24,7 @@ import compliance
 import config
 import records
 import llm
+import packaging
 import reviewer
 import scriptgen
 import seo
@@ -119,8 +120,13 @@ def pick_title(meta: dict, others: list[str], chat=None, misleading: str = "", c
         asked[0] += 1
         return check(meta, t)[0]
 
-    options = [seo.polish_title(t) for t in (meta.get("seo") or {}).get("titles", [])]
-    for t in (seo.polish_title(x) for x in (suggestions or [])):  # the reviewer's own honest suggestions come first, and still have to pass the question
+    core = (meta.get("seo") or {}).get("core", "")
+
+    def best_first(titles):  # the ones with the search phrase up front are asked first: the question budget is small, and a repair must not lose the words people type
+        return packaging.rank_titles(list(titles), core, others)
+
+    options = best_first(seo.polish_title(t) for t in (meta.get("seo") or {}).get("titles", []))
+    for t in best_first(seo.polish_title(x) for x in (suggestions or [])):  # the reviewer's own honest suggestions come first, and still have to pass the question
         if good(t):
             return t
     for t in ([] if misleading else options):
@@ -129,7 +135,7 @@ def pick_title(meta: dict, others: list[str], chat=None, misleading: str = "", c
     story = " ".join(l["text"] for l in meta.get("lines", [])[:8])
     try:
         got = chat("Write 3 different YouTube titles, each under 65 characters, for this story. Honest about what the video covers, no ALL CAPS, "
-                   "no emojis. Promise only what the narration delivers: no 'Why' or 'How did' question unless the narration answers it, and no 'legend' "
+                   "no emojis." + (f" Put the search phrase '{core}' in the first 40 characters of each." if core else "") + " Promise only what the narration delivers: no 'Why' or 'How did' question unless the narration answers it, and no 'legend' "
                    "if the narration says there is none. They must be clearly different from these existing titles: "
                    + json.dumps(others[:15]) + (f"\nThe reviewer rejected the current title: {misleading[:400]} Do not promise a definite answer the story does not give; "
                                                "a 'what we know' angle is honest." if misleading else "")
@@ -137,7 +143,7 @@ def pick_title(meta: dict, others: list[str], chat=None, misleading: str = "", c
                    + f"\nStory: {story}\nReturn JSON: {{\"titles\": [\"...\"]}}")
     except Exception:
         got = {}
-    for t in (seo.polish_title(x) for x in got.get("titles", []) if isinstance(x, str)):
+    for t in best_first(seo.polish_title(x) for x in got.get("titles", []) if isinstance(x, str)):
         if good(t):
             return t
     for t in options:  # the search-based options still get their turn when the writer had nothing usable

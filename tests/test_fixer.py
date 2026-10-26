@@ -607,3 +607,12 @@ def test_a_long_description_intro_is_cut_at_a_sentence_end_instead_of_being_refu
     head = meta["description"].split("\n\nSources:")[0]
     assert 40 <= len(head) <= 520 and head.endswith(".")
     assert fixer.correct_description({"description": "x"}, "S", ["p"], chat=lambda p: {"intro": "too short"}) is False
+
+
+def test_pick_title_tries_the_title_with_the_search_phrase_first(world, tmp_path):
+    d = video(tmp_path, "skin", seo={"core": "skinwalker ranch", "titles": ["Bigelow's Utah Ranch: Pentagon Funding and a Skeptic",
+                                                                         "Skinwalker Ranch: What Bigelow's Team Really Found"]})
+    meta = json.loads((d / "meta.json").read_text())
+    asked = []
+    got = fixer.pick_title(meta, [], chat=lambda *a, **k: {}, check=lambda m, t: (asked.append(t) or True, ""))
+    assert got == "Skinwalker Ranch: What Bigelow's Team Really Found" and asked[0] == got
