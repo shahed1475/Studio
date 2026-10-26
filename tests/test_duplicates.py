@@ -114,3 +114,18 @@ def test_scheduling_and_uploading_hold_the_later_duplicate_tell_the_owner_and_ne
         video(tmp_path, "third", "Hong Gildong", "short", approved=True)
         cfg = {**autopilot.DEFAULTS, "short_slots": [{"day": "fri", "time": "16:00"}], "review_window_hours": 24}
         assert autopilot.do_schedule("third", cfg, NOW) == {"skipped": "duplicate"} and "publish_at" not in json.loads((tmp_path / "third" / "meta.json").read_text())
+
+
+def test_a_chapter_about_a_films_box_office_is_never_cut_as_a_short_and_the_next_chapter_is_used(tmp_path, monkeypatch):
+    import test_clipper
+    monkeypatch.setattr(config, "OUT", tmp_path)
+    doc = test_clipper.make_doc(tmp_path, "doc-a")
+    meta = json.loads((doc / "meta.json").read_text())
+    meta["topic"] = "Fall of Constantinople"
+    meta["lines"] = [dict(l, text=(l["text"] + " The 2019 horror film grossed millions at the box office and critics panned it.") if i < 4 else l["text"]) for i, l in enumerate(meta["lines"])]
+    (doc / "meta.json").write_text(json.dumps(meta))
+    made = []
+    clipper.make_next(produce=lambda data, topic, **kw: made.append(data) or tmp_path / "s", chat=lambda p: {"hook": "Why did it fall?", "title": "The fall"})
+    assert made and not any("box office" in l["text"] for l in made[0]["lines"])
+    after = json.loads((doc / "meta.json").read_text())
+    assert 0 in after.get("clips_failed", []) and made[0]["clip_start_line"] not in (0,)

@@ -139,6 +139,9 @@ def _record(path, key: str, start: int) -> dict:
         return cur
 
 
+MODERN_MEDIA = re.compile(r"\b(films?|movies?|box office|grossed|sequels?|franchise|netflix|hollywood|starring|trailer|streaming|critics?|reviews? scores?)\b", re.I)
+
+
 def _docs() -> list:
     out = []
     for m in sorted(config.OUT.glob("*/meta.json")):
@@ -179,6 +182,9 @@ def make_next(produce=None, chat=None):
             words = []
         ws = windows(d["lines"], d["chapters"], line_seconds(words, texts))
         for w in pick(ws, MAX_TRIES, used=[*d.get("clips", []), *d.get("clips_failed", [])]):
+            if MODERN_MEDIA.search(" ".join(l["text"] for l in w["lines"])):
+                _record(m, "clips_failed", w["start"])  # a chapter about a film's box office or reviews is not a legend: never cut as a Short
+                continue
             data = build_short(d, w, hook(d, w, chat), m.parent.name, outro_for(d["topic"], recent_endings()))
             try:
                 folder = produce(data, d["topic"], requeue=False, pool_size=10, min_unique=3)
