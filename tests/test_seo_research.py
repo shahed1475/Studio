@@ -268,7 +268,8 @@ def test_the_rival_pattern_ignores_other_subjects_and_hour_long_compilations():
               {"title": "Bell Witch Compilation: 3 Hours of Legends", "views": 50000, "dur": 10800, "subs": 40000, "ratio": 1.25},
               {"title": "The Bell Witch: True Story", "views": 20000, "dur": 540, "subs": 4000, "ratio": 5.0},
               {"title": "Bell Witch Haunting Explained", "views": 15000, "dur": 600, "subs": 30000, "ratio": 0.5},
-              {"title": "Bell Witch Cave Tour", "views": 9000, "dur": 660, "subs": 20000, "ratio": 0.45}]
+              {"title": "Bell Witch Cave Tour", "views": 9000, "dur": 660, "subs": 20000, "ratio": 0.45},
+              {"title": "Witches Bells: their uses and folklore", "views": 50000, "dur": 915, "subs": 3000, "ratio": 14.7}]  # an herbal channel: the words only appear as parts of other words
     text = seo.rival_pattern(rivals, "bell witch")
-    assert "Mirror Reaper" not in text and "about 10 minutes" in text and "The Bell Witch: True Story" in text
+    assert "Mirror Reaper" not in text and "Witches Bells" not in text and "about 10 minutes" in text and "The Bell Witch: True Story" in text
     assert seo.rival_pattern(rivals[:2], "bell witch") == "" or "59" not in seo.rival_pattern(rivals[:2], "bell witch")

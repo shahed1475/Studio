@@ -196,7 +196,8 @@ def rival_pattern(rivals: list[dict], core: str = "") -> str:
     """Two facts from the rival videos' public numbers, for the title prompt: how long the top results run, and which title got the most views for its channel's size
     (a video far above its channel's size is what to learn from). Only videos whose title holds the search phrase count (a band with the same name is another subject)
     and lengths under 2 or over 30 minutes are left out (compilations). Titles are cleaned like all outside text. Records from before these fields existed give nothing."""
-    same = [r for r in rivals if has_phrase(str(r.get("title", "")).lower(), core)] if core else list(rivals)
+    key = _core_key(core)
+    same = [r for r in rivals if all(re.search(rf"\b{re.escape(w)}\b", str(r.get("title", "")).lower()) for w in key)] if key else list(rivals)  # whole words: 'Witches Bells' is not 'bell witch'
     durs = sorted(r["dur"] for r in same if r.get("dur") and 120 <= r["dur"] <= 1800)
     parts = []
     if len(durs) >= 3:
