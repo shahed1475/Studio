@@ -71,6 +71,9 @@ Plan and limits: docs/AGENT_TRAINING_PLAN_2026-10-26.md. Every agent has a playb
 ## Hooks and deploys (2026-10-26)
 Account plugin hooks gate some commands (dry run before a production deploy, a push whose commit does not compile, a literal `rm -rf /` match). How to pass each one without weakening it is in `.claude/skills/studio-deploy/SKILL.md`: deploy with `deploy/deploy.sh safe`, check with `deploy/clean_check.sh`, never `rm -rf`, never a hand-built partial stage.
 
+## One story, one video per format (2026-10-26)
+`duplicates.py`: a video's subject is the distinctive words of its topic and its first Wikipedia source (generic words like legend, story, myth ignored); one documentary and one Short per story, and a Short may sit beside the documentary it was clipped from (`source_doc`). Enforced when a topic is chosen (`topicrank.pop_best`, `run._best_topic`), when a clip is chosen (`clipper.make_next`, which also skips chapters about a film's box office or reviews) and before scheduling and uploading (`autopilot.do_schedule`, `do_upload`: the later of two same-story videos goes on hold with a reason and an owner task). Videos on hold do not count. `do_schedule` re-checks eligibility, so a video the approval step just sent back (pictures) cannot take a slot. A broken draft is repaired when its slot comes due (just-in-time rule); to repair one earlier use `python run.py repair <slug>`.
+
 ## Controls that exist (and their limits)
 Source-grounded scripts (up to two Wikipedia articles); claim ledger; claims checked against the source article, then against the web with citations; AI review that sees the source; fixer agent (two tries, then the owner); script, license, video and caption checks; visual review from sampled frames; upload read-back.
 Limits: Wikipedia is a secondary source; the web check is a model with search, not a historian; a vision reading covers only the frames sampled; passing checks are evidence, not proof.
