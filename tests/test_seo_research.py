@@ -190,3 +190,19 @@ def test_a_phrase_the_model_writes_in_lowercase_is_capitalised_like_the_name_it_
     assert "Pied Piper of Hamelin" in out and "pied piper" not in out
     right = "Skinwalker Ranch is a property in Utah with a long history of reports."
     assert seo.ensure_lead("Strange reports.", "skinwalker ranch", chat=lambda p: {"intro": right}) == right  # already capitalised: untouched
+
+
+def test_the_title_prompt_asks_for_a_concrete_detail_from_the_story_and_few_colons(tmp_path, monkeypatch):
+    import scriptgen
+    folder = tmp_path / "v"
+    folder.mkdir()
+    (folder / "meta.json").write_text(json.dumps({"topic": "Pied Piper", "title": "Old", "description": "Old intro.\n\nSources:\nhttps://x.org\n\nChapters:\n0:00 A",
+                                                  "lines": [{"text": "Rats first appear in a version from around 1559."}], "tags": []}))
+    monkeypatch.setattr(seo, "core_phrase", lambda m: "pied piper")
+    monkeypatch.setattr(seo, "suggest", lambda q: ["pied piper story"])
+    monkeypatch.setattr(seo, "competitors", lambda core: [])
+    prompts = []
+    monkeypatch.setattr(scriptgen, "_chat", lambda prompt, *a, **k: prompts.append(prompt) or {"titles": ["The Pied Piper: No Rats at First"], "description_intro": "The pied piper tale has a twist. Rats came late.", "tags": ["pied piper"]})
+    seo.make(folder)
+    p = prompts[0]
+    assert "under 60 characters" in p and "concrete detail" in p and "appears in the story" in p and "at most two" in p.lower() and "No Rats in the Oldest Version" in p

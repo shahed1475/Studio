@@ -62,7 +62,7 @@ def script(topic: str, grounded: str | None = None) -> dict:
     data = _script_chat(
         f"Write a YouTube Short script for a US audience.\nTopic: {topic}\nNiche: {nc['name']}\n"
         f"Style: {nc['style']}\n\nRules:\n"
-        "- Tell it as a short story in 12 to 14 lines of 10 to 16 words each, 140 to 180 words in total.\n"
+        "- Tell it as a short story in 10 to 12 lines of 9 to 14 words each, 110 to 135 words in total (about a minute: competitor Shorts that reached 20,000 views ran 51 seconds at the median).\n"
         "- Story arc: a hook that raises a question, the setting, rising tension, the twist or turning point, a closing line that lingers.\n"
         "- Line 1 is a hook that creates curiosity in under 12 words.\n"
         "- Retell it entirely in your own original words. Never copy sentences from any book, article or film.\n"

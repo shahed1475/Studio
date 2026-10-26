@@ -240,6 +240,51 @@ def _layout_c(frame: Path, hook: str) -> Image.Image:
     return base
 
 
+def art_subject(meta: dict, chat=None) -> str:
+    """One sentence naming the single scene to paint for the thumbnail, taken from what the video covers (never invented, never a real living person)."""
+    import seo
+
+    topic = seo.plain(meta.get("topic") or meta.get("title", ""))[:100]
+    outline = "; ".join(c.get("title", "") for c in meta.get("chapters", []) if c.get("title"))[:400]
+    opening = " ".join(l.get("text", "") for l in meta.get("lines", [])[:3])[:400]
+    try:
+        if chat is None:
+            import scriptgen
+
+            chat = scriptgen._chat
+        out = chat(f"Describe ONE scene to paint for the YouTube thumbnail of this documentary, in one sentence of at most 25 words: a single focal subject (a place, an object or "
+                   f"a creature from the story; a figure only when the story is about a legendary being, never a real living person) and a clear mood. Show only things the story covers.\n"
+                   f"Title: {meta.get('title', '')}\nTopic: {topic}\nChapters: {outline}\nOpening: {opening}\nReturn JSON: " + '{"scene": "..."}')
+        scene = seo.clean_sentences(str(out.get("scene", "")))[:220]
+        if len(scene.split()) >= 4:
+            return scene
+    except Exception:
+        pass
+    return f"A dramatic, moody scene from the story of {topic}"
+
+
+def make_art(folder: Path, meta: dict, hook: str, now=None, chat=None) -> list[str]:
+    """Two thumbnails on a freshly drawn picture (hook bottom left, hook centred). Empty when nothing could be drawn: the caller then uses the video's frames."""
+    import aiart
+
+    got = aiart.thumbnail_art(art_subject(meta, chat), now)
+    if not got:
+        return []
+    out = folder / "thumbs"
+    out.mkdir(exist_ok=True)
+    names = []
+    for tag, layout in (("a", _layout_a), ("b", _layout_b)):
+        img = layout(got[0], hook).convert("RGB")
+        path = out / f"art-{tag}.jpg"
+        q = 90
+        img.save(path, quality=q, optimize=True)
+        while path.stat().st_size > 1_900_000 and q > 60:
+            q -= 8
+            img.save(path, quality=q, optimize=True)
+        names.append(f"thumbs/{path.name}")
+    return names
+
+
 def make(folder: Path, hook: str | None = None) -> list[str]:
     meta = json.loads((folder / "meta.json").read_text())
     if not (folder / "video.mp4").exists():
@@ -266,8 +311,18 @@ def make(folder: Path, hook: str | None = None) -> list[str]:
     for p in work.glob("*"):
         p.unlink()
     work.rmdir()
+    art = make_art(folder, meta, hook)  # a freshly drawn picture first (one clear subject, strong mood); the frames above stay as the fallback and as options
+    names = art + names
+
     def apply(d):
         d["thumb_hook"], d["thumbnails"], d["thumbnail"] = hook, names, names[0]
+        if art:
+            import aiart
+
+            credits = d.setdefault("credits", [])
+            if aiart.CREDIT not in credits:  # the AI label is stated once, like the AI pictures inside the video
+                credits.append(aiart.CREDIT)
+            d["thumb_art"] = "ai"
         reviewer.invalidate(d)
 
     records.update(folder, apply)

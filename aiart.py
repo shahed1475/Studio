@@ -88,3 +88,35 @@ def generate(line: str, visual: str, topic: str, vertical: bool = False, now: dt
             _off_until["day"] = now.strftime("%Y-%m-%d")
         return None
     return dest, CREDIT
+
+
+THUMB_STYLE = ("YouTube thumbnail illustration, 16:9 widescreen. Dramatic cinematic lighting, high contrast, rich saturated colours (deep teal shadows with warm amber light), "
+               "painterly digital illustration with a subtle storybook texture, ONE clear focal subject with a strong mood, subject in the right two thirds, "
+               "darker uncluttered space on the left and bottom. Do not invent architecture or details that are not in the scene description. "
+               "No text, no letters, no numbers, no logos, no watermark, no real person likeness.")
+
+
+def thumbnail_art(scene: str, now: dt.datetime | None = None):
+    """(file, credit) for a 1280x720 thumbnail picture of one scene, or None when drawing is off, over the dollar cap, or failed. Competitors' best thumbnails
+    show one clear subject with a strong mood, which archive photos and old maps rarely do; the picture is always labelled as AI art (the credit)."""
+    now = now or llm._now()
+    if not enabled(now) or llm.spent_today(now) >= llm.load_config()["daily_budget_usd"]:
+        return None
+    prompt = f"{THUMB_STYLE} Subject: {_clean(scene, 220)}."
+    dest = config.CACHE / "art" / ("thumb-" + hashlib.md5(prompt.encode()).hexdigest()[:16] + ".jpg")
+    if dest.exists():
+        return dest, CREDIT
+    try:
+        body = llm._post({"model": MODEL, "modalities": ["image", "text"], "messages": [{"role": "user", "content": prompt}]}, llm.api_key())
+        raw = base64.b64decode(body["choices"][0]["message"]["images"][0]["image_url"]["url"].split(",", 1)[1])
+        from PIL import Image, ImageOps
+
+        im = ImageOps.fit(Image.open(io.BytesIO(raw)).convert("RGB"), (1280, 720), method=Image.LANCZOS, centering=(0.6, 0.5))
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        im.save(dest, "JPEG", quality=92)
+        llm._account(now, "art", MODEL, body)
+    except Exception as e:  # no credit (402), a refused prompt, a network error: the thumbnail keeps using the video's own frames
+        if "402" in str(e):
+            _off_until["day"] = now.strftime("%Y-%m-%d")
+        return None
+    return dest, CREDIT
