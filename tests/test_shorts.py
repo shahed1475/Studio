@@ -69,7 +69,7 @@ def test_short_scheduled_into_short_slots_and_only_against_same_format(tmp_path,
     for name, fmt, pub in (("doc1", "doc", "2026-10-23T20:00:00Z"), ("s1", "short", None)):
         d = tmp_path / name
         d.mkdir()
-        meta = {"format": fmt}
+        meta = {"format": fmt, "review": {"verdict": "pass"}}
         if pub:
             meta["publish_at"] = pub
         (d / "meta.json").write_text(json.dumps(meta))

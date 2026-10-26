@@ -95,8 +95,15 @@ def _best_topic(fmt: str) -> str | None:
     try:
         return topicrank.pop_best(fmt)
     except Exception as e:
-        print(f"  topic ranking unavailable ({type(e).__name__}); taking the first topic")
-        return topicqueue.pop_first()
+        print(f"  topic ranking unavailable ({type(e).__name__}); taking the first topic that is not already made")
+        import duplicates
+
+        for _ in range(30):
+            topic = topicqueue.pop_first()
+            if topic is None or not duplicates.topic_conflict(topic, fmt):
+                return topic
+            print(f"  skipped '{topic[:60]}': the same story is already made")
+        return None
 
 
 def _charged(make, topic):

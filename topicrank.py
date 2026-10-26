@@ -114,7 +114,7 @@ def premise_check(topic: str, article: str, made: list[str] | None = None, chat=
     return bool(out["ok"]), str(out.get("reason", ""))[:200]
 
 
-def pop_best(fmt: str = "doc", sig=None, article_of=None, premise_of=None, demand_of=None) -> str | None:
+def pop_best(fmt: str = "doc", sig=None, article_of=None, premise_of=None, demand_of=None, dup_of=None) -> str | None:
     """Take the best viable topic out of the queue. Topics that cannot be made well are dropped with a note; None when nothing is left."""
     sig = signals() if sig is None else sig
     if article_of is None and premise_of is None:
@@ -123,6 +123,10 @@ def pop_best(fmt: str = "doc", sig=None, article_of=None, premise_of=None, deman
             import seo
 
             demand_of = seo.demand  # a subject people already search for is worth more than an unknown one
+        if dup_of is None:
+            import duplicates
+
+            dup_of = duplicates.topic_conflict  # the real run never makes the same story twice in one format (a test that passes its own helpers opts out)
     if article_of is None:
         import wikipedia
 
@@ -140,6 +144,10 @@ def pop_best(fmt: str = "doc", sig=None, article_of=None, premise_of=None, deman
         if ok and premise_of:
             ok, why = premise_of(topic, article)
             why = f"screened out: {why}" if not ok else why
+        if ok and dup_of:
+            twin = dup_of(topic, fmt)
+            if twin:
+                ok, why = False, f"screened out: the same story as '{twin['title'][:60]}', which is already made"
         if ok:
             topicqueue.remove_topic(topic)
             agentlog.event("info", f"Chose a topic: {topic[:70]}", f"Highest research score among the queue's viable topics ({score(topic, sig)}); its source article has {len(article or '')} characters"

@@ -458,8 +458,40 @@ def do_prelaunch(slug, cfg, now):
             agentlog.event("error", f"Pulled back for repair: {title}", "The final check found: " + "; ".join(res["problems"][:2]) + ". Autopilot repairs it before its slot.", notify=True, now=now)
 
 
+def _twin(slug: str) -> dict | None:
+    """An earlier video of the same format that already tells this story, or None. A catalogue that cannot be read lets the video through."""
+    try:
+        import duplicates
+
+        return duplicates.taken_by(slug)
+    except Exception:
+        return None
+
+
+def hold_duplicate(slug: str, twin: dict, now) -> None:
+    """The later of two videos on one story waits: on hold (visible, and reversible in the dashboard), the owner told once. Its slot is free for another story."""
+    _, meta = _meta(slug)
+    why = f"the same story as '{twin['title'][:70]}' ({twin['slug']}): a second video on one story is held back; release it in the dashboard if you want it anyway"
+    records.merge(config.OUT / slug, {"hold": True, "hold_reason": why})
+    try:
+        import agentbus
+        import agentlog
+
+        agentbus.post("duplicate_subject", "autopilot", "owner", slug, reason=f"Held a duplicate: {meta.get('title', slug)[:70]}", evidence=why, now=now)
+        agentlog.event("found", f"Held a duplicate: {meta.get('title', slug)[:60]}", f"It is {why}.", now=now)
+    except Exception:
+        pass
+
+
 def do_schedule(slug, cfg, now):
     p, meta = _meta(slug)
+    review = meta.get("review") or {}
+    if meta.get("hold") or not (review.get("verdict") == "pass" or meta.get("approved_by") == "you"):
+        return {"skipped": "not eligible"}  # the approval step may have just sent it back (the pictures were read): a video that needs repair must not take a slot
+    twin = _twin(slug)
+    if twin:
+        hold_duplicate(slug, twin, now)
+        return {"skipped": "duplicate"}
     fmt = meta.get("format", "short")
     taken = []
     for m in config.OUT.glob("*/meta.json"):  # only same-format videos block a slot; a Short may publish near a documentary
@@ -474,6 +506,10 @@ def do_upload(slug, cfg, now):
     import upload
 
     _, meta = _meta(slug)
+    twin = _twin(slug)
+    if twin:
+        hold_duplicate(slug, twin, now)  # caught at the last moment: never send a second video on one story
+        return {"skipped": "duplicate"}
     upload.upload(config.OUT / slug, "private", meta["publish_at"])
 
 

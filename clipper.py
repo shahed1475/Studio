@@ -163,7 +163,15 @@ def make_next(produce=None, chat=None):
         import run
 
         produce = run._produce_short
+    import duplicates
+
+    try:
+        rows = duplicates.catalogue()
+    except Exception:
+        rows = []
     for m, d in _docs():
+        if duplicates.conflict(duplicates.subject(d), "short", rows, clip_of=m.parent.name):
+            continue  # a Short on this story already exists (clipped or made from the queue): a second one would tell it twice
         texts = [l["text"] for l in d["lines"]]
         try:
             words = json.loads((m.parent / "words.json").read_text())
