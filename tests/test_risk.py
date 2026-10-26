@@ -249,3 +249,11 @@ def test_the_user_studios_row_exists_only_where_user_studios_do_and_follows_stor
     assert risk.tenants(NOW)["level"] == "act" and "web proxy" in risk.tenants(NOW)["evidence"]
     _tenants_file(world, NOW, [ok], age_hours=6)
     assert risk.tenants(NOW)["level"] == "watch" and "not updated" in risk.tenants(NOW)["evidence"]
+
+
+def test_the_deploy_script_has_a_preview_that_stops_before_it_pulls():
+    from pathlib import Path
+    text = (Path(__file__).parent.parent / "deploy" / "deploy.sh").read_text()
+    dry, pull = text.index('if [[ "${DRY:-0}" == "1" ]]'), text.index("git pull -q --ff-only")
+    block = text[dry:pull]
+    assert dry < pull and "exit 0" in block and "git pull" not in block and "docker compose" not in block.replace("docker-compose", "") and 'DRY=1' in text
