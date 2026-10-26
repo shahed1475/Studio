@@ -337,7 +337,7 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
     import aiart
 
     art = lambda l: aiart.generate(l["text"], l.get("visual", ""), data["topic"], style=data.get("art_style"))  # style "3d": a 3D animated-film look
-    pics = dict(judge=_image_judge(data["topic"]), art=art, art_first=bool(data.get("art_first")), force_art=set(data.get("redraw_lines") or []))
+    pics = dict(judge=_image_judge(data["topic"]), art=art, art_first=bool(data.get("art_first")), force_art=_forced_art(data))
     clips, credits, stats = footage.scene_images(data["lines"], data["topic"], anchors, art_limit=aiart.MAX_PER_VIDEO["doc"], **pics)
     if stats["unique"] < MIN_VARIETY * stats["scenes"] and aiart.enabled():  # the same few pictures again and again: draw illustrations for the scenes that would repeat
         print(f"  only {stats['unique']} different pictures for {stats['scenes']} scenes: drawing more")
@@ -393,6 +393,15 @@ def cmd_redo_short(name: str) -> None:
     _produce_short(data, data["topic"], requeue=False, folder=config.OUT / name)
 
 
+def _forced_art(data: dict) -> set[str]:
+    """Narration lines that are always drawn, whatever a picture search finds: the lines flagged for a redraw, and for a 3D video also the first four (the hook is the
+    drawn, animated scene, never a museum photo: the first remake showed photos for the first 75 seconds)."""
+    forced = set(data.get("redraw_lines") or [])
+    if data.get("art_style") == "3d":
+        forced |= {l["text"] for l in data["lines"][:4]}
+    return forced
+
+
 def _animate(data: dict, clips: list, credits: list) -> tuple[list, list, dict | None]:
     """Animate some drawn scenes when the video asks for it (data["animate"] = how many clips, data["animate_budget"] = dollars, default 3). Returns
     (clips, credits with the AI-video credit added, stats) or the inputs and None when not asked."""
@@ -419,7 +428,8 @@ def cmd_remake(name: str, args: list[str]) -> None:
     if style != "3d":
         raise SystemExit(f"unknown style {style!r}: the only style is 3d")
     data = reset_for_rerender(src)
-    data.update(art_style=style, animate=int(args[args.index("--animate") + 1]) if "--animate" in args else 0, hold=True, remake_of=name)
+    data.update(art_style=style, animate=int(args[args.index("--animate") + 1]) if "--animate" in args else 0, hold=True, remake_of=name,
+                art_first=True)  # draw where no specific picture exists instead of reusing the generic reserve (which repeated the same museum photos)
     _produce_doc(data)
 
 

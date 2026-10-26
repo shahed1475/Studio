@@ -169,3 +169,11 @@ def test_animated_clips_are_not_darkened_like_stock_footage(tmp_path, monkeypatc
         render._render_ungated([clip], [3.0], tmp_path / "n.wav", None, tmp_path, tmp_path / "out.mp4")
         vf = next(a[a.index("-vf") + 1] for a in seen if "-stream_loop" in a)
         assert ("eq=brightness" in vf) == (clip.parent.name != "anim")
+
+
+def test_a_3d_remake_always_draws_the_opening_scenes_so_the_hook_is_never_a_museum_photo():
+    """27 Oct, Mami Wata v2: the first 75 seconds were real museum photos; the hook should be the animated, drawn scene."""
+    lines = [{"text": f"Line {i}."} for i in range(8)]
+    assert run._forced_art({"lines": lines}) == set()
+    assert run._forced_art({"lines": lines, "art_style": "3d"}) == {"Line 0.", "Line 1.", "Line 2.", "Line 3."}
+    assert run._forced_art({"lines": lines, "art_style": "3d", "redraw_lines": ["Line 6."]}) == {"Line 0.", "Line 1.", "Line 2.", "Line 3.", "Line 6."}

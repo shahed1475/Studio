@@ -289,3 +289,11 @@ def test_the_seo_writer_uses_the_writer_model_not_the_cheap_one(tmp_path, monkey
     monkeypatch.setattr(scriptgen, "_chat", lambda prompt, role="cheap": roles.append(role) or {"titles": ["The Pied Piper: No Rats at First"], "description_intro": "The pied piper tale has a twist. Rats came late.", "tags": ["pied piper"]})
     seo.make(folder)
     assert roles == ["script"]
+
+
+def test_a_search_phrase_the_model_already_wrote_in_lowercase_is_capitalised_too():
+    """27 Oct, Mami Wata v2: the writer put the phrase in its first sentence itself, in lowercase, so the old fix (only for a rewrite) never ran: 'The mami wata story starts...'."""
+    out = seo.ensure_lead("The mami wata story starts with a woman on a rock. Her name travelled.", "mami wata", chat=lambda p: pytest.fail("no rewrite is needed"))
+    assert out.startswith("The Mami Wata story starts") and "mami wata" not in out
+    fine = "Mami Wata is a water spirit. Her story crosses oceans."
+    assert seo.ensure_lead(fine, "mami wata", chat=lambda p: pytest.fail("no")) == fine

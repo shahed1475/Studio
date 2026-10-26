@@ -252,6 +252,8 @@ def ensure_lead(intro: str, core: str, chat=None, ask: bool = True) -> str:
     One rewrite is asked of the model (unless ask is False); if that still misses, the phrase is put in front as a plain label. Never invents a fact."""
     intro = re.sub(r"[\u2014\u2013]", "-", str(intro)).strip()
     if has_phrase(intro[:150], core) or not core.strip():
+        if core.strip():  # a phrase the writer already put there in lowercase is a name too
+            return re.sub(re.escape(core.strip()), lambda m: proper_phrase(core) if m.group(0).islower() else m.group(0), intro, count=1, flags=re.I)
         return intro
     if ask:
         try:
