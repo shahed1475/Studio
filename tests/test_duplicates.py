@@ -129,3 +129,22 @@ def test_a_chapter_about_a_films_box_office_is_never_cut_as_a_short_and_the_next
     assert made and not any("box office" in l["text"] for l in made[0]["lines"])
     after = json.loads((doc / "meta.json").read_text())
     assert 0 in after.get("clips_failed", []) and made[0]["clip_start_line"] not in (0,)
+
+
+def test_a_hold_that_cannot_be_saved_does_not_stop_the_pass_and_the_owner_is_still_told(tmp_path, monkeypatch):
+    import agentbus
+    import records
+    import upload
+    from agenteval import sandbox
+    monkeypatch.setattr(config, "OUT", tmp_path)
+    with sandbox():
+        video(tmp_path, "first", "Hong Gildong", "short", publish_at="2026-10-27T16:30:00Z", approved=True)
+        video(tmp_path, "second", "Hong Gildong", "short", publish_at="2026-10-28T16:30:00Z", approved=True)
+        monkeypatch.setattr(records, "merge", lambda *a, **k: (_ for _ in ()).throw(OSError("disk full")))
+        monkeypatch.setattr(upload, "upload", lambda *a, **k: pytest_fail())
+        assert autopilot.do_upload("second", {}, NOW) == {"skipped": "duplicate"}
+        assert any(t["kind"] == "duplicate_subject" for t in agentbus.tasks())
+
+
+def pytest_fail():
+    raise AssertionError("a duplicate must never be uploaded")

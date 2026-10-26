@@ -472,7 +472,10 @@ def hold_duplicate(slug: str, twin: dict, now) -> None:
     """The later of two videos on one story waits: on hold (visible, and reversible in the dashboard), the owner told once. Its slot is free for another story."""
     _, meta = _meta(slug)
     why = f"the same story as '{twin['title'][:70]}' ({twin['slug']}): a second video on one story is held back; release it in the dashboard if you want it anyway"
-    records.merge(config.OUT / slug, {"hold": True, "hold_reason": why})
+    try:
+        records.merge(config.OUT / slug, {"hold": True, "hold_reason": why})
+    except OSError:
+        pass  # not saved (disk full): the owner is still told below, and the next pass finds the same duplicate and tries again
     try:
         import agentbus
         import agentlog
