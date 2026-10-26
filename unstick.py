@@ -51,7 +51,10 @@ def fixes_for(folder: Path, chat=None, review=None) -> dict:
         return review(folder).get("verdict") == "pass"
 
     def edit(apply) -> tuple[bool, str]:
-        meta = json.loads((folder / "meta.json").read_text())
+        try:
+            meta = json.loads((folder / "meta.json").read_text())
+        except (OSError, ValueError) as e:
+            return False, f"could not read the video record ({type(e).__name__})"
         note = apply(meta)
         if not note:
             return False, "nothing changed"

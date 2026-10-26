@@ -340,3 +340,12 @@ def test_the_inbox_never_raises_when_it_cannot_save(tmp_path):
         assert res["needs"] and "dashboard" in res["needs"]  # the setup items are found and reported even though the inbox could not take them
         rep = tracetriage.triage(7, NOW, [{"at": "2026-10-25T10:00:00Z", "kind": "error", "title": "A recurring error", "detail": "d"}] * 3, report=root / "t.json")
         assert rep["families"][0]["count"] == 3
+
+
+def test_a_stuck_draft_fix_on_an_unreadable_record_says_so_instead_of_raising(tmp_path):
+    folder = tmp_path / "gone"
+    folder.mkdir()
+    fixes = unstick.fixes_for(folder, chat=lambda p, r: {}, review=lambda f: {"verdict": "pass"})
+    assert fixes["new_title"][1]() == (False, "could not read the video record (FileNotFoundError)")
+    (folder / "meta.json").write_text("{broken")
+    assert fixes["one_more_repair"][1]() == (False, "could not read the video record (JSONDecodeError)")
