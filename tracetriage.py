@@ -29,7 +29,7 @@ def is_problem(e: dict) -> bool:
 
 
 def signature(title: str) -> str:
-    return lessons.family(re.sub(r"\([^)]*\)|\[[^\]]*\]|:.*$", " ", str(title)))
+    return lessons.family(re.sub(r"\([^)]*\)|\[[^\]]*\]|:.*$", " ", str(title)), generic=False)  # the full shape of an event title, generic words included
 
 
 def triage(days: int = 7, now: dt.datetime | None = None, events: list[dict] | None = None, report: Path | None = None,

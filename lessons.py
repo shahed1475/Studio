@@ -14,15 +14,17 @@ FILE = config.ROOT / "data" / "agent" / "lessons.jsonl"
 MAX_LESSONS = 300
 MIN_OVERLAP = 0.3
 _STOP = {"the", "a", "an", "of", "to", "in", "on", "is", "was", "and", "or", "for", "with", "it", "that", "this", "not", "no"}
+_GENERIC = {"check", "checks", "failed", "fails", "problem", "video", "after", "passed", "again", "still"}  # words every problem has: they say nothing about WHICH problem it is
 
 
-def words(text: str) -> list[str]:
+def words(text: str, generic: bool = True) -> list[str]:
     t = re.sub(r"\b[0-9a-f]{6,}\b|\b\S*\d\S*\b", " ", str(text).lower())  # ids, dates, counts and slugs with digits are not part of a problem's shape
-    return [w for w in re.findall(r"[a-z']+", t) if len(w) > 2 and w not in _STOP][:12]
+    drop = _STOP | _GENERIC if generic else _STOP
+    return [w for w in re.findall(r"[a-z']+", t) if len(w) > 2 and w not in drop][:12]
 
 
-def family(text: str) -> str:
-    return " ".join(sorted(set(words(text))))
+def family(text: str, generic: bool = True) -> str:
+    return " ".join(sorted(set(words(text, generic))))
 
 
 def _clean(text, cap: int) -> str:

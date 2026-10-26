@@ -452,3 +452,12 @@ def test_a_claim_with_no_supporting_paragraph_is_still_not_in_the_excerpt():
     import reviewer
     source = "\n\n".join(f"Paragraph {i} about copper mining in a valley with several named workshops and traders." for i in range(300))
     assert "Atlantis" not in reviewer.relevant_source(source, "The city of Atlantis sank in a single night with 9,000 people.", 6000)
+
+
+def test_lessons_for_one_problem_are_not_returned_for_another_that_only_shares_generic_words():
+    with agenteval.sandbox():
+        lessons.record("fixer", "check title_matches failed", "new title", True, NOW)
+        lessons.record("fixer", "check visual_review failed", "redrew the pictures at the named lines", True, NOW)
+        assert [l["tried"] for l in lessons.recall("fixer", "check visual_review failed")] == ["redrew the pictures at the named lines"]
+        assert [l["tried"] for l in lessons.recall("fixer", "check title_matches failed on another video")] == ["new title"]
+        assert lessons.recall("fixer", "check failed") == []                                  # nothing specific: nothing matches
