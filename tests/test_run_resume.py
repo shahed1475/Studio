@@ -32,7 +32,8 @@ def test_thumbnail_hook_prefers_one_that_names_the_subject():
     meta = {"title": "The Pied Piper of Hamelin Legend", "topic": "The Pied Piper of Hamelin", "lines": [{"text": "The Pied Piper led the children away from Hamelin. The real story is disputed."}],
             "chapters": [{"title": "The Pied Piper"}]}
     got = thumbnail.hook_for(meta, chat=lambda p: {"hooks": ["THE LOST WINDOW!", "PIED PIPER REAL STORY", "WHO WAS THE PIPER?"]})
-    assert got == "PIED PIPER REAL STORY"
+    assert got == "WHO WAS THE PIPER?"  # it names the subject; the one with only the generic words REAL STORY comes after it (27 Oct audit: that template had spread to 3 of 6 thumbnails)
+    assert got != "THE LOST WINDOW!"  # a hook that does not name the subject still loses
 
 
 def test_new_videos_join_the_playlists_named_in_the_file(tmp_path):

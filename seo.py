@@ -198,6 +198,15 @@ def has_phrase(text: str, core: str) -> bool:
     return not key or all(w in text.lower() for w in key)
 
 
+_SMALL = {"of", "the", "and", "a", "an", "in", "on", "at", "to", "for", "de", "la", "del"}
+
+
+def proper_phrase(core: str) -> str:
+    """A search phrase written like the name it is: 'pied piper of hamelin' -> 'Pied Piper of Hamelin' (small words stay small after the first)."""
+    words = core.strip().split()
+    return " ".join(w if i and w in _SMALL else w[:1].upper() + w[1:] for i, w in enumerate(words))
+
+
 def ensure_lead(intro: str, core: str, chat=None, ask: bool = True) -> str:
     """The description's first 150 characters are all a viewer sees before 'Show more' and what search reads first: make sure they carry the phrase.
     One rewrite is asked of the model (unless ask is False); if that still misses, the phrase is put in front as a plain label. Never invents a fact."""
@@ -207,14 +216,14 @@ def ensure_lead(intro: str, core: str, chat=None, ask: bool = True) -> str:
     if ask:
         try:
             chat = chat or scriptgen._chat
-            out = chat(f'Rewrite this YouTube description opening so that the exact words "{core}" appear in the first sentence, within the first 120 characters. '
-                       f"Keep every fact, add none, keep it 2 sentences.\n{intro}\nReturn JSON: " + '{"intro": "..."}')
+            out = chat(f'Rewrite this YouTube description opening so that the exact words "{proper_phrase(core)}" (a name: keep its capital letters) appear in the first sentence, '
+                       f"within the first 120 characters. Keep every fact, add none, keep it 2 sentences.\n{intro}\nReturn JSON: " + '{"intro": "..."}')
             fixed = re.sub(r"[\u2014\u2013]", "-", str(out["intro"])).strip()
             if has_phrase(fixed[:150], core):
-                return fixed
+                return re.sub(re.escape(core.strip()), lambda m: proper_phrase(core) if m.group(0).islower() else m.group(0), fixed, count=1, flags=re.I)
         except Exception:
             pass
-    return f"{core.strip().title()}: {intro}"
+    return f"{proper_phrase(core)}: {intro}"
 
 
 def ensure_title_front(title: str, core: str) -> str:

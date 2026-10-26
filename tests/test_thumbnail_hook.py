@@ -59,3 +59,15 @@ def test_fit_frames_asks_one_vision_question_and_returns_the_numbers_that_fit(tm
     assert thumbnail.fit_frames(files, "x", post=lambda p, k: (_ for _ in ()).throw(RuntimeError("down"))) is None
     monkeypatch.setattr(videoinspect, "model_modalities", lambda: {})
     assert thumbnail.fit_frames(files, "x", post=post) is None  # no model that accepts images: never block
+
+
+PIPER = {"title": "Pied Piper of Hamelin: Real Story of the 130 Vanished Children", "topic": "The Pied Piper of Hamelin", "chapters": [{"title": "The Window", "start_line": 0}],
+         "lines": [{"text": "A stained glass window of about 1300 in the church is the earliest mention of the piper and the children."}]}
+
+
+def test_the_prompt_gives_no_template_example_and_a_story_detail_beats_a_generic_word():
+    asked = []
+    chat = lambda p: asked.append(p) or {"hooks": ["PIED PIPER TRUTH", "PIED PIPER 1300 WINDOW"]}
+    assert thumbnail.hook_for(PIPER, chat=chat) == "PIED PIPER 1300 WINDOW"  # TRUTH is not in the title, but it is a generic word: a real detail wins
+    assert "BELL WITCH TRUTH" not in asked[0] and "like PIED PIPER REAL STORY" not in asked[0]  # the old examples taught the model one template for every video
+    assert "REAL STORY" in thumbnail.GENERIC_HOOK_WORDS or {"real", "story"} <= thumbnail.GENERIC_HOOK_WORDS

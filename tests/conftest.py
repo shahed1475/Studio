@@ -15,6 +15,18 @@ def _isolate_autopilot_log(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_agent_files(tmp_path, monkeypatch):
+    """No test may write the owner's real activity feed, inbox or lessons (tests/test_duplicates.py once filled the local feed with 34 invented 'Roswell Incident' events)."""
+    import agentbus
+    import agentlog
+    import lessons
+
+    monkeypatch.setattr(agentlog, "FILE", tmp_path / "events.jsonl")
+    monkeypatch.setattr(agentbus, "FILE", tmp_path / "tasks.json")
+    monkeypatch.setattr(lessons, "FILE", tmp_path / "lessons.jsonl")
+
+
+@pytest.fixture(autouse=True)
 def _isolate_scriptreview(tmp_path, monkeypatch):
     """The script reviewer keeps results and held scripts under data/agent: a test that goes through the gate must never write the real ones."""
     import scriptreview

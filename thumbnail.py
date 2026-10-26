@@ -26,6 +26,9 @@ def _font(size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.load_default(size)
 
 
+GENERIC_HOOK_WORDS = {"real", "story", "truth", "true", "explained", "legend", "mystery", "secret", "secrets", "unsolved", "history"}  # words any video could carry: they do not make a hook specific
+
+
 def hook_for(meta: dict, avoid=(), chat=None) -> str:
     """2 to 4 words that make someone curious and that the narration actually delivers: the writer sees what the narration covers and may not promise a
     question or debate it never raises; a candidate the narration does not support, or one used before, is skipped; the title's own words are the fallback."""
@@ -44,7 +47,8 @@ def hook_for(meta: dict, avoid=(), chat=None) -> str:
             f"What the narration really covers: {outline[:500]}. It opens: {' '.join(lines[:2])[:300]}\n"
             "Rules: 2 to 4 words, ALL CAPS, creates curiosity, promises only something the narration says or shows: no question it does not answer, no debate it does "
             "not describe, no clickbait lies, no punctuation except ? or !. Name the subject: at least one of the 3 texts must contain its best-known "
-            f"name or word ({meta.get('topic', '')[:60]}), like PIED PIPER REAL STORY or BELL WITCH TRUTH, so a viewer sees what it is about. "
+            f"name or word ({meta.get('topic', '')[:60]}) plus one concrete thing from the story that the title does not say (a place, a year, an object), so a viewer sees "
+            "what it is about. Never use the words REAL STORY, TRUTH or EXPLAINED: every video on the channel would look the same. "
             + (f"Not these (already used): {sorted(used)}. " if used else "") + 'Return JSON: {"hooks": ["..."]}'
         )
         candidates = out.get("hooks") or ([out["hook"]] if out.get("hook") else [])
@@ -59,7 +63,7 @@ def hook_for(meta: dict, avoid=(), chat=None) -> str:
             ok.append(hook)
     named = [h for h in ok if subject & set(re.findall(r"[a-z0-9']+", h.lower()))]  # a thumbnail that names its subject is clicked more than a vague teaser
     in_title = set(re.findall(r"[a-z0-9']+", meta["title"].lower()))
-    named.sort(key=lambda h: 0 if set(re.findall(r"[a-z0-9']+", h.lower())) - in_title else 1)  # and one that adds a word the title lacks comes first
+    named.sort(key=lambda h: 0 if set(re.findall(r"[a-z0-9']+", h.lower())) - in_title - GENERIC_HOOK_WORDS else 1)  # and one that adds a real detail the title lacks comes first
     if named or ok:
         return (named or ok)[0]
     words = re.sub(r"[^A-Za-z0-9 ']", "", meta["title"]).upper().split()

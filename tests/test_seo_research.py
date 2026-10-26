@@ -180,3 +180,13 @@ def test_repair_that_cannot_save_says_so_plainly(tmp_path, monkeypatch):
     monkeypatch.setattr(seo.records, "update", boom)
     with pytest.raises(RuntimeError, match="cannot save"):
         seo.repair(tmp_path, chat=lambda p: {})
+
+
+def test_a_phrase_the_model_writes_in_lowercase_is_capitalised_like_the_name_it_is():
+    asked = []
+    out = seo.ensure_lead("A weeping woman haunts the riverbanks.", "la llorona", chat=lambda p: asked.append(p) or {"intro": "The la llorona legend follows a weeping woman who haunts riverbanks."})
+    assert out.startswith("The La Llorona legend follows") and "La Llorona" in asked[0]
+    out = seo.ensure_lead("The children left the town.", "pied piper of hamelin", chat=lambda p: {"intro": "The story of the pied piper of hamelin begins with a window."})
+    assert "Pied Piper of Hamelin" in out and "pied piper" not in out
+    right = "Skinwalker Ranch is a property in Utah with a long history of reports."
+    assert seo.ensure_lead("Strange reports.", "skinwalker ranch", chat=lambda p: {"intro": right}) == right  # already capitalised: untouched
