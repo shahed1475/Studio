@@ -64,10 +64,14 @@ def scan(now: dt.datetime, state: dict | None = None, lines: list[str] | None = 
             continue
         last, res = state.get(job), log_results(job, lines)
         row = {"agent": name, "job": job, "last": last, "status": "ok", "evidence": ""}
+        try:
+            age = None if last is None else (now - _parse(last)).total_seconds()
+        except (ValueError, TypeError):
+            age = float("inf")  # a time that cannot be read counts as a run that did not happen
         if last is None:
             row["status"] = "not_yet"
-        elif (now - _parse(last)).total_seconds() > STALE_FACTOR * agents.cadence_seconds(jd[job]):
-            row["status"], row["evidence"] = "stale", f"last run {last}, expected every {agents.cadence_seconds(jd[job]) / 3600:.0f} hours"
+        elif age > STALE_FACTOR * agents.cadence_seconds(jd[job]):
+            row["status"], row["evidence"] = "stale", f"last run {str(last)[:30]}, expected every {agents.cadence_seconds(jd[job]) / 3600:.0f} hours"
         if len(res) >= FAIL_STREAK and not any(res[-FAIL_STREAK:]):
             row["status"] = "failing"
             row["evidence"] = "; ".join(l[:160] for l in lines if re.match(rf"^\S+ {re.escape(job)} ", l))[-400:]

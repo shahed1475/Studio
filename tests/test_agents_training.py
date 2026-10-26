@@ -461,3 +461,14 @@ def test_lessons_for_one_problem_are_not_returned_for_another_that_only_shares_g
         assert [l["tried"] for l in lessons.recall("fixer", "check visual_review failed")] == ["redrew the pictures at the named lines"]
         assert [l["tried"] for l in lessons.recall("fixer", "check title_matches failed on another video")] == ["new title"]
         assert lessons.recall("fixer", "check failed") == []                                  # nothing specific: nothing matches
+
+
+def test_an_unwritable_lock_file_or_a_corrupt_state_time_never_crashes_the_guardian_unstick_or_doctor(tmp_path):
+    import doctor
+    import guardian
+    import worker
+    bad = _blocked(tmp_path) / "lock"
+    assert guardian.run(NOW, out=tmp_path / "out", lock_file=bad) == {"skipped": "cannot open the lock file"}
+    assert unstick.run(NOW, out=tmp_path / "out", lock_file=bad) == {"skipped": "cannot open the lock file"}
+    rows = {r["agent"]: r["status"] for r in doctor.scan(NOW, {"recheck": "not a time", "guardian": 12345}, [], worker.JOBS)}
+    assert rows["recheck"] == "stale" and rows["guardian"] == "stale"

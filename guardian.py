@@ -122,7 +122,10 @@ def run(now: dt.datetime | None = None, yt=None, may_edit: bool | None = None, o
     import titletest
 
     now = now or dt.datetime.now(dt.timezone.utc)
-    lock = open(lock_file or autopilot.LOCK_FILE, "w")
+    try:
+        lock = open(lock_file or autopilot.LOCK_FILE, "w")
+    except OSError:
+        return {"skipped": "cannot open the lock file"}  # nothing is edited without the lock
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)  # never edit a video Autopilot is working on
     except BlockingIOError:

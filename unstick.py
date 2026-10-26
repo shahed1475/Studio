@@ -102,7 +102,10 @@ def run(now: dt.datetime | None = None, out: Path | None = None, chat=None, revi
     import autopilot
 
     now = now or dt.datetime.now(dt.timezone.utc)
-    lock = open(lock_file or autopilot.LOCK_FILE, "w")
+    try:
+        lock = open(lock_file or autopilot.LOCK_FILE, "w")
+    except OSError:
+        return {"skipped": "cannot open the lock file"}
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)  # Autopilot may be repairing a draft right now
     except BlockingIOError:
