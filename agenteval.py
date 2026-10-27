@@ -356,13 +356,30 @@ def case_creator_house_style_is_funded_new_only_and_off_by_default():
     return ok, "a new video gets the 3D animated style only when it is on and funded; a redo, a poor account and the default never do" if ok else f"funded={funded} redo={redo} poor={poor} off={off}"
 
 
+def case_autopilot_governor_only_tightens_and_freezes_on_repetition():
+    import datetime as dt
+
+    import governor
+
+    now = dt.datetime(2026, 10, 27, 12, tzinfo=dt.timezone.utc)
+    stamp = lambda i: (now - dt.timedelta(days=i)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    words = ["alpha river storm", "silver mountain bell", "a lighthouse keeper once", "deep under frozen lake", "nobody remembers the harbour", "three sisters crossed", "the map was wrong", "long before the road"]
+    video = lambda i, first: (Path(f"v{i}"), {"format": "doc", "made_at": stamp(i), "publish_at": stamp(i), "slug": f"s{i}", "topic": f"zq{i}wx", "lines": [{"text": first}] + [{"text": "l"}] * (10 + i * 3)})
+    clean = governor.caps([video(i, words[i]) for i in range(8)], now)
+    repeated = governor.caps([video(i, "the very same opening line for everyone" if i < 4 else words[i]) for i in range(8)], now)
+    big = governor.caps([], now, {"doc": 9, "short": 9})
+    ok = (clean["doc"], clean["short"]) == (3, 7) and (repeated["doc"], repeated["short"]) == (0, 0) and big["doc"] == 9 and not governor.allowed([], "doc", now, repeated)
+    return ok, "caps stay at the base on varied videos, freeze on repeated openings, and are never raised by the governor" if ok else f"clean={clean} repeated={repeated}"
+
+
 CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic,
          case_ladder_ends_with_owner_not_a_crash, case_ladder_respects_budget_and_whitelist_and_lessons, case_outside_text_is_cleaned,
          case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules, case_registry_is_consistent,
          case_playbook_scope_injects_role_and_limits_only_when_acting, case_doctor_finds_stale_and_failing_agents_and_fixes_only_safely,
          case_doctor_writes_only_proposals_and_never_installs, case_doctor_skill_drafts_stay_in_quarantine,
          case_scriptreview_holds_hard_failures_and_fixes_only_what_is_mechanical, case_scriptreview_model_never_decides_alone_and_cannot_fail_a_script_by_erroring,
-         case_scriptreview_asks_the_doctor_once_and_the_doctor_closes_the_loop, case_creator_house_style_is_funded_new_only_and_off_by_default]
+         case_scriptreview_asks_the_doctor_once_and_the_doctor_closes_the_loop, case_creator_house_style_is_funded_new_only_and_off_by_default,
+         case_autopilot_governor_only_tightens_and_freezes_on_repetition]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:

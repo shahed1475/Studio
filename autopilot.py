@@ -27,6 +27,7 @@ JOB_FILE = config.ROOT / "job.pid"   # written by the dashboard while one of its
 
 DEFAULTS = {
     "enabled": False,            # master switch, off until the user turns it on
+    "governor": {"enabled": True, "base": {}},  # weekly caps per format from YouTube's template-content rule (governor.py); base {} = 3 documentaries and 7 Shorts a week, tightened by repetition
     "pace_guard": True,          # read the Risks card's 'inauthentic content' level: at watch, no new Shorts; at act, nothing new is made or scheduled until it falls
     "max_videos_per_week": 0,    # 0 = no limit. Otherwise no new video is made for a slot that would be the Nth video out or scheduled in the 7 days before it
     "auto_approve": True,        # reviewer-agent "pass" counts as approval
@@ -63,6 +64,23 @@ def load_config() -> dict:
     if CONFIG_FILE.exists():
         cfg.update({k: v for k, v in json.loads(CONFIG_FILE.read_text()).items() if k in DEFAULTS})
     return cfg
+
+
+def governed(cfg: dict, now: dt.datetime) -> dict:
+    """The config plus this week's caps per format (`_caps`), read from the same risk signals as the Risks card. A reading that fails, or governor.enabled
+    false, gives the config unchanged: the studio works as before."""
+    g = cfg.get("governor") or {}
+    if not g.get("enabled", True):
+        return cfg
+    try:
+        import governor
+        import risk
+
+        caps = governor.caps(risk.videos(config.OUT), now, g.get("base"))
+        governor.record(caps, now)
+        return {**cfg, "_caps": caps}
+    except Exception:
+        return cfg
 
 
 def save_config(cfg: dict) -> None:
@@ -501,13 +519,25 @@ def do_schedule(slug, cfg, now):
         hold_duplicate(slug, twin, now)
         return {"skipped": "duplicate"}
     fmt = meta.get("format", "short")
-    taken = []
+    taken, metas = [], []
     for m in config.OUT.glob("*/meta.json"):  # only same-format videos block a slot; a Short may publish near a documentary
         d = json.loads(m.read_text())
+        metas.append(d) if m.parent.name != slug else None
         if m.parent.name != slug and d.get("format", "short") == fmt and d.get("publish_at") and not d.get("hold"):
             taken.append(_parse(d["publish_at"]))
     slots = cfg["short_slots"] if fmt == "short" else cfg["slots"]
-    records.merge(config.OUT / slug, {"publish_at": scheduler.to_rfc3339(scheduler.next_slot(now, slots, taken, cfg["review_window_hours"]))})
+    import governor
+
+    for _ in range(40):  # the next free slot that stays within the weekly cap (YouTube's template-content rule); none within three weeks: it waits
+        try:
+            at = scheduler.next_slot(now, slots, taken, cfg["review_window_hours"])
+        except ValueError:
+            return {"skipped": "no slot within the weekly pace limit"}
+        if governor.allowed(metas, fmt, at, cfg.get("_caps")):
+            records.merge(config.OUT / slug, {"publish_at": scheduler.to_rfc3339(at)})
+            return None
+        taken.append(at)
+    return {"skipped": "no slot within the weekly pace limit"}
 
 
 def do_upload(slug, cfg, now):
@@ -610,7 +640,7 @@ def tick(now: dt.datetime | None = None) -> dict:
     except BlockingIOError:
         return {"skipped": "locked"}
     try:
-        cfg = load_config()
+        cfg = governed(load_config(), now)
         actions, errors, seen, worked = [], [], set(), set()
         for _ in range(MAX_ROUNDS):  # a quick repair (a new title, a set-aside) lets the next video start in the same tick; a re-render ends the tick
             stop, progressed = False, False
@@ -713,9 +743,9 @@ def plan_view(now: dt.datetime | None = None) -> dict:
     """The next videos with their post times, and how many Autopilot still has to prepare."""
     now = now or dt.datetime.now(dt.timezone.utc)
     try:
-        cfg = load_config()
+        cfg = governed(load_config(), now)
         videos = build_state(now, cfg)["videos"]
-        return {"rows": [r for r in planner.rows(cfg, videos, now) if r["at"] <= (now + dt.timedelta(days=9)).strftime("%Y-%m-%dT%H:%M:%SZ")],
+        return {"governor": cfg.get("_caps"), "rows": [r for r in planner.rows(cfg, videos, now) if r["at"] <= (now + dt.timedelta(days=9)).strftime("%Y-%m-%dT%H:%M:%SZ")],
                 "needs": planner.needs(cfg, videos, now), "prepare_hours": cfg["prepare_hours"], "review_hours": cfg["review_window_hours"], "per_day": {"doc": cfg["uploads_per_day"], "short": cfg["shorts_per_day"]}}
     except Exception:
         return {"rows": [], "needs": {"doc": 0, "short": 0}, "prepare_hours": 0, "review_hours": 0, "per_day": {}}

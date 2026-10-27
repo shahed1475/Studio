@@ -42,3 +42,7 @@ its story scenes are drawn in 3D (the first four scenes always, never a museum p
 (`doc.clips` documentary, `short.clips` Short, each inside its dollar `budget`). A documentary costs about $3 this way, a plain one about $1.2: below `min_credit`, or when the balance cannot be read,
 Autopilot makes the plain kind. A redo or a repair never changes a video's look, and a remake keeps its own settings. Clips are credited as AI-generated video. Code: `run._house_style`,
 `run._apply_house_style`, `animate.py`; the behaviour check is `agenteval.case_creator_house_style_is_funded_new_only_and_off_by_default` (mutation-checked).
+
+
+## Pace governor (27 Oct 2026)
+Autopilot reads the same YouTube template-content risk as the Risks card and sets weekly caps per format: base 3 documentaries and 7 Shorts (10 a week). Repeated openings, one shared structure or one shared theme lower the caps by one; repetition at the act level freezes new videos; nothing raises them above the base (change `governor.base` in `autopilot.json` to choose your own). A slot over the cap shows "Paused" under Next videos and nothing is made for it. Switch off: `"governor": {"enabled": false}`. What YouTube says and the limits of our numbers: docs/superpowers/plans/2026-10-27-pace-governor.md.

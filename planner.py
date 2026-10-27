@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 
 import config
+import governor
 import scheduler
 
 TZ_AUDIENCE = "America/New_York"
@@ -69,6 +70,7 @@ def rows(cfg: dict, videos: list[dict], now: dt.datetime, per_format: int | None
     Passed videos take the earliest empty slots; drafts and new videos are only for slots that are due."""
     earliest = now + dt.timedelta(hours=cfg["review_window_hours"])
     due_until = horizon(cfg, now)
+    caps = cfg.get("_caps")  # set by autopilot.governed(); absent means no weekly limit
     out = []
     for fmt in ("doc", "short"):
         slots = slot_times(slots_for(cfg, fmt), now)
@@ -93,6 +95,8 @@ def rows(cfg: dict, videos: list[dict], now: dt.datetime, per_format: int | None
                 row.update(slug=v["slug"], title=v.get("title", ""), status="uploaded" if v.get("video_id") else "scheduled")
             elif at < earliest:
                 row["status"] = "too_soon"
+            elif caps and not governor.allowed(videos, fmt, at, caps):
+                row["status"] = "paused"  # one more video here would pass the weekly cap (YouTube's template-content rule): nothing fills it
             elif ready:
                 v = ready.pop(0)
                 row.update(slug=v["slug"], title=v.get("title", ""), status="ready")

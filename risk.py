@@ -20,11 +20,12 @@ import time
 from pathlib import Path
 
 import config
+import governor
 
 LEVELS = ("ok", "watch", "act")
 CREDIT_ACT, CREDIT_WATCH = 1.5, 4.0  # dollars left
 RUNWAY_ACT, RUNWAY_WATCH = 3, 7  # days of spend left at the recent daily average
-PACE_WATCH, PACE_ACT = 10, 15  # uploads (made or scheduled) in a week
+PACE_WATCH, PACE_ACT = governor.WATCH_ABOVE + 1, governor.ACT_ABOVE + 1  # videos in the busiest real 7-day span: more than 10 is watch, more than 13 is act
 _credit_cache: dict = {}
 
 
@@ -113,17 +114,15 @@ def pattern(vs, now: dt.datetime | None = None) -> dict:
     norm = lambda t: re.sub(r"[^a-z0-9 ]", "", t.lower())
     firsts = [norm((m.get("lines") or [{"text": ""}])[0]["text"]) for m in recent]
     pairs = sum(1 for i in range(len(firsts)) for j in range(i + 1, len(firsts)) if firsts[i] and difflib.SequenceMatcher(None, firsts[i], firsts[j]).ratio() >= 0.75)
-    week = (now - dt.timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    ahead = (now + dt.timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    pace = sum(1 for _, m in vs if (str(m.get("uploaded_at", "")) >= week) or (m.get("publish_at") and now.strftime("%Y-%m-%dT%H:%M:%SZ") <= m["publish_at"] <= ahead))
+    pace = governor.window_load([m for _, m in vs], now)  # the busiest true 7 days (it used to add a week back to a week ahead)
     by_you = sum(1 for _, m in vs if m.get("approved_by") == "you")
     level = "act" if pace >= PACE_ACT or pairs >= 3 or same_structure >= 0.9 and len(sigs) >= 6 else \
             "watch" if pace >= PACE_WATCH or pairs >= 1 or same_structure >= 0.6 else "ok"
-    ev = (f"{same_structure:.0%} of the last {len(sigs)} videos share one structure; {pairs} pairs of near-identical openings; {pace} videos out or scheduled in a 7-day window "
+    ev = (f"{same_structure:.0%} of the last {len(sigs)} videos share one structure; {pairs} pairs of near-identical openings; {pace} videos in the busiest 7 days (published or scheduled) "
           f"(watch at {PACE_WATCH}, act at {PACE_ACT}); {by_you} of {len(vs)} approved by you, the rest by the reviewer agent")
     content_act = pairs >= 3 or (same_structure >= 0.9 and len(sigs) >= 6)  # the repetition signals alone, apart from how many videos went out
     row = ind("platform", "YouTube 'inauthentic content' (repetitive or mass-produced)", level, ev,
-               "documentary length and chapter count vary per topic; openings and titles compared with recent videos; one new idea per video; review window; daily limit of 2",
+               "documentary length and chapter count vary per topic; openings and titles compared with recent videos; one new idea per video; review window; the pace governor (governor.py) keeps documentaries and Shorts under weekly caps and cuts them when repetition shows",
                "YouTube says reviewers look at your main theme, most-viewed and newest videos, and titles. Every video should add something a template cannot: a source-based angle, a real question, what is known versus legend. A slower start (3 to 5 videos a week) is safer for a new channel.")
     row.update(pace=pace, pairs=pairs, same_structure=round(same_structure, 2), content_act=content_act)
     return row
