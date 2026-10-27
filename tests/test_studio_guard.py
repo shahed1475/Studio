@@ -94,3 +94,12 @@ def test_review_round_two_bypasses_are_refused():
     for cmd in ("echo $((1+2))", "echo $(( (1+2)*3 ))", "bash -o pipefail -c 'ls'", "kubectl apply -f x --dry-run=client", "kubectl apply -f x --dry-run=server",
                 "npm publish --dry-run", "find . -name x -exec rm -rf {} +", "find /tmp/x -exec rm -rf {} \;", "find . -exec ls {} \;"):
         assert run(cmd)[0] == 0, cmd
+
+
+def test_review_round_three_bypasses_are_refused():
+    for cmd in ('find / -exec sh -c "rm -rf {}" \;', "find / -exec bash -c 'rm -rf {}/..' \;", 'bash -xo pipefail -c "rm -rf /"', 'bash -eo pipefail -c "rm -rf /"',
+                "bash -O extglob -c 'rm -rf /'", "sh -e -o errexit -c 'rm -rf /'", "echo $(( `rm -rf /` ))", "echo $(( 1 + `rm -rf ~` ))", "echo $(( $(rm -rf /) + 1 ))"):
+        assert run(cmd)[0] == 2, cmd
+    for cmd in ("find . -name x -exec sh -c 'echo {}' \;", "find /tmp/x -exec sh -c 'ls {}' \;", "bash -xo pipefail -c 'ls'", "bash script.sh arg", "echo $(( 1 + 2 ))",
+                "echo $(( `echo 1` + 2 ))"):
+        assert run(cmd)[0] == 0, cmd

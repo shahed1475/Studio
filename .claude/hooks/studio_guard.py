@@ -92,6 +92,9 @@ def scan(command: str) -> tuple[str, str, list[tuple[str, str]], list[str]]:
             continue
         if s.startswith("$((", i) and s[_match(s, i + 1) - 1:_match(s, i + 1)] == ")" and _match(s, i + 2) == _match(s, i + 1) - 1:  # arithmetic only when it closes with ))
             k = _match(s, i + 1)
+            inner = s[i + 3:k - 1]  # substitutions still run inside arithmetic
+            subs += [m.group(1) for m in re.finditer(r"`([^`]*)`", inner)]
+            subs += [inner[m.start() + 2:_match(inner, m.start() + 1)] for m in re.finditer(r"\$\(", inner)]
             out.append(s[i:k + 1])
             plain.append(s[i:k + 1])
             i = k + 1
@@ -186,18 +189,9 @@ def _nested(tokens: list[str]) -> tuple[list[str], list[list[str]]]:
         return [], []
     name, texts, extra = t[0].split("/")[-1], [], []
     if name in SHELLS:
-        i = 1
-        while i < len(t):  # options: -o/-O/+o/+O and --rcfile/--init-file take a value; the first plain word is a script file; -c takes the command text
-            a = t[i]
-            if a in ("-o", "-O", "+o", "+O", "--rcfile", "--init-file"):
-                i += 2
-            elif a[:1] in "-+" and not a.startswith("--") and "c" in a[1:]:
-                if i + 1 < len(t):
-                    texts.append(t[i + 1])
-                break
-            elif a[:1] in "-+":
-                i += 1
-            else:
+        for i, a in enumerate(t[1:], 1):  # after the first -c group (-c, -ec, -xo ... -c) every later word may be the command text, whatever options come between
+            if a[:1] in "-+" and not a.startswith("--") and "c" in a[1:]:
+                texts += [b for b in t[i + 1:] if b[:1] not in "-+"]
                 break
     elif name == "eval":
         texts.append(" ".join(t[1:]))
@@ -231,9 +225,9 @@ def _nested(tokens: list[str]) -> tuple[list[str], list[list[str]]]:
                 for b in t[i + 1:]:
                     if b in ("+", ";"):
                         break
-                    chunk += paths if b == "{}" else [b]
+                    chunk.append(b)
                 if chunk:
-                    extra.append(chunk)
+                    extra += [[b.replace("{}", p) for b in chunk] for p in paths]  # {} may sit inside an argument (sh -c "rm -rf {}")
     return texts, extra
 
 
