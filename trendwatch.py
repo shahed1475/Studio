@@ -66,6 +66,55 @@ def search_niche(queries: list[str], yt=None) -> list[dict]:
     return sorted(out, key=lambda x: -x["views"])
 
 
+FRESH_DAYS = 14        # "trending" means taking off now, not popular for years
+FRESH_SEARCHES = 4     # 100 quota units each, shared by the documentary and Short searches, once a day
+MIN_SUBS, UNKNOWN_SUBS = 500, 50_000  # a tiny channel counts as 500 (one lucky video must not explode the score); a hidden subscriber count as a mid-size channel
+
+
+def outlier_score(views: int, subs: int | None, age_days: float) -> float:
+    """Views per day divided by the channel's size: how far a video beats what its channel normally gets. About 1 is ordinary, 5 or more is taking off."""
+    return round((views / max(age_days, 1)) / max(subs if subs is not None else UNKNOWN_SUBS, MIN_SUBS), 3)
+
+
+def search_fresh(queries: list[str], yt=None, now: dt.datetime | None = None, days: int = FRESH_DAYS, kind: str = "doc") -> list[dict]:
+    """Videos on the niche's themes published in the last `days`, best outlier score first. kind "doc": at least 4 minutes; "short": 90 seconds or less.
+    Reads public numbers only (API: search 100 units, videos and channels 1 unit per 50)."""
+    yt, now = yt or _service(), now or dt.datetime.now(dt.timezone.utc)
+    since = (now - dt.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    ids: list[str] = []
+    for q in queries[:FRESH_SEARCHES]:
+        extra = {"videoDuration": "short"} if kind == "short" else {}
+        res = yt.search().list(q=q, part="id", type="video", maxResults=15, order="viewCount", regionCode="US", relevanceLanguage="en", publishedAfter=since, **extra).execute()
+        ids += [i["id"]["videoId"] for i in res.get("items", []) if i["id"]["videoId"] not in ids]
+    found = []
+    for k in range(0, len(ids), 50):
+        for v in yt.videos().list(part="snippet,statistics,contentDetails", id=",".join(ids[k:k + 50])).execute().get("items", []):
+            secs = iso_seconds(v["contentDetails"]["duration"])
+            if (kind == "short" and not 0 < secs <= 90) or (kind != "short" and secs < 240):
+                continue
+            age = (now - dt.datetime.fromisoformat(v["snippet"]["publishedAt"].replace("Z", "+00:00"))).total_seconds() / 86400
+            if age > days:
+                continue
+            found.append({"id": v["id"], "title": v["snippet"]["title"], "channel": v["snippet"]["channelTitle"], "channel_id": v["snippet"]["channelId"], "seconds": secs,
+                          "views": int(v["statistics"].get("viewCount", 0)), "age_days": round(age, 1), "url": f"https://www.youtube.com/watch?v={v['id']}"})
+    subs: dict[str, int | None] = {}
+    chans = sorted({f["channel_id"] for f in found})
+    for k in range(0, len(chans), 50):
+        for c in yt.channels().list(part="statistics", id=",".join(chans[k:k + 50])).execute().get("items", []):
+            st = c.get("statistics", {})
+            subs[c["id"]] = None if st.get("hiddenSubscriberCount") else int(st.get("subscriberCount", 0))
+    for f in found:
+        f["subs"] = subs.get(f["channel_id"])
+        f["score"] = outlier_score(f["views"], f["subs"], f["age_days"])
+    return sorted(found, key=lambda f: -f["score"])[:12]
+
+
+def fresh_hint(fresh: dict) -> dict:
+    """The typical length of what is taking off now (top five of each kind): a hint for the writer, not a rule."""
+    mid = lambda xs: int(statistics.median(xs)) if xs else 0
+    return {"doc_minutes": round(mid([f["seconds"] for f in fresh.get("docs", [])[:5]]) / 60, 1), "short_seconds": mid([f["seconds"] for f in fresh.get("shorts", [])[:5]])}
+
+
 def _norm(s: str) -> str:
     return re.sub(r"[^a-z0-9 ]", "", s.lower()).strip()
 
@@ -95,6 +144,14 @@ def run(now: dt.datetime | None = None, yt=None) -> Path:
     except Exception as e:  # quota, missing token, model down: record it and stop cleanly
         digest["error"] = f"{type(e).__name__}: {e}"
         digest.setdefault("summary", summarize_videos([]))
+    try:  # what is taking off now: one search budget a day, and a failure here never loses the digest above
+        seeds = config.search_seeds(SEEDS)
+        half = max(1, FRESH_SEARCHES // 2)
+        fresh = {"docs": search_fresh(seeds[:half], yt, now, kind="doc"), "shorts": search_fresh(seeds[:half], yt, now, kind="short")}
+        fresh["hint"] = fresh_hint(fresh)
+        digest["fresh"] = fresh
+    except Exception as e:
+        digest["fresh"] = {"docs": [], "shorts": [], "hint": {}, "error": f"{type(e).__name__}: {e}"}
     path.write_text(json.dumps(digest, indent=2))
     return path
 

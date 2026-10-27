@@ -587,6 +587,14 @@ def main() -> None:
         for g in sorted(got, key=lambda g: -g["total"]):
             print(f"  {g['total']:>4}  {names[g['index']]}  " + " ".join(f"{k}={v:g}" for k, v in g["parts"].items()))
         print(f"best: {names[max(got, key=lambda g: g['total'])['index']]} (the record was not changed)")
+    elif a[0] == "trainset":
+        import trainset
+
+        rep = trainset.build(allow=tuple(x for x in a[1:] if "/" in x))  # model names the owner allows, e.g. a Llama or Qwen id; Claude output is excluded otherwise
+        print(json.dumps({k: rep[k] for k in ("videos_seen", "examples_kept", "train", "valid", "rejected", "rejected_reasons", "ready_to_train", "needed", "dir")}, indent=1))
+        for slug, why in list(rep["videos_skipped"].items())[:8]:
+            print(f"  left out {slug}: {why}")
+        print("Nothing was pushed or trained. Files are in the folder above.")
     elif a[0] == "script-review":
         import reviewer
         import scriptreview

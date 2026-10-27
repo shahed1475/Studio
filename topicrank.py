@@ -30,6 +30,11 @@ def signals() -> list[tuple[set[str], float]]:
     out = []
     for v in ((trendwatch.latest() or {}).get("videos") or []):
         out.append((words(v.get("title", "")), math.log10(int(v.get("views", 0)) + 10)))
+    fresh = (trendwatch.latest() or {}).get("fresh") or {}
+    for kind in ("docs", "shorts"):  # taking off now, judged against the channel's size: up to double the weight of an old hit with the same views
+        for v in fresh.get(kind) or []:
+            boost = 1 + min(1.0, math.log10(1 + max(0.0, float(v.get("score") or 0))))
+            out.append((words(v.get("title", "")), math.log10(int(v.get("views", 0)) + 10) * boost))
     for c in ((channelwatch.latest() or {}).get("channels") or []):
         for v in c.get("top") or []:
             out.append((words(v.get("title", "")), math.log10(int(v.get("views", 0)) + 10)))

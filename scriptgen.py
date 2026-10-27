@@ -8,6 +8,15 @@ import config
 import llm
 
 
+def _writer_model() -> str:
+    """The model assigned to the writer role when a script is made, recorded so training data can honour that model's licence (trainset.py). A free fallback that
+    answered instead is recorded as the assigned model: that errs toward excluding the example, never toward using it."""
+    try:
+        return str(llm.load_config()["models"].get("script", ""))
+    except Exception:
+        return ""
+
+
 def _ollama_chat(prompt: str) -> dict:
     r = requests.post(
         f"{config.OLLAMA_URL}/api/chat",
@@ -85,7 +94,7 @@ def script(topic: str, grounded: str | None = None) -> dict:
     if len(lines) < 9 or words < 85:
         raise ValueError(f"script too thin ({len(lines)} lines, {words} words)")
     return {
-        "topic": topic, "grounded": bool(grounded),
+        "topic": topic, "grounded": bool(grounded), "script_model": _writer_model(),
         "anchors": [str(a).strip() for a in data.get("anchors", []) if str(a).strip()][:5],
         "title": str(data["title"]).strip()[:95],
         "description": str(data.get("description", "")).strip(),
@@ -342,7 +351,7 @@ def doc_script(topic: str, facts: str | None = None, grounded: str | None = None
     if len(chapters) < 5 or words < 400:
         raise ValueError(f"documentary too thin ({len(chapters)} chapters, {words} words)")
     return {
-        "topic": topic, "format": "doc", "grounded": bool(facts or grounded),
+        "topic": topic, "format": "doc", "grounded": bool(facts or grounded), "script_model": _writer_model(),
         "anchors": [str(a).strip() for a in outline.get("anchors", []) if str(a).strip()][:6],
         "title": str(outline["title"]).strip()[:95],
         "description": str(outline.get("description", "")).strip(),

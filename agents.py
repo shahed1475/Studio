@@ -24,7 +24,7 @@ AGENTS = {
     "monetization": {"job": None, "cmds": [], "ondemand": True, "hands_to": ["reporter"]},
     "backup": {"job": "backup", "cmds": ["backup"], "hands_to": []},
     "triage": {"job": None, "cmds": [], "hands_to": ["trainer"]},
-    "trainer": {"job": None, "cmds": [], "hands_to": ["evaluator"]},
+    "trainer": {"job": None, "cmds": ["trainset"], "hands_to": ["evaluator"]},
     "evaluator": {"job": "agent-review", "cmds": ["agent-review", "agents"], "hands_to": ["triage", "doctor"]},
     "doctor": {"job": "doctor", "cmds": ["doctor"], "hands_to": ["scriptreview"]},
 }

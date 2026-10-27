@@ -120,3 +120,26 @@ def test_the_premise_screen_judges_fit_by_the_channels_own_niche(tmp_path, monke
     (tmp_path / "niche.json").write_text(json.dumps({"name": "Mystery, history and folklore stories", "audience": "a", "style": "s", "channel_angle": "Folk tales", "hashtags": ["#a"]}))
     topicrank.premise_check("The Bell Witch", "article", [], chat=lambda p: seen.append(p) or {"ok": True})
     assert "neither a legend, myth, folktale nor a well-documented historical mystery" in seen[1]  # the owner's studio keeps its wording
+
+
+def test_signals_weight_a_video_taking_off_now_above_an_old_one_with_the_same_views(monkeypatch):
+    import channelwatch
+    import trendwatch
+
+    old = {"title": "Old Bell Legend", "views": 100_000}
+    now_ = {"title": "Fresh Lantern Legend", "views": 100_000, "score": 99.0}
+    monkeypatch.setattr(trendwatch, "latest", lambda: {"videos": [old], "fresh": {"docs": [now_], "shorts": [{"title": "Quick Mirror Tale", "views": 50_000, "score": 0.0}]}})
+    monkeypatch.setattr(channelwatch, "latest", lambda: None)
+    sig = dict((tuple(sorted(w)), wt) for w, wt in topicrank.signals())
+    heavy, light = sig[tuple(sorted(topicrank.words("Fresh Lantern Legend")))], sig[tuple(sorted(topicrank.words("Old Bell Legend")))]
+    assert heavy > light * 1.5 and heavy <= light * 2.01  # up to double, never more
+    assert sig[tuple(sorted(topicrank.words("Quick Mirror Tale")))] > 0  # a Short with no outlier score still counts, unboosted
+
+
+def test_a_digest_without_fresh_data_still_gives_the_old_signals(monkeypatch):
+    import channelwatch
+    import trendwatch
+
+    monkeypatch.setattr(trendwatch, "latest", lambda: {"videos": [{"title": "Old Bell Legend", "views": 1000}]})
+    monkeypatch.setattr(channelwatch, "latest", lambda: None)
+    assert len(topicrank.signals()) == 1
