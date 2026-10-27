@@ -9,7 +9,7 @@ AGENTS = {
     "news": {"job": "policywatch", "cmds": ["newswatch", "policywatch"], "hands_to": ["creator", "guardian"]},
     "creator": {"job": None, "cmds": ["doc", "make", "redo", "remake", "batch"], "hands_to": ["scriptreview", "seo", "reviewer"]},
     "scriptreview": {"job": None, "cmds": ["script-review"], "hands_to": ["creator", "doctor"]},
-    "clipper": {"job": None, "cmds": ["clip"], "hands_to": ["reviewer"]},
+    "clipper": {"job": None, "cmds": ["clip", "remake-short"], "hands_to": ["reviewer"]},
     "seo": {"job": None, "cmds": ["seo", "seo-fix"], "hands_to": ["reviewer"]},
     "qa": {"job": None, "cmds": ["inspect", "analyze-video", "score-thumbnails"], "hands_to": []},
     "compliance": {"job": None, "cmds": [], "hands_to": []},

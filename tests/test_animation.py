@@ -124,10 +124,10 @@ def test_the_animation_step_adds_the_ai_credit_and_is_skipped_when_not_asked_for
     clips, lines = scenes
     data = {"lines": lines, "animate": 2, "animate_budget": 1.5}
     seen = {}
-    monkeypatch.setattr(animate, "clip_generator", lambda: "GEN")
-    monkeypatch.setattr(animate, "animate_scenes", lambda c, l, n, budget, gen: (seen.update(n=n, budget=budget, gen=gen) or ([Path("a.mp4")] + c[1:], {"animated": 1, "cached": 0, "failed": 0, "spent": 0.24, "scenes": [0]})))
+    monkeypatch.setattr(animate, "clip_generator", lambda vertical=False: "GEN")
+    monkeypatch.setattr(animate, "animate_scenes", lambda c, l, n, budget, gen, **k: (seen.update(n=n, budget=budget, gen=gen, **k) or ([Path("a.mp4")] + c[1:], {"animated": 1, "cached": 0, "failed": 0, "spent": 0.24, "scenes": [0]})))
     new, credits, stats = run._animate(data, clips, ["real.jpg (Wikimedia Commons, CC0)"])
-    assert seen == {"n": 2, "budget": 1.5, "gen": "GEN"} and new[0] == Path("a.mp4") and credits[-1] == animate.credit(modelcfg.get("video_generation")) and stats["animated"] == 1
+    assert seen == {"n": 2, "budget": 1.5, "gen": "GEN", "size": (1280, 720)} and new[0] == Path("a.mp4") and credits[-1] == animate.credit(modelcfg.get("video_generation")) and stats["animated"] == 1
     monkeypatch.setattr(animate, "animate_scenes", lambda *a: pytest.fail("not asked for"))
     same, credits2, stats2 = run._animate({"lines": lines}, clips, ["x"])
     assert same == clips and credits2 == ["x"] and stats2 is None
@@ -177,3 +177,40 @@ def test_a_3d_remake_always_draws_the_opening_scenes_so_the_hook_is_never_a_muse
     assert run._forced_art({"lines": lines}) == set()
     assert run._forced_art({"lines": lines, "art_style": "3d"}) == {"Line 0.", "Line 1.", "Line 2.", "Line 3."}
     assert run._forced_art({"lines": lines, "art_style": "3d", "redraw_lines": ["Line 6."]}) == {"Line 0.", "Line 1.", "Line 2.", "Line 3.", "Line 6."}
+
+
+# ---- vertical (Shorts) ----
+def test_a_vertical_first_frame_is_720_by_1280_and_the_clip_settings_ask_for_9_16(tmp_path):
+    img = tmp_path / "v.jpg"
+    Image.new("RGB", (900, 900), (1, 2, 3)).save(img)
+    url = animate.frame_url(img, (720, 1280))
+    assert Image.open(io.BytesIO(base64.b64decode(url.split(",", 1)[1]))).size == (720, 1280)
+    base = {"model": "x", "aspect_ratio": "16:9", "resolution": "720p", "cost_scope": "footage-test"}
+    assert animate.clip_config(base, True)["aspect_ratio"] == "9:16" and animate.clip_config(base, False)["aspect_ratio"] == "16:9"
+    assert animate.clip_config(base, True)["cost_scope"] == "animation" and animate.clip_config(base, True)["model"] == modelcfg.get("video_generation")
+
+
+def test_a_shorts_animation_step_uses_the_vertical_size_and_generator(monkeypatch, scenes):
+    clips, lines = scenes
+    seen = {}
+    monkeypatch.setattr(animate, "clip_generator", lambda vertical=False: seen.update(vertical=vertical) or "GEN")
+    monkeypatch.setattr(animate, "animate_scenes", lambda c, l, n, budget, gen, **k: seen.update(k) or (c, {"animated": 0, "cached": 0, "failed": 0, "spent": 0.0, "scenes": []}))
+    run._animate({"lines": lines, "animate": 1}, clips, [], vertical=True)
+    assert seen == {"vertical": True, "size": (720, 1280)}
+
+
+# ---- a Short cut from one named documentary, in 3D with animation ----
+import clipper
+import test_clipper
+
+
+def test_a_3d_short_is_cut_from_a_named_documentary_and_the_chapter_is_recorded(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "OUT", tmp_path)
+    test_clipper.make_doc(tmp_path, "doc-a")
+    made = []
+    produce = lambda data, topic, **kw: made.append((data, kw)) or tmp_path / "short-1"
+    got = clipper.make_from("doc-a", {"art_style": "3d", "animate": 2, "hold": True}, produce=produce, chat=lambda p: {"hook": "Why did it fall?", "title": "The fall"})
+    data, kw = made[0]
+    assert got == tmp_path / "short-1" and data["source_doc"] == "doc-a" and data["art_style"] == "3d" and data["animate"] == 2 and data["hold"] is True and kw["requeue"] is False
+    assert json.loads((tmp_path / "doc-a" / "meta.json").read_text())["clips"] == [data["clip_start_line"]]
+    assert clipper.make_from("no-such-doc", {}, produce=produce) is None

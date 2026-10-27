@@ -194,3 +194,37 @@ def make_next(produce=None, chat=None):
             _record(m, "clips", w["start"])
             return folder
     return None
+
+
+def make_from(slug: str, extra: dict | None = None, produce=None, chat=None):
+    """One Short cut from this named documentary (the owner asked for it), with `extra` settings merged into the Short's record (for example a 3D look and animation).
+    The same chapter rules as make_next. Returns the Short's folder, or None when no chapter is usable or the pictures could not be made."""
+    if produce is None:
+        import run
+
+        produce = run._produce_short
+    path = config.OUT / slug / "meta.json"
+    try:
+        d = json.loads(path.read_text())
+        texts = [l["text"] for l in d["lines"]]
+        chapters = d["chapters"]
+    except (OSError, ValueError, KeyError):
+        return None
+    try:
+        words = json.loads((path.parent / "words.json").read_text())
+    except (OSError, ValueError):
+        words = []
+    ws = windows(d["lines"], chapters, line_seconds(words, texts))
+    for w in pick(ws, MAX_TRIES, used=[*d.get("clips", []), *d.get("clips_failed", [])]):
+        if MODERN_MEDIA.search(" ".join(l["text"] for l in w["lines"])):
+            _record(path, "clips_failed", w["start"])
+            continue
+        data = {**build_short(d, w, hook(d, w, chat), slug, outro_for(d["topic"], recent_endings())), **(extra or {})}
+        try:
+            folder = produce(data, d["topic"], requeue=False, pool_size=10, min_unique=3)
+        except (Exception, SystemExit):
+            _record(path, "clips_failed", w["start"])
+            continue
+        _record(path, "clips", w["start"])
+        return folder
+    return None

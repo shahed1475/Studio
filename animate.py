@@ -41,16 +41,16 @@ def motion_prompt(line: str, visual: str = "") -> str:
             "movement of the characters, hair and cloth. No text, no cuts, no sudden changes.")
 
 
-def frame_url(path) -> str:
-    """The picture as a 1280x720 JPEG data URL, the first frame of the clip."""
+def frame_url(path, size: tuple[int, int] = (1280, 720)) -> str:
+    """The picture as a JPEG data URL of this size (1280x720, or 720x1280 for a Short), the first frame of the clip."""
     from PIL import ImageOps
 
     buf = io.BytesIO()
-    ImageOps.fit(Image.open(path).convert("RGB"), (1280, 720), method=Image.LANCZOS).save(buf, "JPEG", quality=85)
+    ImageOps.fit(Image.open(path).convert("RGB"), size, method=Image.LANCZOS).save(buf, "JPEG", quality=85)
     return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
-def animate_scenes(clips: list, lines: list[dict], n: int, budget_usd: float, gen, estimate: float = CLIP_ESTIMATE) -> tuple[list, dict]:
+def animate_scenes(clips: list, lines: list[dict], n: int, budget_usd: float, gen, estimate: float = CLIP_ESTIMATE, size: tuple[int, int] = (1280, 720)) -> tuple[list, dict]:
     """(new clips list, stats). gen(prompt, first_frame_data_url) -> (mp4 path, dollars spent) or raises. The input list is not changed."""
     out = list(clips)
     stats = {"animated": 0, "cached": 0, "failed": 0, "spent": 0.0, "scenes": []}
@@ -68,7 +68,7 @@ def animate_scenes(clips: list, lines: list[dict], n: int, budget_usd: float, ge
         if stats["spent"] + estimate > budget_usd:
             break
         try:
-            clip, cost = gen(prompt, frame_url(clips[i]))
+            clip, cost = gen(prompt, frame_url(clips[i], size))
             cache.mkdir(parents=True, exist_ok=True)
             shutil.copy(clip, hit)
         except Exception:
@@ -86,14 +86,20 @@ def animate_scenes(clips: list, lines: list[dict], n: int, budget_usd: float, ge
     return out, stats
 
 
-def clip_generator():
-    """gen(prompt, first_frame) for animate_scenes: one clip through the footage tool (price check, caps, ledger, run record), model from the registry, scope 'animation'."""
+def clip_config(base: dict, vertical: bool = False) -> dict:
+    """The footage tool's settings for animation: the registry's video model, its own cost scope, and the picture shape (9:16 for a Short)."""
+    import modelcfg
+
+    return {**base, "model": modelcfg.get("video_generation"), "cost_scope": "animation", "aspect_ratio": "9:16" if vertical else "16:9"}
+
+
+def clip_generator(vertical: bool = False):
+    """gen(prompt, first_frame) for animate_scenes: one clip through the footage tool (price check, caps, ledger, run record)."""
     import footagestore
     import llm
-    import modelcfg
     from tools.footage import clipgen
 
-    cfg = {**clipgen.load_config(config.ROOT / "config" / "footage.json"), "model": modelcfg.get("video_generation"), "cost_scope": "animation"}
+    cfg = clip_config(clipgen.load_config(config.ROOT / "config" / "footage.json"), vertical)
 
     def gen(prompt: str, first_frame: str):
         run = footagestore.create(cfg["cost_scope"], status="running", model=cfg["model"])

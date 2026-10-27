@@ -189,9 +189,10 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
     else:  # archive pictures: only ones that name the subject
         import aiart
 
-        art = lambda l: aiart.generate(l["text"], l.get("visual", ""), topic, vertical=True)
+        art = lambda l: aiart.generate(l["text"], l.get("visual", ""), topic, vertical=True, style=data.get("art_style"))
         clips, credits, stats = footage.scene_images(data["lines"], topic, data.get("anchors") or [], pool_size=pool_size, judge=_image_judge(topic),
-                                                     art=art, art_limit=aiart.MAX_PER_VIDEO["short"], art_first=bool(data.get("art_first")))
+                                                     art=art, art_limit=12 if data.get("art_style") == "3d" else aiart.MAX_PER_VIDEO["short"],
+                                                     art_first=bool(data.get("art_first")), force_art=_forced_art(data))
         data["footage"] = stats
         if stats["missing"] or stats["unique"] < min_unique:
             clips = [None] * len(clips)
@@ -201,6 +202,10 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
         if not in_place:
             shutil.rmtree(folder, ignore_errors=True)
         raise SystemExit("not enough footage found for this Short" + (("; topic moved to the back of the queue" if kept else "; topic dropped after two failed tries") if requeue else ""))
+    clips, credits, anim = _animate(data, clips, credits, vertical=True)  # a 3D Short can have a few moving clips
+    if anim:
+        data["animation"] = anim
+        print(f"  animation: {anim['animated']} new clip(s), {anim['cached']} from the cache, {anim['failed']} failed, ${anim['spent']:.2f} spent")
     print("Rendering...")
     render.render(clips, durations, narration, ass, work, folder / "video.mp4", loudness=prof["target_lufs"], shots=prof["motion"] >= 1,
                   crossfade=0.3 if prof["motion"] >= 2 and len(clips) <= 20 else 0.0, grain=prof["motion"] >= 2)
@@ -402,7 +407,7 @@ def _forced_art(data: dict) -> set[str]:
     return forced
 
 
-def _animate(data: dict, clips: list, credits: list) -> tuple[list, list, dict | None]:
+def _animate(data: dict, clips: list, credits: list, vertical: bool = False) -> tuple[list, list, dict | None]:
     """Animate some drawn scenes when the video asks for it (data["animate"] = how many clips, data["animate_budget"] = dollars, default 3). Returns
     (clips, credits with the AI-video credit added, stats) or the inputs and None when not asked."""
     n = int(data.get("animate") or 0)
@@ -411,7 +416,8 @@ def _animate(data: dict, clips: list, credits: list) -> tuple[list, list, dict |
     import animate
     import modelcfg
 
-    new, stats = animate.animate_scenes(clips, data["lines"], n, float(data.get("animate_budget", 3.0)), animate.clip_generator())
+    new, stats = animate.animate_scenes(clips, data["lines"], n, float(data.get("animate_budget", 3.0)), animate.clip_generator(vertical=vertical),
+                                        size=(720, 1280) if vertical else (1280, 720))
     if stats["animated"] or stats["cached"]:
         credits = [*credits, animate.credit(modelcfg.get("video_generation"))]
     return new, credits, stats
@@ -488,6 +494,14 @@ def main() -> None:
         cmd_redo(a[1])
     elif a[0] == "doc":
         cmd_doc(" ".join(a[1:]) or None)
+    elif a[0] == "remake-short":
+        import clipper
+
+        n = int(a[a.index("--animate") + 1]) if "--animate" in a else 2
+        folder = clipper.make_from(a[1], {"art_style": "3d", "animate": n, "animate_budget": 1.0, "art_first": True, "hold": True})
+        if folder is None:
+            raise SystemExit(f"no Short could be cut from {a[1]}: no usable chapter left, or the pictures could not be made")
+        print(f"3D Short ready (held, not approved): {folder}")
     elif a[0] == "remake":
         cmd_remake(a[1], a[2:])
     elif a[0] == "batch":
