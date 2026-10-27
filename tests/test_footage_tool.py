@@ -1050,3 +1050,19 @@ def test_a_model_that_cannot_start_from_a_picture_is_refused_before_any_money_mo
     with pytest.raises(clipgen.Refused, match="start from a picture"):
         clipgen.generate(cfg, "k", "motion", r, http=h, sleep=lambda s: None, today="2026-10-25", first_frame=FRAME)
     assert post_count(h) == 0 and money.spent_today() == 0
+
+
+@pytest.mark.parametrize("w,h,aspect,res,match", [(720, 1280, "9:16", "720p", None), (1080, 1920, "9:16", "1080p", None), (720, 1280, "9:16", "1080p", "asked for 1080p"), (720, 1280, "16:9", "720p", "shape")])
+def test_a_vertical_clip_is_judged_by_its_short_side_so_a_720p_short_is_720_wide(cfg, tmp_path, monkeypatch, w, h, aspect, res, match):
+    """27 Oct 2026: two paid 9:16 clips were rejected as 'height 1280, asked for 720p' ($0.48 lost): the resolution label is the short side."""
+    monkeypatch.undo()
+    f = tmp_path / "c.mp4"
+    f.write_bytes(MP4)
+    out = json.dumps({"streams": [{"width": w, "height": h}], "format": {"duration": "8.0"}})
+    monkeypatch.setattr(clipgen.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, out, ""))
+    c = {**cfg, "aspect_ratio": aspect, "resolution": res}
+    if match:
+        with pytest.raises(clipgen.ClipError, match=match):
+            clipgen._probe_check(f, c)
+    else:
+        assert clipgen._probe_check(f, c)["width"] == w

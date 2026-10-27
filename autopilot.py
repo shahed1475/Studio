@@ -43,6 +43,11 @@ DEFAULTS = {
     "shorts_per_day": 1,
     "max_waiting_shorts": 3,     # finished Shorts not yet uploaded
     "short_slots": scheduler.SHORT_SLOTS_DEFAULT,
+    "house_style": {             # 3D animated-film look plus a few moving clips for NEW videos, only while the OpenRouter credit is at least min_credit (about $3 for a documentary)
+        "enabled": False, "min_credit": 8.0,
+        "doc": {"clips": 4, "budget": 1.5},
+        "short": {"clips": 1, "budget": 0.5},
+    },
 }
 MAX_FAILS = 3
 POLISH_MIN_LEAD = dt.timedelta(hours=30)  # a video this close to its slot is not edited: there is no time to make it again and check it

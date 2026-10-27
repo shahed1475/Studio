@@ -168,6 +168,7 @@ def _cmd_make(topic: str | None = None) -> Path:
 def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int = 6, min_unique: int = 4, folder: Path | None = None) -> Path:
     """Voice, footage, render and metadata for a finished Short script. requeue: put the topic back in the queue if footage is missing.
     folder: re-render inside this existing folder (it is never removed if the footage is missing)."""
+    data = _apply_house_style(data, "short", folder)
     slug = re.sub(r"[^a-z0-9]+", "-", data["title"].lower()).strip("-")[:50]
     in_place = folder is not None
     folder = folder or unique_folder(config.OUT / slug)
@@ -322,6 +323,8 @@ def _image_judge(topic: str):
 def _produce_doc(data: dict, folder: Path | None = None) -> Path:
     import random
 
+    data = _apply_house_style(data, "doc", folder)
+
     slug = "doc-" + re.sub(r"[^a-z0-9]+", "-", data["title"].lower()).strip("-")[:45]
     folder = folder or unique_folder(config.OUT / slug)
     work = folder / "work"
@@ -396,6 +399,33 @@ def cmd_redo_short(name: str) -> None:
     _refuse_if_uploaded(name)
     data = reset_for_rerender(json.loads((config.OUT / name / "meta.json").read_text()))
     _produce_short(data, data["topic"], requeue=False, folder=config.OUT / name)
+
+
+def _house_style(kind: str) -> dict:
+    """What Autopilot adds to a NEW video of this kind (autopilot.json house_style): the 3D animated-film look and a few moving clips. Only when it is switched on and
+    the account can pay for it (credit known and at least min_credit: an animated documentary costs about $3, a stopped render wastes it). {} otherwise."""
+    import autopilot
+    import llm
+    import risk
+
+    hs = autopilot.load_config().get("house_style") or {}
+    part = hs.get(kind) or {}
+    if not hs.get("enabled") or not part:
+        return {}
+    try:
+        credit = risk.credit_left(llm.api_key()) if llm.api_key() else None
+    except Exception:
+        credit = None
+    if credit is None or credit < float(hs.get("min_credit", 8.0)):
+        return {}
+    return {"art_style": "3d", "animate": int(part.get("clips", 0)), "animate_budget": float(part.get("budget", 1.0)), "art_first": True, "house_style": True}
+
+
+def _apply_house_style(data: dict, kind: str, folder) -> dict:
+    """Only a new video gets it: a folder means a re-render in place (redo, repair), and a video that chose its own look (a remake) keeps it."""
+    if folder is None and "art_style" not in data:
+        data.update(_house_style(kind))
+    return data
 
 
 def _forced_art(data: dict) -> set[str]:

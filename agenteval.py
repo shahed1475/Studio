@@ -332,13 +332,37 @@ def case_scriptreview_asks_the_doctor_once_and_the_doctor_closes_the_loop():
         return ok, "one task for a repeated problem; unsolved goes to the owner with a post-mortem; a confirmed fix closes it" if ok else f"tasks={len(mine)} owner_first={owner_first} done={done}"
 
 
+def case_creator_house_style_is_funded_new_only_and_off_by_default():
+    import autopilot
+    import llm
+    import risk
+    import run
+
+    old = (autopilot.load_config, risk.credit_left, llm.api_key)
+    on = {"house_style": {"enabled": True, "min_credit": 8.0, "doc": {"clips": 4, "budget": 1.5}, "short": {"clips": 1, "budget": 0.5}}}
+    try:
+        llm.api_key = lambda: "k"
+        autopilot.load_config, risk.credit_left = (lambda: on), (lambda key, *a, **k: 20.0)
+        funded = run._apply_house_style({"title": "t"}, "doc", None)
+        redo = run._apply_house_style({"title": "t"}, "doc", Path("some-folder"))
+        risk.credit_left = lambda key, *a, **k: 3.0
+        poor = run._apply_house_style({"title": "t"}, "doc", None)
+        autopilot.load_config = lambda: {"house_style": {**on["house_style"], "enabled": False}}
+        risk.credit_left = lambda key, *a, **k: 20.0
+        off = run._apply_house_style({"title": "t"}, "doc", None)
+    finally:
+        autopilot.load_config, risk.credit_left, llm.api_key = old
+    ok = funded.get("art_style") == "3d" and funded.get("animate") == 4 and "art_style" not in redo and "art_style" not in poor and "art_style" not in off and autopilot.DEFAULTS["house_style"]["enabled"] is False
+    return ok, "a new video gets the 3D animated style only when it is on and funded; a redo, a poor account and the default never do" if ok else f"funded={funded} redo={redo} poor={poor} off={off}"
+
+
 CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic,
          case_ladder_ends_with_owner_not_a_crash, case_ladder_respects_budget_and_whitelist_and_lessons, case_outside_text_is_cleaned,
          case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules, case_registry_is_consistent,
          case_playbook_scope_injects_role_and_limits_only_when_acting, case_doctor_finds_stale_and_failing_agents_and_fixes_only_safely,
          case_doctor_writes_only_proposals_and_never_installs, case_doctor_skill_drafts_stay_in_quarantine,
          case_scriptreview_holds_hard_failures_and_fixes_only_what_is_mechanical, case_scriptreview_model_never_decides_alone_and_cannot_fail_a_script_by_erroring,
-         case_scriptreview_asks_the_doctor_once_and_the_doctor_closes_the_loop]
+         case_scriptreview_asks_the_doctor_once_and_the_doctor_closes_the_loop, case_creator_house_style_is_funded_new_only_and_off_by_default]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:

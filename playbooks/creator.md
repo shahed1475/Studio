@@ -9,10 +9,11 @@ Autopilot starts one video per due slot, from the best topic in the queue.
 1. Read up to two Wikipedia articles for the topic; write only what they support.
 2. Fact-check and rewrite the script BEFORE any voice or picture is paid for (scriptgen.verify_and_revise).
 3. Real public-domain or CC0 pictures first; labelled AI art for the rest. Narration and captions come from the final script.
-4. Hand to seo for the title and description, then to the reviewer.
+4. House style (autopilot.json house_style): when it is on and the OpenRouter credit is at least min_credit, a NEW video is drawn in a 3D animated-film look, its first four scenes are always drawn, and a few drawn scenes become moving clips inside a dollar budget; documented real pictures stay real. Never for a redo or a repair.
+5. Hand to seo for the title and description, then to the reviewer.
 ## Tools
 scriptgen, tts, aiart, render, subtitles, run.cmd_doc.
 ## Never
-Invent a fact, quote or source. Use an unlicensed picture. Spend past the per-video limit ($2.50 documentary, $0.70 Short).
+Invent a fact, quote or source. Use an unlicensed picture. Animate a real archive picture. Start an animated video when the credit is under min_credit. Spend past the per-video limit ($2.50 documentary, $0.70 Short).
 ## Escalate
 A topic with no usable source article is dropped and the next topic is used; a render error goes to the fixer.

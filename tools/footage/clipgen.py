@@ -348,8 +348,8 @@ def _probe_check(path: Path, cfg: dict) -> dict:
     if abs(dur - cfg["duration_s"]) > cfg["duration_tolerance_s"]:
         problems.append(f"length {dur:.1f} s, asked for {cfg['duration_s']} s")
     m = re.fullmatch(r"(\d{3,4})p", cfg["resolution"])
-    if m and h != int(m.group(1)):
-        problems.append(f"height {h}, asked for {cfg['resolution']}")
+    if m and min(w, h) != int(m.group(1)):  # the label is the short side: a 720p Short is 720 wide and 1280 tall
+        problems.append(f"height {h}, asked for {cfg['resolution']}" if w >= h else f"width {w}, asked for {cfg['resolution']} (a vertical clip's short side)")
     a = re.fullmatch(r"(\d+):(\d+)", cfg["aspect_ratio"])
     if a and abs(w / h - int(a.group(1)) / int(a.group(2))) > cfg["aspect_tolerance"] * int(a.group(1)) / int(a.group(2)):
         problems.append(f"shape {w}x{h}, asked for {cfg['aspect_ratio']}")
