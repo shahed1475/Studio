@@ -38,3 +38,49 @@ def test_an_unreadable_input_is_never_a_reason_to_block():
     p = subprocess.run([sys.executable, str(GUARD)], input="not json", capture_output=True, text=True)
     assert p.returncode == 0
     assert run("")[0] == 0
+
+
+def test_commands_hidden_inside_other_commands_are_refused():
+    for cmd in ("bash -c 'rm -rf /'", 'sh -c "rm -rf /etc"', "zsh -lc 'cd x && rm -rf ~'", "eval rm -rf /", "eval 'rm' '-rf' '/'", "ssh deploy@host 'rm -rf /home'",
+                "ssh -p 2222 deploy@host rm -rf /", "bash -c \"bash -c 'rm -rf /'\"", "echo go | xargs rm -rf", "ls | xargs -n1 sudo rm -r", "sudo -u root rm -rf /",
+                "env FOO=1 rm -rf /", "FOO=1 BAR=2 rm -rf /", "timeout -s KILL 5 rm -rf /", "nice -n 5 rm -rf /", "find / -delete", "find / -name x -exec rm -rf {} +",
+                'echo "$(rm -rf /)"', "echo `rm -rf /`", "x=$(rm -rf ~)", "bash <<EOF\nrm -rf /\nEOF", "ssh host <<'EOF'\nrm -rf /\nEOF", "xargs bash -c 'rm -rf /'",
+                "bash -c 'terraform apply'", "ssh host kubectl apply -f x.yaml"):
+        code, why = run(cmd)
+        assert code == 2 and why.startswith("Refused"), cmd
+
+
+def test_quoting_tricks_do_not_hide_a_command_after_a_fake_here_document():
+    for cmd in ("echo '<<X'\nrm -rf /\nX", 'echo "<<X"\nrm -rf /\nX', "echo $((1<<2))\nrm -rf /\n2", "echo <<<hi\nrm -rf /\nhi", "echo x # <<X\nrm -rf /\nX",
+                "git commit -m 'a\n<<EOF\n'\nrm -rf /\nEOF"):
+        assert run(cmd)[0] == 2, cmd
+
+
+def test_a_command_that_cannot_be_read_is_refused_only_when_it_mentions_something_guarded():
+    for cmd in ('echo "oops; rm -rf /', "echo 'oops; deploy/deploy.sh", 'bash -c "echo (; rm -rf /'):
+        code, why = run(cmd)
+        assert code == 2 and "could not be read" in why, cmd
+    for cmd in ('echo "oops', "git commit -m 'unfinished", "ls (("):
+        assert run(cmd)[0] == 0, cmd
+
+
+def test_a_production_command_needs_its_own_dry_run_flag():
+    for cmd in ("terraform apply # plan", "terraform apply && terraform plan", "kubectl apply -f x.yaml; echo --dry-run", "npm publish # --dry-run", "docker push img"):
+        assert run(cmd)[0] == 2, cmd
+    for cmd in ("kubectl apply -f x.yaml --dry-run=client", "npm publish --dry-run", "terraform plan", "kubectl diff -f x.yaml", "bash -c 'kubectl apply -f x --dry-run=server'"):
+        assert run(cmd)[0] == 0, cmd
+
+
+def test_harmless_wrapped_and_multiline_commands_still_run():
+    for cmd in ("bash -c 'ls -la'", 'bash -c "rm -rf /tmp/claude-1000/scratch/x"', "ssh deploy@host 'docker ps'", "find . -name '*.pyc' -delete", "find /tmp/x -delete",
+                "find . -name x | xargs rm -f", "xargs echo hi", "sudo -u fahad ls", "env FOO=1 ls", "echo $((1<<2))\nrm -rf build", 'git commit -m "line one\nline two: don\'t panic"',
+                "git commit -m \"$(cat <<'EOF'\nfix: the rm -rf / guard (it's fine)\nsecond \"quoted\" line\nEOF\n)\"", "bash script.sh <<EOF\nls\nEOF",
+                "cat <<EOF | bash\nls\nEOF"):
+        assert run(cmd)[0] == 0, cmd
+
+
+def test_other_spellings_of_the_root_are_refused_and_named_folders_are_not():
+    for cmd in ("rm -rf //", "rm -rf /tmp/..", "rm -rf /./", "rm -rf /usr//", "rm -rf /home/../etc"):
+        assert run(cmd)[0] == 2, cmd
+    for cmd in ("rm -rf /tmp/claude-1000/x", "rm -rf /tmp//claude-1000/x/", "rm -rf /var/tmp/build"):
+        assert run(cmd)[0] == 0, cmd
