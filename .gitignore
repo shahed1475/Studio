@@ -39,3 +39,8 @@ job.pid
 reference_meta.json
 pinned_topics.json
 backups/
+
+# third-party skill installs and plugin telemetry: never commit (docs/AUDIT_2026-10-24.md A11); skills come in through extend.py
+.agents/
+skills-lock.json
+.cto-toolkit/
