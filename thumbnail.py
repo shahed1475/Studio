@@ -244,6 +244,10 @@ def art_subject(meta: dict, chat=None) -> str:
     """One sentence naming the single scene to paint for the thumbnail, taken from what the video covers (never invented, never a real living person)."""
     import seo
 
+    if meta.get("thumb_scene"):  # a scene chosen by a person (or an engineer who has seen the pictures) wins over the writer's guess
+        scene = seo.clean_sentences(str(meta["thumb_scene"]))[:220]
+        if len(scene.split()) >= 4:
+            return scene
     topic = seo.plain(meta.get("topic") or meta.get("title", ""))[:100]
     outline = "; ".join(c.get("title", "") for c in meta.get("chapters", []) if c.get("title"))[:400]
     opening = " ".join(l.get("text", "") for l in meta.get("lines", [])[:3])[:400]
@@ -267,7 +271,7 @@ def make_art(folder: Path, meta: dict, hook: str, now=None, chat=None) -> list[s
     """Two thumbnails on a freshly drawn picture (hook bottom left, hook centred). Empty when nothing could be drawn: the caller then uses the video's frames."""
     import aiart
 
-    got = aiart.thumbnail_art(art_subject(meta, chat), now)
+    got = aiart.thumbnail_art(art_subject(meta, chat), now, **({"style": meta["art_style"]} if meta.get("art_style") == "3d" else {}))  # a 3D video gets a 3D picture
     if not got:
         return []
     out = folder / "thumbs"

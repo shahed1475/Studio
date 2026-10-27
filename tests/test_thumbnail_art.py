@@ -121,3 +121,25 @@ def test_the_thumbnail_and_the_scene_pictures_use_their_own_configured_models(ar
     aiart.generate("A line.", "farmhouse", "Bell Witch", now=NOW)
     assert sent == ["google/gemini-3.1-flash-image", "google/gemini-3.1-flash-lite-image"]
     assert modelcfg.DEFAULTS["thumbnail_art"] == "google/gemini-3.1-flash-image" and modelcfg.DEFAULTS["scene_art"] == "google/gemini-3.1-flash-lite-image"
+
+
+def test_a_3d_video_gets_a_3d_style_thumbnail_picture_and_the_plain_one_is_unchanged(art, monkeypatch, tmp_path):
+    """27 Oct, Mami Wata v2: the video is 3D animated but its thumbnail was a dim painterly scene; the 3D golden-hour woman with her comb was the best image of the day."""
+    got3d = aiart.thumbnail_art("a woman on a rock holding a golden comb", now=NOW, style="3d")
+    plain = aiart.thumbnail_art("a woman on a rock holding a golden comb", now=NOW)
+    assert got3d and plain and got3d[0] != plain[0]
+    assert "3D animated" in art[0] and "3D animated" not in art[1] and "No text" in art[0] and "left and bottom" in art[0]
+    seen = []
+    monkeypatch.setattr(aiart, "thumbnail_art", lambda scene, now=None, **k: seen.append(k) or None)
+    folder = tmp_path / "v"
+    folder.mkdir()
+    thumbnail.make_art(folder, {**META, "art_style": "3d"}, "HOOK", now=NOW, chat=lambda p: {"scene": "A woman with a golden comb on a rock"})
+    thumbnail.make_art(folder, META, "HOOK", now=NOW, chat=lambda p: {"scene": "A woman with a golden comb on a rock"})
+    assert seen == [{"style": "3d"}, {}]
+
+
+def test_a_scene_set_by_hand_wins_over_the_writers_choice_and_is_cleaned():
+    asked = []
+    meta = {**META, "thumb_scene": "A dignified water spirit with a golden comb on a rock at golden hour. See evil.com now."}
+    scene = thumbnail.art_subject(meta, chat=lambda p: asked.append(p) or {"scene": "something else entirely"})
+    assert "golden comb" in scene and "evil.com" not in scene and asked == []

@@ -529,6 +529,8 @@ def main() -> None:
         print(f"analysis of {a[1]} by {res['model']}: {res['summary']}")
         for p in res["problems"]:
             print(f"  {p['at_s'] // 60}:{p['at_s'] % 60:02d} [{p['severity']}] {p['what']}")
+        if res.get("ignored_impossible_times"):
+            print(f"({res['ignored_impossible_times']} finding(s) ignored: their time is after the end of the video, so treat this report as leads to check, not facts)")
         print(f"{len(res['problems'])} problem(s). {res['coverage']}" + (f" Cost ${res['cost']:.3f}." if isinstance(res.get('cost'), (int, float)) else ""))
     elif a[0] == "score-thumbnails":
         import thumbscore

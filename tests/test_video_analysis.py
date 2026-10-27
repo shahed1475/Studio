@@ -29,6 +29,7 @@ def world(tmp_path, monkeypatch):
         return dst
 
     monkeypatch.setattr(videoinspect, "_shrink_for_analysis", shrink)
+    monkeypatch.setattr(videoinspect, "_video_seconds", lambda path: 348.0)
     return folder
 
 
@@ -132,3 +133,10 @@ def test_a_reply_cut_off_by_the_output_limit_says_so_instead_of_no_json(world):
     cut = {"choices": [{"finish_reason": "length", "message": {"content": '```json\n{"summary": "The video'}}]}
     got = videoinspect.gemini_analyze(world, post=lambda b, k: cut)
     assert "ran out of output room" in got["error"]
+
+
+def test_problems_at_a_time_after_the_end_of_the_video_are_dropped_and_counted(world):
+    """Real runs, 27 Oct 2026: Gemini listed problems at 7:33, 8:20 and 9:00 in a 5:48 video. A time that cannot exist is a sign its other findings need checking."""
+    got = videoinspect.gemini_analyze(world, post=lambda b, k: answer({"summary": "ok", "problems": [{"at_s": 75, "what": "Wrong house", "severity": "low"}, {"at_s": 453, "what": "Repeated image", "severity": "medium"},
+                                                                                                  {"at_s": 540, "what": "Another repeat", "severity": "medium"}]}))
+    assert [p["at_s"] for p in got["problems"]] == [75] and got["ignored_impossible_times"] == 2

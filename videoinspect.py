@@ -459,6 +459,16 @@ def _shrink_for_analysis(src: Path, dst: Path, height: int) -> Path | None:
     return dst if r.returncode == 0 and dst.exists() else None
 
 
+def _video_seconds(path: Path) -> float | None:
+    """The length of a video file in seconds, or None when it cannot be read."""
+    import subprocess
+
+    try:
+        return float(subprocess.check_output(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)], text=True, timeout=60))
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
 def gemini_analyze(folder: Path, post=None) -> dict:
     """Ask a Gemini model to watch one of OUR OWN finished videos and say what is wrong: pictures that do not fit the narration, garbled text in pictures, caption or
     audio trouble, dull stretches, anything that misleads against the title. Returns {model, summary, problems, coverage} (also saved as video_analysis.json in the
@@ -504,14 +514,18 @@ def gemini_analyze(folder: Path, post=None) -> dict:
         if body["choices"][0].get("finish_reason") == "length":
             return {"error": "the model ran out of output room before it finished its answer; nothing was kept"}
         got = llm.parse_json(body["choices"][0]["message"]["content"])
-        problems = []
+        problems, impossible = [], 0
+        length = _video_seconds(folder / "video.mp4")
         for p in got.get("problems", []) if isinstance(got.get("problems"), list) else []:
             at, what = p.get("at_s"), seo.plain(p.get("what", ""))[:200]
             if isinstance(at, bool) or not isinstance(at, (int, float)) or not what or seo.linky(what) or seo.INSTRUCTION_WORDS.search(what):
                 continue
+            if length and at > length + 2:  # a time after the end of the video cannot be right (real runs listed problems at 9:00 in a 5:48 video)
+                impossible += 1
+                continue
             sev = p.get("severity") if p.get("severity") in ("low", "medium", "high") else "low"
             problems.append({"at_s": int(at), "what": what, "severity": sev})
-        result = {"model": model, "at": _now().strftime("%Y-%m-%dT%H:%M:%SZ"), "summary": seo.plain(got.get("summary", ""))[:400], "problems": problems[:12],
+        result = {"model": model, "at": _now().strftime("%Y-%m-%dT%H:%M:%SZ"), "summary": seo.plain(got.get("summary", ""))[:400], "problems": problems[:12], "ignored_impossible_times": impossible,
                   "coverage": f"The whole video was sent re-encoded at {height}p, 8 frames a second, mono audio. Gemini samples frames itself, so this is not a frame-by-frame inspection.",
                   "cost": (body.get("usage") or {}).get("cost")}
         try:

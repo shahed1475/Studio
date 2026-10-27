@@ -102,13 +102,18 @@ THUMB_STYLE = ("YouTube thumbnail illustration, 16:9 widescreen. Dramatic cinema
                "No text, no letters, no numbers, no logos, no watermark, no real person likeness.")
 
 
-def thumbnail_art(scene: str, now: dt.datetime | None = None):
+THUMB_3D = ("YouTube thumbnail, 16:9 widescreen. Stylized 3D animated film still, soft CGI render like a modern family animated feature, warm volumetric golden-hour light, rich saturated colour, "
+            "ONE clear focal character with an expressive face in the right two thirds, darker uncluttered space on the left and bottom. Do not invent details that are not in the scene "
+            "description. No text, no letters, no numbers, no logos, no watermark, no real person likeness.")
+
+
+def thumbnail_art(scene: str, now: dt.datetime | None = None, style: str | None = None):
     """(file, credit) for a 1280x720 thumbnail picture of one scene, or None when drawing is off, over the dollar cap, or failed. Competitors' best thumbnails
     show one clear subject with a strong mood, which archive photos and old maps rarely do; the picture is always labelled as AI art (the credit)."""
     now = now or llm._now()
     if not enabled(now) or llm.spent_today(now) >= llm.load_config()["daily_budget_usd"]:
         return None
-    prompt = f"{THUMB_STYLE} Subject: {_clean(scene, 220)}."
+    prompt = f"{THUMB_3D if style == '3d' else THUMB_STYLE} Subject: {_clean(scene, 220)}."
     dest = config.CACHE / "art" / ("thumb-" + hashlib.md5(prompt.encode()).hexdigest()[:16] + ".jpg")
     if dest.exists():
         return dest, CREDIT
