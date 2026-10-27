@@ -9,12 +9,13 @@ from pathlib import Path
 
 import compliance
 import llm
+import rulesfile
 import scriptgen
 
 LOUD_RANGE = (-17.5, -12.0)  # integrated LUFS that need no warning: YouTube's reference is -14; our -16 renders and the new -14 ones both sit inside
-PACE_RANGE = (105, 175)  # words a minute: the toolkit reviewed on 21 Oct 2026 calls 140 to 160 standard and warns outside 110 to 170; our videos measured 134 to 150
-LIMITS = {"doc": {"duration": (180, 900), "size": (1920, 1080), "words": 400},
-          "short": {"duration": (20, 180), "size": (1080, 1920), "words": 100}}
+PACE_RANGE = rulesfile.rng("benchmarks", "pace_wpm")  # words a minute (config/rules.json; 105 to 175 since 21 Oct 2026, our videos measured 132 to 150)
+LIMITS = {"doc": {"duration": rulesfile.rng("limits", "doc_duration_s"), "size": (1920, 1080), "words": 400},
+          "short": {"duration": rulesfile.rng("limits", "short_duration_s"), "size": (1080, 1920), "words": 100}}
 
 
 def _c(name: str, ok: bool, detail: str, severity: str = "block") -> dict:

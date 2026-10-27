@@ -342,9 +342,26 @@ def supply(now: dt.datetime | None = None) -> dict:
         return ind("supply", "Next documentary", "ok", f"{what}: Autopilot starts on it {nxt['starts_us']}", controls)
     at = dt.datetime.fromisoformat(nxt["at"].replace("Z", "+00:00"))
     urgent = at - now < dt.timedelta(hours=24 + 6) and nxt["status"] == "empty"
-    how = {"repairing": "a draft is being repaired", "checking": "a draft is being checked", "empty": "nothing is ready, a new documentary is being made"}[nxt["status"]]
+    how = {"repairing": "a draft is being repaired", "checking": "a draft is being checked", "empty": "nothing is ready, a new documentary is being made",
+           "paused": "the weekly pace cap has paused this slot"}.get(nxt["status"], f"slot status: {nxt['status']}")  # never a KeyError on a status added later (28 Oct: 'paused' blanked the whole card)
     return ind("supply", "Next documentary", "act" if urgent else "watch", f"{what}: {how}", controls,
                "Check the Autopilot page: it should be working on this now. If money is the reason, top up OpenRouter." if urgent else "")
+
+
+def growth_rules(now: dt.datetime | None = None) -> dict:
+    """The growth rules file (config/rules.json, rulesfile.py): is it readable, current, and are there changes waiting for the owner."""
+    import rulesfile
+
+    r = rulesfile.load()
+    stale = rulesfile.stale_days(r, now)
+    pending, problems = r["pending_changes"], r["_problems"]
+    level = "watch" if (stale is not None or pending or problems) else "ok"
+    ev = f"rules {r['rules_version']}, last verified {r['last_verified']}. "
+    ev += (f"Not verified for {stale} days (limit {rulesfile.STALE_DAYS}). " if stale is not None else "")
+    ev += (f"{len(pending)} proposed change(s) wait for you. " if pending else "") + ("; ".join(problems[:2]) + ". " if problems else "")
+    return ind("growth_rules", "Growth rules (rules.json)", level, ev.strip(),
+               "defaults when the file is bad; agents can only propose changes, you approve them (run.py rules); four hard rules no file can change",
+               "Run `python run.py rules` to see the proposed changes, then `rules approve <id>` or `rules reject <id>`; `rules verify` when the rules still hold." if level != "ok" else "")
 
 
 def tenants(now: dt.datetime | None = None) -> dict | None:
@@ -494,7 +511,7 @@ def assess(now: dt.datetime | None = None, out: Path | None = None, left: float 
         key = llm.api_key()
         left = credit_left(key) if key else None
     run = running_jobs() if running is None else running
-    rows = [facts(vs), rights(vs), pattern(vs, now), money(left, daily_spend()), process(run, worker_starts(now)), skills(), access(), publishing(vs, now), supply(now), rules(vs, now), login(now), backups(now), agents_row(now)]
+    rows = [facts(vs), rights(vs), pattern(vs, now), money(left, daily_spend()), process(run, worker_starts(now)), skills(), access(), publishing(vs, now), supply(now), rules(vs, now), growth_rules(now), login(now), backups(now), agents_row(now)]
     t = tenants(now)
     if t:
         rows.append(t)

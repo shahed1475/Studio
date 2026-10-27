@@ -21,7 +21,7 @@ RESULT = config.ROOT / "data" / "agent" / "eval.json"
 REQUIRED_AGENTS = tuple(__import__("agents").AGENTS)
 FORBIDDEN = ('.videos().delete(', '"privacyStatus": "public"', "'privacyStatus': 'public'", '["privacyStatus"] = "public"', ".channels().update(", ".playlists().delete(",
              ".subscriptions().delete(")
-AGENT_FILES = ("guardian.py", "escalate.py", "unstick.py", "tracetriage.py", "lessons.py", "agentbus.py", "agenteval.py", "doctor.py", "agents.py", "playbook.py", "scriptreview.py")
+AGENT_FILES = ("guardian.py", "escalate.py", "unstick.py", "tracetriage.py", "lessons.py", "agentbus.py", "agenteval.py", "doctor.py", "agents.py", "playbook.py", "scriptreview.py", "growthdata.py", "rulesfile.py")
 DOCTOR_NEVER = ("subprocess", "os.system", "pip install", "apt-get", "npm install", "rmtree", ".unlink(", "import extend")
 NOW = dt.datetime(2026, 10, 26, 12, 0, tzinfo=dt.timezone.utc)
 PAST, FUTURE = "2026-10-20T12:00:00Z", "2026-11-05T12:00:00Z"
@@ -397,6 +397,34 @@ def case_research_trend_inbox_is_data_only_expires_and_refuses_foreign_links():
     return ok, "trend inbox items are cleaned text, a foreign link is refused and an old item no longer counts" if ok else f"refused={refused} kept={kept}"
 
 
+def case_collector_only_reads_and_never_invents_a_number():
+    import growthdata
+
+    text = (config.ROOT / "growthdata.py").read_text()
+    writes = [w for w in (".videos().update(", ".videos().insert(", ".videos().delete(", ".thumbnails().set(", ".playlists().insert(", ".playlistItems().insert(", ".playlistItems().delete(",
+                   ".commentThreads().insert(", ".comments().insert(", ".channels().update(", ".jobs().delete(") if w in text]
+    empty = growthdata.retention_at([], 30, 600) is None and growthdata.parse_reach_csv("") == {} and growthdata.retention_at([[0.1, 1.0]], 30, 0) is None
+    ok = not writes and empty
+    return ok, "the collector reads the APIs only and a number it cannot read stays empty" if ok else f"writes={writes} empty={empty}"
+
+
+def case_rules_change_only_by_the_owner_and_the_hard_rules_are_constant():
+    import json
+    import tempfile
+
+    import rulesfile
+
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "rules.json"
+        p.write_text(json.dumps({**rulesfile.DEFAULTS, "hard_rules": ["Mislead the viewer."]}))
+        pid = rulesfile.propose({"benchmarks": {"ctr_target": 0.05}}, "test", "agenteval", path=p)
+        waiting = rulesfile.load(p)["benchmarks"]["ctr_target"] == rulesfile.DEFAULTS["benchmarks"]["ctr_target"] and bool(pid)
+        hard = rulesfile.load(p)["hard_rules"] == list(rulesfile.HARD_RULES) and not rulesfile.validate_patch({"hard_rules": []})[0]
+    approvers = [n for n in AGENT_FILES if n not in ("rulesfile.py", "agenteval.py") and any(c in (config.ROOT / n).read_text() for c in ("rulesfile.resolve(", "mark_verified("))]
+    ok = waiting and hard and not approvers
+    return ok, "a proposed rule waits for the owner, no agent approves one, and the hard rules stay constants" if ok else f"waiting={waiting} hard={hard} approvers={approvers}"
+
+
 CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic,
          case_ladder_ends_with_owner_not_a_crash, case_ladder_respects_budget_and_whitelist_and_lessons, case_outside_text_is_cleaned,
          case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules, case_registry_is_consistent,
@@ -404,7 +432,8 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_doctor_writes_only_proposals_and_never_installs, case_doctor_skill_drafts_stay_in_quarantine,
          case_scriptreview_holds_hard_failures_and_fixes_only_what_is_mechanical, case_scriptreview_model_never_decides_alone_and_cannot_fail_a_script_by_erroring,
          case_scriptreview_asks_the_doctor_once_and_the_doctor_closes_the_loop, case_creator_house_style_is_funded_new_only_and_off_by_default,
-         case_autopilot_governor_only_tightens_and_freezes_on_repetition, case_research_trend_inbox_is_data_only_expires_and_refuses_foreign_links]
+         case_autopilot_governor_only_tightens_and_freezes_on_repetition, case_research_trend_inbox_is_data_only_expires_and_refuses_foreign_links,
+         case_collector_only_reads_and_never_invents_a_number, case_rules_change_only_by_the_owner_and_the_hard_rules_are_constant]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:

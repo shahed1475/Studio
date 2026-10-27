@@ -705,6 +705,24 @@ def main() -> None:
         import fixer
 
         print(json.dumps(fixer.repair(a[1], extra="--extra" in a), indent=2, default=str))
+    elif a[0] == "growthdata":  # our own per-video numbers from the Analytics and Reporting APIs (read-only)
+        import growthdata
+
+        print(json.dumps(growthdata.collect(), indent=2))
+    elif a[0] == "rules":  # the growth rules file: only the owner approves a proposed change
+        import rulesfile
+
+        sub = a[1] if len(a) > 1 else "show"
+        if sub in ("approve", "reject") and len(a) > 2:
+            print(rulesfile.resolve(a[2], approve=sub == "approve"))
+        elif sub == "verify":
+            print(rulesfile.mark_verified())
+        else:
+            r = rulesfile.load()
+            print(f"rules {r['rules_version']}, last verified {r['last_verified']}" + (f", NOT verified for {rulesfile.stale_days(r)} days" if rulesfile.stale_days(r) else ""))
+            for p in r["pending_changes"]:
+                print(f"pending {p['id']}: {json.dumps(p['patch'])} | why: {p.get('why', '')} | source: {p.get('source', '')}")
+            print("\n".join(f"problem: {x}" for x in r["_problems"]) or "no problems")
     elif a[0] == "tidy-strategies":
         import strategy
 

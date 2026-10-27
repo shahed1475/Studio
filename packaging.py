@@ -5,10 +5,13 @@ Rules come from the packaging skills (.claude/skills/studio-packaging, yt-title-
 import difflib
 import re
 
+import rulesfile
+
 SEARCH_WORDS = {"real", "story", "legend", "mystery", "mysteries", "myth", "myths", "history", "truth", "origin", "origins", "who", "what", "why",
                 "happened", "unsolved", "lost", "secret", "secrets", "true", "ancient", "haunting", "curse", "disappearance", "vanished"}
 VAGUE_START = re.compile(r"^(what|how|why|did|does|do|is|are)\b.*\b(actually|really)\b.*\?$", re.I)
-TITLE_BEST = (40, 62)  # characters: long enough to say something, short enough not to be cut on a phone
+TITLE_BEST = rulesfile.rng("benchmarks", "title_chars")  # characters (config/rules.json): long enough to say something, short enough not to be cut on a phone
+TITLE_HARD_MAX = rulesfile.get("benchmarks", "title_hard_max")  # longer than this is cut on a phone and scored down
 FRONT = 40  # the words that decide the click sit inside the first 40 characters
 
 
@@ -35,7 +38,7 @@ def title_score(title: str, core: str = "", others=()) -> float:
         score += 3.0 * share  # the main phrase up front
         score += 1.0 * (sum(w in low for w in key) / len(key))  # and somewhere at all
     n = len(t)
-    score += 1.5 if TITLE_BEST[0] <= n <= TITLE_BEST[1] else (0.5 if n <= 70 else -2.0)
+    score += 1.5 if TITLE_BEST[0] <= n <= TITLE_BEST[1] else (0.5 if n <= TITLE_HARD_MAX else -2.0)
     score += 0.4 * min(len(SEARCH_WORDS & set(_words(t))), 3)
     if re.search(r"\b[A-Z][a-z]+\b", t[1:]):
         score += 0.5  # a named subject, not a label

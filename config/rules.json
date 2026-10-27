@@ -1,0 +1,83 @@
+{
+  "rules_version": "1.0.0",
+  "last_verified": "2026-10-28",
+  "benchmarks": {
+    "ctr_target": 0.04,
+    "ctr_retest_below": 0.03,
+    "retention_target_pct": 50,
+    "retention_at_30s_min_pct": 40,
+    "shorts_stayed_target_pct": 70,
+    "shorts_min_seconds": 35,
+    "shorts_max_seconds": 58,
+    "long_min_minutes": 8,
+    "long_max_minutes": 14,
+    "views_per_unique_flag": 3,
+    "topic_repeat_block_days": 30,
+    "hook_max_seconds": 15,
+    "rehook_max_seconds": 90,
+    "title_chars": [
+      40,
+      62
+    ],
+    "title_hard_max": 70,
+    "pace_wpm": [
+      105,
+      175
+    ],
+    "pace_target_wpm": [
+      140,
+      155
+    ],
+    "thumb_words": [
+      2,
+      4
+    ]
+  },
+  "limits": {
+    "doc_duration_s": [
+      180,
+      900
+    ],
+    "short_duration_s": [
+      20,
+      180
+    ]
+  },
+  "policy_constraints": [
+    {
+      "id": "inauthentic_content",
+      "status": "UNVERIFIED",
+      "source": "owner's content prompt, 'clarified July 2026'; not re-read from YouTube's page",
+      "summary": "No generic, template or mass-produced videos with little variation; an original element and two sources beyond Wikipedia."
+    },
+    {
+      "id": "synthetic_disclosure",
+      "status": "VERIFIED",
+      "source": "compliance.RULES ai_disclosure, YouTube Help page watched daily",
+      "summary": "Disclose realistic altered or synthetic media; every upload sets containsSyntheticMedia."
+    },
+    {
+      "id": "distressing_content",
+      "status": "UNVERIFIED",
+      "source": "owner's content prompt, 'July 2026'",
+      "summary": "No distressing or shock content made to farm views."
+    }
+  ],
+  "banned_patterns": [
+    "description starts with 'Sources:'",
+    "encyclopedia-style titles",
+    "title longer than title_hard_max"
+  ],
+  "insights": {
+    "winning_title_patterns": [],
+    "winning_topics": [],
+    "losing_patterns": []
+  },
+  "pending_changes": [],
+  "history": [],
+  "unverified": [
+    "A Short's related video, a pinned comment and Test and Compare can be set through the API (the spec assumes it).",
+    "A unique-viewers metric: the Analytics API answered 'Unknown identifier' for uniques on 28 Oct 2026, so views per unique viewer cannot be read from it.",
+    "Every channel figure quoted in the owner's prompts (CTR, retention, unique viewers)."
+  ]
+}

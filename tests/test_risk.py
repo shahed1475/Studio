@@ -132,9 +132,9 @@ def test_publishing_risk_names_unchecked_videos_going_public_soon_and_failed_rea
     assert risk.publishing(risk.videos(), NOW)["level"] == "act"
 
 
-def test_assess_returns_all_thirteen_and_summary_counts():
+def test_assess_returns_all_fourteen_and_summary_counts():
     rows = risk.assess(NOW, left=10.0, running=[])
-    assert [r["id"] for r in rows] == ["facts", "rights", "platform", "money", "process", "skills", "access", "publishing", "supply", "rules", "login", "backup", "agents"]
+    assert [r["id"] for r in rows] == ["facts", "rights", "platform", "money", "process", "skills", "access", "publishing", "supply", "rules", "growth_rules", "login", "backup", "agents"]
     assert set(risk.summary(rows)) == {"act", "watch", "ok"} and all(r["controls"] for r in rows)
 
 

@@ -6,6 +6,7 @@ AGENTS = {
     "autopilot": {"job": "autopilot", "cmds": ["autopilot"], "hands_to": ["research", "creator", "fixer", "publisher", "reviewer"]},
     "research": {"job": "trendwatch", "cmds": ["ideas", "research", "trends", "channels", "trend-import"], "hands_to": ["creator"]},
     "growth": {"job": "agent", "cmds": ["agent"], "hands_to": ["research"]},
+    "collector": {"job": "growthdata", "cmds": ["growthdata"], "hands_to": ["growth"]},
     "news": {"job": "policywatch", "cmds": ["newswatch", "policywatch"], "hands_to": ["creator", "guardian"]},
     "creator": {"job": None, "cmds": ["doc", "make", "redo", "remake", "batch"], "hands_to": ["scriptreview", "seo", "reviewer"]},
     "scriptreview": {"job": None, "cmds": ["script-review"], "hands_to": ["creator", "doctor"]},

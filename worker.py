@@ -31,6 +31,7 @@ JOBS = [
     {"name": "titletest", "at": "08:00", "cmds": [["titletest"]], "timeout": 900},
     {"name": "policywatch", "at": "06:10", "cmds": [["policywatch"]], "timeout": 900},
     {"name": "agent", "at": "06:30", "cmds": [["agent"]], "timeout": 1800},
+    {"name": "growthdata", "every": 21600, "cmds": [["growthdata"]], "timeout": 900},  # the channel's own per-video numbers: young videos every 6 hours, older ones daily (growthdata.due)
     {"name": "trendwatch", "at": "06:00", "cmds": [["trends"], ["channels"]], "timeout": 3600},  # daily: what is taking off in the niche and in the reference channels (about 1,100 of the 10,000 daily API units: 6 + 4 searches at 100 each, about 120 for the channels)
     {"name": "weekly", "at": "09:00", "weekday": 0, "cmds": [["newswatch"]], "timeout": 3600},
 ]
