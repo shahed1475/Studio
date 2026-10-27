@@ -191,7 +191,7 @@ def _nested(tokens: list[str]) -> tuple[list[str], list[list[str]]]:
     if name in SHELLS:
         for i, a in enumerate(t[1:], 1):  # after the first -c group (-c, -ec, -xo ... -c) every later word may be the command text, whatever options come between
             if a[:1] in "-+" and not a.startswith("--") and "c" in a[1:]:
-                texts += [b for b in t[i + 1:] if b[:1] not in "-+"]
+                texts += t[i + 1:]  # no filter: after `--` the command text may itself start with - or +
                 break
     elif name == "eval":
         texts.append(" ".join(t[1:]))

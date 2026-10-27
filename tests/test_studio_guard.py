@@ -109,3 +109,9 @@ def test_the_command_text_may_come_after_more_options_than_the_c_flag():
     for cmd in ("bash -c -o pipefail 'rm -rf /'", "bash -co pipefail 'rm -rf /'", "sh -c -e 'rm -rf /etc'"):
         assert run(cmd)[0] == 2, cmd
     assert run("bash -c -o pipefail 'ls'")[0] == 0
+
+
+def test_command_text_that_starts_with_a_dash_or_plus_is_still_checked():
+    for cmd in ("bash -c -- '-x; rm -rf /'", "bash -c -- '+x; rm -rf /'", "sh -c -- '-e; rm -rf /etc'"):
+        assert run(cmd)[0] == 2, cmd
+    assert run("bash -c -- '-x; ls'")[0] == 0
