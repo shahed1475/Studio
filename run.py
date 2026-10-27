@@ -329,6 +329,7 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
     data = _apply_house_style(data, "doc", folder)
 
     slug = "doc-" + re.sub(r"[^a-z0-9]+", "-", data["title"].lower()).strip("-")[:45]
+    in_place = folder is not None  # a re-render inside an existing video's folder: that folder is never removed (28 Oct 2026: a re-render at the picture budget removed a whole video)
     folder = folder or unique_folder(config.OUT / slug)
     work = folder / "work"
     folder.mkdir(parents=True, exist_ok=True)
@@ -354,7 +355,7 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
         print(f"  only {stats['unique']} different pictures for {stats['scenes']} scenes: drawing more")
         clips, credits, stats = footage.scene_images(data["lines"], data["topic"], anchors, art_limit=aiart.MAX_PER_VIDEO["doc"] + aiart.EXTRA_FOR_VARIETY, **pics)
     if stats["missing"] or stats["unique"] < 6:
-        shutil.rmtree(folder, ignore_errors=True)
+        shutil.rmtree(work if in_place else folder, ignore_errors=True)
         raise SystemExit(f"only {stats['unique']} on-topic images found ({stats['missing']} scenes without one); "
                          "not rendering a video of unrelated pictures")
     clips, credits, anim = _animate(data, clips, credits)  # some drawn scenes become short moving clips when the video asks for it

@@ -82,15 +82,15 @@ def generate(line: str, visual: str, topic: str, vertical: bool = False, now: dt
     """(file, credit) for a new illustration of this scene, or None when drawing is off, over the dollar cap, or failed. style "3d": a 3D animated-film look
     (its own, better model: these pictures become the first frames of animated clips)."""
     now = now or llm._now()
+    prompt = prompt_for(line, visual, topic, vertical, style)
+    dest = config.CACHE / "art" / (hashlib.md5(prompt.encode()).hexdigest()[:16] + ".jpg")
+    if dest.exists():  # a picture already drawn costs nothing, so it is served even when drawing is off or the day's budget is spent (a re-render at the cap found no pictures)
+        return dest, credit_for(style)
     if not enabled(now):
         return None
     cfg = llm.load_config()
     if llm.spent_today(now) >= cfg["daily_budget_usd"]:
         return None
-    prompt = prompt_for(line, visual, topic, vertical, style)
-    dest = config.CACHE / "art" / (hashlib.md5(prompt.encode()).hexdigest()[:16] + ".jpg")
-    if dest.exists():
-        return dest, credit_for(style)
     try:
         model = modelcfg.get("scene_art_3d" if style == "3d" else "scene_art")
         body = llm._post({"model": model, "modalities": ["image", "text"], "messages": [{"role": "user", "content": prompt}]}, llm.api_key())
@@ -129,12 +129,12 @@ def thumbnail_art(scene: str, now: dt.datetime | None = None, style: str | None 
     """(file, credit) for a 1280x720 thumbnail picture of one scene, or None when drawing is off, over the dollar cap, or failed. Competitors' best thumbnails
     show one clear subject with a strong mood, which archive photos and old maps rarely do; the picture is always labelled as AI art (the credit)."""
     now = now or llm._now()
-    if not enabled(now) or llm.spent_today(now) >= llm.load_config()["daily_budget_usd"]:
-        return None
     prompt = f"{THUMB_3D if style == '3d' else THUMB_PHOTO if style == 'photo' else THUMB_STYLE} Subject: {_clean(scene, 220)}."
     dest = config.CACHE / "art" / ("thumb-" + hashlib.md5(prompt.encode()).hexdigest()[:16] + ".jpg")
-    if dest.exists():
+    if dest.exists():  # already drawn: served for free whatever the budget
         return dest, credit_for(style)
+    if not enabled(now) or llm.spent_today(now) >= llm.load_config()["daily_budget_usd"]:
+        return None
     try:
         model = modelcfg.get("thumbnail_art")
         body = llm._post({"model": model, "modalities": ["image", "text"], "messages": [{"role": "user", "content": prompt}]}, llm.api_key())
