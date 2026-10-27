@@ -103,3 +103,9 @@ def test_review_round_three_bypasses_are_refused():
     for cmd in ("find . -name x -exec sh -c 'echo {}' \;", "find /tmp/x -exec sh -c 'ls {}' \;", "bash -xo pipefail -c 'ls'", "bash script.sh arg", "echo $(( 1 + 2 ))",
                 "echo $(( `echo 1` + 2 ))"):
         assert run(cmd)[0] == 0, cmd
+
+
+def test_the_command_text_may_come_after_more_options_than_the_c_flag():
+    for cmd in ("bash -c -o pipefail 'rm -rf /'", "bash -co pipefail 'rm -rf /'", "sh -c -e 'rm -rf /etc'"):
+        assert run(cmd)[0] == 2, cmd
+    assert run("bash -c -o pipefail 'ls'")[0] == 0
