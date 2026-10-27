@@ -4,7 +4,7 @@ Used by the doctor (which agents should have run lately), by the evaluation (eve
 unreachable) and by `playbook.acting_as` (which playbook a command or Autopilot action works under). Cadences come from the worker's own job list."""
 AGENTS = {
     "autopilot": {"job": "autopilot", "cmds": ["autopilot"], "hands_to": ["research", "creator", "fixer", "publisher", "reviewer"]},
-    "research": {"job": "weekly", "cmds": ["ideas", "research", "trends", "channels"], "hands_to": ["creator"]},
+    "research": {"job": "trendwatch", "cmds": ["ideas", "research", "trends", "channels", "trend-import"], "hands_to": ["creator"]},
     "growth": {"job": "agent", "cmds": ["agent"], "hands_to": ["research"]},
     "news": {"job": "policywatch", "cmds": ["newswatch", "policywatch"], "hands_to": ["creator", "guardian"]},
     "creator": {"job": None, "cmds": ["doc", "make", "redo", "remake", "batch"], "hands_to": ["scriptreview", "seo", "reviewer"]},

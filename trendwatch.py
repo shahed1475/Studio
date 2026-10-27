@@ -9,7 +9,7 @@ import config
 import scriptgen
 
 DATA_DIR = config.ROOT / "data" / "trends"
-SEEDS = ["history stories for sleep", "unsolved mysteries history documentary", "folklore legends explained", "medieval legends true story"]
+SEEDS = ["unsolved mysteries history documentary", "folklore legends explained", "medieval legends true story", "history stories for sleep"]  # the daily fresh search uses the first two: "sleep" phrases bring multi-hour compilations
 PATTERNS = {
     "question": re.compile(r"\?"),
     "real_story": re.compile(r"\b(real story|true story|really happened|what happened)\b", re.I),
@@ -91,7 +91,7 @@ def search_fresh(queries: list[str], yt=None, now: dt.datetime | None = None, da
     for k in range(0, len(ids), 50):
         for v in yt.videos().list(part="snippet,statistics,contentDetails", id=",".join(ids[k:k + 50])).execute().get("items", []):
             secs = iso_seconds(v["contentDetails"]["duration"])
-            if (kind == "short" and not 0 < secs <= 90) or (kind != "short" and secs < 240):
+            if (kind == "short" and not 0 < secs <= 90) or (kind != "short" and not 240 <= secs <= HINT_MAX_DOC):
                 continue
             age = (now - dt.datetime.fromisoformat(v["snippet"]["publishedAt"].replace("Z", "+00:00"))).total_seconds() / 86400
             if age > days:

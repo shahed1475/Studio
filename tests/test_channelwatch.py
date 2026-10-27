@@ -44,7 +44,7 @@ class FakeYT:
         outer = self
         class V:
             def list(self, **kw):
-                return Call({"items": [{"id": v["id"], "snippet": {"title": v["title"], "channelTitle": "Legend Lab", "channelId": "UC123", "publishedAt": "2026-01-01T00:00:00Z"},
+                return Call({"items": [{"id": v["id"], "snippet": {"title": v["title"], "channelTitle": "Legend Lab", "channelId": "UC123", "publishedAt": v.get("at", "2026-01-01T00:00:00Z")},
                                          "statistics": {"viewCount": str(v["views"])}, "contentDetails": {"duration": f"PT{v['sec']}S"}} for v in outer.vids]})
         return V()
 
@@ -148,3 +148,33 @@ def test_breakdown_reports_latest_upload_and_videos_in_the_last_year():
     later = datetime(2028, 1, 1, tzinfo=timezone.utc)
     assert channelwatch.breakdown(FakeYT(VIDS), "@LegendLab", now=later)["recent_year"] == 0
     assert channelwatch.is_active({"recent_year": 3}) and not channelwatch.is_active({"recent_year": 2})
+
+
+def _old(n, views=1000):
+    return [{"id": f"o{i}", "title": f"Old {i}", "views": views, "published": "2026-06-01T00:00:00Z", "seconds": 480} for i in range(n)]
+
+
+def test_fresh_hits_keeps_new_uploads_that_beat_the_channels_own_normal_by_double_or_more():
+    new = [{"id": "n1", "title": "Takes off", "views": 5000, "published": "2026-10-16T00:00:00Z", "seconds": 500},
+           {"id": "n2", "title": "Ordinary", "views": 1200, "published": "2026-10-17T00:00:00Z", "seconds": 500},
+           {"id": "n3", "title": "Too old", "views": 90000, "published": "2026-09-20T00:00:00Z", "seconds": 500}]
+    got = channelwatch.fresh_hits(new + _old(6), NOW)
+    assert [g["id"] for g in got] == ["n1"] and got[0]["score"] == 5.0 and got[0]["age_days"] == 3.5
+
+
+def test_fresh_hits_needs_a_baseline_of_at_least_three_older_uploads():
+    new = [{"id": "n1", "title": "Takes off", "views": 5000, "published": "2026-10-16T00:00:00Z", "seconds": 500}]
+    assert channelwatch.fresh_hits(new + _old(2), NOW) == []
+
+
+def test_fresh_hits_floors_a_tiny_baseline_so_one_lucky_video_on_a_dead_channel_is_not_a_trend():
+    new = [{"id": "n1", "title": "Lucky", "views": 150, "published": "2026-10-16T00:00:00Z", "seconds": 500}]
+    assert channelwatch.fresh_hits(new + _old(5, views=10), NOW) == []  # baseline counts as 100, so 150 views is 1.5 times, not 15
+
+
+def test_breakdown_reports_fresh_hits_without_any_extra_api_call():
+    vids = [{"id": "n1", "title": "Takes off", "views": 5000, "at": "2026-10-16T00:00:00Z", "sec": 500}] + \
+           [{"id": f"o{i}", "title": f"Old {i}", "views": 1000, "at": "2026-06-01T00:00:00Z", "sec": 480} for i in range(5)]
+    yt = FakeYT(vids)
+    out = channelwatch.breakdown(yt, "@LegendLab", now=NOW)
+    assert [f["id"] for f in out["fresh"]] == ["n1"] and len(yt.calls) == 1  # the one channels() lookup that was already made

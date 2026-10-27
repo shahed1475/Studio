@@ -27,6 +27,14 @@ def _isolate_agent_files(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_trend_inbox(tmp_path, monkeypatch):
+    """Trends typed in by a person are the owner's data: no test may read or write the real file."""
+    import trendinbox
+
+    monkeypatch.setattr(trendinbox, "FILE", tmp_path / "trend_inbox.json")
+
+
+@pytest.fixture(autouse=True)
 def _isolate_scriptreview(tmp_path, monkeypatch):
     """The script reviewer keeps results and held scripts under data/agent: a test that goes through the gate must never write the real ones."""
     import scriptreview

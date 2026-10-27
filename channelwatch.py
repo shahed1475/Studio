@@ -6,6 +6,7 @@ built from public-domain legends or documented history; a person decides what en
 import datetime as dt
 import json
 import re
+import statistics
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -103,6 +104,26 @@ def resolve(yt, ref: str) -> dict:
     return {"id": c["id"], "title": c["snippet"]["title"], "uploads": c["contentDetails"]["relatedPlaylists"]["uploads"]}
 
 
+FRESH_MIN_RATIO = 2.0    # a new upload needs at least double the channel's usual views to count as taking off
+FRESH_MIN_BASELINE = 3   # older uploads needed to know what "usual" is
+FRESH_FLOOR = 100        # a baseline under 100 views counts as 100, so one lucky video on a quiet channel is not a trend
+
+
+def fresh_hits(vids: list[dict], now: dt.datetime) -> list[dict]:
+    """Uploads from the last `trendwatch.FRESH_DAYS` days that beat the same channel's usual views (the median of its older uploads) by FRESH_MIN_RATIO
+    or more, best first. Works on videos the weekly scan already fetched: no extra API call."""
+    def age(v):
+        return (now - dt.datetime.fromisoformat(v["published"].replace("Z", "+00:00"))).total_seconds() / 86400
+
+    older = [v["views"] for v in vids if age(v) > trendwatch.FRESH_DAYS]
+    if len(older) < FRESH_MIN_BASELINE:
+        return []
+    usual = max(statistics.median(older), FRESH_FLOOR)
+    hits = [{**{k: v[k] for k in ("id", "title", "channel", "url", "views", "seconds") if k in v}, "age_days": round(age(v), 1), "score": round(v["views"] / usual, 2)}
+            for v in vids if age(v) <= trendwatch.FRESH_DAYS]
+    return sorted((h for h in hits if h["score"] >= FRESH_MIN_RATIO), key=lambda h: -h["score"])
+
+
 def breakdown(yt, ref: str, scan: int = 50, now: dt.datetime | None = None) -> dict:
     ch = resolve(yt, ref)
     ids = [i["contentDetails"]["videoId"] for i in
@@ -115,7 +136,7 @@ def breakdown(yt, ref: str, scan: int = 50, now: dt.datetime | None = None) -> d
     vids.sort(key=lambda x: -x["views"])
     year_ago = (now or dt.datetime.now(dt.timezone.utc)) - dt.timedelta(days=365)
     recent = [v for v in vids if v["published"][:10] >= year_ago.strftime("%Y-%m-%d")]
-    return {"channel": ch["title"], "channel_id": ch["id"], "top": vids[:5], "summary": trendwatch.summarize_videos(vids), "scanned": len(vids),
+    return {"channel": ch["title"], "channel_id": ch["id"], "top": vids[:5], "fresh": fresh_hits(vids, now or dt.datetime.now(dt.timezone.utc))[:3], "summary": trendwatch.summarize_videos(vids), "scanned": len(vids),
             "latest": max((v["published"] for v in vids), default=""), "recent_year": len(recent)}
 
 

@@ -22,9 +22,15 @@ def words(text: str) -> set[str]:
     return {w for w in re.findall(r"[a-z0-9']+", (text or "").lower().replace("’", "'")) if len(w) > 3 and w not in STOP}
 
 
+def _taking_off(v: dict) -> float:
+    """The weight of a video taking off now: its views on the logarithm scale, up to double for a high outlier score."""
+    return math.log10(int(v.get("views", 0)) + 10) * (1 + min(1.0, math.log10(1 + max(0.0, float(v.get("score") or 0)))))
+
+
 def signals() -> list[tuple[set[str], float]]:
     """(words, weight) for each well-viewed video title the studies found; weight grows with the logarithm of its views."""
     import channelwatch
+    import trendinbox
     import trendwatch
 
     out = []
@@ -33,11 +39,16 @@ def signals() -> list[tuple[set[str], float]]:
     fresh = (trendwatch.latest() or {}).get("fresh") or {}
     for kind in ("docs", "shorts"):  # taking off now, judged against the channel's size: up to double the weight of an old hit with the same views
         for v in fresh.get(kind) or []:
-            boost = 1 + min(1.0, math.log10(1 + max(0.0, float(v.get("score") or 0))))
-            out.append((words(v.get("title", "")), math.log10(int(v.get("views", 0)) + 10) * boost))
+            out.append((words(v.get("title", "")), _taking_off(v)))
     for c in ((channelwatch.latest() or {}).get("channels") or []):
+        hot = c.get("fresh") or []  # a new upload that beat its own channel's usual views counts once, boosted, even when it is also in `top`
+        for v in hot:
+            out.append((words(v.get("title", "")), _taking_off(v)))
         for v in c.get("top") or []:
-            out.append((words(v.get("title", "")), math.log10(int(v.get("views", 0)) + 10)))
+            if v.get("title") not in {h.get("title") for h in hot}:
+                out.append((words(v.get("title", "")), math.log10(int(v.get("views", 0)) + 10)))
+    for v in trendinbox.active():  # read from the owner's own Studio Trends tab by a person or assistant: a few lines of public facts
+        out.append((words(v.get("title", "")), _taking_off({**v, "views": max(int(v.get("views", 0)), 1000)})))
     return out
 
 

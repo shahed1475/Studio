@@ -143,3 +143,19 @@ def test_a_digest_without_fresh_data_still_gives_the_old_signals(monkeypatch):
     monkeypatch.setattr(trendwatch, "latest", lambda: {"videos": [{"title": "Old Bell Legend", "views": 1000}]})
     monkeypatch.setattr(channelwatch, "latest", lambda: None)
     assert len(topicrank.signals()) == 1
+
+
+def test_a_reference_channels_fresh_hit_counts_once_and_weighs_more_than_a_plain_top_video_with_the_same_views(monkeypatch):
+    import channelwatch
+    import trendwatch
+
+    monkeypatch.setattr(trendwatch, "latest", lambda: None)
+    hit = {"title": "Fresh Lantern Legend", "views": 50_000, "score": 9.0}
+    plain = {"title": "Old Bell Legend", "views": 50_000}
+    only_fresh = {"title": "Newest Mirror Tale", "views": 8_000, "score": 3.0}
+    monkeypatch.setattr(channelwatch, "latest", lambda: {"channels": [{"top": [hit, plain], "fresh": [hit, only_fresh]}]})
+    sig = topicrank.signals()
+    by = {tuple(sorted(w)): wt for w, wt in sig}
+    assert len(sig) == 3  # the hit that is also in `top` is not counted twice
+    assert by[tuple(sorted(topicrank.words("Fresh Lantern Legend")))] > by[tuple(sorted(topicrank.words("Old Bell Legend")))] * 1.5
+    assert by[tuple(sorted(topicrank.words("Newest Mirror Tale")))] > 0

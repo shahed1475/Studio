@@ -101,3 +101,11 @@ def test_alive_depends_on_fresh_heartbeat(tmp_path, monkeypatch):
     old = time.time() - 600
     os.utime(tmp_path / "hb", (old, old))
     assert worker.alive() is False
+
+
+def test_trend_and_reference_channel_jobs_run_daily_before_the_research_agent_so_autopilot_sees_what_is_taking_off_now():
+    by = {j["name"]: j for j in worker.JOBS}
+    assert by["trendwatch"]["cmds"] == [["trends"], ["channels"]] and "weekday" not in by["trendwatch"]
+    assert by["trendwatch"]["at"] < by["agent"]["at"]  # 06:00 before 06:30
+    weekly_cmds = [c[0] for c in by["weekly"]["cmds"]]
+    assert "trends" not in weekly_cmds and "channels" not in weekly_cmds and "newswatch" in weekly_cmds

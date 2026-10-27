@@ -517,3 +517,15 @@ def test_the_free_model_cache_and_the_login_state_record_never_break_a_model_cal
     assert res["ok"] is False and res["error"] == "expired"                                    # the check still reports the expired login
     assert any("login expired" in e["title"] for e in agentlog.recent(5))
     ytlogin.stamp(dt.datetime(2026, 10, 26, 12, 0, tzinfo=dt.timezone.utc))                     # recording the consent date does not raise either
+
+
+def test_the_trend_inbox_case_passes_and_fails_when_the_link_rule_is_broken(monkeypatch):
+    import re
+
+    import trendinbox
+
+    ok, detail = agenteval.case_research_trend_inbox_is_data_only_expires_and_refuses_foreign_links()
+    assert ok, detail
+    monkeypatch.setattr(trendinbox, "WATCH", re.compile(r".*"))  # mutation: any link accepted
+    ok, detail = agenteval.case_research_trend_inbox_is_data_only_expires_and_refuses_foreign_links()
+    assert not ok and "refused=False" in detail

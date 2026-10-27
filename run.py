@@ -25,6 +25,7 @@
   python run.py newsvideo        make the next queued YouTube-news video
   python run.py subtitles NAME [--burn]   subtitles for a finished video (.srt, and burned in with --burn)
   python run.py trends           weekly niche trend research (YouTube API) + original topic ideas
+  python run.py trend-import FILE.json   keep trending videos a person read in Studio's Trends tab (ranking signal for 14 days)
   python run.py channels         study your reference channels (top videos, themes) + proposals
   python run.py branding "NAME" "TAGLINE"   profile picture, banner and description in branding/
   python run.py approve NAME     mark a reviewed video as ready to upload
@@ -667,6 +668,13 @@ def main() -> None:
 
         d = json.loads(trendwatch.run().read_text())
         print(d.get("error") or f"{len(d['videos'])} videos read, median views {d['summary']['median_views']}, {len(d['ideas'])} topic ideas to review")
+    elif a[0] == "trend-import":  # trends read from the owner's own Studio Trends tab by a person: a JSON file of rows (title, channel, views, age_days, seconds, url)
+        import trendinbox
+
+        done, problems = trendinbox.import_items(json.loads(Path(a[1]).read_text()), source="studio_trends")
+        print(f"{len(done)} trending videos kept for ranking, {len(problems)} skipped")
+        for p in problems:
+            print(" -", p)
     elif a[0] == "subtitles":
         folder = config.OUT / a[1]
         if "--burn" in a:

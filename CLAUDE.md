@@ -168,3 +168,6 @@ Keep my costs low in everything you build or change, especially automations that
 ### 7. How to report
 
 Keep it short. After a task, say what you did and which tool did it (one line), plus anything that needs my attention, such as a sign-in or an install.
+
+## Trend scan (2026-10-27)
+Plan: docs/studio/TREND_PICKER_PLAN_2026-10-27.md. Autopilot sees what is taking off through the official YouTube API only (`trendwatch.search_fresh`, `channelwatch.fresh_hits`; daily job `trendwatch` at 06:00 UTC). YouTube's terms bar automated access without written permission, so no headless browser and no Google session on the server. YouTube Studio's Trends tab has no API: a person (or an assistant in the owner's own Chrome, attended) reads it into `trendinbox` (`run.py trend-import FILE.json`, 14-day signals, data only). The dashboard panel "Taking off now" shows all three. A trend only raises the rank of a topic that still needs its own source article and passes every existing gate.

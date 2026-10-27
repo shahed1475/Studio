@@ -149,3 +149,13 @@ def test_the_length_hint_ignores_multi_hour_sleep_videos_that_would_make_it_mean
     docs = [{"seconds": 9000}, {"seconds": 10000}, {"seconds": 480}, {"seconds": 600}, {"seconds": 720}]
     assert trendwatch.fresh_hint({"docs": docs, "shorts": []}) == {"doc_minutes": 10.0, "short_seconds": 0}
     assert trendwatch.fresh_hint({"docs": [{"seconds": 9000}], "shorts": []})["doc_minutes"] == 0
+
+
+def test_search_fresh_leaves_out_multi_hour_compilations_a_different_product_from_a_six_minute_documentary():
+    yt = FakeYT([_v(1, 300_000, "PT3H40M", 5, "a"), _v(2, 40_000, "PT9M", 5, "a"), _v(3, 20_000, "PT44M", 5, "a"), _v(4, 20_000, "PT50M", 5, "a")], {"a": 1_000})
+    got = trendwatch.search_fresh(["q"], yt, NOW, kind="doc")
+    assert sorted(g["id"] for g in got) == ["v2", "v3"]  # over 45 minutes is left out, 44 minutes stays
+
+
+def test_the_phrases_searched_each_day_ask_about_stories_not_sleep_so_compilations_do_not_fill_the_list():
+    assert not any("sleep" in s for s in trendwatch.SEEDS[:2])  # the first two phrases are the ones the daily fresh search uses

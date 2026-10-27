@@ -647,7 +647,7 @@ class H(BaseHTTPRequestHandler):
             import newswatch
 
             self.send_json({**autopilot_view(), "config": autopilot.load_config(), "status": autopilot.status(),
-                            "news": newswatch.latest_digest(), "trends": __import__("trendwatch").latest(),
+                            "news": newswatch.latest_digest(), "trends": __import__("trendwatch").latest(), "taking_off": __import__("trendinbox").taking_off(),
                             "agent_config": __import__("agent").load_config(),
                             "channels": {"refs": __import__("channelwatch").load_refs(), "digest": __import__("channelwatch").latest(),
                                          "meta": __import__("channelwatch").load_meta(), "max": __import__("channelwatch").MAX_REFS,
