@@ -9,6 +9,13 @@
 - Money spent so far (this project): $0 for this kit setup; studio spend about $2.9 on 24 Oct
 
 ## Log
+### 2026-10-27 - Models registry, thumbnail scoring, animation and 3D (owner: "set the best models, research thumbnails, make Mami Wata animation and 3D")
+- Models and prices verified against OpenRouter's lists and written down: docs/studio/MODELS_2026-10-27.md, `modelcfg.py`, `config/models.json`. SEO is now written by the writer model; thumbnails by Gemini 3.1 Flash image ($0.067, measured clearest of three); thumbnails are scored by Claude vision (`thumbscore.py`, rubric from the competitor research) and the best goes first; `run.py analyze-video` sends one of our OWN videos to Gemini 3.1 Pro (real run found and fixed a thinking-token cut-off; its timestamps are unreliable, impossible ones are dropped).
+- Clip tool: real OpenRouter price fields (the old `per-video-second` keys no longer exist), per-model limits, allowed list, per-token models (Seedance) refused, image-to-video through `frame_images`.
+- Animation and 3D: `animate.py`, `run.py remake <slug> --style 3d --animate N`, `aiart.generate(style="3d")`, 3D thumbnail style. Measured: one scene (picture plus 8 s clip) about $0.31; Mami Wata v2 (35 scenes, 20 drawn, 6 clips) cost about $3.4 in all.
+- Live: Mami Wata v1 (qNqNy3_duqU) HELD and made private (it was scheduled for 22:00Z); v2 = folder doc-mami-wata-the-real-story-behind-the-woman-on-, held, not approved, title "Who Was Mami Wata? The Name Is Just Two English Words", 3D thumbnail scored 8.1. The gate flags v2 for a human look only because it compares it with v1 (same script): clears when v1 is deleted. Owner decides: approve v2, delete v1.
+- Daily money cap raised 3.5 -> 6 -> 9 for this work (backups llm.json.bak-27oct-cap and -cap2 on the server); put it back (about 3.5) when the owner wants.
+- Not verified: whether animation lifts views; Gemini's other findings (audio "dropouts" are the designed 1.1 s pauses between lines, 35 of them; repeats: 30 unique of 35 scenes).
 ### 2026-10-27 - Growth research and first changes (owner: "research competitors, improve all videos, use USD, Playwright idea")
 - Research, plan and decisions: docs/studio/GROWTH_PLAN_2026-10-27.md (457 competitor videos through the official API, Studio per-video numbers, the winning thumbnails looked at).
 - Built and deployed (d2c7830): AI-drawn thumbnail art first, Shorts to about a minute, titles with a concrete detail. Tests: full suite 1278 passed locally, 1272 in a clean checkout.
