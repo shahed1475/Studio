@@ -35,3 +35,10 @@ A video the reviewer passes can still carry a moderate invented-facts warning (r
 
 ## What you see
 The Autopilot page: **Next videos** (each slot, what fills it, and when Autopilot starts on it), **Working on now**, **Needs you** (only what Autopilot cannot repair), **Scheduled**. The folder `ready/` lists approved videos named by post time.
+
+## House style: 3D animated videos (27 Oct 2026)
+`autopilot.json` `house_style` (default off; the owner's studio has it on with `min_credit` 8). When it is on and the OpenRouter credit is known and at least `min_credit`, a NEW video gets the 3D animated-film look:
+its story scenes are drawn in 3D (the first four scenes always, never a museum photo as the hook), documented real pictures stay real and credited, and a few drawn scenes become moving clips
+(`doc.clips` documentary, `short.clips` Short, each inside its dollar `budget`). A documentary costs about $3 this way, a plain one about $1.2: below `min_credit`, or when the balance cannot be read,
+Autopilot makes the plain kind. A redo or a repair never changes a video's look, and a remake keeps its own settings. Clips are credited as AI-generated video. Code: `run._house_style`,
+`run._apply_house_style`, `animate.py`; the behaviour check is `agenteval.case_creator_house_style_is_funded_new_only_and_off_by_default` (mutation-checked).
