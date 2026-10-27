@@ -15,6 +15,9 @@
     "topic_repeat_block_days": 30,
     "hook_max_seconds": 15,
     "rehook_max_seconds": 90,
+    "min_impressions_for_ctr": 200,
+    "min_views_for_diagnosis": 30,
+    "retention_drop_pp": 15,
     "title_chars": [
       40,
       62

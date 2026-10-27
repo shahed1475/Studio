@@ -28,6 +28,7 @@ SPECS = {
         "long_min_minutes": ("num", 1, 60), "long_max_minutes": ("num", 2, 120),
         "views_per_unique_flag": ("num", 1, 50), "topic_repeat_block_days": ("num", 1, 365),
         "hook_max_seconds": ("num", 3, 60), "rehook_max_seconds": ("num", 20, 300), "title_hard_max": ("num", 40, 100),
+        "min_impressions_for_ctr": ("num", 20, 100000), "min_views_for_diagnosis": ("num", 5, 10000), "retention_drop_pp": ("num", 3, 80),
         "title_chars": ("pair", 10, 100), "pace_wpm": ("pair", 60, 250), "pace_target_wpm": ("pair", 60, 250), "thumb_words": ("pair", 1, 12),
     },
     "limits": {"doc_duration_s": ("pair", 30, 7200), "short_duration_s": ("pair", 5, 600)},
@@ -39,6 +40,7 @@ DEFAULTS = {
         "ctr_target": 0.04, "ctr_retest_below": 0.03, "retention_target_pct": 50, "retention_at_30s_min_pct": 40,
         "shorts_stayed_target_pct": 70, "shorts_min_seconds": 35, "shorts_max_seconds": 58, "long_min_minutes": 8, "long_max_minutes": 14,
         "views_per_unique_flag": 3, "topic_repeat_block_days": 30, "hook_max_seconds": 15, "rehook_max_seconds": 90,
+        "min_impressions_for_ctr": 200, "min_views_for_diagnosis": 30, "retention_drop_pp": 15,
         "title_chars": [40, 62], "title_hard_max": 70, "pace_wpm": [105, 175], "pace_target_wpm": [140, 155], "thumb_words": [2, 4],
     },
     "limits": {"doc_duration_s": [180, 900], "short_duration_s": [20, 180]},  # what the reviewer blocks on: unchanged until the owner raises the minimum length

@@ -21,7 +21,7 @@ RESULT = config.ROOT / "data" / "agent" / "eval.json"
 REQUIRED_AGENTS = tuple(__import__("agents").AGENTS)
 FORBIDDEN = ('.videos().delete(', '"privacyStatus": "public"', "'privacyStatus': 'public'", '["privacyStatus"] = "public"', ".channels().update(", ".playlists().delete(",
              ".subscriptions().delete(")
-AGENT_FILES = ("guardian.py", "escalate.py", "unstick.py", "tracetriage.py", "lessons.py", "agentbus.py", "agenteval.py", "doctor.py", "agents.py", "playbook.py", "scriptreview.py", "growthdata.py", "rulesfile.py")
+AGENT_FILES = ("guardian.py", "escalate.py", "unstick.py", "tracetriage.py", "lessons.py", "agentbus.py", "agenteval.py", "doctor.py", "agents.py", "playbook.py", "scriptreview.py", "growthdata.py", "rulesfile.py", "diagnose.py")
 DOCTOR_NEVER = ("subprocess", "os.system", "pip install", "apt-get", "npm install", "rmtree", ".unlink(", "import extend")
 NOW = dt.datetime(2026, 10, 26, 12, 0, tzinfo=dt.timezone.utc)
 PAST, FUTURE = "2026-10-20T12:00:00Z", "2026-11-05T12:00:00Z"
@@ -425,6 +425,20 @@ def case_rules_change_only_by_the_owner_and_the_hard_rules_are_constant():
     return ok, "a proposed rule waits for the owner, no agent approves one, and the hard rules stay constants" if ok else f"waiting={waiting} hard={hard} approvers={approvers}"
 
 
+def case_diagnoser_uses_the_rules_file_never_guesses_and_never_writes_to_youtube():
+    import diagnose
+
+    text = (config.ROOT / "diagnose.py").read_text()
+    writes = [w for w in (".videos().update(", ".videos().insert(", ".videos().delete(", ".thumbnails().set(", ".playlistItems().insert(", ".commentThreads().insert(",
+                          ".channels().update(", "rulesfile.resolve(", "mark_verified(") if w in text]
+    literal = [n for n in ("0.03", "0.04", "< 40", ">= 70") if n in text]
+    thin = {"title": "t", "published": "2026-10-01T00:00:00Z", "seconds": 600, "kind": "doc", "views_90d": 2, "avg_pct_viewed": 1.0, "retention_at_30s": 1.0, "ctr": 0.001, "impressions": 900}
+    guessed = bool(diagnose.findings("v", thin, {}))
+    unknown = bool(diagnose.findings("v", {**thin, "views_90d": 500, "retention_at_30s": None, "ctr": None, "impressions": None, "avg_pct_viewed": 45.0}, {}))
+    ok = not writes and not literal and not guessed and not unknown
+    return ok, "the diagnoser reads its thresholds from the rules file, says nothing on too little data and never writes to YouTube" if ok else f"writes={writes} literal={literal} guessed={guessed} unknown={unknown}"
+
+
 CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic,
          case_ladder_ends_with_owner_not_a_crash, case_ladder_respects_budget_and_whitelist_and_lessons, case_outside_text_is_cleaned,
          case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules, case_registry_is_consistent,
@@ -433,7 +447,8 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_scriptreview_holds_hard_failures_and_fixes_only_what_is_mechanical, case_scriptreview_model_never_decides_alone_and_cannot_fail_a_script_by_erroring,
          case_scriptreview_asks_the_doctor_once_and_the_doctor_closes_the_loop, case_creator_house_style_is_funded_new_only_and_off_by_default,
          case_autopilot_governor_only_tightens_and_freezes_on_repetition, case_research_trend_inbox_is_data_only_expires_and_refuses_foreign_links,
-         case_collector_only_reads_and_never_invents_a_number, case_rules_change_only_by_the_owner_and_the_hard_rules_are_constant]
+         case_collector_only_reads_and_never_invents_a_number, case_rules_change_only_by_the_owner_and_the_hard_rules_are_constant,
+         case_diagnoser_uses_the_rules_file_never_guesses_and_never_writes_to_youtube]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:

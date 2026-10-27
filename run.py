@@ -709,6 +709,11 @@ def main() -> None:
         import growthdata
 
         print(json.dumps(growthdata.collect(), indent=2))
+    elif a[0] == "diagnose":  # one primary problem per video from our own numbers; owner tasks only, nothing is written to YouTube
+        import diagnose
+
+        print(json.dumps(diagnose.run(), indent=2))
+        print(diagnose.report())
     elif a[0] == "rules":  # the growth rules file: only the owner approves a proposed change
         import rulesfile
 
