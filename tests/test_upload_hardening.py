@@ -179,3 +179,45 @@ def test_the_upload_lock_is_free_again_after_a_refusal_or_a_finished_upload(vid,
     assert upload.upload(vid, "private", pub) == "NEWID"
     with pytest.raises(SystemExit, match="already uploaded"):  # not "being uploaded": the lock was released
         upload.upload(vid, "private", pub)
+
+
+class RecordingThumbs(FakeYT):
+    def __init__(self, **k):
+        super().__init__(**k)
+        self.thumbs = []
+
+    def thumbnails(self):
+        outer = self
+        return type("T", (), {"set": lambda s, videoId, media_body: (outer.thumbs.append(videoId), Exec({}))[1]})()
+
+
+def test_a_short_with_a_vertical_cover_gets_it_set_after_upload(vid, monkeypatch):
+    meta = json.loads((vid / "meta.json").read_text())
+    meta["cover"] = "thumbs/cover.jpg"
+    (vid / "thumbs").mkdir()
+    (vid / "thumbs" / "cover.jpg").write_bytes(b"x")
+    (vid / "meta.json").write_text(json.dumps(meta))
+    pub = when()
+    yt = RecordingThumbs(stored={"title": "The Title", "privacy": "private", "publish_at": pub})
+    monkeypatch.setattr(upload, "_service", lambda: yt)
+    upload.upload(vid, "private", pub)
+    saved = json.loads((vid / "meta.json").read_text())
+    assert yt.thumbs == ["NEWID"] and saved["cover_uploaded"] is True and "cover_error" not in saved
+
+
+def test_a_refused_cover_is_recorded_and_the_upload_stands(vid, monkeypatch, tmp_path):
+    import agentlog
+
+    monkeypatch.setattr(agentlog, "FILE", tmp_path / "events.jsonl")
+    monkeypatch.setattr(agentlog.subprocess, "run", lambda *a, **k: None)
+    meta = json.loads((vid / "meta.json").read_text())
+    meta["cover"] = "thumbs/cover.jpg"
+    (vid / "thumbs").mkdir()
+    (vid / "thumbs" / "cover.jpg").write_bytes(b"x")
+    (vid / "meta.json").write_text(json.dumps(meta))
+    pub = when()
+    monkeypatch.setattr(upload, "_service", lambda: RefusedThumbs(stored={"title": "The Title", "privacy": "private", "publish_at": pub}))
+    assert upload.upload(vid, "private", pub) == "NEWID"
+    saved = json.loads((vid / "meta.json").read_text())
+    assert saved["cover_error"] and not saved.get("cover_uploaded")
+    assert any(e["title"].startswith("Cover was not set") for e in agentlog.recent())

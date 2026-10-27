@@ -22,7 +22,7 @@ import records
 EDIT_LIMIT = 2      # metadata repairs by the guardian per video
 MAX_ACTIONS = 5     # videos acted on in one run
 TS = "%Y-%m-%dT%H:%M:%SZ"
-UPLOAD_KEYS = ("video_id", "uploaded_at", "publish_at", "upload_started", "upload_check", "playlists", "thumbnail_uploaded", "thumbnail_error",
+UPLOAD_KEYS = ("video_id", "uploaded_at", "publish_at", "upload_started", "upload_check", "playlists", "thumbnail_uploaded", "thumbnail_error", "cover_uploaded", "cover_error",
                "taken_back", "prelaunch_ok", "prelaunch")
 
 

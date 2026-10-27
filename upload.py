@@ -172,6 +172,17 @@ def _upload(folder: Path, privacy: str, publish_at: str | None) -> str:
 
             agentlog.event("error", f"Thumbnail was not set: {meta.get('title', folder.name)}",
                            "YouTube refused the custom thumbnail (often a channel that is not phone-verified: youtube.com/verify). The video is uploaded; add the thumbnail in YouTube Studio.", notify=True)
+    cover = folder / meta["cover"] if meta.get("cover") else None  # a Short's vertical 9:16 cover (YouTube's Shorts rule); a long video uses "thumbnail"
+    if cover and cover.exists():
+        try:
+            yt.thumbnails().set(videoId=resp["id"], media_body=MediaFileUpload(str(cover), mimetype="image/jpeg")).execute()
+            done["cover_uploaded"] = True
+        except Exception as e:  # the video is already up; YouTube lets Shorts covers be added in Studio on a computer
+            done["cover_error"] = str(e)[:300]
+            import agentlog
+
+            agentlog.event("error", f"Cover was not set: {meta.get('title', folder.name)}",
+                           "YouTube refused the Short's vertical cover. The video is uploaded; add the cover (thumbs/cover.jpg in its folder) in YouTube Studio on a computer.", notify=True)
     try:
         done["upload_check"] = verify_upload(yt, resp["id"], {"title": meta["title"], "privacy": body["status"]["privacyStatus"], "publish_at": publish_at})
         if not done["upload_check"]["ok"]:
