@@ -84,3 +84,13 @@ def test_other_spellings_of_the_root_are_refused_and_named_folders_are_not():
         assert run(cmd)[0] == 2, cmd
     for cmd in ("rm -rf /tmp/claude-1000/x", "rm -rf /tmp//claude-1000/x/", "rm -rf /var/tmp/build"):
         assert run(cmd)[0] == 0, cmd
+
+
+def test_review_round_two_bypasses_are_refused():
+    for cmd in ("echo $((rm -rf /); echo)", "echo $(( rm -rf / ))", "bash -o pipefail -c 'rm -rf /'", "bash +o history -c 'rm -rf /'", "bash --norc -c 'rm -rf /'",
+                "bash --rcfile x -c 'rm -rf /'", "kubectl apply -f x --dry-run=none", "kubectl apply -f x --dry-run=false", "terraform apply -dry-run=0",
+                "find . -exec bash -c 'rm -rf /' \;", "find /tmp -execdir sh -c 'rm -rf ~' \;", "find / -exec rm -rf {} \;", "find / -ok rm -r {} \;"):
+        assert run(cmd)[0] == 2, cmd
+    for cmd in ("echo $((1+2))", "echo $(( (1+2)*3 ))", "bash -o pipefail -c 'ls'", "kubectl apply -f x --dry-run=client", "kubectl apply -f x --dry-run=server",
+                "npm publish --dry-run", "find . -name x -exec rm -rf {} +", "find /tmp/x -exec rm -rf {} \;", "find . -exec ls {} \;"):
+        assert run(cmd)[0] == 0, cmd

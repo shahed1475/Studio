@@ -90,7 +90,7 @@ def scan(command: str) -> tuple[str, str, list[tuple[str, str]], list[str]]:
             plain.append(s[i:i + 2])
             i += 2
             continue
-        if s.startswith("$((", i):
+        if s.startswith("$((", i) and s[_match(s, i + 1) - 1:_match(s, i + 1)] == ")" and _match(s, i + 2) == _match(s, i + 1) - 1:  # arithmetic only when it closes with ))
             k = _match(s, i + 1)
             out.append(s[i:k + 1])
             plain.append(s[i:k + 1])
@@ -186,12 +186,18 @@ def _nested(tokens: list[str]) -> tuple[list[str], list[list[str]]]:
         return [], []
     name, texts, extra = t[0].split("/")[-1], [], []
     if name in SHELLS:
-        for i, a in enumerate(t[1:], 1):
-            if a.startswith("-") and not a.startswith("--") and "c" in a[1:]:
+        i = 1
+        while i < len(t):  # options: -o/-O/+o/+O and --rcfile/--init-file take a value; the first plain word is a script file; -c takes the command text
+            a = t[i]
+            if a in ("-o", "-O", "+o", "+O", "--rcfile", "--init-file"):
+                i += 2
+            elif a[:1] in "-+" and not a.startswith("--") and "c" in a[1:]:
                 if i + 1 < len(t):
                     texts.append(t[i + 1])
                 break
-            if not a.startswith("-"):
+            elif a[:1] in "-+":
+                i += 1
+            else:
                 break
     elif name == "eval":
         texts.append(" ".join(t[1:]))
@@ -214,10 +220,20 @@ def _nested(tokens: list[str]) -> tuple[list[str], list[list[str]]]:
             if a.startswith("-") or a in ("(", "!", ")"):
                 break
             starts.append(a)
-        deleting = "-delete" in t or (any(a in ("-exec", "-execdir", "-ok") for a in t) and any(a.split("/")[-1] == "rm" for a in t))
         danger = [p for p in starts if p not in RELATIVE_TOP and _dangerous_path(p)]
-        if deleting and danger:
+        if "-delete" in t and danger:
             extra.append(["rm", "-rf"] + danger)
+        # whatever -exec / -execdir / -ok runs is a command of its own, with {} standing for the start paths (a relative start is a filtered search: not the root)
+        paths = [p if p not in RELATIVE_TOP else "./match" for p in starts] or ["./match"]
+        for i, a in enumerate(t):
+            if a in ("-exec", "-execdir", "-ok", "-okdir"):
+                chunk = []
+                for b in t[i + 1:]:
+                    if b in ("+", ";"):
+                        break
+                    chunk += paths if b == "{}" else [b]
+                if chunk:
+                    extra.append(chunk)
     return texts, extra
 
 
@@ -315,7 +331,7 @@ def deploy_without_preview(segs: list[list[str]]) -> str | None:
     for seg in segs:  # a production command needs a dry-run flag among its own arguments (not in a comment or another command)
         t = _unwrap(seg)
         verb = PROD.get(t[0].split("/")[-1]) if t else None
-        if verb and verb in t[1:] and not any(re.match(r"^-{1,2}(server-)?dry-run", a) for a in t[1:]):
+        if verb and verb in t[1:] and not any(re.match(r"^(--dry-run(=(client|server|true))?|--server-dry-run|-dry-run)$", a) for a in t[1:]):
             return "a production command needs a dry run first (--dry-run in the same command)"
     return None
 
