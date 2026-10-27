@@ -280,6 +280,17 @@ def verdict_from(checks: list[dict], source: str | None) -> str:
     return "needs_human" if human or source == "news" else "pass"
 
 
+def description_head(meta: dict, limit: int = 600) -> str:
+    """The start of the description for the AI review, cut at a line break so a link is never cut in half. A plain cut at 600 characters left a lone "h" after a
+    Wikipedia link and the review reported a stray character in a description that was fine (28 Oct 2026)."""
+    text = str(meta.get("description", ""))
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    at = cut.rfind("\n")
+    return cut[:at] if at > limit // 2 else cut
+
+
 def llm_review(meta: dict, source: str = "") -> list[dict]:
     text = " ".join(l["text"] for l in meta.get("lines", []))[:7000]
     article = re.sub(r"</?\s*article\s*>", " ", relevant_source(source, text, 12000), flags=re.I)  # the article cannot close its own wrapper
@@ -290,7 +301,7 @@ def llm_review(meta: dict, source: str = "") -> list[dict]:
     try:
         r = scriptgen._review_chat(
             "You check a YouTube video script before it is published. Be strict.\n"
-            f"{grounding}Title: {meta.get('title')}\nDescription: {meta.get('description', '')[:600]}\n"
+            f"{grounding}Title: {meta.get('title')}\nDescription: {description_head(meta)}\n"
             + (f"Chapter titles (shown in the description): {'; '.join(c.get('title', '') for c in meta['chapters'])[:500]}\n" if meta.get("chapters") else "")
             + (f"Thumbnail text: {meta['thumb_hook']}\n" if meta.get("thumb_hook") else "") + f"Narration: {text}\n\n"
             "Score 0 to 10: invented_facts_risk (specific names, dates, numbers or quotes that look made up or are "
@@ -329,7 +340,7 @@ def title_ok(meta: dict, title: str) -> tuple[bool, str]:
     text = " ".join(l["text"] for l in meta.get("lines", []))[:7000]
     try:
         r = scriptgen._review_chat(
-            f"A YouTube video's narration:\n{text}\n\nProposed title: {title}\nDescription: {meta.get('description', '')[:600]}\n\n"
+            f"A YouTube video's narration:\n{text}\n\nProposed title: {title}\nDescription: {description_head(meta)}\n\n"
             "Does the title (or the description) promise something the narration does not deliver (a Why or How question it never answers, a debate it only "
             "mentions in passing, a legend or event it says did not happen)? Be strict. "
             'Return JSON {"misleading_title": false, "reason": ""}.')
