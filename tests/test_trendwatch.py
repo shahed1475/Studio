@@ -143,3 +143,9 @@ def test_run_stores_fresh_outliers_with_a_length_hint_and_a_failure_there_keeps_
     monkeypatch.setattr(trendwatch, "search_fresh", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("quotaExceeded")))
     d2 = json.loads(trendwatch.run(NOW).read_text())
     assert len(d2["videos"]) == 3 and "quotaExceeded" in d2["fresh"]["error"] and d2["fresh"]["docs"] == []
+
+
+def test_the_length_hint_ignores_multi_hour_sleep_videos_that_would_make_it_meaningless():
+    docs = [{"seconds": 9000}, {"seconds": 10000}, {"seconds": 480}, {"seconds": 600}, {"seconds": 720}]
+    assert trendwatch.fresh_hint({"docs": docs, "shorts": []}) == {"doc_minutes": 10.0, "short_seconds": 0}
+    assert trendwatch.fresh_hint({"docs": [{"seconds": 9000}], "shorts": []})["doc_minutes"] == 0

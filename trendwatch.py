@@ -68,6 +68,7 @@ def search_niche(queries: list[str], yt=None) -> list[dict]:
 
 FRESH_DAYS = 14        # "trending" means taking off now, not popular for years
 FRESH_SEARCHES = 4     # 100 quota units each, shared by the documentary and Short searches, once a day
+HINT_MAX_DOC = 45 * 60  # the niche has two-to-three-hour sleep videos; they are a different format and would make the hint meaningless
 MIN_SUBS, UNKNOWN_SUBS = 500, 50_000  # a tiny channel counts as 500 (one lucky video must not explode the score); a hidden subscriber count as a mid-size channel
 
 
@@ -110,9 +111,9 @@ def search_fresh(queries: list[str], yt=None, now: dt.datetime | None = None, da
 
 
 def fresh_hint(fresh: dict) -> dict:
-    """The typical length of what is taking off now (top five of each kind): a hint for the writer, not a rule."""
+    """The typical length of what is taking off now (the top few of each kind; documentaries over 45 minutes left out): a hint for the writer, not a rule."""
     mid = lambda xs: int(statistics.median(xs)) if xs else 0
-    return {"doc_minutes": round(mid([f["seconds"] for f in fresh.get("docs", [])[:5]]) / 60, 1), "short_seconds": mid([f["seconds"] for f in fresh.get("shorts", [])[:5]])}
+    return {"doc_minutes": round(mid([f["seconds"] for f in fresh.get("docs", [])[:8] if f["seconds"] <= HINT_MAX_DOC]) / 60, 1), "short_seconds": mid([f["seconds"] for f in fresh.get("shorts", [])[:5]])}
 
 
 def _norm(s: str) -> str:
