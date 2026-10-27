@@ -21,7 +21,7 @@ PUBLIC = {"/healthz", "/login"}
 TENANT_ONLY = {"/api/niche"}  # answers 404 "only in a user studio" in the owner's studio, by design (STUDIO_MODE=tenant switches it on)
 SKIPPED = {"/oauth/callback", "/claim"}  # need a Google state / a tenant claim token: covered by their own tests
 PREFIX_SAMPLES = {  # one concrete address for each prefix route; none of these files exist
-    "/branding/": "/branding/avatar.png", "/captions/": "/captions/none.srt", "/footage/file/": "/footage/file/a/b/clip", "/static/": "/static/none.css",
+    "/branding/": "/branding/avatar.png", "/captions/": "/captions/none.srt", "/cover/": "/cover/none.jpg", "/footage/file/": "/footage/file/a/b/clip", "/static/": "/static/none.css",
     "/thumb/": "/thumb/none.jpg", "/thumbopt/": "/thumbopt/none.jpg", "/video/": "/video/none.mp4"}
 
 
@@ -129,3 +129,35 @@ def test_a_missing_page_file_is_a_clean_500(server, monkeypatch):
     port, tmp = server
     monkeypatch.setattr(config, "ROOT", tmp)  # no channels.html here
     assert get(port, "/channels")[0] == 500
+
+
+def _video_with_pictures(tmp, slug, **meta):
+    folder = tmp / "out" / slug
+    (folder / "thumbs").mkdir(parents=True)
+    (folder / "thumbs" / "cover.jpg").write_bytes(b"\xff\xd8cover")
+    (folder / "thumbs" / "new-a.jpg").write_bytes(b"\xff\xd8thumb")
+    (folder / "meta.json").write_text(json.dumps({"title": "T", **meta}))
+
+
+def test_cover_route_shows_a_shorts_vertical_cover_and_a_documentarys_chosen_thumbnail(server):
+    port, tmp = server
+    _video_with_pictures(tmp, "a-short", format="short", cover="thumbs/cover.jpg")
+    _video_with_pictures(tmp, "a-doc", format="doc", thumbnail="thumbs/new-a.jpg")
+    assert get(port, "/cover/a-short")[::2] == (200, b"\xff\xd8cover")
+    assert get(port, "/cover/a-doc")[::2] == (200, b"\xff\xd8thumb")
+
+
+def test_cover_route_never_leaves_the_videos_thumbs_folder(server):
+    port, tmp = server
+    _video_with_pictures(tmp, "evil", format="short", cover="../meta.json")
+    (tmp / "secret.txt").write_text("x")
+    assert get(port, "/cover/evil")[0] == 404
+    assert get(port, "/cover/..%2f..%2fsecret")[0] in (400, 404)
+    assert get(port, "/cover/nothing-here")[0] == 404
+
+
+def test_the_video_list_tells_the_page_which_cover_a_short_has(server):
+    port, tmp = server
+    _video_with_pictures(tmp, "a-short", format="short", cover="thumbs/cover.jpg")
+    status, _, body = get(port, "/api/state")
+    assert status == 200 and [v["cover"] for v in json.loads(body)["videos"] if v["slug"] == "a-short"] == ["thumbs/cover.jpg"]

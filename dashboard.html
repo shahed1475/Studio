@@ -371,7 +371,7 @@ function home(m){
 
   ${homeVideos()}`;
 }
-function vcard(v){return`<button class="vcard" title="${esc(whenText(v))}" onclick="go('videos',{slug:'${v.slug}'})"><div class="thumb" style="background-image:url('/thumb/${esc(v.slug)}')"></div><div class="meta"><div class="ttl">${esc(v.title)}</div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${stateBadge(v.state)}<span class="mute">${v.format==="doc"?"Documentary":"Short"}</span></div></div></button>`}
+function vcard(v){return`<button class="vcard" title="${esc(whenText(v))}" onclick="go('videos',{slug:'${v.slug}'})"><div class="thumb" style="background-image:url('${posterUrl(v)}')"></div><div class="meta"><div class="ttl">${esc(v.title)}</div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${stateBadge(v.state)}<span class="mute">${v.format==="doc"?"Documentary":"Short"}</span></div></div></button>`}
 
 /* ---------- Videos ---------- */
 
@@ -396,7 +396,9 @@ function whenText(v){
 const WHEN_ICON={uploaded:"youtube-logo",scheduled:"calendar-check",made:"clock"};
 function posterUrl(v){
   const n=v.format==="doc"&&v.thumbnail?(v.thumbnail.match(/thumb-(\d+)\./)||[])[1]:null;
-  return n?`/thumbopt/${esc(v.slug)}/${n}?v=${v.thumb_v}`:`/thumb/${esc(v.slug)}`;
+  if(n)return `/thumbopt/${esc(v.slug)}/${n}?v=${v.thumb_v}`;
+  if(v.format==="doc"?v.thumbnail:v.cover)return `/cover/${esc(v.slug)}?v=${v.thumb_v}`; // an AI picture or a Short's vertical cover
+  return `/thumb/${esc(v.slug)}`;
 }
 function vcard2(v,n,tall){
   return `<button class="vc" style="--n:${n}" onclick="go('videos',{slug:'${v.slug}'})" aria-label="Open ${esc(v.title)}">
@@ -459,7 +461,7 @@ function videos(m){
     m.innerHTML=`<div class="head"><div><button class="btn quiet sm" onclick="openSlug=null;editing=false;render()">${ico("arrow-left")}All videos</button></div><h1>${esc(v.title)}</h1>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${stateBadge(v.state)}<span class="mute">${v.format==="doc"?"Documentary":"Short"}, ${v.mb} MB, made ${esc(v.made)}${v.cost?`, cost so far ${usd(v.cost)}`:""}</span></div></div>
     <div class="detail">
-      <div class="stack"><video controls preload="metadata" poster="/thumb/${esc(v.slug)}" src="/video/${esc(v.slug)}"></video>
+      <div class="stack"><video controls preload="metadata" poster="${posterUrl(v)}" src="/video/${esc(v.slug)}"></video>
         ${v.format==="doc"?thumbPanel(v):""}
         ${v.format==="doc"?seoPanel(v):""}
         ${subsPanel(v)}
