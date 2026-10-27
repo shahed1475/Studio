@@ -29,6 +29,7 @@ STYLES = [  # one per video, chosen by its topic: every video no longer looks li
      "no text, no letters, no captions, no watermark"),
 ]
 CREDIT = "Illustration: AI-generated storybook art (Google Gemini image model via OpenRouter)"
+CREDIT_PHOTO = "Images: AI-generated realistic scenes with invented people, not real photographs (Google Gemini image model via OpenRouter)"
 MAX_PER_VIDEO = {"doc": 16, "short": 6}
 EXTRA_FOR_VARIETY = 12  # more drawings allowed when a documentary would otherwise show the same pictures again and again
 PRICE_EACH = 0.034  # dollars per picture, measured 20 Oct 2026: $3.19 for 95 pictures
@@ -55,13 +56,25 @@ STYLE_3D = ("Stylized 3D animated film still, soft CGI render like a modern fami
             "detailed environment, no text, no letters, no numbers, no captions, no logos, no watermark")
 
 
+# Opt-in realistic look (art_style "photo", owner's request 28 Oct 2026). It is never chosen by style_for, so the default stays an illustration (a compliance test
+# keeps that). The people are invented and unnamed; the period rules stop the modern objects the first tests showed (a ballpoint pen, an elastic hair tie).
+STYLE_PHOTO = ("Photorealistic documentary photograph, natural light, 35mm lens, shallow depth of field, realistic skin, hands and fabric, costume, tools and buildings correct "
+               "for the era of the story. Invented, unnamed ordinary people only: never a portrait of a real, named or famous person. No modern objects, no ballpoint pens, "
+               "no plastic, no zips, no elastic hair ties, no electric light, no text, no letters, no numbers, no captions, no logos, no watermark")
+
+
 def style_for(topic: str) -> str:
     return STYLES[int(hashlib.md5(str(topic).lower().encode()).hexdigest(), 16) % len(STYLES)]
 
 
+def credit_for(style: str | None) -> str:
+    return CREDIT_PHOTO if style == "photo" else CREDIT
+
+
 def prompt_for(line: str, visual: str, topic: str, vertical: bool, style: str | None = None) -> str:
     shape = "vertical 9:16 composition" if vertical else "16:9 widescreen composition"
-    text = f"{STYLE_3D if style == '3d' else style_for(topic)}, {shape}. Story: {_clean(topic, 120)}. Scene: {_clean(line)}. Show: {_clean(visual, 80) or 'the setting of the scene'}."
+    look = STYLE_3D if style == "3d" else STYLE_PHOTO if style == "photo" else style_for(topic)
+    text = f"{look}, {shape}. Story: {_clean(topic, 120)}. Scene: {_clean(line)}. Show: {_clean(visual, 80) or 'the setting of the scene'}."
     return text + (NO_WRITING if TEXTY.search(f"{visual} {line}") else "")
 
 
@@ -77,7 +90,7 @@ def generate(line: str, visual: str, topic: str, vertical: bool = False, now: dt
     prompt = prompt_for(line, visual, topic, vertical, style)
     dest = config.CACHE / "art" / (hashlib.md5(prompt.encode()).hexdigest()[:16] + ".jpg")
     if dest.exists():
-        return dest, CREDIT
+        return dest, credit_for(style)
     try:
         model = modelcfg.get("scene_art_3d" if style == "3d" else "scene_art")
         body = llm._post({"model": model, "modalities": ["image", "text"], "messages": [{"role": "user", "content": prompt}]}, llm.api_key())
@@ -93,7 +106,7 @@ def generate(line: str, visual: str, topic: str, vertical: bool = False, now: dt
         if "402" in str(e):
             _off_until["day"] = now.strftime("%Y-%m-%d")
         return None
-    return dest, CREDIT
+    return dest, credit_for(style)
 
 
 THUMB_STYLE = ("YouTube thumbnail illustration, 16:9 widescreen. Dramatic cinematic lighting, high contrast, rich saturated colours (deep teal shadows with warm amber light), "
@@ -107,16 +120,21 @@ THUMB_3D = ("YouTube thumbnail, 16:9 widescreen. Stylized 3D animated film still
             "description. No text, no letters, no numbers, no logos, no watermark, no real person likeness.")
 
 
+THUMB_PHOTO = ("YouTube thumbnail, 16:9 widescreen. Photorealistic cinematic still, dramatic natural light, ONE clear focal subject in the right two thirds, an invented unnamed "
+               "person or an object, never a portrait of a real or famous person, darker uncluttered space on the left and bottom, costume and setting correct for the era, "
+               "no modern objects. Do not invent details that are not in the scene description. No text, no letters, no numbers, no logos, no watermark.")
+
+
 def thumbnail_art(scene: str, now: dt.datetime | None = None, style: str | None = None):
     """(file, credit) for a 1280x720 thumbnail picture of one scene, or None when drawing is off, over the dollar cap, or failed. Competitors' best thumbnails
     show one clear subject with a strong mood, which archive photos and old maps rarely do; the picture is always labelled as AI art (the credit)."""
     now = now or llm._now()
     if not enabled(now) or llm.spent_today(now) >= llm.load_config()["daily_budget_usd"]:
         return None
-    prompt = f"{THUMB_3D if style == '3d' else THUMB_STYLE} Subject: {_clean(scene, 220)}."
+    prompt = f"{THUMB_3D if style == '3d' else THUMB_PHOTO if style == 'photo' else THUMB_STYLE} Subject: {_clean(scene, 220)}."
     dest = config.CACHE / "art" / ("thumb-" + hashlib.md5(prompt.encode()).hexdigest()[:16] + ".jpg")
     if dest.exists():
-        return dest, CREDIT
+        return dest, credit_for(style)
     try:
         model = modelcfg.get("thumbnail_art")
         body = llm._post({"model": model, "modalities": ["image", "text"], "messages": [{"role": "user", "content": prompt}]}, llm.api_key())
@@ -131,4 +149,4 @@ def thumbnail_art(scene: str, now: dt.datetime | None = None, style: str | None 
         if "402" in str(e):
             _off_until["day"] = now.strftime("%Y-%m-%d")
         return None
-    return dest, CREDIT
+    return dest, credit_for(style)

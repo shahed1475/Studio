@@ -9,7 +9,7 @@ Every video is checked against a catalog of YouTube rules before it is approved,
 | `originality` (no reading aloud of text we did not write) | share of the narration's 8-word runs found in the source article; warn 6%, block 15% (our videos measured 0 to 4.1%) | warn is reported; block: the fixer rewords the copied lines and the video is made again |
 | `template_variety` (templated, repetitive videos) | existing variety checks and the Risks card | the fixer varies the script |
 | `kids_signals` (kid-directed wording may make YouTube treat it as made for kids) | deterministic words in title, description, tags | warn; you decide |
-| `ai_disclosure` | upload sets `containsSyntheticMedia`; a test keeps the art style an illustration | n/a |
+| `ai_disclosure` | upload sets `containsSyntheticMedia` on every video; a test keeps the default art style an illustration. The opt-in realistic style (`run.py doc --photo`, owner's request 28 Oct 2026) draws only invented, unnamed people, forbids modern objects, credits its pictures "AI-generated realistic scenes with invented people, not real photographs" (`aiart.CREDIT_PHOTO`), and the video is made held and unapproved | n/a |
 | `api_private_lock` NOT APPLICABLE (settled 25 Oct 2026: 7 API uploads went public on schedule) | `safety.check` still reports a video that is private after its slot, naming a Studio edit as the usual cause | Autopilot pauses and tells you; fix it in YouTube Studio |
 | `phone_verification` UNVERIFIED | the upload survives a refused thumbnail, records `thumbnail_error` and tells you | add the thumbnail in YouTube Studio |
 

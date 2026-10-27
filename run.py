@@ -222,8 +222,8 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
     return folder
 
 
-def cmd_doc(topic: str | None = None) -> Path:
-    return _charged(_cmd_doc, topic)
+def cmd_doc(topic: str | None = None, photo: bool = False) -> Path:
+    return _charged(lambda t: _cmd_doc(t, photo), topic)
 
 
 MIN_VARIETY = 0.55  # share of a documentary's scenes that must show a different picture (Pied Piper showed 28%, Delphi 100%)
@@ -241,7 +241,7 @@ def _pending_doc() -> dict | None:
     return saved
 
 
-def _cmd_doc(topic: str | None = None) -> Path:
+def _cmd_doc(topic: str | None = None, photo: bool = False) -> Path:
     import random
 
     saved = _pending_doc() if not topic else None
@@ -286,6 +286,8 @@ def _cmd_doc(topic: str | None = None) -> Path:
             print(f"  script attempt {attempt + 1} failed: {e}")
     if not data:
         raise SystemExit("could not generate a documentary script")
+    if photo:  # realistic invented people (owner's request): the video is held and unapproved, nothing about it goes out until the owner says so
+        data.update(art_style="photo", art_first=True, hold=True)
     PENDING_DOC.parent.mkdir(parents=True, exist_ok=True)
     PENDING_DOC.write_text(json.dumps({"data": data, "folder": "", "tries": 0}))
     return _produce_doc(data)
@@ -524,7 +526,7 @@ def main() -> None:
     elif a[0] == "redo":
         cmd_redo(a[1])
     elif a[0] == "doc":
-        cmd_doc(" ".join(a[1:]) or None)
+        cmd_doc(" ".join(w for w in a[1:] if w != "--photo") or None, photo="--photo" in a)
     elif a[0] == "remake-short":
         import clipper
 

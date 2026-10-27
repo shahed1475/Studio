@@ -271,7 +271,7 @@ def make_art(folder: Path, meta: dict, hook: str, now=None, chat=None) -> list[s
     """Two thumbnails on a freshly drawn picture (hook bottom left, hook centred). Empty when nothing could be drawn: the caller then uses the video's frames."""
     import aiart
 
-    got = aiart.thumbnail_art(art_subject(meta, chat), now, **({"style": meta["art_style"]} if meta.get("art_style") == "3d" else {}))  # a 3D video gets a 3D picture
+    got = aiart.thumbnail_art(art_subject(meta, chat), now, **({"style": meta["art_style"]} if meta.get("art_style") in ("3d", "photo") else {}))  # a 3D or realistic video gets a thumbnail in its own look
     if not got:
         return []
     out = folder / "thumbs"
@@ -333,8 +333,9 @@ def make(folder: Path, hook: str | None = None) -> list[str]:
             import aiart
 
             credits = d.setdefault("credits", [])
-            if aiart.CREDIT not in credits:  # the AI label is stated once, like the AI pictures inside the video
-                credits.append(aiart.CREDIT)
+            label = aiart.credit_for(d.get("art_style"))
+            if label not in credits:  # the AI label is stated once, like the AI pictures inside the video
+                credits.append(label)
             d["thumb_art"] = "ai"
         reviewer.invalidate(d)
 
