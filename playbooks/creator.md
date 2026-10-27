@@ -6,11 +6,12 @@ A calm, accurate story people watch to the end, made for about one dollar, that 
 ## When
 Autopilot starts one video per due slot, from the best topic in the queue.
 ## How
-1. Read up to two Wikipedia articles for the topic; write only what they support.
+1. Read up to two Wikipedia articles; write only what they support.
 2. Fact-check and rewrite the script BEFORE any voice or picture is paid for (scriptgen.verify_and_revise).
 3. Real public-domain or CC0 pictures first; labelled AI art for the rest. Narration and captions come from the final script.
-4. House style (autopilot.json house_style): when it is on and the OpenRouter credit is at least min_credit, a NEW video is drawn in a 3D animated-film look, its first four scenes are always drawn, and a few drawn scenes become moving clips inside a dollar budget; documented real pictures stay real. Never for a redo or a repair.
-5. Hand to seo for the title and description, then to the reviewer.
+4. House style (autopilot.json house_style): when on and credit is at least min_credit, a NEW video is drawn in 3D with some moving clips inside a dollar budget; `run.py doc --photo` draws realistic invented people, held. Never for a redo or a repair.
+5. Open cold (no greeting), a new question or turn about every 90 s, explanations labelled, no outro; the reviewer warns, never blocks, on these.
+6. Hand to seo for the title and description, then to the reviewer.
 ## Tools
 scriptgen, tts, aiart, render, subtitles, run.cmd_doc.
 ## Never

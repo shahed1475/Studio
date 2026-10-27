@@ -439,6 +439,20 @@ def case_diagnoser_uses_the_rules_file_never_guesses_and_never_writes_to_youtube
     return ok, "the diagnoser reads its thresholds from the rules file, says nothing on too little data and never writes to YouTube" if ok else f"writes={writes} literal={literal} guessed={guessed} unknown={unknown}"
 
 
+def case_generator_style_rules_only_warn_and_read_their_limits_from_the_rules_file():
+    import reviewer
+
+    text = (config.ROOT / "reviewer.py").read_text()
+    body = text[text.index("def generator_checks"):text.index("def rule_checks")]
+    bad = {"format": "doc", "lines": [{"text": "Welcome to the channel!"}] + [{"text": "The merchant carried the ledgers across the old stone bridge."}] * 40
+           + [{"text": "Thanks for watching, subscribe."}], "description": "Sources: x"}
+    checks = reviewer.generator_checks(bad, {"duration": 400})
+    only_warn = bool(checks) and {c["severity"] for c in checks} == {"warn"} and not all(c["ok"] for c in checks)
+    literal = [n for n in ("<= 90", "<= 15", "> 35", "35 <=") if n in body]
+    ok = only_warn and not literal
+    return ok, "style rules from the content prompt are warnings and take their limits from the rules file" if ok else f"only_warn={only_warn} literal={literal}"
+
+
 CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic,
          case_ladder_ends_with_owner_not_a_crash, case_ladder_respects_budget_and_whitelist_and_lessons, case_outside_text_is_cleaned,
          case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules, case_registry_is_consistent,
@@ -448,7 +462,7 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_scriptreview_asks_the_doctor_once_and_the_doctor_closes_the_loop, case_creator_house_style_is_funded_new_only_and_off_by_default,
          case_autopilot_governor_only_tightens_and_freezes_on_repetition, case_research_trend_inbox_is_data_only_expires_and_refuses_foreign_links,
          case_collector_only_reads_and_never_invents_a_number, case_rules_change_only_by_the_owner_and_the_hard_rules_are_constant,
-         case_diagnoser_uses_the_rules_file_never_guesses_and_never_writes_to_youtube]
+         case_diagnoser_uses_the_rules_file_never_guesses_and_never_writes_to_youtube, case_generator_style_rules_only_warn_and_read_their_limits_from_the_rules_file]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:

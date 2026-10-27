@@ -206,6 +206,43 @@ def variety_checks(meta: dict, recent: list[dict]) -> list[dict]:
     return out
 
 
+LOOP = re.compile(r"\?|\b(but|yet|however|except|until|strangest|stranger|no one|nobody|never|still)\b", re.I)  # a proxy for an open loop or a turn in the story
+GREETING = re.compile(r"^\W*(welcome|hello|hi|hey|what's up|in this video|today,? we|before we begin)\b", re.I)
+OUTRO = re.compile(r"thanks? for watching|like and subscribe|subscribe|see you (next|in the)|until next time|don't forget to", re.I)
+
+
+def generator_checks(meta: dict, probe: dict, rules: dict | None = None) -> list[dict]:
+    """The content prompt's structure rules, as warnings only (a video that is otherwise fine is never failed for style): a cold open with no greeting, a new
+    question or turn at least every `rehook_max_seconds`, no outro, a Short inside its length, a description that does not open with its sources.
+    The re-hook check is a proxy: it looks for questions and turn words, with line times estimated from word counts."""
+    r = rules or rulesfile.load()
+    b = r["benchmarks"]
+    kind = "doc" if meta.get("format") == "doc" else "short"
+    lines, out = [l.get("text", "") for l in meta.get("lines", [])], []
+    if kind == "doc" and lines:
+        first = re.split(r"(?<=[.?!])\s", lines[0].strip())[0]
+        max_words = round(b["hook_max_seconds"] * b["pace_target_wpm"][0] / 60)
+        bad = len(first.split()) > max_words or bool(GREETING.search(lines[0]))
+        out.append(_c("hook_opening", not bad, f"the first sentence is {len(first.split())} words (aim for {max_words} or fewer) and " + ("starts with a greeting or 'in this video'" if GREETING.search(lines[0]) else "opens straight into the story"), "warn"))
+        total = sum(len(t.split()) for t in lines)
+        if probe["duration"] >= 120 and total >= 150:
+            per_word, t, marks = probe["duration"] / total, 0.0, [0.0]
+            for text in lines:
+                if LOOP.search(text):
+                    marks.append(t)
+                t += len(text.split()) * per_word
+            marks.append(probe["duration"])
+            gap = max(b_ - a for a, b_ in zip(marks, marks[1:]))
+            out.append(_c("rehook_gap", gap <= b["rehook_max_seconds"], f"longest stretch without a question or a turn is about {gap:.0f} s (aim for {b['rehook_max_seconds']} or less; a proxy)", "warn"))
+        out.append(_c("no_outro", not any(OUTRO.search(t) for t in lines[-2:]), "ends on the story, not on a thanks or a subscribe line" if not any(OUTRO.search(t) for t in lines[-2:]) else "the last lines read like an outro (thanks, subscribe)", "warn"))
+    if kind == "short" and probe.get("duration"):
+        lo, hi = b["shorts_min_seconds"], b["shorts_max_seconds"]
+        out.append(_c("short_target_length", lo <= probe["duration"] <= hi, f"{probe['duration']:.0f} s (target {lo} to {hi})", "warn"))
+    if meta.get("description"):
+        out.append(_c("description_hook", not meta["description"].lstrip().lower().startswith("sources"), "the description opens with its hook, not with the sources" if not meta["description"].lstrip().lower().startswith("sources") else "the description starts with 'Sources:': the first lines are what search shows", "warn"))
+    return out
+
+
 def rule_checks(meta: dict, probe: dict, existing_titles: list[str], thumb_bytes: int | None, recent: list[dict] | None = None, source: str = "") -> list[dict]:
     kind = "doc" if meta.get("format") == "doc" else "short"
     lim = LIMITS[kind]
@@ -259,6 +296,7 @@ def rule_checks(meta: dict, probe: dict, existing_titles: list[str], thumb_bytes
     words = sum(len(l.split()) for l in lines)
     out.append(_c("script_length", words >= lim["words"], f"{words} words (need {lim['words']})"))
     dupes = len(lines) - len(set(lines))
+    out += generator_checks(meta, probe)
     out.append(label_check(meta))
     out.append(_c("script_loop", dupes <= max(1, len(lines) // 10), f"{dupes} repeated narration lines"))
     claims = unhedged_claims([l["text"] for l in meta.get("lines", [])], source, meta.get("verified_claims", []))

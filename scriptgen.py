@@ -314,6 +314,10 @@ def doc_script(topic: str, facts: str | None = None, grounded: str | None = None
         f"Style: {nc['style']}\n{rules}\n\nGive {n_chapters} chapters in story order: chapter 1 opens with a hook that raises "
         "the central question, the middle chapters cover background and the main competing theories fairly, one chapter near the end says plainly "
         "what is documented, what is legend and what historians dispute, and the last has a closing thought. "
+        "Structure: open cold, the first sentence is the strangest fact or the central question, with no greeting, no channel name and no 'in this video'. "
+        "About every 60 to 90 seconds of narration raise a new question or turn ('but that is not the strangest part'). Label each explanation as legend, eyewitness claim, "
+        "historical record or scholarly theory. Near the end give the most reasonable reading of the evidence, using only what the sources support, and leave one question open. "
+        "End on the story: no thanks, no subscribe line. "
         'Return JSON: {"title": "under 70 chars", "description": "3 sentences", '
         '"tags": ["..."], "anchors": ["3 to 6 real names of the places, people and things at the heart of this '
         'story, as they appear in archive image titles"], "chapters": [{"title": "...", "summary": "one sentence of what this chapter covers"}]}'
