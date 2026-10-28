@@ -1,0 +1,41 @@
+# Audit fixes, a conductor, and the road to fewer paid models (28 Oct 2026)
+
+Status: part 1 (audit fixes) built, tested and deployed (`0429186`). Parts 2 to 4 are a plan that waits for the owner's decisions listed at the end.
+
+## Part 1. Audit of every video (done)
+A free review of all 25 videos (`reviewer.review(use_llm=False, persist=False)`, no model) found no blocking failure and these repeating warnings. Each was traced to a cause before anything was changed:
+
+| Warning | Count | Root cause | Fix (all tested) |
+|---|---|---|---|
+| loudness -18 LUFS | 3 newest | growth agent auto-applied "calm bedtime" edit profiles (-16, then -18) inside its own limit (-20 to -12); the reviewer accepts only -17.5 and louder | `editprofile.LIMITS` stops at -17; consistency test and `agenteval` case; `audiofix.py` re-measured the 3 unpublished videos to -16.1 (audio only, picture copied) |
+| Short over 58 s | 14 of 15 | script asked 110 to 135 words; render added 0.6 s after each line; clipper assumed 0.12 s | `editprofile.short_pause` (max 250 ms), `scriptgen.short_word_range` from the length target and the real pause, clipper uses the real pause |
+| title fails the review after being chosen | seen on Cambyses film and Short | the best-scoring titles promised an answer the narration never gives | `packaging.honest_first`: the reviewer's own title check runs on the best three before choosing |
+| hook states a dispute as fact | 1 | model wrote "Nobody has ever found them" | prompt rule plus `clipper.OVERCLAIM` fallback |
+| niche tags that do not fit | 18 of 25 | `legends and folklore` allowed on every video | `kinds.generic_tags`: tags must fit the video's kind |
+
+Left alone on purpose: public videos (owner approval: 4 old uploads miss the search phrase up front), documentary pause 0.6 s (the owner's calm style), 7 documentaries with a long stretch between turns, 3 with repeated pictures (the new picture rules already stop this), the Cambyses film's two second-source warnings (the script was written before the fix; claiming sources the script does not use would be false).
+
+## Part 2. What the research found about "train it, use Hugging Face, stop paying for models"
+- **Where the money goes** (`data/llm_usage.json`, 19 to 28 Oct): $35.76 in 10 days; pictures $18.58 (52 percent), text models $13.58 (38 percent), footage the rest. Removing every paid text model would save under 40 percent; pictures are the bigger lever.
+- **The data rule.** Anthropic's commercial terms, section D.4(a), forbid using the service "to train competing AI models" (read 28 Oct 2026 at anthropic.com/legal/commercial-terms). Every script so far was written by Claude, so `run.py trainset` finds 0 usable examples. Usable data: scripts written by an open-licence model (Qwen is Apache 2.0, Llama has its own licence) and filtered by our free rule checks, or human-written or human-edited text. Using Claude's verdicts as the filter is a grey area: avoid it, filter with `scriptreview` and the other free rules.
+- **Tinker** (thinkingmachines.ai/tinker, read 28 Oct 2026): you write the training loop, they run the GPUs; LoRA on about 25 open-weight models (Qwen3, GPT-OSS, DeepSeek, Nemotron and others, 4B to 1T); billed per million tokens (no dollar figures on the page; "See all pricing"); checkpoints $0.10 per GB a month; sign-up by a link, no waitlist stated; "we do not train on your content". Serverless inference is only for two of their own models, so a fine-tuned Qwen must be exported and served somewhere else.
+- **Hugging Face** (docs read 28 Oct 2026): login is by access token, never a password: `hf auth login --token $HF_TOKEN` (write permission to upload). Free accounts get about $0.10 a month of Inference Providers credit, PRO $2: useless for generating, fine for storing a private dataset or model.
+- **Serving your own model.** Your 4 GB card runs a quantised 3 to 4 billion parameter model. The server has CPU Ollama containers (slow, but a script can run overnight). Quality of a small fine-tuned writer is unproven.
+- **Earlier decisions that still stand** (docs/studio/TREND_AND_TRAINING_2026-10-27.md): no rented GPU unless the owner says so (this request is that say-so, but it still needs an account and a budget); the fact-checker and reviewer stay strong models; a model that "knows the whole system" is not trained, the playbooks and code carry that.
+
+## Part 3. Plan (each step has a test, an `agenteval` case where an agent changes, a mutation check, and goes through `studio-deploy`)
+1. **Writer bench (free to build, about $0.30 to run once).** `writerbench.py`: the same 10 source articles written by each candidate open model (free OpenRouter models first, then cheap Qwen, GPT-OSS, DeepSeek ids); scored only by free rules (valid JSON, words, labels, loops, retells, copied wording, hook rules, `kinds`), with one Claude fact-check pass per model as a sample, reported, not used as training labels. Output: which model can write a script that passes `scriptgen.verify_and_revise`, and its cost per script against Sonnet's.
+2. **Model ladder in `llm.py`.** Roles stay `script`, `review`, `cheap`; add an optional `script_draft` model: the chosen open model writes, Claude only fact-checks. Owner switch, off by default, tested on 3 real videos held and compared. Expected saving: most of the $0.76 a day script spend, not the review.
+3. **Picture cost (the larger lever).** Z-Image Turbo (Apache 2.0) was measured at about $0.005 a picture on fal.ai or Replicate against $0.034 for the current model (memory note civitai-research-28oct): about $15 of the $18.58 in 10 days. It is not on OpenRouter, so it needs a second provider key and a deviation from "everything through OpenRouter" for pictures only. Needs the owner's yes and a licence read before use.
+4. **Training set to Hugging Face.** After step 2 runs, `run.py trainset` fills with open-model scripts that passed the free rules and were approved; push the private dataset with `HF_TOKEN` (scp, never the password). A first Tinker LoRA run on Qwen3-8B once there are 150 or more examples, evaluated on held-out topics with the step 1 bench before anything uses it.
+5. **A conductor for "2 or 3 prompts".** `run.py ask "<request>"` (and the studio MCP tool): the writer role turns a plain request into a JSON plan of whitelisted commands from `agents.py` (the same pattern as `escalate.solve`: the model only picks names), runs it under the Autopilot lock with budget and hold rules, logs every step, stops at anything that publishes, deletes or spends over the cap and asks the owner. Nothing it plans can bypass the existing gates.
+6. **Agents that write their own skills.** The doctor already drafts quarantined skills for problem families seen three times (`data/agent/proposals/skills/`). Extend it to draft from solved cases too (lessons that worked twice), and let the learner propose edits to `config/kinds.json` cards from watch-time data. Drafts stay quarantined: `vetskill.py` then `extend.py add`, run by the owner.
+
+## What I need from the owner (nothing below was done without it)
+1. A Tinker account and an API key (copied with `scp`, never pasted in chat), and a monthly training budget. Not needed until step 4.
+2. A Hugging Face access token with write permission, created at huggingface.co/settings/tokens. Run `hf auth login` on your own computer in your own terminal; for the server, `scp` the token to `~/studio` and say so, and I will wire `HF_TOKEN`. Never send a password.
+3. Which writer model's output may be used for training (Qwen3 under Apache 2.0 is the cleanest), or a decision to ask Anthropic for approval.
+4. Yes or no to a second provider for pictures (step 3), and to a top-up: OpenRouter credit is $3.67 against about $3.66 a day.
+
+## Limits
+A fine-tuned small writer may not match Claude on facts; the reviewer stays strong whatever writes. Savings above are estimates from 10 days of spend, not measurements of the new setup. Training, serving and the conductor are plans until the owner's items arrive.
