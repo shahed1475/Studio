@@ -2,7 +2,7 @@
 
 Source files (owner's, read in full 28 Oct 2026, copied to `docs/` and **not committed**): `youtube_content_system_prompt.md` (content rules for The Sleeping Library) and `growth_agent_builder_prompt_sonnet.md` (a Growth Agent: collector, diagnoser, fixer, learner, policy watcher, `rules.json`).
 
-Status: PLAN ONLY. Nothing below is built. Approval of this plan, and of the six decisions in section 3, starts Phase 1.
+Status 28 Oct 2026: approved with all six recommendations and built. Phases 0 to 8 are deployed (module names: `rulesfile.py` not `rules.py`, `growthdata.py`, `diagnose.py`, `secondsources.py` (built, OFF), `actionlog.py`, `policyclass.py`, `drift.py`, `learner.py`, `growthview.py`); phase 9 is the close-out (CLAUDE.md section "Growth system", dashboard Growth panel, Risks card). Still open: the owner enables the Reporting API; a top-up before second sources are switched on and the length minimum is raised. The title test still applies titles to public videos (the owner's 24 Oct switch): logged and reversible, not flipped.
 
 ## 1. What the two files ask for
 
