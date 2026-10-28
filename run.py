@@ -303,7 +303,7 @@ def _cmd_doc(topic: str | None = None, photo: bool = False) -> Path:
                 data["sources"] = [f"Wikipedia: {a['title']} (CC BY-SA 4.0), retold in our own words" for a in arts] + [a["url"] for a in arts]
             if attempted:
                 data["sources_extra"] = (extra or {}).get("items", [])
-                data["sources"] = [*data.get("sources", []), *[f"{i['title']}: {i['url']}" for i in data["sources_extra"]]]
+                data["sources"] = [*data.get("sources", []), *[i["url"] for i in data["sources_extra"]]]  # addresses only: a page's own title is never written into the public description
                 if extra and extra.get("element"):
                     data["original_element"] = extra["element"]
             data["anchors"] = anchor_terms(topic, data.get("anchors", []), src[0] if src else "")

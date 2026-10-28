@@ -466,8 +466,9 @@ def case_second_sources_are_off_by_default_and_only_verified_pages_count():
     text = (config.ROOT / "secondsources.py").read_text()
     writes = [w for w in (".videos().update(", ".thumbnails().set(", "subprocess", "os.system") if w in text]
     off = autopilot.DEFAULTS["second_sources"]["enabled"] is False and not ss.enabled(autopilot.DEFAULTS, 99.0)
-    ok = off and bool(good) and not any(bad) and not writes
-    return ok, "second sources are off until the owner switches them on and count only pages we fetched and quoted from" if ok else f"off={off} good={bool(good)} bad={[bool(b) for b in bad]} writes={writes}"
+    inside = ss.allowed("https://169.254.169.254/latest") or ss.allowed("https://127.0.0.1/x") or ss.public_host("a.example.org", lambda h, p: [(2, 0, 0, "", ("10.0.0.5", 443))])
+    ok = off and bool(good) and not any(bad) and not writes and not inside
+    return ok, "second sources are off until the owner switches them on, count only public pages we fetched and quoted from, and never reach an internal address" if ok else f"off={off} good={bool(good)} bad={[bool(b) for b in bad]} writes={writes} inside={inside}"
 
 
 CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic,
