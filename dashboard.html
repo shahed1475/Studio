@@ -230,6 +230,71 @@ button.wd{cursor:pointer}button.wd:hover{transform:translateY(-2px);border-color
 .vnone{padding:34px 20px}
 @media(max-width:640px){.lgrid{grid-template-columns:1fr}.sgrid{grid-template-columns:repeat(auto-fill,minmax(132px,1fr))}.stat{flex:1 1 40%}}
 
+/* ---- live view, dock, monitor (29 Oct 2026): one quiet rail carries the motion; everything else stays still ---- */
+.runbox{display:flex;align-items:center;gap:10px;width:100%;text-align:left;cursor:pointer;line-height:1.35}
+.runbox:hover{border-color:var(--accent)}
+.runbox>span:last-child{min-width:0}.runbox b{margin-bottom:1px}.runbox>span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
+.dot-live{width:9px;height:9px;border-radius:99px;background:var(--ink2);flex:none;display:inline-block}
+.dot-live.on{background:var(--accent);animation:beat 1.9s ease-out infinite}
+.dot-live.bad{background:var(--bad)}
+@keyframes beat{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 55%,transparent)}70%,100%{box-shadow:0 0 0 8px transparent}}
+.livestrip{display:flex;align-items:center;gap:16px;flex-wrap:wrap;width:100%;margin-top:14px;padding:16px 22px;text-align:left;cursor:pointer;color:inherit}
+.livestrip:hover{border-color:var(--accent)}
+.livestrip .lt{font-weight:620;letter-spacing:-.01em;overflow-wrap:anywhere}
+.livestrip .mini{display:flex;gap:6px;margin-left:auto;align-items:center}
+.livestrip .mini i{width:26px;height:6px;border-radius:99px;background:var(--line)}
+.livestrip .mini i.done{background:var(--accent)}.livestrip .mini i.now{background:var(--accent);animation:beat2 1.9s ease-in-out infinite}
+.livehero{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(250px,1fr)}
+.livehero>*,.livegrid>*{min-width:0}
+.livehero>div{padding:26px}
+.livehero>div+div{border-left:1px solid var(--line)}
+.livestate{display:flex;align-items:center;gap:10px;font-size:13.5px;color:var(--ink2);font-weight:560;flex-wrap:wrap}
+.livetitle{font-size:24px;font-weight:650;letter-spacing:-.03em;line-height:1.2;margin:10px 0 26px;overflow-wrap:anywhere;text-wrap:balance}
+.rail{display:grid;grid-template-columns:repeat(5,1fr)}
+.rail .st{display:flex;flex-direction:column;align-items:center;gap:9px;position:relative;font-size:13px;color:var(--ink2);font-weight:560;text-align:center}
+.rail .st::before{content:"";position:absolute;top:10px;right:50%;width:100%;height:2px;background:var(--line)}
+.rail .st:first-child::before{display:none}
+.rail .st i{width:22px;height:22px;border-radius:99px;border:2px solid var(--line);background:var(--surface);position:relative;z-index:1;display:grid;place-items:center}
+.rail .st i .ic{width:12px;height:12px}
+.rail .st.done::before,.rail .st.now::before{background:var(--accent)}
+.rail .st.done i{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.rail .st.now{color:var(--ink)}
+.rail .st.now i{border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+.rail .st.now i::after{content:"";width:8px;height:8px;border-radius:99px;background:var(--accent);animation:beat2 1.9s ease-in-out infinite}
+@keyframes beat2{50%{transform:scale(.55);opacity:.55}}
+.heartbeat{margin-top:22px;font:12.5px/1.5 "Geist Mono",ui-monospace,monospace;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.heartbeat b{font-weight:600;color:var(--ink)}
+.heartbeat.stale{color:var(--warn)}
+.money{display:flex;flex-direction:column;gap:7px}
+.money+.money{margin-top:22px}
+.money .big{font-size:28px;font-weight:650;letter-spacing:-.035em;line-height:1.1}
+.money .big small{font-size:15px;font-weight:500;color:var(--ink2);letter-spacing:0}
+.mbar{height:6px;border-radius:99px;background:var(--sunken);border:1px solid var(--line);overflow:hidden}
+.mbar>i{display:block;height:100%;background:var(--accent);border-radius:99px}
+.mbar.warn>i{background:var(--warn)}.mbar.bad>i{background:var(--bad)}
+.livegrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}
+.feed>*{display:flex;gap:12px;padding:12px 18px;align-items:flex-start}
+.feed>*+*{border-top:1px solid var(--line)}
+.feed .ic{margin-top:2px;color:var(--ink2)}
+.feed .k-error .ic{color:var(--bad)}.feed .k-applied .ic{color:var(--ok)}
+.feed .mute{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.feed time{font-size:12px;color:var(--ink2);white-space:nowrap;margin-left:auto;padding-left:8px}
+.slot{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 14px;align-items:center;padding:13px 18px}
+.slot .bd{grid-column:1}.slot>.badge{grid-column:2;grid-row:1/3;align-self:center}
+.slot+.slot{border-top:1px solid var(--line)}
+.slot b{font-variant-numeric:tabular-nums}
+.rk{padding:0!important;display:block!important}
+.rk>summary{display:flex;align-items:center;gap:10px;cursor:pointer;list-style:none;padding:13px 20px}
+.rk>summary::-webkit-details-marker{display:none}
+.rk>summary::after{content:"";width:7px;height:7px;border-right:2px solid var(--ink2);border-bottom:2px solid var(--ink2);transform:rotate(45deg);transition:transform .15s;margin:0 4px 3px}
+.rk[open]>summary::after{transform:rotate(-135deg);margin-bottom:-3px}
+.rk>summary:hover{background:var(--sunken)}
+.rkb{padding:0 20px 14px;display:flex;flex-direction:column;gap:6px}
+.fv{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0}.fv>*{flex:1 1 260px;min-width:0}
+.fv img{width:100%;border-radius:var(--r);display:block}
+.dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:3px 14px;font-size:13.5px;margin:8px 0}.dl dt{color:var(--ink2)}.dl dd{margin:0;overflow-wrap:anywhere}
+@media(max-width:900px){.livehero{grid-template-columns:1fr}.livehero>div{padding:20px}.livehero>div+div{border-left:0;border-top:1px solid var(--line)}.livegrid{grid-template-columns:1fr}.rail .st{font-size:11.5px}.livetitle{font-size:20px}}
+
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 <link rel="stylesheet" href="/static/studio.css?v=1">
@@ -240,9 +305,9 @@ button.wd{cursor:pointer}button.wd:hover{transform:translateY(-2px);border-color
     <div class="brand">Story <span>Studio</span></div>
     <nav id="nav" aria-label="Main"></nav>
     <div class="side-foot">
-      <div class="runbox" id="runbox" aria-live="polite"></div>
+      <button type="button" class="runbox" id="runbox" onclick="go('live',{slug:null})" aria-live="polite"></button>
+      <nav id="nav3" aria-label="Tools"></nav>
       <nav id="nav2" aria-label="Settings"></nav>
-      <p class="pagelinks"><a href="/now">Right now</a> · <a href="/footage">Footage</a> · <a href="/channels">Channels</a></p>
     </div>
   </aside>
   <main id="main"><div class="stack"><div class="skel" style="height:34px;width:40%"></div><div class="skel" style="height:110px"></div><div class="skel" style="height:90px"></div></div></main>
@@ -252,7 +317,7 @@ button.wd{cursor:pointer}button.wd:hover{transform:translateY(-2px);border-color
 <div class="toast" id="toast" role="status"></div>
 
 <script>
-const NAV=[["home","Home","squares-four"],["videos","Videos","film-strip"],["create","Create","magic-wand"],["autopilot","Autopilot","robot"],["growth","Growth","sparkle"],["activity","Activity","pulse"],["youtube","YouTube","youtube-logo"]]; const SET=["settings","Settings","gear-six"];
+const NAV=[["home","Home","squares-four"],["live","Live","broadcast"],["videos","Videos","film-strip"],["autopilot","Autopilot","robot"],["create","Create","magic-wand"],["growth","Growth","sparkle"],["activity","Activity","pulse"],["youtube","YouTube","youtube-logo"]]; const TOOLS=[["footage","Footage","film-slate"],["channels","Channels","users-three"]]; const SET=["settings","Settings","gear-six"];
 let S=null,tab=(location.hash.slice(1)||"home"),openSlug=null,openJob=null,ytInfo=null,editing=false,lastSig="",logTimer=null;
 
 const url=u=>/^https?:\/\//i.test(u||"")?u:"";
@@ -294,26 +359,127 @@ async function refresh(force){
   render();
 }
 function chrome(){
-  if(S.tenant&&!NAV.some(n=>n[0]==="niche"))NAV.splice(3,0,["niche","Niche","list-checks"]);
+  if(S.tenant&&!NAV.some(n=>n[0]==="niche"))NAV.splice(4,0,["niche","Niche","list-checks"]);
   const c=S.counts["needs review"],r=running();
   document.getElementById("nav").innerHTML=NAV.map(([k,l,i])=>`<button class="${tab===k?"on":""}" onclick="go('${k}',{slug:null})" ${tab===k?'aria-current="page"':""}>${ico(i)}<span class="t">${l}</span>${k==="videos"&&c?`<span class="count">${c}</span>`:""}${k==="autopilot"&&S.autopilot.needs_you?`<span class="count">${S.autopilot.needs_you}</span>`:""}${k==="growth"&&S.agent&&S.agent.unread?`<span class="count">${S.agent.unread}</span>`:""}</button>`).join("");
+  document.getElementById("nav3").innerHTML=TOOLS.map(([k,l,i])=>`<button class="${tab===k?"on":""}" onclick="go('${k}',{slug:null})" ${tab===k?'aria-current="page"':""}>${ico(i)}<span class="t">${l}</span></button>`).join("");
   document.getElementById("nav2").innerHTML=(([k,l,i])=>`<button class="${tab===k?"on":""}" onclick="go('${k}',{slug:null})" ${tab===k?'aria-current="page"':""}>${ico(i)}<span class="t">${l}</span></button>`)(SET);
   const au=S.auth&&S.auth.on, bt=(k,l,i,x="")=>`<button class="${tab===k?"on":""}" onclick="go('${k}',{slug:null})">${ico(i)}<span class="t">${l}</span>${x}</button>`;
   document.getElementById("nav2").innerHTML+=au?`<button class="logout" onclick="logout()">${ico("sign-out")}<span class="t">Sign out</span></button>`:"";
-  const nv=S.autopilot.needs_you,gv=S.agent&&S.agent.unread,more=["growth","activity","youtube","settings"].includes(tab);
+  const nv=S.autopilot.needs_you,gv=S.agent&&S.agent.unread,more=["create","growth","activity","youtube","settings","footage","channels","niche"].includes(tab);
   document.getElementById("tabbar").innerHTML=NAV.slice(0,4).map(([k,l,i])=>bt(k,l,i,k==="videos"&&c?`<span class="count">${c}</span>`:k==="autopilot"&&nv?`<span class="count">${nv}</span>`:"")).join("")+`<button class="${more?"on":""}" onclick="sheet()" aria-haspopup="true">${ico("dots-three")}<span class="t">More</span>${gv?`<span class="count">${gv}</span>`:""}</button>`;
-  document.getElementById("sheetcard").innerHTML=`<div class="state"><b>${r||S.autopilot.busy?"Working":"Idle"}</b>${r?esc(r.cmd):S.autopilot.busy?"Autopilot or a repair is running":"Nothing is running"}</div>`+[...NAV.slice(4),SET].map(([k,l,i])=>bt(k,l,i,k==="growth"&&gv?`<span class="count">${gv}</span>`:"")).join("")+[["/now","Right now","pulse"],["/footage","Footage clips","film-strip"],["/channels","Channels","squares-four"]].map(([h,l,i])=>`<button onclick="location.href='${h}'">${ico(i)}<span class="t">${l}</span></button>`).join("")+(au?`<button onclick="logout()">${ico("sign-out")}<span class="t">Sign out</span></button>`:"");
+  document.getElementById("sheetcard").innerHTML=`<div class="state"><b>${r||S.autopilot.busy?"Working":"Idle"}</b>${r?esc(r.cmd):S.autopilot.busy?"Autopilot or a repair is running":"Nothing is running"}</div>`+[...NAV.slice(4),...TOOLS,SET].map(([k,l,i])=>bt(k,l,i,k==="growth"&&gv?`<span class="count">${gv}</span>`:"")).join("")+[["/now","Right now","pulse"],["/footage","Footage clips","film-strip"],["/channels","Channels","squares-four"]].map(([h,l,i])=>`<button onclick="location.href='${h}'">${ico(i)}<span class="t">${l}</span></button>`).join("")+(au?`<button onclick="logout()">${ico("sign-out")}<span class="t">Sign out</span></button>`:"");
   document.documentElement.classList.toggle("busy",!!r);
-  document.getElementById("runbox").className="runbox"+(r?" busy":"");
-  const lockBusy=!r&&S.autopilot&&S.autopilot.busy;
-  document.getElementById("runbox").innerHTML=r?`<b>Working</b>${esc(r.cmd)}`:lockBusy?`<b>Working</b>Autopilot or a repair is running`:`<b>Idle</b>Nothing is running`;
+  const lvOn=wasBusy(),dock=document.getElementById("runbox"),busyNow=!!r||lvOn||!!S.autopilot.busy;
+  dock.className="runbox"+(busyNow?" busy":"");
+  const dockTitle=lvOn?(VERB[L.stage.key]||"Working"):r?"Working":S.autopilot.busy?"Working":"Idle";
+  const dockText=lvOn?(L.stage.topic||"Open Live to watch"):r?r.cmd:S.autopilot.busy?"Autopilot or a repair is running":(L&&L.next&&L.next[0]?"Next post "+L.next[0].us:"Nothing is running");
+  dock.innerHTML=`<span class="dot-live ${busyNow?"on":""}"></span><span><b>${esc(dockTitle)}</b>${esc(dockText)}</span>`;
 }
 function render(force){
   if(!S)return;chrome();
   const m=document.getElementById("main");
-  ({home,videos,create,niche,autopilot,growth,activity,youtube,settings})[tab]?.(m);
-  if(tab==="home")loadRisk();
+  ({home,live,videos,create,niche,autopilot,growth,activity,youtube,settings,footage,channels})[tab]?.(m);
+  if(tab==="home"){loadRisk();paintHomeLive()}
   m.firstElementChild?.classList.add("view");setTheme(document.documentElement.dataset.theme);
+}
+
+
+/* ---------- Live ---------- */
+let L=null,liveTimer=null,liveLast=0;
+const wasBusy=()=>!!(L&&L.busy&&L.stage&&!L.stage.idle);
+const VERB={plan:"Planning",voice:"Recording the voice",pictures:"Drawing the pictures",render:"Rendering the video",check:"Checking the result"};
+const secs=n=>n==null?"":n<90?n+" s":n<5400?Math.round(n/60)+" min":Math.round(n/3600)+" h";
+const agoIso=t=>{try{return ago(new Date(t).getTime()/1000)}catch(e){return ""}};
+async function pollLive(){
+  if(document.hidden)return;
+  let r;try{r=await fetch("/api/now")}catch(e){return}
+  if(r.status===401){location.href="/login";return}
+  try{L=await r.json()}catch(e){return}
+  if(S)chrome();
+  if(tab==="live")paintLive();else if(tab==="home")paintHomeLive();
+}
+function startLive(){clearInterval(liveTimer);liveTimer=setInterval(()=>{const gap=tab==="live"?3000:9000;if(Date.now()-liveLast>=gap-300){liveLast=Date.now();pollLive()}},1000);liveLast=Date.now();pollLive()}
+function railHTML(){
+  const st=L.stage,on=wasBusy();
+  return `<div class="rail" role="list" aria-label="Build stages">${st.steps.map((x,i)=>{const c=on&&st.index!=null?(i<st.index?"done":i===st.index?"now":""):"";return `<div class="st ${c}" role="listitem" ${c==="now"?'aria-current="step"':""}><i>${c==="done"?ico("check"):""}</i><span>${esc(x.label)}</span></div>`}).join("")}</div>`;
+}
+function heroHTML(){
+  const st=L.stage,on=wasBusy(),m=L.money,cr=L.credit,stale=on&&st.age_s>90;
+  const title=on?(st.topic?"Making "+esc(st.topic):"Working on a video"):(L.autopilot_on?"Idle, waiting for the next slot":"Idle, Autopilot is off");
+  const old=!on&&st.age_s!=null&&st.age_s>21600;  // a log from days ago is not news
+  const beat=old?`<div class="heartbeat">No build has run in the last ${secs(st.age_s)}.</div>`:st.last_line?`<div class="heartbeat ${stale?"stale":""}" title="${esc(st.last_line)}">${on?`<b>${esc(st.label||"")}</b> last output ${secs(st.age_s)} ago${stale?", it may be stuck":""}. `:(st.age_s!=null?`Last build output ${secs(st.age_s)} ago. `:"")}${esc(st.last_line)}</div>`:"";
+  let money="";
+  if(m){const pct=m.cap>0?Math.min(100,Math.round(100*m.spent_today/m.cap)):0,cls=m.left<0?"bad":pct>=80?"warn":"";
+    money=`<div class="money"><span class="mute">Spent today</span><div class="big mono">$${m.spent_today.toFixed(2)} <small>of $${m.cap.toFixed(2)}</small></div><div class="mbar ${cls}" role="img" aria-label="${pct} percent of the daily cap used"><i style="width:${pct}%"></i></div><span class="mute">${m.left<0?"Over the cap. New paid work waits until tomorrow (UTC).":"$"+m.left.toFixed(2)+" left today"}</span></div>`}
+  if(cr)money+=`<div class="money"><span class="mute">OpenRouter credit</span><div class="big mono">$${cr.left.toFixed(2)}</div><span class="mute">${cr.left<1.5?`${badge("Low","warn")} Below the $1.50 needed to start a video. `:""}Read ${secs(cr.age_s)} ago</span></div>`;
+  return `<div><div class="livestate"><span class="dot-live ${on?(stale?"bad":"on"):""}"></span>${on?"Working now":"Idle"}${badge(L.autopilot_on?"Autopilot on":"Autopilot off",L.autopilot_on?"ok":"mute")}</div><div class="livetitle">${title}</div>${railHTML()}${beat}</div><div>${money||'<p class="mute">Spend is not available right now.</p>'}</div>`;
+}
+const SLOT={ready:["Ready","ok"],coming:["Coming","mute"],too_soon:["Too soon","mute"],paused:["Paused","warn"],hold:["On hold","warn"],uploaded:["On YouTube","ok"],scheduled:["Scheduled","ok"]};
+function nextHTML(){
+  if(!L.next.length)return empty("calendar-check","No posts planned","Turn Autopilot on and it fills the next slots.",`<button class="btn quiet sm" onclick="go('autopilot')">Open Autopilot</button>`);
+  return L.next.map(x=>{const b=SLOT[x.status]||[String(x.status).replace(/_/g," "),"mute"];return `<div class="slot"><div><b>${esc(x.us)}</b> <span class="mute">${x.format==="doc"?"Documentary":"Short"}</span></div>${badge(...b)}<div class="mute" style="overflow-wrap:anywhere">${esc(x.title||"Nothing made for it yet")}</div><div class="mute bd">${esc(x.bd)} Bangladesh</div></div>`}).join("");
+}
+const EVI={info:"pulse",found:"sparkle",strategy:"lightning",applied:"check-circle",error:"warning-circle"};
+function feedHTML(){
+  if(!L.events.length)return empty("pulse","Nothing yet","The agents will report here as they work.");
+  const rows=[];for(const e of L.events){const p=rows[rows.length-1];if(p&&p.title===e.title&&p.detail===e.detail)p.n++;else rows.push({...e,n:1})}  // the same report repeated is one row with a count
+  return `<div class="feed">${rows.map(e=>`<div class="k-${esc(e.kind)}">${ico(EVI[e.kind]||"pulse")}<div class="grow"><div class="ttl">${esc(e.title)}${e.n>1?` <span class="mute">repeated ${e.n} times</span>`:""}</div>${e.detail?`<div class="mute">${esc(e.detail)}</div>`:""}</div><time>${agoIso(e.at)}</time></div>`).join("")}</div>`;
+}
+function vidsHTML(){
+  const rep=L.working_on?`<div><div class="grow"><div class="ttl">Repairing: ${esc(L.working_on.title)}</div><div class="mute">${esc((L.working_on.problems||[]).join("; ")||"")}</div></div>${badge("Repair","warn")}</div>`:"";
+  const rows=L.videos.map(v=>`<div style="cursor:pointer" onclick="go('videos',{slug:'${esc(v.slug)}'})"><div class="grow"><div class="ttl">${esc(v.title)}</div><div class="mute">${esc(v.stage)}</div></div>${badge(v.format==="doc"?"Documentary":"Short","mute")}</div>`).join("");
+  return rep+rows||empty("film-strip","No videos yet","Videos show here as they are made.");
+}
+function paintLive(){
+  const g=id=>document.getElementById(id);if(!L||!g("lv-hero"))return;
+  g("lv-hero").innerHTML=heroHTML();g("lv-next").innerHTML=nextHTML();g("lv-feed").innerHTML=feedHTML();g("lv-vids").innerHTML=vidsHTML();
+  const pre=g("lv-log");if(pre){const bottom=pre.scrollHeight-pre.scrollTop-pre.clientHeight<40;pre.textContent=(L.build_log||[]).join("\n")||"No build output yet.";if(bottom)pre.scrollTop=pre.scrollHeight}
+  const nm=g("lv-logname");if(nm)nm.textContent=L.build_log_name?"("+L.build_log_name+")":"";
+}
+function live(m){
+  m.innerHTML=`<div class="head"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap"><h1>Live</h1><button class="btn quiet sm" onclick="popMonitor()">${ico("monitor-play")}Open a small monitor window</button></div><p class="sub">What the studio is doing right now. It updates every few seconds while this page is open.</p></div>
+  <div class="panel livehero" id="lv-hero"><div class="skel" style="height:170px;margin:26px"></div><div></div></div>
+  <div class="sec livegrid"><div><h2>Next posts</h2><div class="panel" id="lv-next" style="margin-top:12px"></div></div><div><h2>What the agents did</h2><div class="panel" id="lv-feed" style="margin-top:12px"></div></div></div>
+  <div class="sec"><h2>Videos in the pipeline</h2><div class="panel rows" id="lv-vids" style="margin-top:12px"></div></div>
+  <div class="sec"><details><summary class="ttl" style="cursor:pointer">Build log <span class="mute" id="lv-logname"></span></summary><pre class="log" id="lv-log" style="margin-top:12px">Loading</pre></details></div>`;
+  if(L)paintLive();else pollLive();
+}
+function popMonitor(){const w=window.open("/monitor","studio-monitor","popup=yes,width=460,height=340");if(!w)toast("Your browser blocked the window. Allow pop-ups for this page, or open /monitor in a new tab.")}
+function paintHomeLive(){
+  const b=document.getElementById("homelive");if(!b)return;
+  if(!L){b.innerHTML=`<div class="skel" style="height:22px;width:60%"></div>`;return}
+  const on=wasBusy(),st=L.stage,m=L.money,nx=L.next&&L.next[0];
+  const txt=on?`<span class="lt">Making ${esc(st.topic||"a video")}</span><span class="mute">${esc(VERB[st.key]||"")}</span>`:`<span class="lt">Idle</span><span class="mute">${nx?"Next post "+esc(nx.us)+" ("+(nx.format==="doc"?"documentary":"Short")+")":"No post planned"}</span>`;
+  const mini=on&&st.index!=null?`<span class="mini" aria-hidden="true">${st.steps.map((x,i)=>`<i class="${i<st.index?"done":i===st.index?"now":""}"></i>`).join("")}</span>`:"";
+  b.innerHTML=`<span class="dot-live ${on?"on":""}"></span>${txt}${mini}${m?`<span class="mute mono">$${m.spent_today.toFixed(2)} of $${m.cap.toFixed(2)} today</span>`:""}`;
+}
+
+/* ---------- Footage ---------- */
+const FB={done:"ok",used:"ok",running:"warn",queued:"warn",fallback:"warn",failed:"bad",blocked:"bad"};
+const dollars=x=>"$"+Number(x||0).toFixed(2);
+function runHTML(r){
+  const dl=(k,v)=>v?`<dt>${k}</dt><dd>${esc(v)}</dd>`:"";
+  const led=r.ledger?dl("Source",r.ledger.source)+dl("Author or model",r.ledger.author)+dl("Licence",r.ledger.licence)+dl("Fetched",r.ledger.fetched)+dl("File hash",r.ledger.sha256):`<dt>Ledger</dt><dd>No ledger row for this run</dd>`;
+  const media=(r.clip_url?`<video controls preload="none" src="${url(r.clip_url)}" ${r.thumb_url?`poster="${url(r.thumb_url)}"`:""}></video>`:"")+(r.contact_url?`<img loading="lazy" src="${url(r.contact_url)}" alt="Contact sheet of the clip">`:"");
+  return `<div class="panel pad stack" style="gap:8px"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="ttl grow mono" style="font-size:13px">${esc(r.run_id)}</span>${badge(r.status||"unknown",FB[r.status]||"mute")}</div>${r.error?`<div class="err">${esc(r.error)}</div>`:""}<div class="mute">${r.decision?"Decision: "+esc(r.decision)+(r.reason?". "+esc(r.reason):""):"No decision yet"}</div>${media?`<div class="fv">${media}</div>`:""}<dl class="dl">${led}${dl("Cost booked",dollars(r.cost))}${dl("Started",r.created_at)}${dl("Finished",r.finished_at)}${dl("Job",r.job)}${dl("Model",r.model)}</dl><details><summary class="mute" style="cursor:pointer">Last ${r.log.length} log lines</summary><pre class="log" style="margin-top:8px">${esc(r.log.join("\n")||"No log lines")}</pre></details></div>`;
+}
+async function footage(m){
+  m.innerHTML=`<div class="head"><h1>Footage</h1><p class="sub">Clips the studio generated for each video, with where each came from, what it cost and whether it was used.</p></div><div id="ft"><div class="skel" style="height:90px"></div></div>`;
+  const paint=async()=>{let d;try{d=await api("/api/footage")}catch(e){return}const box=document.getElementById("ft");if(!box||tab!=="footage")return;
+    if([...document.querySelectorAll("#ft video")].some(v=>!v.paused)||document.querySelector("#ft details[open]"))return;
+    const mm=d.money,pct=mm.cap>0?Math.min(100,Math.round(100*mm.spent_today/mm.cap)):0;
+    box.innerHTML=`<div class="panel pad money" style="margin-bottom:6px"><span class="mute">Spent today</span><div class="big mono">${dollars(mm.spent_today)} <small>of ${dollars(mm.cap)}</small></div><div class="mbar ${mm.left<0?"bad":pct>=80?"warn":""}"><i style="width:${pct}%"></i></div></div>`+
+      (d.videos.length?d.videos.map(v=>`<div class="sec"><h2>${esc(v.title)} <span class="mute" style="font-weight:500;font-size:14px">${dollars(v.total_cost)} in total</span></h2><div class="stack" style="margin-top:12px">${v.runs.map(runHTML).join("")}</div></div>`).join(""):`<div class="sec"><div class="panel">${empty("film-slate","No footage runs yet","Clips appear here when a video uses generated footage.")}</div></div>`)};
+  await paint();clearInterval(logTimer);logTimer=setInterval(paint,20000);
+}
+
+/* ---------- Channels ---------- */
+async function channels(m){
+  m.innerHTML=`<div class="head"><h1>Channels</h1><p class="sub">The channel profiles in config/channels, read only. Each sets who the videos are for, the daily budget and whether a person approves every video.</p></div><div id="ch"><div class="skel" style="height:90px"></div></div>`;
+  let d;try{d=await api("/api/channels")}catch(e){return}
+  const yn=(b,a,c)=>b?badge(a,"ok"):badge(c,"mute");
+  document.getElementById("ch").innerHTML=`<div class="panel pad" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span class="grow">This studio asks a person to approve every video</span>${yn(d.studio_human_approval,"Yes","No, the owner's studio")}</div><div class="sec livegrid">${d.channels.map(c=>c.error?`<div class="panel pad"><b>${esc(c.id)}</b><div class="err" style="margin-top:8px">Invalid: ${esc(c.error)}</div></div>`:`<div class="panel pad stack" style="gap:10px"><h2>${esc(c.id)}</h2><p class="mute">${esc(c.audience)}</p><dl class="dl"><dt>Daily budget</dt><dd class="mono">${dollars(c.daily_budget_usd)}</dd><dt>Videos a week</dt><dd class="mono">${esc(c.videos_per_week)}</dd><dt>Made for kids</dt><dd>${c.made_for_kids?"Yes":"No"}</dd><dt>Approval</dt><dd>${c.human_approval?"A person approves each video":"Automatic"}</dd><dt>Sources</dt><dd>${esc(c.sources.join(", "))}</dd><dt>Pictures</dt><dd>${esc(c.visuals.join(", "))}</dd><dt>Voice</dt><dd>${esc(c.voice)}</dd></dl></div>`).join("")}</div>`;
 }
 
 /* ---------- Home ---------- */
@@ -343,13 +509,16 @@ async function loadRisk(){
   const box=document.getElementById("riskbox");if(!box)return;
   if(S.tenant&&!S.niche_confirmed){box.innerHTML="";return}  // a new user has nothing to be warned about yet: the first steps are on the card above
   try{const R=await api("/api/risk"),order={act:0,watch:1,ok:2},rows=R.rows.slice().sort((a,b)=>order[a.level]-order[b.level]),lv={act:["Act","bad"],watch:["Watch","warn"],ok:["OK","ok"]};
-    box.innerHTML=`<h2>Risks <span class="mute" style="font-weight:500;font-size:14px">${R.summary.act.length} need action, ${R.summary.watch.length} to watch, ${R.summary.ok} fine</span></h2><div class="panel rows">${rows.map(r=>`<div style="display:block"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="ttl grow">${esc(r.name)}</span>${badge(...lv[r.level])}</div><p class="mute" style="margin-top:4px">${esc(r.evidence)}</p>${r.level!=="ok"&&r.owner_decision?`<p class="mute" style="margin-top:4px"><b>For you:</b> ${esc(r.owner_decision)}</p>`:""}<details style="margin-top:4px"><summary class="mute">Controls in place</summary><p class="mute">${esc(r.controls)}</p></details></div>`).join("")}</div>`}catch(e){box.innerHTML=""}
+    const open=rows.filter(r=>r.level!=="ok"),fine=rows.filter(r=>r.level==="ok");
+    const one=r=>`<details class="rk"><summary><span class="ttl grow">${esc(r.name)}</span>${badge(...lv[r.level])}</summary><div class="rkb"><p class="mute">${esc(r.evidence)}</p>${r.owner_decision?`<p class="mute"><b>For you:</b> ${esc(r.owner_decision)}</p>`:""}<p class="mute"><b>Controls in place:</b> ${esc(r.controls)}</p></div></details>`;
+    box.innerHTML=`<h2>Risks <span class="mute" style="font-weight:500;font-size:14px">${R.summary.act.length} need action, ${R.summary.watch.length} to watch, ${R.summary.ok} fine</span></h2><div class="panel rows">${open.map(one).join("")}${fine.length?`<details class="rk"><summary><span class="ttl grow">${fine.length} checks are fine</span>${badge("OK","ok")}</summary><div class="rkb">${fine.map(r=>`<p class="mute"><b>${esc(r.name)}.</b> ${esc(r.evidence)}</p>`).join("")}</div></details>`:""}</div>`}catch(e){box.innerHTML=""}
 }
 function home(m){
   const n=nextStep(),c=S.counts,h=S.health,y=S.youtube;
   const check=(ok,label,fix,go_)=>`<div><div class="grow"><span class="ttl">${label}</span></div>${ok?badge("Ready","ok"):`<button class="btn quiet sm" onclick="${go_}">${fix}</button>`}</div>`;
   m.innerHTML=`<div class="head"><h1>Home</h1><p class="sub">${esc(S.niche.name)}. Everything the automation did, and what to do next.</p></div>
   <div class="panel next">${ico(n.icon,"lg")}<div class="grow stack" style="gap:4px"><h2>${n.title}</h2><p class="sub">${n.text}</p></div>${n.btn}</div>
+  <button type="button" class="panel livestrip" id="homelive" onclick="go('live',{slug:null})" aria-label="Open the live view"></button>
 
   <div class="sec"><h2>Pipeline</h2>
     <div class="panel pipe">
@@ -896,8 +1065,8 @@ async function llmClearAKey(){if(!confirm("Remove the saved Claude key?"))return
 async function llmTest(role){const el=document.getElementById("t_"+role);el.textContent="Testing...";try{const r=await api("/api/llm/test",{role});el.innerHTML=r.ok?`Works. ${r.seconds} s, cost ${usd(r.usd)}`:`<span style="color:var(--bad)">${esc(r.error)}</span>`}catch(e){el.textContent=""}}
 async function savePk(){const v=document.getElementById("pk").value;if(!v.trim())return toast("Paste a key first");await api("/api/key/save",{which:"pexels",value:v});document.getElementById("pk").value="";editing=false;toast("Key saved and hidden");refresh(true)}
 
-window.addEventListener("hashchange",()=>{const t=location.hash.slice(1);if(t&&t!==tab&&[...NAV,SET].some(n=>n[0]===t)){tab=t;render(true)}});
-refresh(true);setInterval(()=>refresh(),4000);
+window.addEventListener("hashchange",()=>{const t=location.hash.slice(1);if(t&&t!==tab&&[...NAV,...TOOLS,SET].some(n=>n[0]===t)){tab=t;render(true)}});
+refresh(true);setInterval(()=>refresh(),4000);startLive();
 </script>
 </body>
 </html>

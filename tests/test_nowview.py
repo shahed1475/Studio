@@ -65,3 +65,41 @@ def test_an_unreadable_footage_store_is_none_not_an_error(monkeypatch):
     import footagestore
     monkeypatch.setattr(footagestore, "runs", lambda *a, **k: (_ for _ in ()).throw(OSError("disk")))
     assert nowview.footage_status(NOW) is None
+
+
+# ---- the live view (29 Oct 2026) ----
+def test_the_station_is_the_newest_log_line_that_names_one_and_a_finished_or_quiet_build_is_idle():
+    lines = ["Documentary: The Lost Army", "  source articles: 2", "Voice...", "Archival images (only pictures that name the subject)...", "Rendering (48/48 scenes have footage)..."]
+    s = nowview.stage_now(lines, 5, True)
+    assert (s["key"], s["index"], s["of"], s["idle"]) == ("render", 3, 5, False) and s["last_line"].startswith("Rendering")
+    assert s["topic"] == "The Lost Army"
+    assert nowview.stage_now(lines[:3], 5, True)["key"] == "voice" and nowview.stage_now(lines[:1], 5, True)["key"] == "plan"
+    assert nowview.stage_now(lines + ["Done: /app/output/x/video.mp4"], 5, True)["idle"] is True  # finished
+    assert nowview.stage_now(lines, 5, False)["idle"] is True  # nothing holds the lock or a job
+    assert nowview.stage_now(lines, nowview.LIVE_SECONDS + 1, True)["idle"] is True  # a quiet log is not progress
+    assert nowview.stage_now([], None, True)["idle"] is True and nowview.stage_now(["no stage here"], 1, True)["key"] is None
+
+
+def test_the_live_log_is_the_newest_build_log_never_the_action_summary(tmp_path, monkeypatch):
+    import os
+    monkeypatch.setattr(config, "ROOT", tmp_path)
+    (tmp_path / "logs").mkdir()
+    old, new, quiet = (tmp_path / "logs" / n for n in ("a-doc.log", "b-doc.log", "autopilot.log"))
+    old.write_text("Voice...\n"), new.write_text("Rendering...\n"), quiet.write_text("ok approve x\n")
+    os.utime(old, (1, 1)), os.utime(new, (100, 100))  # the quiet file is the newest by time and must still be skipped
+    path, lines, age = nowview.live_log()
+    assert path.name == "b-doc.log" and lines == ["Rendering..."] and age > 0
+    (tmp_path / "logs" / "b-doc.log").unlink(), old.unlink()
+    assert nowview.live_log()[0] is None
+
+
+def test_build_carries_the_live_fields_and_a_failing_source_does_not_break_the_page(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "OUT", tmp_path / "out")
+    (tmp_path / "out").mkdir()
+    monkeypatch.setattr(nowview, "_plan_cache", {})
+    monkeypatch.setattr(nowview, "events", lambda n=8: [{"at": "T", "kind": "info", "title": "t", "detail": ""}])
+    import autopilot
+    monkeypatch.setattr(autopilot, "plan_view", lambda now: (_ for _ in ()).throw(RuntimeError("planner down")))
+    d = nowview.build(NOW)
+    assert {"stage", "busy", "build_log", "next", "events", "credit"} <= set(d) and d["next"] == [] and d["events"][0]["title"] == "t"
+    assert d["stage"]["of"] == 5 and isinstance(d["stage"]["steps"], list)

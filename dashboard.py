@@ -620,6 +620,8 @@ class H(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(b)))
             self.end_headers()
             self.wfile.write(b)
+        elif u.path == "/monitor":
+            self.send_page_file("monitor.html")
         elif u.path == "/now":
             self.send_page_file("now.html")
         elif u.path == "/api/now":

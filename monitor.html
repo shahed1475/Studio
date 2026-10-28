@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Studio monitor</title>
+<style>
+@font-face{font-family:"Geist";src:url(/static/geist.woff2) format("woff2");font-weight:100 900;font-display:swap}
+@font-face{font-family:"Geist Mono";src:url(/static/geist-mono.woff2) format("woff2");font-weight:100 900;font-display:swap}
+/* The same tokens as the dashboard. A small window: everything fits at 420 by 300 and grows with the window. */
+:root{--bg:#f4f4f5;--surface:#fff;--sunken:#f4f4f5;--ink:#18181b;--ink2:#52525b;--line:#e4e4e7;--accent:#0f766e;--accent-ink:#fff;--accent-soft:#e2f3f1;--warn:#a15c07;--bad:#b42318;--ok:#15803d}
+:root[data-theme="dark"]{--bg:#0e0f11;--surface:#17181b;--sunken:#101113;--ink:#ececee;--ink2:#a1a1aa;--line:#27282c;--accent:#2dd4bf;--accent-ink:#04201d;--accent-soft:#12302d;--warn:#fbbf24;--bad:#f87171;--ok:#4ade80}
+*{box-sizing:border-box}html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font:clamp(13px,2.2vmin,17px)/1.45 "Geist",ui-sans-serif,system-ui,sans-serif;-webkit-font-smoothing:antialiased;display:flex}
+.mono{font-family:"Geist Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+main{flex:1;display:flex;flex-direction:column;gap:1.6vmin;padding:max(14px,3vmin);min-width:0}
+header{display:flex;align-items:center;gap:10px;color:var(--ink2);font-weight:560}
+header .grow{flex:1}
+.dot{width:.7em;height:.7em;border-radius:99px;background:var(--ink2);flex:none}
+.dot.on{background:var(--accent);animation:beat 1.9s ease-out infinite}.dot.bad{background:var(--bad)}
+@keyframes beat{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 55%,transparent)}70%,100%{box-shadow:0 0 0 .7em transparent}}
+h1{margin:0;font-size:clamp(18px,5vmin,40px);font-weight:650;letter-spacing:-.03em;line-height:1.15;overflow-wrap:anywhere;text-wrap:balance}
+.rail{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:.4vmin}
+.rail div{display:flex;flex-direction:column;gap:6px;font-size:.82em;color:var(--ink2);font-weight:560}
+.rail i{height:6px;border-radius:99px;background:var(--line)}
+.rail .done i{background:var(--accent)}.rail .now{color:var(--ink)}.rail .now i{background:var(--accent);animation:pulse 1.9s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.45}}
+.beat{font:.82em/1.4 "Geist Mono",ui-monospace,monospace;color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.beat.stale{color:var(--warn)}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:1.4vmin;margin-top:auto}
+.c{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:max(10px,1.6vmin) max(12px,2vmin);display:flex;flex-direction:column;gap:5px;min-width:0}
+.c small{color:var(--ink2);font-size:.82em}
+.c b{font-size:1.5em;font-weight:650;letter-spacing:-.03em;line-height:1.1}
+.c .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar{height:6px;border-radius:99px;background:var(--sunken);border:1px solid var(--line);overflow:hidden}.bar i{display:block;height:100%;background:var(--accent)}
+.bar.warn i{background:var(--warn)}.bar.bad i{background:var(--bad)}
+footer{display:flex;gap:10px;align-items:center;color:var(--ink2);font-size:.8em}
+footer span.grow{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+button{font:inherit;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;padding:3px 10px;cursor:pointer}
+button:hover{border-color:var(--accent)}button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (max-height:260px){.cards{grid-template-columns:1fr}.c:nth-child(2){display:none}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+</head>
+<body>
+<main aria-live="polite">
+  <header><span class="dot" id="dot"></span><span id="state">Connecting</span><span class="grow"></span><span class="mono" id="clock"></span></header>
+  <h1 id="title">Studio monitor</h1>
+  <div class="rail" id="rail" aria-label="Build stages"></div>
+  <div class="beat" id="beat"></div>
+  <div class="cards">
+    <div class="c" id="money"></div>
+    <div class="c" id="next"></div>
+  </div>
+  <footer><span class="grow" id="event"></span><button id="wake" type="button" aria-pressed="false" hidden>Keep screen on</button></footer>
+</main>
+<script>
+const $=id=>document.getElementById(id),esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+try{const t=localStorage.getItem("theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.dataset.theme=t}catch(e){}
+const secs=n=>n==null?"":n<90?n+" s":n<5400?Math.round(n/60)+" min":Math.round(n/3600)+" h";
+function paint(L){
+  const st=L.stage,on=!!(L.busy&&st&&!st.idle),m=L.money,cr=L.credit,nx=L.next&&L.next[0],stale=on&&st.age_s>90;
+  $("dot").className="dot "+(on?(stale?"bad":"on"):"");
+  $("state").textContent=on?"Working now":"Idle";
+  $("title").textContent=on?(st.topic?"Making "+st.topic:"Working on a video"):(L.autopilot_on?"Waiting for the next slot":"Autopilot is off");
+  $("rail").innerHTML=st.steps.map((x,i)=>`<div class="${on&&st.index!=null?(i<st.index?"done":i===st.index?"now":""):""}"><i></i>${esc(x.label)}</div>`).join("");
+  const b=$("beat");b.className="beat"+(stale?" stale":"");b.textContent=(!on&&st.age_s>21600)?"No build has run in the last "+secs(st.age_s)+".":st.last_line?(on?st.label+", last output "+secs(st.age_s)+" ago: ":"Last output "+secs(st.age_s)+" ago: ")+st.last_line:"";
+  if(m){const pct=m.cap>0?Math.min(100,Math.round(100*m.spent_today/m.cap)):0;
+    $("money").innerHTML=`<small>Spent today</small><b class="mono">$${m.spent_today.toFixed(2)}<small> of $${m.cap.toFixed(2)}</small></b><div class="bar ${m.left<0?"bad":pct>=80?"warn":""}" role="img" aria-label="${pct} percent of the daily cap"><i style="width:${pct}%"></i></div><small>${cr?"Credit $"+cr.left.toFixed(2):m.left<0?"Over the cap":"$"+m.left.toFixed(2)+" left"}</small>`}
+  $("next").innerHTML=nx?`<small>Next post</small><b class="t">${esc(nx.us)}</b><small class="t">${nx.format==="doc"?"Documentary":"Short"}${nx.title?": "+esc(nx.title):""}</small>`:`<small>Next post</small><b>None planned</b>`;
+  const e=L.events&&L.events[0];$("event").textContent=e?e.title:"";
+  $("clock").textContent=new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"});
+}
+async function tick(){
+  try{const r=await fetch("/api/now");if(r.status===401){location.href="/login";return}paint(await r.json())}
+  catch(e){$("state").textContent="Not reachable, retrying";$("dot").className="dot bad"}
+}
+let timer=setInterval(tick,2500);tick();
+document.addEventListener("visibilitychange",()=>{clearInterval(timer);timer=setInterval(tick,document.hidden?15000:2500);if(!document.hidden)tick()});
+let lock=null;const wb=$("wake");
+if("wakeLock" in navigator){wb.hidden=false;wb.onclick=async()=>{try{if(lock){await lock.release();lock=null;wb.setAttribute("aria-pressed","false")}else{lock=await navigator.wakeLock.request("screen");wb.setAttribute("aria-pressed","true");lock.addEventListener("release",()=>{lock=null;wb.setAttribute("aria-pressed","false")})}}catch(e){}}}
+</script>
+</body>
+</html>
