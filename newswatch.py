@@ -234,6 +234,14 @@ def run(now: dt.datetime | None = None) -> Path:
             digest["error"] = f"summary failed: {type(e).__name__}"
     import safety
 
+    try:
+        import learner
+
+        growth = learner.latest_summary(now)
+        if growth:
+            digest["growth"] = growth  # this week's learner report, first lines
+    except Exception:
+        pass
     digest["items"] = [{"title": f"Policy page changed: {c['page']}",
                         "what_changed": c["added"][0] if c["added"] else "Some text on this page was removed.",
                         "why_it_matters": "This is YouTube's own rule page. Read the change before the next upload.",

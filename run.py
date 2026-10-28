@@ -747,6 +747,14 @@ def main() -> None:
 
         d = drift.run(policy_changes=newswatch.recent_policy_changes(dt.datetime.now(dt.timezone.utc), 40))
         print(f"drift: {d['status']} ({d['have_days']} of {d['need_days']} days of history), {len(d['events'])} finding(s)")
+    elif a[0] == "learn":  # the weekly report: what worked, what did not, from our own numbers (reads and writes its own files; never touches YouTube)
+        import datetime as dt
+
+        import learner
+
+        out = learner.run()
+        print(json.dumps(out, indent=2))
+        print(learner.latest_summary(dt.datetime.now(dt.timezone.utc), lines=40))
     elif a[0] == "policy":  # YouTube rule-page changes and the hold on scheduling and uploads (the owner releases it)
         import policyclass
 

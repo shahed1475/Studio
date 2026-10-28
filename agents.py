@@ -8,6 +8,7 @@ AGENTS = {
     "growth": {"job": "agent", "cmds": ["agent"], "hands_to": ["research"]},
     "collector": {"job": "growthdata", "cmds": ["growthdata"], "hands_to": ["diagnoser"]},
     "diagnoser": {"job": "diagnose", "cmds": ["diagnose"], "hands_to": ["fixer", "research"]},
+    "learner": {"job": "weekly", "cmds": ["learn"], "hands_to": ["research"]},
     "news": {"job": "policywatch", "cmds": ["newswatch", "policywatch"], "hands_to": ["creator", "guardian"]},
     "creator": {"job": None, "cmds": ["doc", "make", "redo", "remake", "batch"], "hands_to": ["scriptreview", "seo", "reviewer"]},
     "scriptreview": {"job": None, "cmds": ["script-review"], "hands_to": ["creator", "doctor"]},

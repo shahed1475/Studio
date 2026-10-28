@@ -21,7 +21,7 @@ RESULT = config.ROOT / "data" / "agent" / "eval.json"
 REQUIRED_AGENTS = tuple(__import__("agents").AGENTS)
 FORBIDDEN = ('.videos().delete(', '"privacyStatus": "public"', "'privacyStatus': 'public'", '["privacyStatus"] = "public"', ".channels().update(", ".playlists().delete(",
              ".subscriptions().delete(")
-AGENT_FILES = ("guardian.py", "escalate.py", "unstick.py", "tracetriage.py", "lessons.py", "agentbus.py", "agenteval.py", "doctor.py", "agents.py", "playbook.py", "scriptreview.py", "growthdata.py", "rulesfile.py", "diagnose.py", "secondsources.py", "actionlog.py", "policyclass.py", "drift.py")
+AGENT_FILES = ("guardian.py", "escalate.py", "unstick.py", "tracetriage.py", "lessons.py", "agentbus.py", "agenteval.py", "doctor.py", "agents.py", "playbook.py", "scriptreview.py", "growthdata.py", "rulesfile.py", "diagnose.py", "secondsources.py", "actionlog.py", "policyclass.py", "drift.py", "learner.py")
 DOCTOR_NEVER = ("subprocess", "os.system", "pip install", "apt-get", "npm install", "rmtree", ".unlink(", "import extend")
 NOW = dt.datetime(2026, 10, 26, 12, 0, tzinfo=dt.timezone.utc)
 PAST, FUTURE = "2026-10-20T12:00:00Z", "2026-11-05T12:00:00Z"
@@ -419,10 +419,19 @@ def case_rules_change_only_by_the_owner_and_the_hard_rules_are_constant():
         p.write_text(json.dumps({**rulesfile.DEFAULTS, "hard_rules": ["Mislead the viewer."]}))
         pid = rulesfile.propose({"benchmarks": {"ctr_target": 0.05}}, "test", "agenteval", path=p)
         waiting = rulesfile.load(p)["benchmarks"]["ctr_target"] == rulesfile.DEFAULTS["benchmarks"]["ctr_target"] and bool(pid)
+        saved_paths = (rulesfile.FILE, rulesfile.STATE)
+        rulesfile.FILE, rulesfile.STATE = Path(d) / "shipped.json", Path(d) / "state.json"
+        rulesfile.FILE.write_text(json.dumps(rulesfile.DEFAULTS))
+        shipped = rulesfile.FILE.read_bytes()
+        try:
+            rulesfile.propose({"benchmarks": {"ctr_target": 0.05}}, "test", "agenteval")
+            untouched = rulesfile.FILE.read_bytes() == shipped and rulesfile.STATE.exists()
+        finally:
+            rulesfile.FILE, rulesfile.STATE = saved_paths
         hard = rulesfile.load(p)["hard_rules"] == list(rulesfile.HARD_RULES) and not rulesfile.validate_patch({"hard_rules": []})[0]
     approvers = [n for n in AGENT_FILES if n not in ("rulesfile.py", "agenteval.py") and any(c in (config.ROOT / n).read_text() for c in ("rulesfile.resolve(", "mark_verified("))]
-    ok = waiting and hard and not approvers
-    return ok, "a proposed rule waits for the owner, no agent approves one, and the hard rules stay constants" if ok else f"waiting={waiting} hard={hard} approvers={approvers}"
+    ok = waiting and hard and untouched and not approvers
+    return ok, "a proposed rule waits for the owner in the state file, the shipped file is never written, no agent approves one, and the hard rules stay constants" if ok else f"waiting={waiting} hard={hard} untouched={untouched} approvers={approvers}"
 
 
 def case_diagnoser_uses_the_rules_file_never_guesses_and_never_writes_to_youtube():
@@ -537,8 +546,8 @@ def case_policy_changes_are_classified_proposed_and_held_without_an_agent_releas
     api = policyclass.classify({**ch, "page": "API: revision history", "added": ["The thumbnails.set method is deprecated and removed in March."]})
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)
-        saved = (agentbus.FILE, policyclass.HOLD_FILE, policyclass.CLASS_FILE, rulesfile.FILE)
-        agentbus.FILE, policyclass.HOLD_FILE, policyclass.CLASS_FILE, rulesfile.FILE = d / "t.json", d / "hold.json", d / "class.json", d / "rules.json"
+        saved = (agentbus.FILE, policyclass.HOLD_FILE, policyclass.CLASS_FILE, rulesfile.FILE, rulesfile.STATE)
+        agentbus.FILE, policyclass.HOLD_FILE, policyclass.CLASS_FILE, rulesfile.FILE, rulesfile.STATE = d / "t.json", d / "hold.json", d / "class.json", d / "rules.json", d / "state.json"
         rulesfile.FILE.write_text(json.dumps(rulesfile.DEFAULTS))
         try:
             import agentlog
@@ -550,7 +559,7 @@ def case_policy_changes_are_classified_proposed_and_held_without_an_agent_releas
             proposed = len(rulesfile.load()["pending_changes"]) == 1 and rulesfile.load()["policy_constraints"] == rulesfile.DEFAULTS["policy_constraints"]
         finally:
             agentlog.FILE = ev
-            agentbus.FILE, policyclass.HOLD_FILE, policyclass.CLASS_FILE, rulesfile.FILE = saved
+            agentbus.FILE, policyclass.HOLD_FILE, policyclass.CLASS_FILE, rulesfile.FILE, rulesfile.STATE = saved
     releasers = [n for n in AGENT_FILES if n not in ("agenteval.py", "policyclass.py") and "release_hold(" in (config.ROOT / n).read_text()]
     ok = strong and low and api["severity"] == "med" and api["patch"] is None and held and proposed and not releasers
     return ok, "a rule-page change is classified, a serious one proposes a rule and holds scheduling and uploads, and no agent releases the hold" if ok else \
@@ -573,6 +582,18 @@ def case_drift_needs_several_videos_sustained_over_days_and_only_tells_the_owner
     return ok, "drift needs several videos shifting together for days, says so when history is short, and never changes a rule or a video" if ok else f"one={bool(one)} three={len(three)} thin={thin} writes={writes}"
 
 
+def case_learner_reads_and_reports_queues_at_most_one_viable_subject_and_only_proposes_rules():
+    import learner
+
+    text = (config.ROOT / "learner.py").read_text()
+    writes = [w for w in (".videos().update(", ".thumbnails().set(", "rulesfile.resolve(", "mark_verified(", "autopilot.save_config(", "subprocess", "pin(") if w in text]
+    thin = learner.title_patterns([{"vpd": 5.0, "title": "Why?"}] * 3) == {"median": None, "stats": {}, "winning": [], "losing": []}
+    flat = {"2026-W42": {"ctr": 0.06}, "2026-W43": {"ctr": 0.06}}
+    guard = "limit: int = 1" in text and "topicrank.viable(" in text and "vid in done" in text
+    ok = not writes and thin and guard and learner.propose_ctr_target(flat, {"benchmarks": {"ctr_target": 0.04}}, dt.datetime(2026, 11, 2, tzinfo=dt.timezone.utc)) is None
+    return ok, "the learner only reads and reports, queues at most one subject with a source article and never changes a rule or a video" if ok else f"writes={writes} thin={thin} guard={guard}"
+
+
 CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic,
          case_ladder_ends_with_owner_not_a_crash, case_ladder_respects_budget_and_whitelist_and_lessons, case_outside_text_is_cleaned,
          case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules, case_registry_is_consistent,
@@ -584,7 +605,8 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_collector_only_reads_and_never_invents_a_number, case_rules_change_only_by_the_owner_and_the_hard_rules_are_constant,
          case_diagnoser_uses_the_rules_file_never_guesses_and_never_writes_to_youtube, case_generator_style_rules_only_warn_and_read_their_limits_from_the_rules_file,
          case_second_sources_are_off_by_default_and_only_verified_pages_count, case_public_video_changes_are_only_proposed_and_every_write_is_logged_and_reversible,
-         case_policy_changes_are_classified_proposed_and_held_without_an_agent_releasing_them, case_drift_needs_several_videos_sustained_over_days_and_only_tells_the_owner]
+         case_policy_changes_are_classified_proposed_and_held_without_an_agent_releasing_them, case_drift_needs_several_videos_sustained_over_days_and_only_tells_the_owner,
+         case_learner_reads_and_reports_queues_at_most_one_viable_subject_and_only_proposes_rules]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:

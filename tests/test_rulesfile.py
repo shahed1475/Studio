@@ -103,3 +103,43 @@ def test_the_supply_row_survives_a_slot_status_it_does_not_know(monkeypatch):
     monkeypatch.setattr(planner, "rows", lambda *a, **k: [{"format": "doc", "at": "2026-10-29T22:00:00Z", "us": "Thu", "status": "paused", "title": "", "slug": None, "starts_us": "Wed"}])
     row = risk.supply(NOW)
     assert row["id"] == "supply" and "paused" in row["evidence"]
+
+
+def test_nothing_the_system_does_writes_the_shipped_file_it_all_goes_to_the_state_file():
+    shipped_before = rulesfile.FILE.read_bytes()
+    pid = rulesfile.propose({"benchmarks": {"ctr_target": 0.05}}, "w", "s", NOW)
+    pid2 = rulesfile.propose({"banned_patterns_add": ["titles that start with Why"]}, "w", "s", NOW)
+    rulesfile.resolve(pid, True, NOW)
+    rulesfile.resolve(pid2, False, NOW)
+    rulesfile.mark_verified(NOW + dt.timedelta(days=2))
+    rulesfile.set_insights({"winning_topics": ["Voynich Manuscript"]})
+    assert rulesfile.FILE.read_bytes() == shipped_before and rulesfile.STATE.exists()  # a deploy can always fast-forward the shipped file
+    assert set(json.loads(rulesfile.STATE.read_text())) == {"benchmarks", "rules_version", "last_verified", "pending_changes", "history", "insights"}  # only what changed
+
+
+def test_the_state_file_overrides_the_shipped_file_and_what_it_does_not_name_still_follows_the_shipped_file(tmp_path):
+    rulesfile.FILE.write_text(json.dumps({"benchmarks": {"ctr_target": 0.06, "hook_max_seconds": 12}}))
+    rulesfile.STATE.write_text(json.dumps({"benchmarks": {"ctr_target": 0.05}}))
+    r = rulesfile.load()
+    assert r["benchmarks"]["ctr_target"] == 0.05 and r["benchmarks"]["hook_max_seconds"] == 12 and r["benchmarks"]["ctr_retest_below"] == 0.03 and r["_problems"] == []
+    rulesfile.FILE.write_text(json.dumps({"benchmarks": {"ctr_target": 0.07, "hook_max_seconds": 14}}))  # the next deploy changes a shipped value
+    r = rulesfile.load()
+    assert r["benchmarks"]["ctr_target"] == 0.05 and r["benchmarks"]["hook_max_seconds"] == 14  # the owner's approved value stays; untouched values follow the code
+
+
+def test_an_approved_list_addition_keeps_the_shipped_entries_and_a_broken_state_file_is_ignored_and_reported():
+    rulesfile.FILE.write_text(json.dumps({**rulesfile.DEFAULTS, "banned_patterns": ["shipped pattern one", "shipped pattern two"]}))
+    pid = rulesfile.propose({"banned_patterns_add": ["a new pattern"]}, "w", "s", NOW)
+    rulesfile.resolve(pid, True, NOW)
+    assert rulesfile.load()["banned_patterns"] == ["shipped pattern one", "shipped pattern two", "a new pattern"]
+    rulesfile.STATE.write_text("{broken")
+    r = rulesfile.load()
+    assert r["banned_patterns"] == ["shipped pattern one", "shipped pattern two"] and any("rules_state.json unreadable" in p for p in r["_problems"])
+    rulesfile.STATE.unlink()
+    assert rulesfile.load()["_problems"] == []  # no state file yet is normal
+
+
+def test_insights_are_short_known_lists_only():
+    out = rulesfile.set_insights({"winning_topics": [f"topic {i} " + "x" * 300 for i in range(15)], "losing_patterns": ["encyclopedia titles"], "made_up": ["x"], "winning_title_patterns": "not a list"})
+    assert len(out["winning_topics"]) == 10 and all(len(t) <= 160 for t in out["winning_topics"]) and out["losing_patterns"] == ["encyclopedia titles"] and "made_up" not in out
+    assert out["winning_title_patterns"] == [] and rulesfile.load()["insights"]["losing_patterns"] == ["encyclopedia titles"]

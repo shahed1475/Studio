@@ -47,6 +47,7 @@ def _isolate_growth_files(tmp_path, monkeypatch):
     private = iso / "rules.json"
     shutil.copy(shipped, private)
     monkeypatch.setattr(rulesfile, "FILE", private)
+    monkeypatch.setattr(rulesfile, "STATE", iso / "rules_state.json")
     monkeypatch.setattr(policyclass, "CLASS_FILE", iso / "policy_class.json")
     monkeypatch.setattr(policyclass, "HOLD_FILE", iso / "policy_hold.json")
     monkeypatch.setattr(actionlog, "ACTIONS", iso / "actions.json")
@@ -55,6 +56,11 @@ def _isolate_growth_files(tmp_path, monkeypatch):
     monkeypatch.setattr(growthdata, "DAILY", iso / "metrics_daily.json")
     monkeypatch.setattr(drift, "FILE", iso / "metrics_daily.json")
     monkeypatch.setattr(diagnose, "FILE", iso / "diagnoses.json")
+    import learner
+
+    monkeypatch.setattr(learner, "WEEKLY", iso / "weekly.json")
+    monkeypatch.setattr(learner, "QUEUED", iso / "queued_longs.json")
+    monkeypatch.setattr(learner, "REPORTS", iso / "reports")
 
 
 @pytest.fixture(autouse=True)

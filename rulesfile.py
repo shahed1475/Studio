@@ -11,7 +11,8 @@ from pathlib import Path
 import config
 import filelock
 
-FILE = config.ROOT / "config" / "rules.json"
+FILE = config.ROOT / "config" / "rules.json"  # shipped with the code, never written by the running system
+STATE = config.ROOT / "data" / "rules_state.json"  # what the running system changes: approved values, proposals, history, insights (data/ is not in git, so a deploy never conflicts)
 STALE_DAYS = 30
 HARD_RULES = (
     "Never mislead the viewer: the title and thumbnail must be paid off.",
@@ -83,19 +84,19 @@ def _day(text) -> bool:
         return False
 
 
-def load(path: Path | None = None) -> dict:
-    """The rules in force: defaults overlaid with every valid value in the file. Never raises; `_problems` lists what was ignored."""
-    out, problems = copy.deepcopy(DEFAULTS), []
+def _overlay(out: dict, src: Path, problems: list, optional: bool) -> None:
+    """Apply the valid values of one rules file onto `out` (defaults first, then the shipped file, then the state file)."""
     try:
-        raw = json.loads(Path(path or FILE).read_text())
+        raw = json.loads(Path(src).read_text())
         if not isinstance(raw, dict):
             raise ValueError("not an object")
     except FileNotFoundError:
-        raw = {}
-        problems.append("rules file missing: defaults in use")
+        if not optional:
+            problems.append("rules file missing: defaults in use")
+        return
     except (OSError, ValueError):
-        raw = {}
-        problems.append("rules file unreadable: defaults in use")
+        problems.append(f"{Path(src).name} unreadable: its values are ignored")
+        return
     for section, specs in SPECS.items():
         for key, value in (raw.get(section) or {}).items() if isinstance(raw.get(section), dict) else ():
             if key in specs and _ok(specs[key], value):
@@ -114,7 +115,18 @@ def load(path: Path | None = None) -> dict:
             out[key] = raw[key]
     if isinstance(raw.get("insights"), dict):
         out["insights"].update({k: v for k, v in raw["insights"].items() if isinstance(v, list)})
-    out["hard_rules"] = list(HARD_RULES)  # constants: whatever the file says
+
+
+def load(path: Path | None = None) -> dict:
+    """The rules in force: defaults, overlaid with every valid value in the shipped file and then in the state file. With an explicit `path` (tests) only that file is
+    read. Never raises; `_problems` lists what was ignored."""
+    out, problems = copy.deepcopy(DEFAULTS), []
+    if path:
+        _overlay(out, Path(path), problems, optional=False)
+    else:
+        _overlay(out, FILE, problems, optional=False)
+        _overlay(out, STATE, problems, optional=True)  # no state file yet is normal
+    out["hard_rules"] = list(HARD_RULES)  # constants: whatever a file says
     out["_problems"] = problems
     return out
 
@@ -159,23 +171,26 @@ def validate_patch(patch) -> tuple[bool, str]:
 
 
 def _raw(path: Path) -> dict:
+    """The writable file as it is: only what was changed (a missing or unreadable file is {}), never the shipped defaults."""
     try:
-        raw = json.loads(path.read_text())
-        return raw if isinstance(raw, dict) else copy.deepcopy(DEFAULTS)
+        raw = json.loads(Path(path).read_text())
+        return raw if isinstance(raw, dict) else {}
     except (OSError, ValueError):
-        return copy.deepcopy(DEFAULTS)
+        return {}
 
 
 def _save(path: Path, raw: dict) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     filelock.write_atomic(path, json.dumps(raw, indent=2, ensure_ascii=False) + "\n")
 
 
 def propose(patch: dict, why: str, source: str, now: dt.datetime | None = None, path: Path | None = None) -> str | None:
-    """Queue a change for the owner. Returns its id, or None when the patch is not allowed. Nothing changes until `approve`."""
+    """Queue a change for the owner. Returns its id, or None when the patch is not allowed. Nothing changes until `approve`. Written to the state file."""
     ok, _ = validate_patch(patch)
     if not ok:
         return None
-    path = Path(path or FILE)
+    path = Path(path or STATE)
     raw, now = _raw(path), now or dt.datetime.now(dt.timezone.utc)
     pend = [p for p in raw.get("pending_changes", []) if isinstance(p, dict)]
     if any(p.get("patch") == patch for p in pend):
@@ -193,8 +208,9 @@ def _bump(version: str) -> str:
 
 
 def resolve(pid: str, approve: bool, now: dt.datetime | None = None, path: Path | None = None) -> str:
-    """The owner's decision on a pending change. Approve applies it, bumps the version and sets last_verified; reject only records it."""
-    path, now = Path(path or FILE), now or dt.datetime.now(dt.timezone.utc)
+    """The owner's decision on a pending change. Approve applies it, bumps the version and sets last_verified; reject only records it. Written to the state file."""
+    explicit = path is not None
+    path, now = Path(path or STATE), now or dt.datetime.now(dt.timezone.utc)
     raw = _raw(path)
     hit = next((p for p in raw.get("pending_changes", []) if isinstance(p, dict) and p.get("id") == pid), None)
     if not hit:
@@ -203,14 +219,15 @@ def resolve(pid: str, approve: bool, now: dt.datetime | None = None, path: Path 
         ok, why = validate_patch(hit["patch"])
         if not ok:
             return f"{pid} not applied: {why}"
+        cur = load(path if explicit else None)  # the rules in force now: lists are extended from these, so the shipped ones are kept
         for section, body in hit["patch"].items():
             if section in SPECS:
                 raw.setdefault(section, {}).update(body)
             elif section == "banned_patterns_add":
-                raw["banned_patterns"] = list(dict.fromkeys([*raw.get("banned_patterns", DEFAULTS["banned_patterns"]), *body]))
+                raw["banned_patterns"] = list(dict.fromkeys([*cur["banned_patterns"], *body]))
             elif section == "policy_constraints_add":
-                raw["policy_constraints"] = [*raw.get("policy_constraints", DEFAULTS["policy_constraints"]), *body]
-        raw["rules_version"] = _bump(raw.get("rules_version", DEFAULTS["rules_version"]))
+                raw["policy_constraints"] = [*cur["policy_constraints"], *body]
+        raw["rules_version"] = _bump(cur["rules_version"])
         raw["last_verified"] = now.date().isoformat()
     raw["pending_changes"] = [p for p in raw["pending_changes"] if p is not hit]
     raw["history"] = (raw.get("history", []) + [{"id": pid, "decision": "approved" if approve else "rejected", "at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -221,8 +238,19 @@ def resolve(pid: str, approve: bool, now: dt.datetime | None = None, path: Path 
 
 def mark_verified(now: dt.datetime | None = None, path: Path | None = None) -> str:
     """The owner (or a verified policy check) confirms the rules still hold today."""
-    path, now = Path(path or FILE), now or dt.datetime.now(dt.timezone.utc)
+    path, now = Path(path or STATE), now or dt.datetime.now(dt.timezone.utc)
     raw = _raw(path)
     raw["last_verified"] = now.date().isoformat()
     _save(path, raw)
     return f"rules marked verified on {raw['last_verified']}"
+
+
+def set_insights(insights: dict, path: Path | None = None) -> dict:
+    """What the weekly learner found (winning title patterns and topics, losing patterns): short strings, at most 10 each. These are notes, not thresholds, so an
+    agent may write them; nothing reads them as a rule."""
+    path = Path(path or STATE)
+    clean = {k: [re_text for re_text in (str(x)[:160] for x in v[:10]) if re_text] for k, v in insights.items() if k in DEFAULTS["insights"] and isinstance(v, list)}
+    raw = _raw(path)
+    raw["insights"] = {**{k: [] for k in DEFAULTS["insights"]}, **clean}
+    _save(path, raw)
+    return raw["insights"]
