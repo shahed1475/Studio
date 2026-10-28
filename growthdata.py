@@ -117,9 +117,10 @@ def fetch_reach(rp, session, store: dict) -> tuple[dict, str | None]:
 DAILY = config.ROOT / "data" / "agent" / "metrics" / "daily.json"
 
 
-def fetch_daily(an, now: dt.datetime, base: dict, path: Path | None = None, every_hours: int = 20) -> bool:
-    """Daily views per video and per traffic source for the last 90 days (two Analytics queries), kept for the drift detector. At most once every `every_hours`.
-    `path` is the metrics file's path when a test passes one: the daily file then sits beside it."""
+def fetch_daily(an, now: dt.datetime, base: dict, video_ids: list[str], path: Path | None = None, every_hours: int = 20) -> bool:
+    """Daily views per video (one filtered query each: the API does not support the day and video dimensions together, checked 28 Oct 2026) and per traffic source
+    for the last 90 days, kept for the drift detector. At most once every `every_hours`. `path` is the metrics file's path when a test passes one: the daily
+    file then sits beside it."""
     target = (Path(path).with_name("daily.json") if path else DAILY)
     try:
         old = json.loads(target.read_text())
@@ -128,8 +129,9 @@ def fetch_daily(an, now: dt.datetime, base: dict, path: Path | None = None, ever
     except (OSError, ValueError, KeyError):
         pass
     vids, traffic = {}, {}
-    for day, vid, views in an.reports().query(metrics="views", dimensions="day,video", maxResults=10000, **base).execute().get("rows", []):
-        vids.setdefault(vid, {})[day] = int(views)
+    for vid in video_ids[:50]:
+        rows = an.reports().query(metrics="views", dimensions="day", filters=f"video=={vid}", sort="day", **base).execute().get("rows", [])
+        vids[vid] = {day: int(views) for day, views in rows}
     for day, src, views in an.reports().query(metrics="views", dimensions="day,insightTrafficSourceType", maxResults=10000, **base).execute().get("rows", []):
         traffic.setdefault(day, {})[src] = int(views)
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -179,7 +181,7 @@ def collect(now: dt.datetime | None = None, cl=None, path: Path | None = None, l
         store["videos"][v["id"]] = entry
         collected += 1
     try:
-        fetch_daily(an, now, base, path)
+        fetch_daily(an, now, base, [v["id"] for v in videos], path)
     except Exception as e:
         problems.append(f"daily series unavailable: {type(e).__name__}: {str(e)[:120]}")
     days, reach_problem = fetch_reach(rp, session, store) if rp is not None else ({}, "reporting API client could not be built")

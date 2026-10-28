@@ -31,8 +31,10 @@ class Analytics:
         d = kw["dimensions"]
         if d == "video":
             return Req(self.totals if isinstance(self.totals, Exception) else {"rows": self.totals})
-        if d == "day,video":
-            return Req({"rows": [["2026-10-26", "V1", 5], ["2026-10-27", "V1", 7], ["2026-10-27", "V2", 9]]})
+        if d == "day,video":  # the real API answers 400 "The query is not supported" for this pair (checked 28 Oct 2026): the fake must not accept it either
+            return Req(RuntimeError("400 The query is not supported"))
+        if d == "day":
+            return Req({"rows": [["2026-10-26", 5], ["2026-10-27", 7]] if kw.get("filters") == "video==V1" else [["2026-10-27", 9]]})
         if d == "day,insightTrafficSourceType":
             return Req({"rows": [["2026-10-26", "SHORTS", 30], ["2026-10-26", "YT_SEARCH", 10], ["2026-10-27", "SHORTS", 20]]})
         if d == "elapsedVideoTimeRatio":
@@ -157,19 +159,19 @@ def test_daily_views_per_video_and_source_are_kept_for_the_drift_detector_at_mos
     an = Analytics(TOTALS)
     run(tmp_path, an=an)
     d = json.loads((tmp_path / "daily.json").read_text())
-    assert d["videos"]["V1"] == {"2026-10-26": 5, "2026-10-27": 7} and d["traffic"]["2026-10-26"] == {"SHORTS": 30, "YT_SEARCH": 10}
-    n = sum(1 for c in an.calls if c["dimensions"] in ("day,video", "day,insightTrafficSourceType"))
-    assert n == 2
+    assert d["videos"]["V1"] == {"2026-10-26": 5, "2026-10-27": 7} and d["videos"]["V2"] == {"2026-10-27": 9} and d["traffic"]["2026-10-26"] == {"SHORTS": 30, "YT_SEARCH": 10}
+    assert not any(c["dimensions"] == "day,video" for c in an.calls)  # the unsupported pair is never asked
+    assert sum(1 for c in an.calls if c["dimensions"] == "day") == 2  # one filtered query per video
     run(tmp_path, an=an, now=NOW + dt.timedelta(hours=7))
-    assert sum(1 for c in an.calls if c["dimensions"] == "day,video") == 1  # not asked again within 20 hours
+    assert sum(1 for c in an.calls if c["dimensions"] == "day") == 2  # not asked again within 20 hours
     run(tmp_path, an=an, now=NOW + dt.timedelta(hours=26))
-    assert sum(1 for c in an.calls if c["dimensions"] == "day,video") == 2
+    assert sum(1 for c in an.calls if c["dimensions"] == "day") == 4
 
 
 def test_a_failing_daily_query_is_reported_and_does_not_stop_the_rest(tmp_path):
     class Bad(Analytics):
         def query(self, **kw):
-            if kw["dimensions"] == "day,video":
+            if kw["dimensions"] == "day":
                 return Req(RuntimeError("quota"))
             return super().query(**kw)
 
