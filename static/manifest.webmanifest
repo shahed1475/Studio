@@ -1,0 +1,21 @@
+{
+  "name": "Story Studio",
+  "short_name": "Studio",
+  "description": "Your YouTube story studio: live work, notifications and Autopilot.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#050505",
+  "theme_color": "#050505",
+  "icons": [
+    {"src": "/static/icons/app-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "/static/icons/app-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "/static/icons/app-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ],
+  "shortcuts": [
+    {"name": "Live", "short_name": "Live", "url": "/#live"},
+    {"name": "Notifications", "short_name": "Alerts", "url": "/notifications"},
+    {"name": "Videos", "short_name": "Videos", "url": "/#videos"}
+  ]
+}

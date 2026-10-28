@@ -3,7 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#040c09">
+<meta name="theme-color" content="#050505">
+<meta name="color-scheme" content="light dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/static/manifest.webmanifest">
+<link rel="icon" type="image/png" href="/static/icons/app-192.png">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
 <title>Sign in · Story Studio</title>
 <style>
 @font-face{font-family:"Geist";src:url(/static/geist.woff2) format("woff2");font-weight:100 900;font-display:swap}
@@ -25,7 +31,7 @@ button:active{transform:translateY(1px)}
 :root{--bad:#b42318;--bad-bg:#fcebe9}
 :root[data-theme="dark"]{--bad:#fb7185;--bad-bg:rgb(251 113 133 / .13)}
 </style>
-<link rel="stylesheet" href="/static/studio.css">
+<link rel="stylesheet" href="/static/studio.css?v=4">
 <script>try{var t=localStorage.getItem("theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");document.documentElement.dataset.theme=t}catch(e){document.documentElement.dataset.theme="dark"}</script>
 </head>
 <body>

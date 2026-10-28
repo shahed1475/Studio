@@ -119,3 +119,62 @@ def test_the_notification_routes_answer_and_read_marks_the_feed(tmp_path, monkey
     assert d["counts"]["unread"] >= 2 and d["counts"]["badge"] >= 2 and any(i["title"] == "A render failed" and i["source"] == "Warnings" for i in d["items"])
     dashboard.agent_read()
     assert dashboard.notifications_view()["counts"]["unread"] == 0
+
+
+# ---- black and white, Autopilot sections, Android (29 Oct 2026) ----
+V4 = CSS[CSS.index("v4 (29 Oct 2026)"):]
+
+
+def _greys(block: str) -> dict:
+    out = {}
+    for name, val in re.findall(r"--(bg|surface|surface2|sunken|ink|ink2|line|accent|accent-ink|accent-soft|accent-text|ok|ok-bg|warn|warn-bg|bad|bad-bg|pop):(#[0-9a-fA-F]{6}|#[0-9a-fA-F]{3})\b", block):
+        out.setdefault(name, []).append(val)
+    return out
+
+
+def test_the_palette_is_black_and_white_only_in_both_themes_and_on_every_page():
+    def grey(h):
+        h = h.lstrip("#")
+        h = "".join(c * 2 for c in h) if len(h) == 3 else h
+        return len({h[0:2].lower(), h[2:4].lower(), h[4:6].lower()}) == 1
+    toks = _greys(V4)
+    assert len(toks) >= 15
+    assert all(grey(v) for vals in toks.values() for v in vals), {k: v for k, v in toks.items() if not all(grey(x) for x in v)}
+    for f in ("monitor.html", "notifications.html"):
+        page = (ROOT / f).read_text()
+        for v in re.findall(r"--(?:bg|surface|ink|ink2|line|accent|ok|warn|bad)[a-z-]*:(#[0-9a-fA-F]{3,6})", page):
+            assert grey(v), (f, v)
+    assert "rgba(255,190,0" not in HTML  # the amber policy-hold fill is gone
+
+
+def test_status_is_carried_by_an_icon_and_a_fill_not_by_colour_alone():
+    for needle in (".b-ok::before", ".b-warn::before", ".b-bad::before", "check.svg", "warning.svg", "x-circle.svg"):
+        assert needle in V4, needle
+    for icon in ("check", "warning", "x-circle"):
+        assert (ROOT / "static" / "icons" / f"{icon}.svg").exists()
+
+
+def test_autopilot_is_four_sections_each_with_content_and_the_choice_is_remembered():
+    block = HTML[HTML.index("async function autopilot(m){"):HTML.index("function slotEditor(name){")]
+    groups = re.findall(r'data-ap="(overview|schedule|rules|research)"', block)
+    assert {g: groups.count(g) for g in ("overview", "schedule", "rules", "research")} == {"overview": 8, "schedule": 1, "rules": 1, "research": 5}
+    assert "function apSubSet(" in block and 'role="tablist"' in block and "sessionStorage" in block
+    for g in ("overview", "schedule", "rules", "research"):
+        assert f'#apwrap[data-sub="{g}"] [data-ap]:not([data-ap="{g}"])' in V4
+
+
+def test_the_app_installs_on_android_and_its_pages_are_built_for_touch():
+    import json
+    m = json.loads((ROOT / "static" / "manifest.webmanifest").read_text())
+    assert m["display"] == "standalone" and m["start_url"] == "/" and m["name"] and m["short_name"]
+    sizes = {(i["sizes"], i["purpose"]) for i in m["icons"]}
+    assert ("192x192", "any") in sizes and ("512x512", "any") in sizes and ("512x512", "maskable") in sizes
+    for i in m["icons"]:
+        assert (ROOT / i["src"].lstrip("/")).is_file()
+    for page in (HTML, MON, NOTES, (ROOT / "login.html").read_text()):
+        assert 'rel="manifest"' in page and 'name="theme-color"' in page and "viewport" in page
+    assert "viewport-fit=cover" in HTML and 'name="color-scheme"' in HTML
+    for needle in ("touch-action:manipulation", "-webkit-tap-highlight-color", "min-height:44px", "env(safe-area-inset", "overflow-x:clip", "color-scheme:dark"):
+        assert needle in V4, needle
+    import dashboard
+    assert '".webmanifest": "application/manifest+json"' in (ROOT / "dashboard.py").read_text() and dashboard.H.serve_static

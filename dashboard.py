@@ -728,7 +728,7 @@ class H(BaseHTTPRequestHandler):
         p = (config.ROOT / "static" / name).resolve()
         if not p.is_file() or config.ROOT / "static" not in p.parents:
             return self.send_error(404)
-        kind = {".svg": "image/svg+xml", ".woff2": "font/woff2", ".css": "text/css"}.get(p.suffix, "application/octet-stream")
+        kind = {".svg": "image/svg+xml", ".woff2": "font/woff2", ".css": "text/css", ".png": "image/png", ".webmanifest": "application/manifest+json"}.get(p.suffix, "application/octet-stream")
         self.send_bytes(p.read_bytes(), kind)
 
     def serve_cover(self, slug):
