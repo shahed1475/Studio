@@ -586,8 +586,10 @@ def finish_video(folder: Path) -> None:
     titles = [t for t in (meta.get("seo") or {}).get("titles", []) if not fixer._too_similar(t, others)] or (meta.get("seo") or {}).get("titles") or []
     if titles:
         import packaging
+        import reviewer
 
-        meta["title"] = packaging.rank_titles(titles, (meta.get("seo") or {}).get("core", ""), others, meta.get("kind", ""))[0]  # the best-scoring option, not just the first
+        ranked = packaging.rank_titles(titles, (meta.get("seo") or {}).get("core", ""), others, meta.get("kind", ""))
+        meta["title"] = packaging.honest_first(ranked, lambda t: reviewer.title_ok(meta, t))  # the best-scoring option that the narration can keep the promise of
     import seo
 
     tags = fixer.clean_tags(meta)

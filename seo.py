@@ -48,14 +48,17 @@ def polish_title(title: str, limit: int = 70) -> str:
     return fix_a_an(t)
 
 
-def relevant_tags(tags: list[str], corpus: str, limit: int = 15) -> list[str]:
+def relevant_tags(tags: list[str], corpus: str, limit: int = 15, kind: str = "") -> list[str]:
     """Keep a tag only when every word in it appears in the video's own title, topic, description or script, or is a plain niche word.
     This drops search suggestions that belong to other things (a game, a novel series, a song) whatever the model says."""
     words = set(re.findall(r"[a-z0-9']+", corpus.lower()))
+    fits = set(kinds.generic_tags(kind)) if kind else None  # with a kind, a tag made only of niche words must be one that fits it
     out: list[str] = []
     for t in tags:
         t = str(t).strip().lower()
         toks = re.findall(r"[a-z0-9']+", t)
+        if fits is not None and toks and t not in fits and not all(w in words for w in toks) and all(w in GENERIC_TAG_WORDS for w in toks):
+            continue
         if toks and t not in out and len(t) <= 30 and not OFF_TOPIC.search(t) and all(w in words or w in GENERIC_TAG_WORDS for w in toks):
             out.append(t)
     return out[:limit]
@@ -367,7 +370,7 @@ def _make(folder: Path) -> dict:
         'Return JSON: {"titles": ["..."], "description_intro": "...", "tags": ["..."]}')
     titles = [polish_title(t) for t in data["titles"] if 8 < len(str(t)) <= 70 and not linky(t)][:5]  # a link in a title is never ours
     tags, total = [], 0
-    for t in relevant_tags([str(x).strip().lower() for x in data["tags"] if not linky(x)] + [core] + kws[:6], corpus_of(meta)):
+    for t in relevant_tags([str(x).strip().lower() for x in data["tags"] if not linky(x)] + [core] + kws[:6], corpus_of(meta), kind=meta.get("kind") or kinds.classify(meta)):
         if total + len(t) < 450:
             tags.append(t)
             total += len(t)

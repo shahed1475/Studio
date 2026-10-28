@@ -22,6 +22,7 @@ from pathlib import Path
 import agentlog
 import compliance
 import config
+import kinds
 import records
 import llm
 import packaging
@@ -229,8 +230,9 @@ def vary_script(meta: dict, folder: Path, detail: str, chat=None) -> int:
 
 
 def clean_tags(meta: dict) -> list[str]:
-    tags = seo.relevant_tags(list(meta.get("tags", [])), seo.corpus_of(meta))
-    for generic in ("history stories for sleep", "legends and folklore"):  # the channel's own niche tags
+    kind = meta.get("kind") or kinds.classify(meta)
+    tags = seo.relevant_tags(list(meta.get("tags", [])), seo.corpus_of(meta), kind=kind)
+    for generic in kinds.generic_tags(kind)[:2]:  # the channel's own niche tags that fit this kind of video
         if len(tags) < 5 and generic not in tags:
             tags.append(generic)
     return tags

@@ -62,8 +62,24 @@ def ideas(n: int = 10) -> list[str]:
     return [t.strip() for t in data["topics"] if isinstance(t, str) and t.strip()]
 
 
+WORDS_PER_SECOND = 2.17  # measured on our own narration: about 130 words a minute
+
+
+def short_word_range(lines: int = 11, pause: float | None = None) -> tuple[int, int]:
+    """Words a Short's script may have so that the finished video stays inside the Short length target (config/rules.json), once the breath after each line
+    is counted. 28 Oct 2026: 14 of 15 Shorts ran over 58 seconds because the script asked for 110 to 135 words and the render added 0.6 s after each line."""
+    import editprofile
+    import rulesfile
+
+    pause = editprofile.short_pause() if pause is None else pause
+    top = rulesfile.get("benchmarks", "shorts_max_seconds")
+    hi = int((top - 2 - lines * pause) * WORDS_PER_SECOND)  # 2 seconds of margin for the first and last line
+    return max(70, hi - 20), max(90, hi)
+
+
 def script(topic: str, grounded: str | None = None) -> dict:
     nc = config.niche()
+    lo_words, hi_words = short_word_range()
     src = (
         "- Use ONLY the facts in SOURCES below, in your own words. Add no people, places, dates or details they do not "
         "state; say so plainly when they call something uncertain.\nSOURCES:\n" + grounded + "\n"
@@ -71,7 +87,7 @@ def script(topic: str, grounded: str | None = None) -> dict:
     data = _script_chat(
         f"Write a YouTube Short script for a US audience.\nTopic: {topic}\nNiche: {nc['name']}\n"
         f"Style: {nc['style']}\n\nRules:\n"
-        "- Tell it as a short story in 10 to 12 lines of 9 to 14 words each, 110 to 135 words in total (about a minute: competitor Shorts that reached 20,000 views ran 51 seconds at the median).\n"
+        f"- Tell it as a short story in 10 to 12 lines of 8 to 12 words each, {lo_words} to {hi_words} words in total, never more (it must run under a minute: competitor Shorts that reached 20,000 views ran 51 seconds at the median).\n"
         "- Story arc: a hook that raises a question, the setting, rising tension, the twist or turning point, a closing line that lingers.\n"
         "- Line 1 is a hook that creates curiosity in under 12 words.\n"
         "- Retell it entirely in your own original words. Never copy sentences from any book, article or film.\n"

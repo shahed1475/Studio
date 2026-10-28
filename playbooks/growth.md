@@ -10,6 +10,6 @@ Read public numbers only. Compare our views per day by video kind. Propose in ou
 ## Tools
 growth.snapshot, channelwatch, trendwatch, strategy.add, topicrank.
 ## Never
-Copy another channel's script or title. Queue a topic without a source article. Claim a number it did not read.
+Copy another channel's script or title. Queue a topic without a source article. Claim a number it did not read. Propose a loudness target quieter than the reviewer accepts (editprofile.LIMITS).
 ## Escalate
 YouTube API errors or missing permission: log it once, continue with what is available.

@@ -10,6 +10,6 @@ Pick a self-contained moment, reuse the script lines and pictures, give it its o
 ## Tools
 clipper, seo, reviewer.
 ## Never
-Cut from another channel's video. Use a clip that needs context the Short does not give.
+Cut from another channel's video. Use a clip that needs context the Short does not give. Open on a flat 'nobody has ever' for something the story calls a legend or a dispute.
 ## Escalate
 No clippable moment: make a Short from the queue instead.

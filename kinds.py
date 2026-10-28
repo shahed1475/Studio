@@ -24,9 +24,9 @@ def _load() -> dict:
         raw = json.loads(FILE.read_text())
         kinds = {k: v for k, v in raw["kinds"].items() if isinstance(v, dict) and isinstance(v.get("words"), list)}
         return {"order": [k for k in raw.get("order", []) if k in kinds] or list(kinds), "kinds": kinds, "default": raw.get("default") or FALLBACK,
-                "title_words": raw.get("title_words") or {}}
+                "title_words": raw.get("title_words") or {}, "generic_tags": raw.get("generic_tags") or {}}
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
-        return {"order": [], "kinds": {}, "default": FALLBACK, "title_words": {}}
+        return {"order": [], "kinds": {}, "default": FALLBACK, "title_words": {}, "generic_tags": {}}
 
 
 def names() -> list[str]:
@@ -79,6 +79,13 @@ def brief(meta: dict, part: str) -> str:
     kind = meta.get("kind") or classify(meta)
     text = card(kind, part)
     return f"Kind of video ({kind}): {text}" if text else ""
+
+
+def generic_tags(kind: str) -> list[str]:
+    """The channel-wide niche phrases that fit this kind of video: the always-allowed ones first, then the kind's own. 28 Oct 2026: 'legends and folklore' sat on
+    18 of 25 videos, including a Persian army that vanished in 525 BC, and 'unsolved mysteries' on legends: a tag the video is not about."""
+    t = _load().get("generic_tags", {})
+    return [*(t.get("always") or []), *(t.get(kind) or t.get("story") or [])] if t else []
 
 
 def title_words(kind: str) -> set[str]:

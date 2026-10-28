@@ -59,6 +59,20 @@ def rank_titles(titles: list[str], core: str = "", others=(), kind: str = "") ->
     return [t for _, _, t in sorted(((-title_score(t, core, others, kind), i, t) for i, t in enumerate(titles)))]
 
 
+def honest_first(ranked: list[str], ok, tries: int = 3) -> str:
+    """The first of the best `tries` titles that `ok(title) -> (accepted, reason)` accepts, otherwise the best-scored one. The reviewer's own title check runs here,
+    before the title is chosen: on 28 Oct 2026 the highest-scoring titles promised an answer the narration never gives, failed the review afterwards and cost a
+    repair round. A check that cannot answer accepts the best-scored title, as the review decides later."""
+    for title in ranked[:tries]:
+        try:
+            accepted, _ = ok(title)
+        except Exception:
+            return ranked[0]
+        if accepted:
+            return title
+    return ranked[0]
+
+
 _STOP = set("the a an and of to in on at for with from by is was were are be been it its this that these those as but or not no yet then there their they he she his her "
             "which who whom what when where while than into onto over under after before about also had has have do did does so such other another one two three first second third".split())
 

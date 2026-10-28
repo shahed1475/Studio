@@ -7,6 +7,7 @@ import json
 import re
 
 import config
+import editprofile
 import filelock
 import kinds
 import scriptgen
@@ -56,13 +57,13 @@ def recent_endings(exclude: str = "") -> list[str]:
     return out
 
 
-def line_seconds(words: list[dict], texts: list[str]) -> list[float]:
+def line_seconds(words: list[dict], texts: list[str], pause: float = PAUSE) -> list[float]:
     """Seconds each narration line lasts: from the saved word timings, else estimated from the word count."""
     spans: dict[int, list[float]] = {}
     for w in words:
         s = spans.setdefault(w["i"], [w["s"], w["e"]])
         s[0], s[1] = min(s[0], w["s"]), max(s[1], w["e"])
-    return [round(spans[i][1] - spans[i][0] + PAUSE, 2) if i in spans else round(len(t.split()) / WORDS_PER_SEC + PAUSE, 2) for i, t in enumerate(texts)]
+    return [round(spans[i][1] - spans[i][0] + pause, 2) if i in spans else round(len(t.split()) / WORDS_PER_SEC + pause, 2) for i, t in enumerate(texts)]
 
 
 def score(lines: list[dict]) -> float:
@@ -100,6 +101,9 @@ def _trim(text: str, words: int) -> str:
     return " ".join(text.split()[:words])
 
 
+OVERCLAIM = re.compile(r"\b(?:nobody|no one|no-one)\s+(?:has\s+)?ever\b|\bnever\s+(?:been\s+)?(?:found|seen|solved|explained)\b|\bhas\s+never\b|\bproven\s+(?:fact|true)\b", re.I)  # 28 Oct 2026: "Nobody has ever found them" opened a Short whose source describes disputed finds; the review called it overstated
+
+
 def hook(meta: dict, w: dict, chat=None) -> dict:
     """A hook line (under 12 words) that raises a question, and a title. A model failure falls back to the story's own words."""
     chat = chat or scriptgen._chat
@@ -107,10 +111,11 @@ def hook(meta: dict, w: dict, chat=None) -> dict:
     try:
         got = chat(f"Documentary: {meta['title']}. This part is called '{w['chapter']}'. Story part:\n{story}\n\n"
                    "Write a first line for a YouTube Short that makes a viewer need the answer (a question or a surprising claim, "
-                   "under 12 words, true to the story, no clickbait lies) and a title under 70 characters. " + kinds.brief(meta, "hook") + " "
+                   "under 12 words, true to the story, no clickbait lies; never say flatly what the story itself calls a legend or a dispute: no 'nobody has ever', "
+                   "'never been found', use 'legend says' or 'said to') and a title under 70 characters. " + kinds.brief(meta, "hook") + " "
                    'Return JSON {"hook": "...", "title": "..."}')
         h, t = str(got["hook"]).strip(), str(got["title"]).strip()
-        if h and t:
+        if h and t and not OVERCLAIM.search(h):  # an absolute the model added anyway: the story's own question below is used instead
             return {"hook": _trim(h, 12), "title": t[:70]}
     except Exception:
         pass
@@ -181,7 +186,7 @@ def make_next(produce=None, chat=None):
             words = json.loads((m.parent / "words.json").read_text())
         except (OSError, ValueError):
             words = []
-        ws = windows(d["lines"], d["chapters"], line_seconds(words, texts))
+        ws = windows(d["lines"], d["chapters"], line_seconds(words, texts, editprofile.short_pause()))
         for w in pick(ws, MAX_TRIES, used=[*d.get("clips", []), *d.get("clips_failed", [])]):
             if MODERN_MEDIA.search(" ".join(l["text"] for l in w["lines"])):
                 _record(m, "clips_failed", w["start"])  # a chapter about a film's box office or reviews is not a legend: never cut as a Short
@@ -215,7 +220,7 @@ def make_from(slug: str, extra: dict | None = None, produce=None, chat=None):
         words = json.loads((path.parent / "words.json").read_text())
     except (OSError, ValueError):
         words = []
-    ws = windows(d["lines"], chapters, line_seconds(words, texts))
+    ws = windows(d["lines"], chapters, line_seconds(words, texts, editprofile.short_pause()))
     for w in pick(ws, MAX_TRIES, used=[*d.get("clips", []), *d.get("clips_failed", [])]):
         if MODERN_MEDIA.search(" ".join(l["text"] for l in w["lines"])):
             _record(path, "clips_failed", w["start"])

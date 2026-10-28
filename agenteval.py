@@ -21,7 +21,7 @@ RESULT = config.ROOT / "data" / "agent" / "eval.json"
 REQUIRED_AGENTS = tuple(__import__("agents").AGENTS)
 FORBIDDEN = ('.videos().delete(', '"privacyStatus": "public"', "'privacyStatus': 'public'", '["privacyStatus"] = "public"', ".channels().update(", ".playlists().delete(",
              ".subscriptions().delete(")
-AGENT_FILES = ("guardian.py", "escalate.py", "unstick.py", "tracetriage.py", "lessons.py", "agentbus.py", "agenteval.py", "doctor.py", "agents.py", "playbook.py", "scriptreview.py", "growthdata.py", "rulesfile.py", "diagnose.py", "secondsources.py", "actionlog.py", "policyclass.py", "drift.py", "learner.py", "kinds.py")
+AGENT_FILES = ("guardian.py", "escalate.py", "unstick.py", "tracetriage.py", "lessons.py", "agentbus.py", "agenteval.py", "doctor.py", "agents.py", "playbook.py", "scriptreview.py", "growthdata.py", "rulesfile.py", "diagnose.py", "secondsources.py", "actionlog.py", "policyclass.py", "drift.py", "learner.py", "kinds.py", "audiofix.py")
 DOCTOR_NEVER = ("subprocess", "os.system", "pip install", "apt-get", "npm install", "rmtree", ".unlink(", "import extend")
 NOW = dt.datetime(2026, 10, 26, 12, 0, tzinfo=dt.timezone.utc)
 PAST, FUTURE = "2026-10-20T12:00:00Z", "2026-11-05T12:00:00Z"
@@ -619,6 +619,27 @@ def case_kind_cards_are_free_short_advice_and_the_repeated_part_of_a_prompt_is_c
                 else f"kind={kind} junk={junk} problems={kinds.problems()} lies={lies} reaches_out={reaches_out} cached_ok={cached_ok}")
 
 
+def case_an_agent_cannot_set_a_profile_the_reviewer_rejects_and_a_short_fits_its_length_and_nothing_uploaded_is_re_encoded():
+    import audiofix
+    import editprofile
+    import reviewer
+    import rulesfile
+    import scriptgen
+
+    floor_ok = editprofile.LIMITS["target_lufs"][0] >= reviewer.LOUD_RANGE[0] and editprofile.validate({"target_lufs": reviewer.LOUD_RANGE[0] - 0.6}) == {}
+    top = rulesfile.get("benchmarks", "shorts_max_seconds")
+    fits = all(scriptgen.short_word_range(11, editprofile.short_pause({"sentence_pause_ms": ms}))[1] / scriptgen.WORDS_PER_SECOND
+               + 11 * editprofile.short_pause({"sentence_pause_ms": ms}) <= top for ms in (100, 600, 900))
+    with tempfile.TemporaryDirectory() as d:
+        folder = Path(d)
+        (folder / "video.mp4").write_bytes(b"not a real video")
+        (folder / "meta.json").write_text(json.dumps({"video_id": "abc"}))
+        untouched = audiofix.normalize(folder) == {"changed": False, "why": "already uploaded: not touched"} and (folder / "video.mp4").read_bytes() == b"not a real video"
+    ok = floor_ok and fits and untouched
+    return ok, ("agent loudness limits sit inside the reviewer's range, every Short word budget fits the length target, an uploaded video is never re-encoded" if ok
+                else f"floor_ok={floor_ok} fits={fits} untouched={untouched}")
+
+
 CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic,
          case_ladder_ends_with_owner_not_a_crash, case_ladder_respects_budget_and_whitelist_and_lessons, case_outside_text_is_cleaned,
          case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules, case_registry_is_consistent,
@@ -632,7 +653,8 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_second_sources_are_off_by_default_and_only_verified_pages_count, case_public_video_changes_are_only_proposed_and_every_write_is_logged_and_reversible,
          case_policy_changes_are_classified_proposed_and_held_without_an_agent_releasing_them, case_drift_needs_several_videos_sustained_over_days_and_only_tells_the_owner,
          case_learner_reads_and_reports_queues_at_most_one_viable_subject_and_only_proposes_rules,
-         case_kind_cards_are_free_short_advice_and_the_repeated_part_of_a_prompt_is_cached_not_leaked]
+         case_kind_cards_are_free_short_advice_and_the_repeated_part_of_a_prompt_is_cached_not_leaked,
+         case_an_agent_cannot_set_a_profile_the_reviewer_rejects_and_a_short_fits_its_length_and_nothing_uploaded_is_re_encoded]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:

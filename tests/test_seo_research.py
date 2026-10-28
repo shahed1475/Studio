@@ -110,6 +110,8 @@ def test_a_short_gets_the_same_research_title_and_lead_but_no_custom_thumbnail(t
         seen.append("seo")
     monkeypatch.setattr(seo, "make", fake_make)
     monkeypatch.setattr(thumbnail, "make", lambda f: seen.append("thumb"))
+    import reviewer
+    monkeypatch.setattr(reviewer, "title_ok", lambda meta, t: (True, ""))  # the real check asks a model: not in a unit test
     autopilot.finish_video(folder)
     assert seen == ["seo"] and json.loads((folder / "meta.json").read_text())["title"] == "Mami Wata Real Story"
 
@@ -297,3 +299,26 @@ def test_a_search_phrase_the_model_already_wrote_in_lowercase_is_capitalised_too
     assert out.startswith("The Mami Wata story starts") and "mami wata" not in out
     fine = "Mami Wata is a water spirit. Her story crosses oceans."
     assert seo.ensure_lead(fine, "mami wata", chat=lambda p: pytest.fail("no")) == fine
+
+
+def test_finish_video_picks_the_best_title_the_narration_can_keep_the_promise_of(tmp_path, monkeypatch):
+    """28 Oct 2026: the two best-scoring titles promised an answer or stated a legend as fact; the review failed them afterwards and a repair round was paid."""
+    import autopilot
+    import reviewer
+    import thumbnail
+    folder = tmp_path / "s"
+    folder.mkdir()
+    (folder / "meta.json").write_text(json.dumps({"format": "short", "title": "Old", "description": "Old.", "tags": [], "lines": [{"text": "x"}]}))
+
+    def fake_make(f):
+        m = json.loads((f / "meta.json").read_text())
+        m["seo"] = {"core": CORE, "titles": ["Mami Wata: What Happened in 1850?", "Mami Wata Real Story", "Mami Wata, Said to Rise From the Sea"]}
+        (f / "meta.json").write_text(json.dumps(m))
+    monkeypatch.setattr(seo, "make", fake_make)
+    monkeypatch.setattr(thumbnail, "make", lambda f: None)
+    asked = []
+    monkeypatch.setattr(reviewer, "title_ok", lambda meta, t: asked.append(t) or ("Said to" in t, "promises an answer"))
+    autopilot.finish_video(folder)
+    assert json.loads((folder / "meta.json").read_text())["title"] == "Mami Wata, Said to Rise From the Sea" and len(asked) >= 2
+    assert packaging.honest_first(["a", "b", "c"], lambda t: (False, "")) == "a"  # nothing passes: the best-scored title, the review decides
+    assert packaging.honest_first(["a", "b"], lambda t: 1 / 0) == "a"  # a check that cannot answer does not block

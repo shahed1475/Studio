@@ -183,7 +183,7 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
         raise SystemExit("the Short's script admits its sources say little; not made")
     print("Voice + captions...")
     prof = editprofile.load()
-    narration, ass, durations = tts.narrate([l["text"] for l in data["lines"]], work, prof["sentence_pause_ms"] / 1000, prof["motion"], prof["caption_pos"])
+    narration, ass, durations = tts.narrate([l["text"] for l in data["lines"]], work, editprofile.short_pause(prof), prof["motion"], prof["caption_pos"])
     print("Footage...")
     if config.PEXELS_KEY:
         clips = [footage.clip_for(l["visual"]) for l in data["lines"]]

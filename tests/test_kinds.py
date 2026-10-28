@@ -81,3 +81,22 @@ def test_a_card_never_asks_for_a_lie():
     text = " ".join(kinds.card(k, p) for k in kinds.names() for p in kinds.PARTS).lower()
     for bad in ("you won't believe", "shocking", "invent", "make up", "fake"):
         assert bad not in text
+
+
+def test_a_niche_tag_must_fit_the_kind_of_video():
+    """28 Oct 2026: 'legends and folklore' sat on 18 of 25 videos, including a Persian army that vanished in 525 BC."""
+    corpus = "lost army of cambyses persian army vanished western desert egypt 525 bc"
+    tags = ["lost army of cambyses", "legends and folklore", "unsolved mysteries", "history stories for sleep", "folklore legends and myths", "persian army vanished"]
+    mystery = seo.relevant_tags(tags, corpus, kind="mystery")
+    assert "unsolved mysteries" in mystery and "history stories for sleep" in mystery and "persian army vanished" in mystery
+    assert "legends and folklore" not in mystery and "folklore legends and myths" not in mystery
+    legend = seo.relevant_tags(tags, corpus, kind="legend")
+    assert "legends and folklore" in legend and "unsolved mysteries" not in legend
+    assert "legends and folklore" in seo.relevant_tags(tags, corpus)  # no kind given: the old behaviour
+
+
+def test_fixer_adds_only_the_niche_tags_that_fit(tmp_path):
+    import fixer
+    m = {**meta("Lost Army of Cambyses", lines=["An army vanished."]), "tags": [], "description": "d"}
+    tags = fixer.clean_tags(m)
+    assert "history stories for sleep" in tags and "legends and folklore" not in tags

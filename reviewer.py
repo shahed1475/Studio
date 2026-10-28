@@ -381,12 +381,15 @@ def title_ok(meta: dict, title: str) -> tuple[bool, str]:
     """Would the full review accept this title for this narration and description? Asked of the same Claude model that does the review, with the same
     strictness. (True, "") when the model cannot be asked: the full review decides later."""
     text = " ".join(l["text"] for l in meta.get("lines", []))[:7000]
+    if not text.strip():
+        return True, ""  # nothing to judge the title against: the full review decides once there is narration
     try:
-        r = scriptgen._review_chat(
-            f"A YouTube video's narration:\n{text}\n\nProposed title: {title}\nDescription: {description_head(meta)}\n\n"
+        r = scriptgen._review_chat(llm.cached(
+            f"A YouTube video's narration:\n{text}\n\n",  # the same for every candidate title: one cache block
+            f"Proposed title: {title}\nDescription: {description_head(meta)}\n\n"
             "Does the title (or the description) promise something the narration does not deliver (a Why or How question it never answers, a debate it only "
             "mentions in passing, a legend or event it says did not happen)? Be strict. "
-            'Return JSON {"misleading_title": false, "reason": ""}.')
+            'Return JSON {"misleading_title": false, "reason": ""}.'))
         return (not r.get("misleading_title"), str(r.get("reason") or "")[:200])
     except Exception:
         return True, ""

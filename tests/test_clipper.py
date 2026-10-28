@@ -173,3 +173,14 @@ def test_a_doc_that_is_not_scheduled_yet_is_not_clipped(tmp_path, monkeypatch):
     m.pop("publish_at")
     (d / "meta.json").write_text(json.dumps(m))
     assert clipper.clippable() == 0  # its Short would say "the full story is on our channel" before it is
+
+
+def test_a_hook_that_states_a_dispute_as_a_flat_fact_is_replaced_by_the_storys_own_question():
+    """28 Oct 2026: 'Nobody has ever found them' opened a Short whose source describes disputed finds."""
+    meta = {"title": "Lost Army", "topic": "Lost Army"}
+    w = {"chapter": "The storm", "lines": [{"text": "Why did no trace remain?"}, {"text": "A storm came."}]}
+    for bad in ("Nobody has ever found them", "No one ever saw them again", "The army has never been found", "It was never solved"):
+        got = clipper.hook(meta, w, chat=lambda p, b=bad: {"hook": b, "title": "T"})
+        assert got["hook"] == "Why did no trace remain?", bad
+    ok = clipper.hook(meta, w, chat=lambda p: {"hook": "Where did 50,000 soldiers go?", "title": "T"})
+    assert ok["hook"] == "Where did 50,000 soldiers go?"
