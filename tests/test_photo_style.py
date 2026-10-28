@@ -67,3 +67,18 @@ def test_doc_photo_flag_makes_a_held_realistic_video_and_the_default_does_not(tm
     assert made[0]["art_style"] == "photo" and made[0]["hold"] is True and made[0]["art_first"] is True
     assert "art_style" not in made[1] and "hold" not in made[1]
     assert json.loads(run.PENDING_DOC.read_text())["data"].get("art_style") is None  # the second, plain run rewrote the saved script
+
+
+def test_every_scene_of_a_realistic_video_is_drawn_and_other_styles_are_not_forced():
+    lines = [{"text": f"Line {i}."} for i in range(12)]
+    assert run._forced_art({"art_style": "photo", "lines": lines}) == {l["text"] for l in lines}
+    assert run._forced_art({"lines": lines}) == set() and run._forced_art({"art_style": "3d", "lines": lines}) == {l["text"] for l in lines[:4]}
+    assert run._forced_art({"art_style": "photo", "lines": lines, "redraw_lines": ["Extra."]}) >= {"Extra."}
+
+
+def test_a_realistic_scene_gets_a_camera_shot_chosen_from_its_line_and_other_styles_do_not():
+    shots = {aiart.prompt_for(f"A scene number {i}.", "a room", "T", False, style="photo").split("Shot: ")[1].split(".")[0] for i in range(40)}
+    assert len(shots) >= 6 and shots <= {s.rstrip(".") for s in aiart.SHOTS}  # the shots vary across a video
+    a = aiart.prompt_for("Same line.", "a room", "T", False, style="photo")
+    assert a == aiart.prompt_for("Same line.", "a room", "T", False, style="photo") and "Shot:" in a  # deterministic: a repeat is a cache hit
+    assert "Shot:" not in aiart.prompt_for("Same line.", "a room", "T", False) and "Shot:" not in aiart.prompt_for("Same line.", "a room", "T", False, style="3d")

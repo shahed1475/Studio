@@ -464,6 +464,8 @@ def _forced_art(data: dict) -> set[str]:
     """Narration lines that are always drawn, whatever a picture search finds: the lines flagged for a redraw, and for a 3D video also the first four (the hook is the
     drawn, animated scene, never a museum photo: the first remake showed photos for the first 75 seconds)."""
     forced = set(data.get("redraw_lines") or [])
+    if data.get("art_style") == "photo":  # every scene is drawn: no reused picture, no chart or faded sketch from the archive (the first two realistic videos showed both)
+        forced |= {l["text"] for l in data["lines"]}
     if data.get("art_style") == "3d":
         forced |= {l["text"] for l in data["lines"][:4]}
     return forced

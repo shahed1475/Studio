@@ -63,6 +63,10 @@ STYLE_PHOTO = ("Photorealistic documentary photograph, natural light, 35mm lens,
                "no plastic, no zips, no elastic hair ties, no electric light, no text, no letters, no numbers, no captions, no logos, no watermark")
 
 
+SHOTS = ("a wide establishing shot of the place, any people small in the frame", "a close-up on hands and an object, no face", "a medium shot of one person seen from the side",
+         "an over-the-shoulder shot", "a low angle looking up", "a view through a window or doorway", "an empty room or landscape with no people", "a silhouette against a window, fire or sky")
+
+
 def style_for(topic: str) -> str:
     return STYLES[int(hashlib.md5(str(topic).lower().encode()).hexdigest(), 16) % len(STYLES)]
 
@@ -75,6 +79,8 @@ def prompt_for(line: str, visual: str, topic: str, vertical: bool, style: str | 
     shape = "vertical 9:16 composition" if vertical else "16:9 widescreen composition"
     look = STYLE_3D if style == "3d" else STYLE_PHOTO if style == "photo" else style_for(topic)
     text = f"{look}, {shape}. Story: {_clean(topic, 120)}. Scene: {_clean(line)}. Show: {_clean(visual, 80) or 'the setting of the scene'}."
+    if style == "photo":  # a different camera shot per scene (chosen from the line, so a repeat is a cache hit): the first realistic video drew the same woman by a candle again and again
+        text += f" Shot: {SHOTS[int(hashlib.md5(str(line).encode()).hexdigest(), 16) % len(SHOTS)]}."
     return text + (NO_WRITING if TEXTY.search(f"{visual} {line}") else "")
 
 
