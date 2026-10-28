@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Studio notifications</title>
+<style>
+@font-face{font-family:"Geist";src:url(/static/geist.woff2) format("woff2");font-weight:100 900;font-display:swap}
+@font-face{font-family:"Geist Mono";src:url(/static/geist-mono.woff2) format("woff2");font-weight:100 900;font-display:swap}
+/* The dashboard's tokens. A small window: it works at 380 by 520 and fills a second screen. */
+:root{--bg:#eef3f2;--surface:#fff;--sunken:#e9efee;--ink:#10201d;--ink2:#4b5d59;--line:#dbe5e2;--accent:#0f766e;--accent-ink:#fff;--accent-soft:#dff3ef;--ok:#15803d;--ok-bg:#e3f4ea;--warn:#a15c07;--warn-bg:#fbefd9;--bad:#b42318;--bad-bg:#fcebe9}
+:root[data-theme="dark"]{--bg:#070c0c;--surface:#0f1716;--sunken:#0a1111;--ink:#e8f1ef;--ink2:#93a8a3;--line:#1d2b29;--accent:#2dd4bf;--accent-ink:#04201d;--accent-soft:#0f2b28;--ok:#4ade80;--ok-bg:#10301d;--warn:#fbbf24;--warn-bg:#33260c;--bad:#f87171;--bad-bg:#3a1616}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%}
+body{background:radial-gradient(900px 500px at 0 -10%,color-mix(in srgb,var(--accent) 12%,transparent),transparent 60%),var(--bg);color:var(--ink);font:14px/1.5 "Geist",ui-sans-serif,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+main{max-width:760px;margin:0 auto;padding:14px 14px 28px;display:flex;flex-direction:column;gap:12px}
+header{display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:2;padding:6px 0 10px;background:linear-gradient(var(--bg) 70%,transparent)}
+h1{margin:0;font-size:19px;font-weight:650;letter-spacing:-.03em;flex:1}
+.count{font:600 12.5px "Geist Mono",ui-monospace,monospace;background:var(--accent);color:var(--accent-ink);border-radius:99px;padding:1px 9px}
+.count[hidden]{display:none}
+button{font:inherit;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:10px;padding:5px 12px;cursor:pointer;transition:border-color .15s,transform .15s}
+button:hover{border-color:var(--accent)}button:active{transform:scale(.97)}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border-radius:99px;padding:4px 13px;color:var(--ink2);font-weight:560}
+.chip[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.chip small{opacity:.75;margin-left:4px;font-weight:600}
+.list{display:flex;flex-direction:column;gap:8px}
+.group{font-size:12.5px;color:var(--ink2);font-weight:600;margin:8px 2px 0}
+.n{display:grid;grid-template-columns:auto 1fr auto;gap:2px 12px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:11px 14px;animation:rise .4s cubic-bezier(.16,1,.3,1) both;animation-delay:calc(var(--i,0)*40ms);box-shadow:0 1px 2px rgb(16 42 40 / .05);position:relative}
+.n.unread{border-color:color-mix(in srgb,var(--accent) 55%,var(--line))}
+.n.unread::after{content:"";position:absolute;top:12px;right:12px;width:8px;height:8px;border-radius:99px;background:var(--accent)}
+.n i{grid-row:1/3;width:8px;border-radius:99px;background:var(--ink2);align-self:stretch;opacity:.5}
+.n.bad i{background:var(--bad);opacity:1}.n.warn i{background:var(--warn);opacity:1}.n.ok i{background:var(--ok);opacity:1}.n.info i{background:var(--accent);opacity:.7}
+.n b{font-weight:620;letter-spacing:-.01em;overflow-wrap:anywhere;padding-right:16px}
+.n span{color:var(--ink2);font-size:13px;grid-column:2;overflow-wrap:anywhere}
+.n time{grid-column:3;grid-row:2;color:var(--ink2);font-size:12px;white-space:nowrap;align-self:end}
+.src{font-size:11.5px;font-weight:620;color:var(--ink2)}
+.empty{text-align:center;color:var(--ink2);padding:40px 10px}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<main>
+  <header><h1>Notifications</h1><span class="count" id="count" hidden></span><button id="read" type="button">Mark all read</button></header>
+  <div class="chips" id="chips" role="group" aria-label="Filter notifications"></div>
+  <div class="list" id="list" aria-live="polite"></div>
+</main>
+<script>
+const $=id=>document.getElementById(id),esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+try{document.documentElement.dataset.theme=localStorage.getItem("theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch(e){}
+let D=null,filter="all";
+const ago=iso=>{const s=Math.max(0,(Date.now()-new Date(iso).getTime())/1000);return s<60?"just now":s<3600?Math.round(s/60)+" min ago":s<86400?Math.round(s/3600)+" h ago":Math.round(s/86400)+" d ago"};
+function chips(){
+  const c=D.sources,all=D.items.length;
+  const defs=[["all","All",all],["needs","Needs you",D.counts.waiting],["Growth","Growth",c.Growth],["Activity","Activity",c.Activity],["Warnings","Warnings",c.Warnings]];
+  $("chips").innerHTML=defs.map(([k,l,n])=>`<button class="chip" type="button" data-k="${k}" aria-pressed="${filter===k}">${l}<small>${n}</small></button>`).join("");
+}
+function row(i,n){return `<div class="n ${i.level} ${i.unread?"unread":""}" style="--i:${Math.min(n,10)}"><i></i><b>${esc(i.title)}</b><time>${i.pinned?"":esc(ago(i.at))}</time><span><span class="src">${esc(i.source)}</span>${i.detail?". "+esc(i.detail):""}</span></div>`}
+function paint(){
+  chips();const n=D.counts.badge;$("count").hidden=!n;$("count").textContent=n;document.title=(n?"("+n+") ":"")+"Studio notifications";
+  const keep=i=>filter==="all"||(filter==="needs"?i.pinned&&i.counted:i.source===filter);
+  const items=D.items.filter(keep),pin=items.filter(i=>i.pinned),ev=items.filter(i=>!i.pinned);let k=0;
+  $("list").innerHTML=!items.length?`<div class="empty">Nothing here. New reports from the agents show up on their own.</div>`:
+    (pin.length?`<div class="group">Waiting for you</div>`+pin.map(i=>row(i,k++)).join(""):"")+(ev.length?`<div class="group">Recent</div>`+ev.map(i=>row(i,k++)).join(""):"");
+}
+async function load(){
+  try{const r=await fetch("/api/notifications");if(r.status===401){location.href="/login";return}D=await r.json();paint()}catch(e){}
+}
+$("chips").addEventListener("click",e=>{const b=e.target.closest("[data-k]");if(b){filter=b.dataset.k;paint()}});
+$("read").onclick=async()=>{try{await fetch("/api/notifications/read",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})}catch(e){}load()};
+load();let t=setInterval(load,4000);
+document.addEventListener("visibilitychange",()=>{clearInterval(t);t=setInterval(load,document.hidden?20000:4000);if(!document.hidden)load()});
+</script>
+</body>
+</html>

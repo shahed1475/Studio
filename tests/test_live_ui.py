@@ -72,3 +72,50 @@ def test_the_dashboard_script_parses(tmp_path):
     f.write_text(script())
     r = subprocess.run(["node", "--check", str(f)], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
+
+
+# ---- shell, notifications, theme (29 Oct 2026) ----
+CSS = (ROOT / "static" / "studio.css").read_text()
+V3 = CSS[CSS.index("v3 (29 Oct 2026)"):]
+NOTES = (ROOT / "notifications.html").read_text()
+
+
+def test_the_shell_has_a_top_bar_with_the_bell_and_an_accessible_day_night_switch():
+    for needle in ('id="topbar"', 'id="bell"', 'aria-haspopup="dialog"', 'id="notes"', 'role="dialog"', 'id="toasts"', 'id="tswitch"', 'role="switch"', 'aria-label="Night mode"',
+                   'id="alertsw"', 'id="pill"', 'id="navlist"'):
+        assert needle in HTML, needle
+    js = script()
+    for fn in ("toggleTheme", "toggleNotes", "closeNotes", "notesRead", "toastNote", "pollNotes", "toggleAlerts", "movePill", "countUp"):
+        assert re.search(rf"function {fn}\(", js), fn
+    assert 'key==="Escape"' in js and "startViewTransition" in js and "reduced()" in js  # keyboard close, the circular reveal, and no motion when the person asked for none
+    assert 'localStorage.setItem("theme"' in js
+
+
+def test_only_transform_and_opacity_move_in_the_new_animations():
+    bodies = re.findall(r"@keyframes\s+[\w-]+\s*\{(.*?\})\s*\}", V3, re.S)
+    assert bodies
+    for b in bodies:
+        props = set(re.findall(r"([a-z-]+)\s*:", b)) - {"from", "to"}
+        assert props <= {"transform", "opacity"}, props
+    assert "prefers-reduced-motion" in V3 and "@media(max-width:900px)" in V3  # reduced motion handled, phone layout handled
+
+
+def test_the_notifications_window_reads_the_api_and_marks_read(tmp_path):
+    for needle in ("/api/notifications", "/api/notifications/read", "prefers-reduced-motion", ":focus-visible", 'aria-live="polite"', 'name="viewport"'):
+        assert needle in NOTES, needle
+    assert "—" not in NOTES
+    import notifyview
+    sent = set(notifyview.build(events=[])) | {"counts", "items", "sources"}
+    assert set(re.findall(r"\bD\.([a-z]+)", NOTES)) <= sent
+
+
+def test_the_notification_routes_answer_and_read_marks_the_feed(tmp_path, monkeypatch):
+    import agentlog
+    import dashboard
+    monkeypatch.setattr(agentlog, "FILE", tmp_path / "events.jsonl")
+    agentlog.event("error", "A render failed", "ffmpeg exited 1")
+    agentlog.event("applied", "Repaired a title")
+    d = dashboard.notifications_view()
+    assert d["counts"]["unread"] >= 2 and d["counts"]["badge"] >= 2 and any(i["title"] == "A render failed" and i["source"] == "Warnings" for i in d["items"])
+    dashboard.agent_read()
+    assert dashboard.notifications_view()["counts"]["unread"] == 0

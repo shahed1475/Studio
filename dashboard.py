@@ -284,6 +284,21 @@ def risk_view() -> dict:
     return _RISK["data"]
 
 
+def notifications_view() -> dict:
+    """Everything that wants the owner's attention, from every source, each read on its own so one that fails leaves the rest."""
+    import notifyview
+
+    def safe(fn, default):
+        try:
+            return fn()
+        except Exception:
+            return default
+
+    failed = [{"id": j["id"], "cmd": j["cmd"]} for j in JOBS.values() if j["status"] == "failed" and time.time() - (j.get("ended") or 0) < 86400]
+    return notifyview.build(risks=safe(lambda: risk_view()["rows"], []), needs_you=safe(lambda: len(autopilot_view()["needs_you"]), 0),
+                            growth=safe(lambda: __import__("growthview").view(), {}), failed_jobs=failed)
+
+
 def agent_view() -> dict:
     import agent
     import agentlog
@@ -622,6 +637,10 @@ class H(BaseHTTPRequestHandler):
             self.wfile.write(b)
         elif u.path == "/monitor":
             self.send_page_file("monitor.html")
+        elif u.path == "/notifications":
+            self.send_page_file("notifications.html")
+        elif u.path == "/api/notifications":
+            self.send_json(notifications_view())
         elif u.path == "/now":
             self.send_page_file("now.html")
         elif u.path == "/api/now":
@@ -873,7 +892,7 @@ class H(BaseHTTPRequestHandler):
             return {"strategy": agent_strategy(b)}
         if path == "/api/agent/profile":
             return {"profile": agent_profile(b)}
-        if path == "/api/agent/read":
+        if path in ("/api/agent/read", "/api/notifications/read"):
             return agent_read()
         if path == "/api/autopilot/hold":
             p = config.OUT / safe_slug(b["slug"]) / "meta.json"

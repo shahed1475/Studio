@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#040c09">
+<meta name="theme-color" content="#eef6f1">
 <meta name="mobile-web-app-capable" content="yes">
 <title>Story Studio</title>
 <style>
@@ -302,16 +302,36 @@ button.wd{cursor:pointer}button.wd:hover{transform:translateY(-2px);border-color
 <body>
 <div class="shell">
   <aside>
-    <div class="brand">Story <span>Studio</span></div>
-    <nav id="nav" aria-label="Main"></nav>
+    <div class="brand"><i class="mark"><i class="ic" style="--i:url(/static/icons/books.svg)"></i></i>Story <span>Studio</span></div>
+    <nav id="nav" aria-label="Main"><i class="pill" id="pill" aria-hidden="true"></i><div id="navlist"></div></nav>
     <div class="side-foot">
       <button type="button" class="runbox" id="runbox" onclick="go('live',{slug:null})" aria-live="polite"></button>
       <nav id="nav3" aria-label="Tools"></nav>
       <nav id="nav2" aria-label="Settings"></nav>
     </div>
   </aside>
-  <main id="main"><div class="stack"><div class="skel" style="height:34px;width:40%"></div><div class="skel" style="height:110px"></div><div class="skel" style="height:90px"></div></div></main>
+  <div class="col">
+    <header class="topbar" id="topbar">
+      <div class="brand tb-brand"><i class="mark"><i class="ic" style="--i:url(/static/icons/books.svg)"></i></i>Story <span>Studio</span></div>
+      <div class="tb-title" id="tbtitle" aria-hidden="true"></div>
+      <span class="tb-sp"></span>
+      <button type="button" class="pillbtn" id="tblive" onclick="go('live',{slug:null})" aria-label="Open the live view"></button>
+      <div class="tb-bell">
+        <button type="button" class="iconbtn" id="bell" aria-haspopup="dialog" aria-expanded="false" aria-controls="notes" aria-label="Notifications" onclick="toggleNotes(event)"><span id="bellic"></span><span class="bdg" id="bellbadge" hidden></span></button>
+        <div class="notes" id="notes" role="dialog" aria-label="Notifications" tabindex="-1">
+          <div class="nhead"><h2>Notifications</h2><span class="tb-sp"></span><button type="button" class="btn quiet sm" onclick="notesRead()">Mark all read</button><button type="button" class="iconbtn sm" onclick="popNotes()" aria-label="Open in a small window" title="Open in a small window"><i class="ic" style="--i:url(/static/icons/arrow-square-out.svg)"></i></button></div>
+          <div class="chips" id="nchips" role="group" aria-label="Filter notifications"></div>
+          <div class="nlist" id="nlist"></div>
+          <div class="nfoot"><span>Desktop alerts<small id="alertstate"></small></span><button type="button" class="tsw" id="alertsw" role="switch" aria-checked="false" aria-label="Desktop alerts" onclick="toggleAlerts()"><i></i></button></div>
+        </div>
+      </div>
+      <button type="button" class="tswitch" id="tswitch" role="switch" aria-checked="false" aria-label="Night mode" onclick="toggleTheme(event)"><span class="knob"><i style="--i:url(/static/icons/sun.svg)"></i><i style="--i:url(/static/icons/moon.svg)"></i></span></button>
+    </header>
+    <div id="sentinel" aria-hidden="true"></div>
+    <main id="main"><div class="stack"><div class="skel" style="height:34px;width:40%"></div><div class="skel" style="height:110px"></div><div class="skel" style="height:90px"></div></div></main>
+  </div>
 </div>
+<div id="toasts" aria-live="polite" aria-atomic="false"></div>
 <nav id="tabbar" aria-label="Main"></nav>
 <div id="sheet" aria-hidden="true"><div class="scrim" onclick="sheet(false)"></div><div class="card" id="sheetcard"></div></div>
 <div class="toast" id="toast" role="status"></div>
@@ -340,10 +360,21 @@ const running=()=>S&&S.jobs.find(j=>j.status==="running");
 const jobBadge=j=>badge(j.status==="done"?"Finished":j.status==="failed"?"Failed":"Running",j.status==="done"?"ok":j.status==="failed"?"bad":"warn");
 const empty=(icon,title,text,btn="")=>`<div class="empty">${ico(icon)}<b>${title}</b><span>${text}</span>${btn}</div>`;
 
-function setTheme(t){safe(()=>localStorage.setItem("theme",t));document.documentElement.dataset.theme=t;const l=document.getElementById("themelbl");if(l)l.textContent=t==="dark"?"Switch to light":"Switch to dark"}
+function setTheme(t){safe(()=>localStorage.setItem("theme",t));document.documentElement.dataset.theme=t;const l=document.getElementById("themelbl");if(l)l.textContent=t==="dark"?"Switch to light":"Switch to dark";
+  const sw=document.getElementById("tswitch");if(sw)sw.setAttribute("aria-checked",t==="dark");const mc=document.querySelector('meta[name="theme-color"]');if(mc)mc.content=t==="dark"?"#040c09":"#eef6f1"}
 function sheet(o){const e=document.getElementById("sheet");o=o===undefined?!e.classList.contains("open"):o;e.classList.toggle("open",o);e.setAttribute("aria-hidden",!o)}
 async function logout(){await fetch("/logout",{method:"POST"});location.href="/login"}
-function toggleTheme(){setTheme(document.documentElement.dataset.theme==="dark"?"light":"dark")}
+const reduced=()=>matchMedia("(prefers-reduced-motion: reduce)").matches;
+function toggleTheme(ev){
+  const next=document.documentElement.dataset.theme==="dark"?"light":"dark";
+  if(!document.startViewTransition||reduced()){setTheme(next);return}
+  const el=(ev&&ev.currentTarget)||document.getElementById("tswitch"),r=el.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2;
+  const end=Math.hypot(Math.max(x,innerWidth-x),Math.max(y,innerHeight-y));
+  document.documentElement.classList.add("vt-theme");
+  const vt=document.startViewTransition(()=>setTheme(next));
+  vt.ready.then(()=>document.documentElement.animate({clipPath:[`circle(0px at ${x}px ${y}px)`,`circle(${end}px at ${x}px ${y}px)`]},{duration:650,easing:"cubic-bezier(.65,0,.25,1)",pseudoElement:"::view-transition-new(root)"})).catch(()=>{});
+  vt.finished.finally(()=>document.documentElement.classList.remove("vt-theme"));
+}
 setTheme(safe(()=>localStorage.getItem("theme"))||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"));
 
 function go(t,opts={}){sheet(false);if(opts.slug!==undefined)openSlug=opts.slug;tab=t;location.hash=t;clearInterval(logTimer);render(true)}
@@ -361,7 +392,7 @@ async function refresh(force){
 function chrome(){
   if(S.tenant&&!NAV.some(n=>n[0]==="niche"))NAV.splice(4,0,["niche","Niche","list-checks"]);
   const c=S.counts["needs review"],r=running();
-  document.getElementById("nav").innerHTML=NAV.map(([k,l,i])=>`<button class="${tab===k?"on":""}" onclick="go('${k}',{slug:null})" ${tab===k?'aria-current="page"':""}>${ico(i)}<span class="t">${l}</span>${k==="videos"&&c?`<span class="count">${c}</span>`:""}${k==="autopilot"&&S.autopilot.needs_you?`<span class="count">${S.autopilot.needs_you}</span>`:""}${k==="growth"&&S.agent&&S.agent.unread?`<span class="count">${S.agent.unread}</span>`:""}</button>`).join("");
+  document.getElementById("navlist").innerHTML=NAV.map(([k,l,i])=>`<button class="${tab===k?"on":""}" onclick="go('${k}',{slug:null})" ${tab===k?'aria-current="page"':""}>${ico(i)}<span class="t">${l}</span>${k==="videos"&&c?`<span class="count">${c}</span>`:""}${k==="autopilot"&&S.autopilot.needs_you?`<span class="count">${S.autopilot.needs_you}</span>`:""}${k==="growth"&&S.agent&&S.agent.unread?`<span class="count">${S.agent.unread}</span>`:""}</button>`).join("");
   document.getElementById("nav3").innerHTML=TOOLS.map(([k,l,i])=>`<button class="${tab===k?"on":""}" onclick="go('${k}',{slug:null})" ${tab===k?'aria-current="page"':""}>${ico(i)}<span class="t">${l}</span></button>`).join("");
   document.getElementById("nav2").innerHTML=(([k,l,i])=>`<button class="${tab===k?"on":""}" onclick="go('${k}',{slug:null})" ${tab===k?'aria-current="page"':""}>${ico(i)}<span class="t">${l}</span></button>`)(SET);
   const au=S.auth&&S.auth.on, bt=(k,l,i,x="")=>`<button class="${tab===k?"on":""}" onclick="go('${k}',{slug:null})">${ico(i)}<span class="t">${l}</span>${x}</button>`;
@@ -370,6 +401,7 @@ function chrome(){
   document.getElementById("tabbar").innerHTML=NAV.slice(0,4).map(([k,l,i])=>bt(k,l,i,k==="videos"&&c?`<span class="count">${c}</span>`:k==="autopilot"&&nv?`<span class="count">${nv}</span>`:"")).join("")+`<button class="${more?"on":""}" onclick="sheet()" aria-haspopup="true">${ico("dots-three")}<span class="t">More</span>${gv?`<span class="count">${gv}</span>`:""}</button>`;
   document.getElementById("sheetcard").innerHTML=`<div class="state"><b>${r||S.autopilot.busy?"Working":"Idle"}</b>${r?esc(r.cmd):S.autopilot.busy?"Autopilot or a repair is running":"Nothing is running"}</div>`+[...NAV.slice(4),...TOOLS,SET].map(([k,l,i])=>bt(k,l,i,k==="growth"&&gv?`<span class="count">${gv}</span>`:"")).join("")+[["/now","Right now","pulse"],["/footage","Footage clips","film-strip"],["/channels","Channels","squares-four"]].map(([h,l,i])=>`<button onclick="location.href='${h}'">${ico(i)}<span class="t">${l}</span></button>`).join("")+(au?`<button onclick="logout()">${ico("sign-out")}<span class="t">Sign out</span></button>`:"");
   document.documentElement.classList.toggle("busy",!!r);
+  movePill();topbarPaint();
   const lvOn=wasBusy(),dock=document.getElementById("runbox"),busyNow=!!r||lvOn||!!S.autopilot.busy;
   dock.className="runbox"+(busyNow?" busy":"");
   const dockTitle=lvOn?(VERB[L.stage.key]||"Working"):r?"Working":S.autopilot.busy?"Working":"Idle";
@@ -381,9 +413,114 @@ function render(force){
   const m=document.getElementById("main");
   ({home,live,videos,create,niche,autopilot,growth,activity,youtube,settings,footage,channels})[tab]?.(m);
   if(tab==="home"){loadRisk();paintHomeLive()}
-  m.firstElementChild?.classList.add("view");setTheme(document.documentElement.dataset.theme);
+  if(force===true){[...m.children].forEach((c,i)=>{c.classList.remove("rise");void c.offsetWidth;c.classList.add("rise");c.style.setProperty("--i",Math.min(i,9))});countUp(m)}
+  setTheme(document.documentElement.dataset.theme);
 }
 
+
+
+/* ---------- Shell: top bar, navigation pill, motion ---------- */
+let pillReady=false;
+function movePill(){
+  const list=document.getElementById("navlist"),pill=document.getElementById("pill");if(!list||!pill)return;
+  const on=list.querySelector("button.on");
+  if(!on){pill.style.opacity=0;return}
+  pill.style.opacity=1;pill.style.height=on.offsetHeight+"px";pill.style.transform=`translateY(${on.offsetTop}px)`;
+  if(!pillReady){pillReady=true;requestAnimationFrame(()=>requestAnimationFrame(()=>pill.classList.add("ready")))}
+}
+function topbarPaint(){
+  const cur=[...NAV,...TOOLS,SET].find(n=>n[0]===tab),tt=document.getElementById("tbtitle");
+  if(tt&&cur)tt.innerHTML=ico(cur[2])+`<span>${esc(cur[1])}</span>`;
+  const lp=document.getElementById("tblive");
+  if(lp){const on=wasBusy()||!!running();lp.innerHTML=`<span class="dot-live ${on?"on":""}"></span><span>${on?esc((L&&L.stage&&VERB[L.stage.key])||"Working"):"Idle"}</span>`}
+}
+function countUp(root){
+  if(reduced())return;
+  root.querySelectorAll(".pipe .n,.stat b").forEach(el=>{
+    const raw=el.textContent.trim();if(!/^\d{1,6}$/.test(raw))return;
+    const to=+raw,t0=performance.now();el.textContent="0";
+    const tick=t=>{const p=Math.min(1,(t-t0)/750);el.textContent=Math.round(to*(1-Math.pow(1-p,3)));if(p<1)requestAnimationFrame(tick)};requestAnimationFrame(tick);
+  });
+}
+let spot=0;
+document.addEventListener("pointermove",e=>{
+  if(spot||e.pointerType==="touch")return;
+  spot=requestAnimationFrame(()=>{spot=0;const p=e.target.closest&&e.target.closest(".panel");if(p){const r=p.getBoundingClientRect();p.style.setProperty("--mx",(e.clientX-r.left)+"px");p.style.setProperty("--my",(e.clientY-r.top)+"px")}});
+},{passive:true});
+new IntersectionObserver(([e])=>document.getElementById("topbar").classList.toggle("stuck",!e.isIntersecting)).observe(document.getElementById("sentinel"));
+
+/* ---------- Notifications: bell, panel, toasts, desktop alerts ---------- */
+let NT=null,ntFilter="all",ntOpen=false,ntSeen=null,ntOpenedAt=0,lastBadge=0;
+const SRC_ICON={Warnings:"warning-circle",Growth:"chart-line-up",Activity:"pulse",Autopilot:"robot"};
+const alertsOn=()=>safe(()=>localStorage.getItem("alerts"))==="on"&&"Notification" in window&&Notification.permission==="granted";
+async function pollNotes(){
+  if(document.hidden)return;
+  let r;try{r=await fetch("/api/notifications")}catch(e){return}
+  if(r.status===401){location.href="/login";return}
+  let d;try{d=await r.json()}catch(e){return}
+  const fresh=ntSeen?d.items.filter(i=>!i.pinned&&i.unread&&!ntSeen.has(i.id)):[];
+  ntSeen=new Set(d.items.map(i=>i.id));NT=d;paintBell();if(ntOpen)paintNotes();
+  fresh.slice(0,3).forEach(toastNote);
+}
+function paintBell(){
+  const n=NT?NT.counts.badge:0,b=document.getElementById("bellbadge"),bell=document.getElementById("bell");if(!b)return;
+  document.getElementById("bellic").innerHTML=ico(n?"bell-ringing":"bell");
+  b.textContent=n>99?"99+":n;b.hidden=!n;
+  if(n>lastBadge&&!reduced()){b.classList.remove("pop");void b.offsetWidth;b.classList.add("pop");bell.classList.remove("ring");void bell.offsetWidth;bell.classList.add("ring")}
+  lastBadge=n;bell.setAttribute("aria-label",n?`Notifications, ${n} need you`:"Notifications");
+  document.title=(n?`(${n}) `:"")+"Story Studio";
+}
+function noteRow(i,k){
+  return `<button type="button" class="nrow ${esc(i.level)} ${i.unread?"unread":""}" style="--i:${Math.min(k,8)}" onclick="noteGo('${esc(i.tab)}')"><span class="nic">${ico(SRC_ICON[i.source]||"pulse")}</span><span class="nb"><b>${esc(i.title)}</b>${i.detail?`<span>${esc(i.detail)}</span>`:""}<small><span>${esc(i.source)}</span>${i.pinned?"":`<time>${agoIso(i.at)}</time>`}</small></span></button>`;
+}
+function paintNotes(){
+  const d=NT||{items:[],sources:{},counts:{badge:0,waiting:0}};
+  const keep=i=>ntFilter==="all"||(ntFilter==="needs"?i.pinned&&i.counted:i.source===ntFilter);
+  const items=d.items.filter(keep),pin=items.filter(i=>i.pinned),ev=items.filter(i=>!i.pinned);let k=0;
+  const chip=(key,l,n)=>`<button class="chip" type="button" aria-pressed="${ntFilter===key}" onclick="ntSet('${key}')">${l}<small>${n||0}</small></button>`;
+  document.getElementById("nchips").innerHTML=chip("all","All",d.items.length)+chip("needs","Needs you",d.counts.waiting)+chip("Growth","Growth",d.sources.Growth)+chip("Activity","Activity",d.sources.Activity)+chip("Warnings","Warnings",d.sources.Warnings);
+  document.getElementById("nlist").innerHTML=!items.length?empty("bell","All quiet","New reports from Autopilot and the agents show up here as they happen."):
+    (pin.length?`<div class="ngroup">Waiting for you</div>`+pin.map(i=>noteRow(i,k++)).join(""):"")+(ev.length?`<div class="ngroup">Recent</div>`+ev.map(i=>noteRow(i,k++)).join(""):"");
+  paintAlertSw();
+}
+function ntSet(k){ntFilter=k;paintNotes()}
+function toggleNotes(e){e&&e.stopPropagation();ntOpen?closeNotes():openNotes()}
+function openNotes(){
+  ntOpen=true;ntOpenedAt=Date.now();const n=document.getElementById("notes");n.classList.add("open");document.getElementById("bell").setAttribute("aria-expanded","true");paintNotes();pollNotes();n.focus({preventScroll:true});
+}
+function closeNotes(){
+  if(!ntOpen)return;ntOpen=false;document.getElementById("notes").classList.remove("open");const b=document.getElementById("bell");b.setAttribute("aria-expanded","false");b.focus({preventScroll:true});
+  if(NT&&NT.counts.unread&&Date.now()-ntOpenedAt>1500)notesRead(true);  // looked at for a moment: the new ones count as seen
+}
+async function notesRead(quiet){try{await api("/api/notifications/read",{})}catch(e){return}if(!quiet)toast("All marked as read");pollNotes()}
+function noteGo(t){closeNotes();go(t,{slug:null})}
+function popNotes(){const w=window.open("/notifications","studio-notifications","popup=yes,width=420,height=580");if(!w)toast("Your browser blocked the window. Allow pop-ups for this page, or open /notifications in a new tab.")}
+document.addEventListener("click",e=>{if(ntOpen&&!e.target.closest("#notes")&&!e.target.closest("#bell"))closeNotes()});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&ntOpen)closeNotes()});
+function toastNote(i){
+  const host=document.getElementById("toasts");if(!host)return;
+  const t=document.createElement("div");t.className="nt "+i.level;t.setAttribute("role","status");
+  t.innerHTML=`<span class="nic">${ico(SRC_ICON[i.source]||"pulse")}</span><div class="nb"><b>${esc(i.title)}</b>${i.detail?`<span>${esc(i.detail)}</span>`:""}</div><button type="button" class="x" aria-label="Dismiss">${ico("x")}</button><i class="life"></i>`;
+  host.prepend(t);requestAnimationFrame(()=>requestAnimationFrame(()=>t.classList.add("in")));
+  const kill=()=>{t.classList.remove("in");t.classList.add("out");setTimeout(()=>t.remove(),320)};let h=setTimeout(kill,7000);
+  t.onmouseenter=()=>{clearTimeout(h);t.classList.add("hold")};t.onmouseleave=()=>{t.classList.remove("hold");h=setTimeout(kill,2500)};
+  t.querySelector(".x").onclick=ev=>{ev.stopPropagation();kill()};t.onclick=()=>{noteGo(i.tab);kill()};
+  if(alertsOn()){try{new Notification(i.title,{body:i.detail||i.source,tag:i.id,silent:true})}catch(e){}}
+  while(host.children.length>4)host.lastElementChild.remove();
+}
+function paintAlertSw(){
+  const on=alertsOn(),sw=document.getElementById("alertsw"),st=document.getElementById("alertstate");if(!sw)return;
+  sw.setAttribute("aria-checked",on);
+  if(st)st.textContent=!("Notification" in window)?"Not supported in this browser":Notification.permission==="denied"?"Blocked in the browser's site settings":on?"On: alerts show in your desktop bar":"Off";
+}
+async function toggleAlerts(){
+  if(!("Notification" in window))return toast("This browser cannot show desktop alerts.");
+  if(alertsOn()){safe(()=>localStorage.setItem("alerts","off"));paintAlertSw();return}
+  const p=Notification.permission==="granted"?"granted":await Notification.requestPermission();
+  if(p==="granted"){safe(()=>localStorage.setItem("alerts","on"));toast("Desktop alerts are on")}else toast("Desktop alerts are blocked. Allow them in the browser's site settings.");
+  paintAlertSw();
+}
+setInterval(()=>{if(!document.hidden)pollNotes()},6000);pollNotes();
 
 /* ---------- Live ---------- */
 let L=null,liveTimer=null,liveLast=0;

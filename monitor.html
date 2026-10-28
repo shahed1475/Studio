@@ -17,8 +17,8 @@ main{flex:1;display:flex;flex-direction:column;gap:1.6vmin;padding:max(14px,3vmi
 header{display:flex;align-items:center;gap:10px;color:var(--ink2);font-weight:560}
 header .grow{flex:1}
 .dot{width:.7em;height:.7em;border-radius:99px;background:var(--ink2);flex:none}
-.dot.on{background:var(--accent);animation:beat 1.9s ease-out infinite}.dot.bad{background:var(--bad)}
-@keyframes beat{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 55%,transparent)}70%,100%{box-shadow:0 0 0 .7em transparent}}
+.dot{position:relative}.dot.on{background:var(--accent)}.dot.on::after{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--accent);animation:ring 1.9s ease-out infinite}.dot.bad{background:var(--bad)}
+@keyframes ring{from{transform:scale(1);opacity:.55}to{transform:scale(2.7);opacity:0}}
 h1{margin:0;font-size:clamp(18px,5vmin,40px);font-weight:650;letter-spacing:-.03em;line-height:1.15;overflow-wrap:anywhere;text-wrap:balance}
 .rail{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:.4vmin}
 .rail div{display:flex;flex-direction:column;gap:6px;font-size:.82em;color:var(--ink2);font-weight:560}
