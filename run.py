@@ -235,6 +235,8 @@ def _second_sources(topic: str, arts: list[dict]) -> tuple[bool, dict | None]:
             return False, None
         extra = secondsources.gather(topic, [a["title"] for a in arts])
         print(f"  second sources: {len(extra['items']) if extra else 0} verified beyond Wikipedia" + (f", original element: {extra['element']['kind']}" if extra and extra.get("element") else ""))
+        if not extra and secondsources.LAST_PROBLEM:
+            print(f"  second sources: none found because {secondsources.LAST_PROBLEM}")
         return True, extra
     except Exception as e:
         print(f"  second sources skipped: {type(e).__name__}")

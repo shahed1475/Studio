@@ -298,3 +298,30 @@ def test_fetch_itself_pins_every_hop_to_the_address_it_just_checked(monkeypatch)
     for handlers, ip in zip(built, ("93.184.216.34", "151.101.1.1")):
         pinned = [h for h in handlers if isinstance(h, ss._PinnedHandler)]
         assert len(pinned) == 1 and pinned[0]._ip == ip and ss._NoRedirect in handlers  # each hop connects to the address checked for that hop
+
+
+def _search_world(monkeypatch, body, seen):
+    monkeypatch.setattr(llm, "load_config", lambda: {"enabled": True, "daily_budget_usd": 5.0, "models": {"review": "anthropic/claude-sonnet-5.5"}})
+    monkeypatch.setattr(llm, "api_key", lambda: "k")
+    monkeypatch.setattr(llm, "spent_today", lambda now=None: 0.0)
+    monkeypatch.setattr(llm, "_account", lambda *a, **k: None)
+    monkeypatch.setattr(llm, "_post", lambda payload, key: seen.append(payload) or body)
+
+
+def test_the_search_asks_for_enough_tokens_because_900_cut_the_answer_off_on_the_live_run(monkeypatch):
+    seen = []
+    ok = {"choices": [{"finish_reason": "stop", "message": {"content": '{"sources": [{"url": "https://a.example.org/x", "title": "T", "passage": "p"}]}',
+                                                           "annotations": [{"url_citation": {"url": "https://a.example.org/x"}}]}}]}
+    _search_world(monkeypatch, ok, seen)
+    cands, cited = ss.search("Topic", ["W"], NOW)
+    assert seen[0]["max_tokens"] >= 2500 and ss.SEARCH_TOKENS >= 2500 and [c["url"] for c in cands] == ["https://a.example.org/x"] and cited == {"https://a.example.org/x"} and ss.LAST_PROBLEM == ""
+
+
+def test_an_empty_search_always_says_why(monkeypatch):
+    cut = {"choices": [{"finish_reason": "length", "message": {"content": "", "annotations": []}}]}
+    _search_world(monkeypatch, cut, [])
+    assert ss.search("Topic", [], NOW) == ([], set()) and "cut off" in ss.LAST_PROBLEM
+    _search_world(monkeypatch, {"choices": [{"finish_reason": "stop", "message": {"content": "no json here"}}]}, [])
+    assert ss.search("Topic", [], NOW) == ([], set()) and ss.LAST_PROBLEM.startswith("the search failed")
+    monkeypatch.setattr(llm, "load_config", lambda: {"enabled": False, "daily_budget_usd": 5.0, "models": {}})
+    assert ss.search("Topic", [], NOW) == ([], set()) and "paid models are off" in ss.LAST_PROBLEM
