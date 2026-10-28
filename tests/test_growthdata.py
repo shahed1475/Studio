@@ -31,6 +31,10 @@ class Analytics:
         d = kw["dimensions"]
         if d == "video":
             return Req(self.totals if isinstance(self.totals, Exception) else {"rows": self.totals})
+        if d == "day,video":
+            return Req({"rows": [["2026-10-26", "V1", 5], ["2026-10-27", "V1", 7], ["2026-10-27", "V2", 9]]})
+        if d == "day,insightTrafficSourceType":
+            return Req({"rows": [["2026-10-26", "SHORTS", 30], ["2026-10-26", "YT_SEARCH", 10], ["2026-10-27", "SHORTS", 20]]})
         if d == "elapsedVideoTimeRatio":
             return Req(RuntimeError("quota") if kw["filters"].split("==")[1] in self.bad else {"rows": self.curve})
         return Req({"rows": self.traffic})
@@ -147,3 +151,27 @@ def test_the_reach_reports_already_read_are_not_downloaded_twice(tmp_path):
     growthdata.collect(NOW + dt.timedelta(hours=7), (None, Analytics(TOTALS), Reporting(), sess), tmp_path / "videos.json", lambda: videos(NOW))
     assert calls == ["https://x/r1"]
     assert json.loads((tmp_path / "videos.json").read_text())["videos"]["V1"]["ctr"] == 0.03  # and the earlier days are kept
+
+
+def test_daily_views_per_video_and_source_are_kept_for_the_drift_detector_at_most_once_a_day(tmp_path):
+    an = Analytics(TOTALS)
+    run(tmp_path, an=an)
+    d = json.loads((tmp_path / "daily.json").read_text())
+    assert d["videos"]["V1"] == {"2026-10-26": 5, "2026-10-27": 7} and d["traffic"]["2026-10-26"] == {"SHORTS": 30, "YT_SEARCH": 10}
+    n = sum(1 for c in an.calls if c["dimensions"] in ("day,video", "day,insightTrafficSourceType"))
+    assert n == 2
+    run(tmp_path, an=an, now=NOW + dt.timedelta(hours=7))
+    assert sum(1 for c in an.calls if c["dimensions"] == "day,video") == 1  # not asked again within 20 hours
+    run(tmp_path, an=an, now=NOW + dt.timedelta(hours=26))
+    assert sum(1 for c in an.calls if c["dimensions"] == "day,video") == 2
+
+
+def test_a_failing_daily_query_is_reported_and_does_not_stop_the_rest(tmp_path):
+    class Bad(Analytics):
+        def query(self, **kw):
+            if kw["dimensions"] == "day,video":
+                return Req(RuntimeError("quota"))
+            return super().query(**kw)
+
+    out = run(tmp_path, an=Bad(TOTALS))
+    assert out["collected"] == 2 and any("daily series unavailable" in p for p in out["problems"])

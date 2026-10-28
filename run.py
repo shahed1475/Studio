@@ -740,6 +740,23 @@ def main() -> None:
 
         print(json.dumps(diagnose.run(), indent=2))
         print(diagnose.report())
+        import datetime as dt
+
+        import drift
+        import newswatch
+
+        d = drift.run(policy_changes=newswatch.recent_policy_changes(dt.datetime.now(dt.timezone.utc), 40))
+        print(f"drift: {d['status']} ({d['have_days']} of {d['need_days']} days of history), {len(d['events'])} finding(s)")
+    elif a[0] == "policy":  # YouTube rule-page changes and the hold on scheduling and uploads (the owner releases it)
+        import policyclass
+
+        if len(a) > 1 and a[1] == "release":
+            print(policyclass.release_hold(" ".join(a[2:])))
+        else:
+            h = policyclass.hold_active()
+            print(f"HOLD ACTIVE since {h['since']} for: {', '.join(h['pages'])}. Read the changes below, then `python run.py policy release`." if h else "no policy hold")
+            for r in policyclass.recent(8):
+                print(f"{r['at'][:10]} {r['severity']:4} {r['affects']:12} {r['page']}: {r['summary'][:110]}" + (f" | rules proposal {r['proposal']}" if r.get("proposal") else ""))
     elif a[0] == "edits":  # changes to videos on YouTube: proposals for public videos (owner approves) and the log of what was changed
         import actionlog
 

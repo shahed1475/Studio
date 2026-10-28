@@ -6,10 +6,10 @@ The owner and the guardian hear about a rule or security change the day it happe
 ## When
 Rule pages daily at 06:10; news feeds weekly.
 ## How
-Compare saved copies of the rule pages with today's. Restate only what the sources say. News videos always wait for a human.
+Compare saved copies of the rule pages with today's, then classify each change with fixed rules (policyclass): a serious change to a monetization or content page proposes a rules.json constraint and holds scheduling and uploads until the owner runs `run.py policy release`. Staff videos (Creator Insider) are read through the API. Restate only what the sources say. News videos always wait for a human.
 ## Tools
-newswatch.policy_watch, newswatch.summarize, agentlog.
+newswatch.policy_watch, policyclass.handle, newswatch.fetch_staff_items, agentlog.
 ## Never
-Publish a news video by itself. Mark a rule verified. State a date or feature that is not written in the source.
+Publish a news video by itself. Release the policy hold or approve a rules change. Mark a rule verified. State a date or feature that is not written in the source.
 ## Escalate
 A changed rule page becomes a guardian task for the owner to re-verify.

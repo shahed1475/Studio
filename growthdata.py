@@ -114,6 +114,29 @@ def fetch_reach(rp, session, store: dict) -> tuple[dict, str | None]:
         return {}, f"reach reports unavailable: {type(e).__name__}: {str(e)[:160]}"
 
 
+DAILY = config.ROOT / "data" / "agent" / "metrics" / "daily.json"
+
+
+def fetch_daily(an, now: dt.datetime, base: dict, path: Path | None = None, every_hours: int = 20) -> bool:
+    """Daily views per video and per traffic source for the last 90 days (two Analytics queries), kept for the drift detector. At most once every `every_hours`.
+    `path` is the metrics file's path when a test passes one: the daily file then sits beside it."""
+    target = (Path(path).with_name("daily.json") if path else DAILY)
+    try:
+        old = json.loads(target.read_text())
+        if now - _parse(old["updated"]) < dt.timedelta(hours=every_hours):
+            return False
+    except (OSError, ValueError, KeyError):
+        pass
+    vids, traffic = {}, {}
+    for day, vid, views in an.reports().query(metrics="views", dimensions="day,video", maxResults=10000, **base).execute().get("rows", []):
+        vids.setdefault(vid, {})[day] = int(views)
+    for day, src, views in an.reports().query(metrics="views", dimensions="day,insightTrafficSourceType", maxResults=10000, **base).execute().get("rows", []):
+        traffic.setdefault(day, {})[src] = int(views)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    filelock.write_atomic(target, json.dumps({"updated": _iso(now), "videos": vids, "traffic": traffic}))
+    return True
+
+
 def collect(now: dt.datetime | None = None, cl=None, path: Path | None = None, list_videos=None) -> dict:
     now = now or dt.datetime.now(dt.timezone.utc)
     yt, an, rp, session = cl or clients()
@@ -155,6 +178,10 @@ def collect(now: dt.datetime | None = None, cl=None, path: Path | None = None, l
         entry.update(collected=_iso(now), sources=sources, unavailable=UNAVAILABLE, reach=(prev or {}).get("reach", {}))
         store["videos"][v["id"]] = entry
         collected += 1
+    try:
+        fetch_daily(an, now, base, path)
+    except Exception as e:
+        problems.append(f"daily series unavailable: {type(e).__name__}: {str(e)[:120]}")
     days, reach_problem = fetch_reach(rp, session, store) if rp is not None else ({}, "reporting API client could not be built")
     for vid, d in days.items():
         if vid in store["videos"]:

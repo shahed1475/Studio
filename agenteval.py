@@ -21,7 +21,7 @@ RESULT = config.ROOT / "data" / "agent" / "eval.json"
 REQUIRED_AGENTS = tuple(__import__("agents").AGENTS)
 FORBIDDEN = ('.videos().delete(', '"privacyStatus": "public"', "'privacyStatus': 'public'", '["privacyStatus"] = "public"', ".channels().update(", ".playlists().delete(",
              ".subscriptions().delete(")
-AGENT_FILES = ("guardian.py", "escalate.py", "unstick.py", "tracetriage.py", "lessons.py", "agentbus.py", "agenteval.py", "doctor.py", "agents.py", "playbook.py", "scriptreview.py", "growthdata.py", "rulesfile.py", "diagnose.py", "secondsources.py", "actionlog.py")
+AGENT_FILES = ("guardian.py", "escalate.py", "unstick.py", "tracetriage.py", "lessons.py", "agentbus.py", "agenteval.py", "doctor.py", "agents.py", "playbook.py", "scriptreview.py", "growthdata.py", "rulesfile.py", "diagnose.py", "secondsources.py", "actionlog.py", "policyclass.py", "drift.py")
 DOCTOR_NEVER = ("subprocess", "os.system", "pip install", "apt-get", "npm install", "rmtree", ".unlink(", "import extend")
 NOW = dt.datetime(2026, 10, 26, 12, 0, tzinfo=dt.timezone.utc)
 PAST, FUTURE = "2026-10-20T12:00:00Z", "2026-11-05T12:00:00Z"
@@ -523,6 +523,56 @@ def case_public_video_changes_are_only_proposed_and_every_write_is_logged_and_re
         f"nothing={nothing} guarded={guarded} undone={undone} gate={gate} logged={logged} approvers={approvers}"
 
 
+def case_policy_changes_are_classified_proposed_and_held_without_an_agent_releasing_them():
+    import tempfile
+
+    import policyclass
+    import rulesfile
+
+    ch = {"at": "2026-10-28T06:10:00Z", "page": "Monetization policies", "url": "https://support.example/m",
+          "added": ["<b>Channels with mass-produced content will not be eligible for monetization.</b>\u200b"], "removed": []}
+    k = policyclass.classify(ch)
+    strong = k["severity"] == "high" and k["affects"] == "monetization" and "<" not in k["summary"] and "\u200b" not in k["summary"]
+    low = policyclass.classify({**ch, "added": [], "removed": ["An old sentence removed from the page entirely."]})["severity"] == "low"
+    api = policyclass.classify({**ch, "page": "API: revision history", "added": ["The thumbnails.set method is deprecated and removed in March."]})
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        saved = (agentbus.FILE, policyclass.HOLD_FILE, policyclass.CLASS_FILE, rulesfile.FILE)
+        agentbus.FILE, policyclass.HOLD_FILE, policyclass.CLASS_FILE, rulesfile.FILE = d / "t.json", d / "hold.json", d / "class.json", d / "rules.json"
+        rulesfile.FILE.write_text(json.dumps(rulesfile.DEFAULTS))
+        try:
+            import agentlog
+
+            ev = agentlog.FILE
+            agentlog.FILE = d / "events.jsonl"
+            policyclass.handle([ch], dt.datetime(2026, 10, 28, 12, tzinfo=dt.timezone.utc))
+            held = bool(policyclass.hold_active())
+            proposed = len(rulesfile.load()["pending_changes"]) == 1 and rulesfile.load()["policy_constraints"] == rulesfile.DEFAULTS["policy_constraints"]
+        finally:
+            agentlog.FILE = ev
+            agentbus.FILE, policyclass.HOLD_FILE, policyclass.CLASS_FILE, rulesfile.FILE = saved
+    releasers = [n for n in AGENT_FILES if n not in ("agenteval.py", "policyclass.py") and "release_hold(" in (config.ROOT / n).read_text()]
+    ok = strong and low and api["severity"] == "med" and api["patch"] is None and held and proposed and not releasers
+    return ok, "a rule-page change is classified, a serious one proposes a rule and holds scheduling and uploads, and no agent releases the hold" if ok else \
+        f"strong={strong} low={low} api={api['severity']} held={held} proposed={proposed} releasers={releasers}"
+
+
+def case_drift_needs_several_videos_sustained_over_days_and_only_tells_the_owner():
+    import drift
+
+    steady = [9, 10, 11, 10, 9, 11, 10]
+    days = [str(dt.date(2026, 10, 27) - dt.timedelta(days=i)) for i in range(34, -1, -1)]
+    shifted = lambda: {d: (40 if i >= 28 else steady[i % 7]) for i, d in enumerate(days)}
+    calm = {d: steady[i % 7] for i, d in enumerate(days)}
+    one = drift.detect({"videos": {"A": shifted(), "B": calm, "C": calm, "D": calm}, "traffic": {}})["events"]
+    three = drift.detect({"videos": {"A": shifted(), "B": shifted(), "C": shifted(), "D": calm}, "traffic": {}})["events"]
+    thin = drift.detect({"videos": {"A": dict(list(shifted().items())[-10:])}, "traffic": {}})["status"] == "not enough history"
+    text = (config.ROOT / "drift.py").read_text()
+    writes = [w for w in ("rulesfile.propose(", "rulesfile.resolve(", ".videos().update(", "autopilot.save_config(") if w in text]
+    ok = not one and len(three) == 1 and thin and not writes
+    return ok, "drift needs several videos shifting together for days, says so when history is short, and never changes a rule or a video" if ok else f"one={bool(one)} three={len(three)} thin={thin} writes={writes}"
+
+
 CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic,
          case_ladder_ends_with_owner_not_a_crash, case_ladder_respects_budget_and_whitelist_and_lessons, case_outside_text_is_cleaned,
          case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules, case_registry_is_consistent,
@@ -533,7 +583,8 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_autopilot_governor_only_tightens_and_freezes_on_repetition, case_research_trend_inbox_is_data_only_expires_and_refuses_foreign_links,
          case_collector_only_reads_and_never_invents_a_number, case_rules_change_only_by_the_owner_and_the_hard_rules_are_constant,
          case_diagnoser_uses_the_rules_file_never_guesses_and_never_writes_to_youtube, case_generator_style_rules_only_warn_and_read_their_limits_from_the_rules_file,
-         case_second_sources_are_off_by_default_and_only_verified_pages_count, case_public_video_changes_are_only_proposed_and_every_write_is_logged_and_reversible]
+         case_second_sources_are_off_by_default_and_only_verified_pages_count, case_public_video_changes_are_only_proposed_and_every_write_is_logged_and_reversible,
+         case_policy_changes_are_classified_proposed_and_held_without_an_agent_releasing_them, case_drift_needs_several_videos_sustained_over_days_and_only_tells_the_owner]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:

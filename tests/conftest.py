@@ -27,6 +27,37 @@ def _isolate_agent_files(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_growth_files(tmp_path, monkeypatch):
+    """No test may write the shipped rules file (a fake policy change once left a pending change in config/rules.json) or the growth, policy-hold and action files."""
+    import shutil
+
+    import actionlog
+    import diagnose
+    import drift
+    import growthdata
+    import policyclass
+    import rulesfile
+
+    import newswatch
+
+    monkeypatch.setattr(newswatch, "_staff_service", lambda: None)  # no test builds a real YouTube client from a login that happens to be on this machine
+    shipped = rulesfile.FILE
+    iso = tmp_path / "_growth_isolated"
+    iso.mkdir()
+    private = iso / "rules.json"
+    shutil.copy(shipped, private)
+    monkeypatch.setattr(rulesfile, "FILE", private)
+    monkeypatch.setattr(policyclass, "CLASS_FILE", iso / "policy_class.json")
+    monkeypatch.setattr(policyclass, "HOLD_FILE", iso / "policy_hold.json")
+    monkeypatch.setattr(actionlog, "ACTIONS", iso / "actions.json")
+    monkeypatch.setattr(actionlog, "EDITS", iso / "edits.json")
+    monkeypatch.setattr(growthdata, "FILE", iso / "metrics_videos.json")
+    monkeypatch.setattr(growthdata, "DAILY", iso / "metrics_daily.json")
+    monkeypatch.setattr(drift, "FILE", iso / "metrics_daily.json")
+    monkeypatch.setattr(diagnose, "FILE", iso / "diagnoses.json")
+
+
+@pytest.fixture(autouse=True)
 def _isolate_trend_inbox(tmp_path, monkeypatch):
     """Trends typed in by a person are the owner's data: no test may read or write the real file."""
     import trendinbox

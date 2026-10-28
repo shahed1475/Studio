@@ -18,6 +18,10 @@
     "min_impressions_for_ctr": 200,
     "min_views_for_diagnosis": 30,
     "retention_drop_pp": 15,
+    "drift_sigma": 2,
+    "drift_recent_days": 7,
+    "drift_baseline_days": 28,
+    "drift_min_videos": 3,
     "title_chars": [
       40,
       62

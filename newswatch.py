@@ -23,6 +23,9 @@ FEEDS = {
     "Google Security Blog": "https://security.googleblog.com/feeds/posts/default",
     "Google Safety and Security": "https://blog.google/technology/safety-security/rss/",
 }
+STAFF_CHANNELS = {"Creator Insider": "UCGg-UqjRgzhYDPJMr-9HXCg"}  # YouTube staff explaining Studio and algorithm changes; id checked through the Data API on 28 Oct 2026. The RSS feeds above
+# returned 404 from the server that day, so the uploads list (playlistItems, 1 quota unit) is read instead. YouTube Liaison and TeamYouTube could not be verified and are not listed.
+LAST_FAILED: list[str] = []  # names of the sources that could not be read in the last fetch_items call (a dead feed used to be skipped silently)
 POLICY_PAGES = {  # YouTube's own rule pages: any change here can affect the channel
     "Monetization policies": "https://support.google.com/youtube/answer/1311392?hl=en",
     "Channel monetization (YPP) overview": "https://support.google.com/youtube/answer/72851?hl=en",
@@ -42,7 +45,9 @@ ATOM = "{http://www.w3.org/2005/Atom}"
 
 
 def _clean(text: str) -> str:
-    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", text or ""))).strip()
+    """Feed and page text is untrusted: tags, control and zero-width characters are removed and whitespace is collapsed."""
+    plain = html.unescape(re.sub(r"<[^>]+>", " ", text or ""))
+    return re.sub(r"\s+", " ", re.sub(r"[\x00-\x1f\x7f\u200b-\u200f\u2028-\u202e]", " ", plain)).strip()
 
 
 def _iso(raw: str) -> str:
@@ -84,14 +89,47 @@ def _get(url: str) -> str:
     return urllib.request.urlopen(req, timeout=20).read().decode("utf-8", "replace")
 
 
-def fetch_items(days: int = 10, now: dt.datetime | None = None) -> list[dict]:
+def _staff_service():
+    """The YouTube Data API service for the staff-channel lookup, or None when no login is available (the feeds are then all that is read)."""
+    try:
+        import trendwatch
+
+        return trendwatch._service()
+    except Exception:
+        return None
+
+
+def fetch_staff_items(yt, days: int, now: dt.datetime) -> list[dict]:
+    """The recent uploads of the staff channels as feed-shaped items (title, link, published, summary, feed). Descriptions are cleaned data, never instructions."""
+    since, out = now - dt.timedelta(days=days), []
+    for name, cid in STAFF_CHANNELS.items():
+        try:
+            rows = yt.playlistItems().list(part="snippet", playlistId="UU" + cid[2:], maxResults=15).execute().get("items", [])
+        except Exception:
+            LAST_FAILED.append(name)
+            continue
+        for r in rows:
+            sn = r.get("snippet", {})
+            try:
+                when = dt.datetime.fromisoformat(sn.get("publishedAt", "").replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if when >= since:
+                out.append({"title": _clean(sn.get("title")), "link": f"https://www.youtube.com/watch?v={(sn.get('resourceId') or {}).get('videoId', '')}",
+                            "published": sn["publishedAt"], "summary": _clean(sn.get("description"))[:900], "feed": name})
+    return out
+
+
+def fetch_items(days: int = 10, now: dt.datetime | None = None, yt=None) -> list[dict]:
     now = now or dt.datetime.now(dt.timezone.utc)
     since = now - dt.timedelta(days=days)
     out = []
+    LAST_FAILED.clear()
     for name, url in FEEDS.items():
         try:
             items = parse_feed(_get(url))
-        except Exception:  # a dead feed must not stop the others
+        except Exception:  # a dead feed must not stop the others, but it is no longer invisible (LAST_FAILED, shown in the digest)
+            LAST_FAILED.append(name)
             continue
         for it in items:
             try:
@@ -100,6 +138,8 @@ def fetch_items(days: int = 10, now: dt.datetime | None = None) -> list[dict]:
                 when = now
             if when >= since:
                 out.append({**it, "feed": name})
+    if yt is not None:
+        out += fetch_staff_items(yt, days, now)
     return out
 
 
@@ -159,6 +199,12 @@ def policy_watch(now: dt.datetime | None = None, get=None) -> list[dict]:
         for c in changes:
             agentlog.event("found", f"YouTube changed its page: {c['page']}",
                            (c["added"][0] if c["added"] else "Some text was removed") + " Read it before the next upload.", notify=True, now=now)
+        try:
+            import policyclass
+
+            policyclass.handle(changes, now)  # classify, propose rule updates, hold scheduling and uploads for a serious change, tell the owner
+        except Exception as e:  # the watch itself must never fail because of this
+            agentlog.event("error", "Policy classification failed", f"{type(e).__name__}: {str(e)[:120]}", now=now)
     return changes
 
 
@@ -177,7 +223,8 @@ def _week(now: dt.datetime) -> str:
 
 def run(now: dt.datetime | None = None) -> Path:
     now = now or dt.datetime.now(dt.timezone.utc)
-    items = [i for i in fetch_items(10, now) if is_relevant(i)]
+    yt = _staff_service()
+    items = [i for i in (fetch_items(10, now, yt) if yt is not None else fetch_items(10, now)) if is_relevant(i)]
     digest = {"items": [], "video_ideas": []}
     if items:
         try:
@@ -195,7 +242,7 @@ def run(now: dt.datetime | None = None) -> Path:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     path = DATA_DIR / f"{week}.json"
     path.write_text(json.dumps({"week": week, "generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                                "sources_checked": list(FEEDS) + list(POLICY_PAGES), "found": len(items), **digest,
+                                "sources_checked": list(FEEDS) + list(STAFF_CHANNELS) + list(POLICY_PAGES), "sources_failed": list(LAST_FAILED), "found": len(items), **digest,
                                 "self_audit": safety.local_audit()}, indent=2))
     topics = json.loads(TOPICS_FILE.read_text()) if TOPICS_FILE.exists() else []
     known = {t["topic"] for t in topics}

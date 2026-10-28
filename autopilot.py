@@ -513,6 +513,10 @@ def hold_duplicate(slug: str, twin: dict, now) -> None:
 
 
 def do_schedule(slug, cfg, now):
+    import policyclass
+
+    if policyclass.hold_active():
+        return {"skipped": "policy hold: a YouTube rule page changed and the owner has not released it"}
     p, meta = _meta(slug)
     review = meta.get("review") or {}
     if meta.get("hold") or not (review.get("verdict") == "pass" or meta.get("approved_by") == "you"):
@@ -544,7 +548,11 @@ def do_schedule(slug, cfg, now):
 
 
 def do_upload(slug, cfg, now):
+    import policyclass
     import upload
+
+    if policyclass.hold_active():
+        return {"skipped": "policy hold: a YouTube rule page changed and the owner has not released it"}
 
     _, meta = _meta(slug)
     twin = _twin(slug)

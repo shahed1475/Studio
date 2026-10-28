@@ -102,6 +102,18 @@ def to_owner(task_id: str, note: str, now=None, file: Path | None = None) -> dic
     return _move(task_id, "owner", note, now, file)
 
 
+def post_to_owner_once(kind: str, source: str, slug: str, reason: str, evidence: str = "", note: str = "", now=None, file: Path | None = None,
+                       commands: list[str] | None = None) -> dict | None:
+    """One task for the owner per (kind, video or topic) for as long as an earlier one is still open or waiting for the owner. Returns the new task, or None when
+    one already waits. (`post` alone would make a second task, because a task handed to the owner is no longer "open".)"""
+    if any(t["kind"] == kind and t["slug"] == slug and t["state"] in LIVE + ("owner",) for t in tasks(file)):
+        return None
+    t = post(kind, source, "owner", slug=slug, reason=reason, evidence=evidence, now=now, file=file, commands=commands)
+    if t.get("id"):
+        to_owner(t["id"], note or "a decision is yours", now, file)
+    return t
+
+
 def tasks(file: Path | None = None) -> list[dict]:
     return _load(file or FILE)
 

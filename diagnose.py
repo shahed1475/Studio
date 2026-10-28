@@ -118,12 +118,9 @@ def run(now: dt.datetime | None = None, metrics: Path | None = None, path: Path 
             store.setdefault(vid, {})[window] = {"at": growthdata._iso(now), "title": e["title"], "primary": primary, "findings": [{"problem": p, "evidence": ev} for p, ev in fs],
                                                    "action": ACTIONS.get(primary, "")}
             new.append((vid, window, primary))
-            if primary in ACTIONS and ("growth_" + primary, vid) not in {(t["kind"], t["slug"]) for t in agentbus.tasks(tasks) if t["state"] in agentbus.LIVE + ("owner",)}:
-                t = agentbus.post("growth_" + primary, "diagnoser", "owner", slug=vid, reason=f"{e['title'][:70]} ({window}): {ACTIONS[primary]}",
-                                  evidence="; ".join(ev for _, ev in fs)[:500], now=now, file=tasks)
-                if t.get("id"):
-                    agentbus.to_owner(t["id"], "growth diagnosis: a decision is yours", now, tasks)
-                    posted += 1
+            if primary in ACTIONS and agentbus.post_to_owner_once("growth_" + primary, "diagnoser", vid, f"{e['title'][:70]} ({window}): {ACTIONS[primary]}",
+                                                                  "; ".join(ev for _, ev in fs)[:500], "growth diagnosis: a decision is yours", now, tasks):
+                posted += 1
     if new:
         path = Path(path or FILE)
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -20,9 +20,9 @@ def write(tmp_path, data) -> Path:
 
 
 def test_the_shipped_file_matches_the_defaults_so_nothing_drifts_silently():
-    shipped = json.loads(rulesfile.FILE.read_text())
+    shipped = json.loads((rulesfile.config.ROOT / "config" / "rules.json").read_text())  # the file in the repo, not the isolated copy the fixtures use
     assert shipped == rulesfile.DEFAULTS
-    assert rulesfile.load()["_problems"] == []
+    assert rulesfile.load(rulesfile.config.ROOT / "config" / "rules.json")["_problems"] == []
 
 
 def test_a_missing_or_broken_file_falls_back_to_defaults_and_says_so(tmp_path):
