@@ -117,3 +117,12 @@ def test_with_no_numbers_yet_the_report_says_so_and_nothing_breaks(tmp_path, mon
 def test_the_weekly_job_runs_the_learner_before_the_news_digest_and_the_agent_is_registered():
     job = next(j for j in worker.JOBS if j["name"] == "weekly")
     assert job["cmds"] == [["learn"], ["newswatch"]] and agents.AGENTS["learner"]["job"] == "weekly"
+
+
+def test_the_weakest_list_never_repeats_a_video_from_the_best_list(world):
+    text = open(run(world)["report"]).read()
+    docs = text.split("## Documentaries: best three")[1].split("## Shorts")[0]
+    best, weakest = docs.split("## Documentaries: weakest three")
+    assert "Why Did the Piper" in best and "Why Did the Piper" not in weakest and "The Oracle of Delphi" in weakest  # four documentaries: three best, one left for the weakest list
+    shorts = text.split("## Shorts: best three")[1].split("## Title patterns")[0]
+    assert "fewer than four videos: no separate weakest list yet" in shorts.split("## Shorts: weakest three")[1]  # two Shorts: nothing to say about a weakest one

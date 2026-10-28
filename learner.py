@@ -164,8 +164,9 @@ def propose_ctr_target(weekly: dict, rules: dict, now: dt.datetime) -> str | Non
 
 def markdown(week: str, ranks: dict, pats: dict, trend: list[str], actions: list[str], rules: dict) -> str:
     def rows(kind, rs, best):
-        part = rs[:3] if best else rs[::-1][:3]
-        return [f"- {r['title'][:60]}: {r['vpd']} views a day, {r['avg_pct']}% watched" + (f", click rate {r['ctr'] * 100:.1f}%" if r.get("ctr") is not None else "") for r in part] or ["- not enough videos with views yet"]
+        part = rs[:3] if best else rs[3:][::-1][:3]  # the weakest list never repeats a video already among the best three
+        line = lambda r: f"- {r['title'][:60]}: {r['vpd']} views a day, {r['avg_pct']}% watched" + (f", click rate {r['ctr'] * 100:.1f}%" if r.get("ctr") is not None else "")
+        return [line(r) for r in part] or (["- not enough videos with views yet"] if not rs else ["- fewer than four videos: no separate weakest list yet"])
     lines = [f"# Weekly growth report, {week}", ""]
     for kind, name in (("doc", "Documentaries"), ("short", "Shorts")):
         lines += [f"## {name}: best three", *rows(kind, ranks[kind], True), f"## {name}: weakest three", *rows(kind, ranks[kind], False), ""]
