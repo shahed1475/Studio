@@ -633,7 +633,7 @@ def case_an_agent_cannot_set_a_profile_the_reviewer_rejects_and_a_short_fits_its
     with tempfile.TemporaryDirectory() as d:
         folder = Path(d)
         (folder / "video.mp4").write_bytes(b"not a real video")
-        (folder / "meta.json").write_text(json.dumps({"video_id": "abc"}))
+        records.save(folder, {"video_id": "abc"})  # fixture records go through records.py
         untouched = audiofix.normalize(folder) == {"changed": False, "why": "already uploaded: not touched"} and (folder / "video.mp4").read_bytes() == b"not a real video"
     ok = floor_ok and fits and untouched
     return ok, ("agent loudness limits sit inside the reviewer's range, every Short word budget fits the length target, an uploaded video is never re-encoded" if ok
