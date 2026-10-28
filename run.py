@@ -74,6 +74,13 @@ def unique_folder(base: Path) -> Path:
     return base.parent / f"{base.name}-{n}"
 
 
+def freemodels_top(now, n: int) -> list[str]:
+    import freemodels
+
+    freemodels.refresh(now)
+    return freemodels.choose("script", now, n=n)
+
+
 def cmd_ideas(n: int = 10) -> None:
     new = topicqueue.extend(scriptgen.ideas(n))
     print("\n".join(f"+ {t}" for t in new) or "no new ideas")
@@ -621,6 +628,20 @@ def main() -> None:
         for g in sorted(got, key=lambda g: -g["total"]):
             print(f"  {g['total']:>4}  {names[g['index']]}  " + " ".join(f"{k}={v:g}" for k, v in g["parts"].items()))
         print(f"best: {names[max(got, key=lambda g: g['total'])['index']]} (the record was not changed)")
+    elif a[0] == "writer-bench":  # free open models write Short scripts from our sources; scored by free rules only, no Claude call, nothing trained
+        import writerbench
+
+        now = llm._now()
+        cs = writerbench.cases(int(a[a.index("--cases") + 1]) if "--cases" in a else 4)
+        models = a[a.index("--models") + 1].split(",") if "--models" in a else freemodels_top(now, int(a[a.index("--top") + 1]) if "--top" in a else 4)
+        print(f"{len(models)} free model(s) x {len(cs)} source(s): " + ", ".join(c["topic"] for c in cs))
+        if "--list" in a:
+            print("\n".join(models))
+            return
+        res = writerbench.run(models, cs, now=now)
+        for s in res["summary"]:
+            print(f"  usable {s['usable']}/{s['tries']}  answered {s['answered']}  mean {s['mean_score']:.2f}  {s['seconds']}s  {s['model']}  often fails: {', '.join(s['often_fails']) or '-'}")
+        print("Saved in data/writerbench/. Free rules only: facts beyond numbers and years are NOT checked.")
     elif a[0] == "trainset":
         import trainset
 

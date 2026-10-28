@@ -7,7 +7,7 @@ import llm
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCES = [p for p in ROOT.glob("*.py") if p.name not in {"llm.py"}]
-SANCTIONED_POST = {"webcheck.py", "secondsources.py", "aiart.py"}  # they send their own payload (web search plugin, image output) through llm._post: still OpenRouter, still the key and cap of llm.py
+SANCTIONED_POST = {"webcheck.py", "secondsources.py", "aiart.py", "writerbench.py"}  # writerbench calls only models OpenRouter lists at price zero (tests/test_writerbench.py). They send their own payload (web search plugin, image output) through llm._post: still OpenRouter, still the key and cap of llm.py
 
 
 def test_no_module_calls_a_model_host_except_llm_py():
@@ -18,7 +18,7 @@ def test_no_module_calls_a_model_host_except_llm_py():
         assert "api.openai.com" not in text and "generativelanguage.googleapis.com" not in text, p.name
 
 
-def test_only_the_three_known_helpers_send_their_own_payload():
+def test_only_the_known_helpers_send_their_own_payload():
     users = {p.name for p in SOURCES if "llm._post(" in p.read_text()}
     assert users == SANCTIONED_POST, users ^ SANCTIONED_POST
 
