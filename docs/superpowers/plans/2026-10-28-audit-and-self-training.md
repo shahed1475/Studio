@@ -39,3 +39,10 @@ Left alone on purpose: public videos (owner approval: 4 old uploads miss the sea
 
 ## Limits
 A fine-tuned small writer may not match Claude on facts; the reviewer stays strong whatever writes. Savings above are estimates from 10 days of spend, not measurements of the new setup. Training, serving and the conductor are plans until the owner's items arrive.
+
+## Addendum 29 Oct 2026: can Tinker be used free, and may Claude train a model?
+- **Official prices** (thinkingmachines.ai/tinker/pricing, "as of October 19, 2026", USD per million tokens): Qwen3-8B (32K) prefill 0.195, sample 0.60, train 0.44; Qwen3.5-4B (64K) train 0.737; GPT-OSS-20B (32K) train 0.396. The page mentions no free or starter credits.
+- **Free credits are reported, not confirmed.** Beam (12 Jul 2026) says new users get $150; DataCamp says the credit arrives when an account is cleared and lasts a year. Neither is the official page. Check with `tinker billing` after login.
+- **Grants** (thinkingmachines.ai/news/tinker-research-and-teaching-grants): teaching $250 per student for academic classes; research from $5,000; rolling review, answer within about a week; the page does not say whether individuals or businesses qualify. A monetised channel should not present itself as research.
+- **Cost of a first run** (estimate, not a quote): 300 script examples of about 4,000 tokens, 3 epochs, is about 3.6 million training tokens, about $1.6 on Qwen3-8B, plus sampling to evaluate. So a first run costs a few dollars even without credits. The GPU work is remote, so the 4 GB local card does not limit it.
+- **Claude output must not be training data.** Anthropic's commercial terms D.4(a) bar using the Services "to train competing AI models". OpenRouter only routes to Anthropic; its own terms were not read, so treat the bar as applying. Claude may still judge, review and act as an agent in the pipeline. Training text and labels must come from open-licence models (check each licence), public-domain or human-written text, or real outcomes (approvals, analytics), not from Claude's answers.
