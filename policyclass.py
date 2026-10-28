@@ -36,9 +36,16 @@ def _slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")[:40]
 
 
+def _menu(sentence: str) -> bool:
+    """A page's navigation or index line, not a rule: many mentions of policy names with no sentence structure, or mostly capitalised words in a long run
+    (28 Oct 2026: the Community Guidelines menu was read as a medium change and proposed as a rule)."""
+    words = sentence.split()
+    return len(re.findall(r"(?i)\bpolic(?:y|ies)\b", sentence)) >= 3 or (len(words) >= 8 and sum(w[:1].isupper() for w in words) / len(words) > 0.55)
+
+
 def classify(change: dict) -> dict:
     """{"affects": monetization | content | metrics | none, "severity": low | med | high, "summary", "patch" (a validated rules patch or None), "why"}."""
-    page, added = str(change.get("page", "")), [_text(s, 300) for s in change.get("added", [])]
+    page, added = str(change.get("page", "")), [t for t in (_text(s, 300) for s in change.get("added", [])) if not _menu(t)]  # menu lines are not rules
     if page in CONTENT_PAGES:
         affects = "monetization" if any(w in page.lower() for w in ("monetization", "spam")) else "content"
         strong = [s for s in added if STRONG.search(s)]

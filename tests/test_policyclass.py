@@ -124,3 +124,17 @@ def test_a_source_that_cannot_be_read_is_named_instead_of_skipped_silently(monke
     assert items == [] and newswatch.LAST_FAILED == ["Dead feed", "Creator Insider"]
     ok = newswatch.fetch_items(10, NOW, Staff([row(27)]))
     assert [i["feed"] for i in ok] == ["Creator Insider"] and newswatch.LAST_FAILED == ["Dead feed"]
+
+
+MENU = ("Nudity & sexual content policies Thumbnails policy Child safety policy Suicide, self-harm, and eating disorders policy Vulgar language policy "
+        "Violent or dangerous content Hate speech, predatory behavior, and harassment policies.")
+
+
+def test_a_navigation_menu_is_never_read_as_a_rule_change():
+    k = policyclass.classify(change("Community Guidelines", added=[MENU]))
+    assert (k["severity"], k["patch"], k["summary"]) == ("low", None, "")
+    policyclass.handle([change("Community Guidelines", added=[MENU])], NOW)
+    assert agentbus.tasks() == [] and rulesfile.load()["pending_changes"] == [] and policyclass.hold_active() is None
+    real = policyclass.classify(change("Community Guidelines", added=[MENU, "Creators must disclose realistic synthetic media in the upload settings."]))
+    assert real["severity"] == "high" and real["summary"].startswith("Creators must disclose")  # the menu is dropped, the real sentence still counts
+    assert policyclass.classify(change(added=[STRONG]))["severity"] == "high"
