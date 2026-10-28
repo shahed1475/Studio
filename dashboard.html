@@ -303,7 +303,7 @@ button.wd{cursor:pointer}button.wd:hover{transform:translateY(-2px);border-color
 
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
-<link rel="stylesheet" href="/static/studio.css?v=4">
+<link rel="stylesheet" href="/static/studio.css?v=5">
 </head>
 <body>
 <div class="shell">
@@ -344,6 +344,7 @@ button.wd{cursor:pointer}button.wd:hover{transform:translateY(-2px);border-color
 
 <script>
 const NAV=[["home","Home","squares-four"],["live","Live","broadcast"],["videos","Videos","film-strip"],["autopilot","Autopilot","robot"],["create","Create","magic-wand"],["growth","Growth","sparkle"],["activity","Activity","pulse"],["youtube","YouTube","youtube-logo"]]; const TOOLS=[["footage","Footage","film-slate"],["channels","Channels","users-three"]]; const SET=["settings","Settings","gear-six"];
+let weekDone=false;
 let apSub=(()=>{try{return sessionStorage.getItem('apSub')||'overview'}catch(e){return 'overview'}})();
 let S=null,tab=(location.hash.slice(1)||"home"),openSlug=null,openJob=null,ytInfo=null,editing=false,lastSig="",logTimer=null;
 
@@ -384,7 +385,7 @@ function toggleTheme(ev){
 }
 setTheme(safe(()=>localStorage.getItem("theme"))||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"));
 
-function go(t,opts={}){sheet(false);if(opts.slug!==undefined)openSlug=opts.slug;tab=t;location.hash=t;clearInterval(logTimer);render(true)}
+function go(t,opts={}){sheet(false);weekDone=false;if(opts.slug!==undefined)openSlug=opts.slug;tab=t;location.hash=t;clearInterval(logTimer);render(true)}
 async function job(cmd,args=[]){const r=await api("/api/job",{cmd,args});openJob=r.id;toast("Started. It keeps running if you close this page.");await refresh(true);go("activity")}
 
 async function refresh(force){
@@ -420,6 +421,7 @@ function render(force){
   const m=document.getElementById("main");
   ({home,live,videos,create,niche,autopilot,growth,activity,youtube,settings,footage,channels})[tab]?.(m);
   if(tab==="home"){loadRisk();paintHomeLive()}
+  if(tab==="videos"&&!weekDone){weekDone=true;requestAnimationFrame(()=>document.querySelector(".week .wd.today")?.scrollIntoView({inline:"center",block:"nearest"}))}  // the week strip opens on today, once per visit
   if(force===true){[...m.children].forEach((c,i)=>{c.classList.remove("rise");void c.offsetWidth;c.classList.add("rise");c.style.setProperty("--i",Math.min(i,9))});countUp(m)}
   setTheme(document.documentElement.dataset.theme);
 }
@@ -439,7 +441,7 @@ function topbarPaint(){
   const cur=[...NAV,...TOOLS,SET].find(n=>n[0]===tab),tt=document.getElementById("tbtitle");
   if(tt&&cur)tt.innerHTML=ico(cur[2])+`<span>${esc(cur[1])}</span>`;
   const lp=document.getElementById("tblive");
-  if(lp){const on=wasBusy()||!!running();lp.innerHTML=`<span class="dot-live ${on?"on":""}"></span><span>${on?esc((L&&L.stage&&VERB[L.stage.key])||"Working"):"Idle"}</span>`}
+  if(lp){const on=wasBusy()||!!running();lp.innerHTML=`${ico("broadcast","pic")}<span class="dot-live ${on?"on":""}"></span><span>${on?esc((L&&L.stage&&VERB[L.stage.key])||"Working"):"Idle"}</span>`}
 }
 function countUp(root){
   if(reduced())return;
@@ -1035,7 +1037,7 @@ async function activity(m){
   if(!openJob&&S.jobs[0])openJob=S.jobs[0].id;
   let EV=[];try{EV=(await api("/api/agent")).events||[]}catch(e){}
   m.innerHTML=`<div class="head"><h1>Activity</h1><p class="sub">What the automation did on its own, then every job the dashboard started with its live log.</p></div>
-  <div class="sec"><h2>What Autopilot and the agents did</h2><div class="panel">${EV.length?`<div class="rows">${EV.slice(0,30).map(e=>`<div><div class="grow"><div class="ttl">${esc(e.title)}</div><div class="mute">${esc(e.detail)} ${ago(Date.parse(e.at)/1000)}</div></div>${badge(...(AG_EVENT[e.kind]||AG_EVENT.info))}</div>`).join("")}</div>`:empty("pulse","Nothing yet","Every step the automation takes is written here in plain words.")}</div></div>
+  <div class="sec"><h2>What Autopilot and the agents did</h2><div class="panel">${EV.length?`<div class="rows">${EV.slice(0,30).map(e=>`<div><div class="grow"><div class="ttl">${esc(e.title)}</div><div class="mute evd">${esc(e.detail)}</div><div class="mute">${ago(Date.parse(e.at)/1000)}</div></div>${badge(...(AG_EVENT[e.kind]||AG_EVENT.info))}</div>`).join("")}</div>`:empty("pulse","Nothing yet","Every step the automation takes is written here in plain words.")}</div></div>
   <div class="sec"><h2>Jobs you started</h2></div>
   <div class="panel">${S.jobs.length?`<div class="rows">${S.jobs.map(j=>`<div><div class="grow"><span class="ttl">${esc(j.cmd)}</span><div class="mute">${ago(j.started)}${j.ended?", took "+dur(j.ended-j.started):""}</div></div>${jobBadge(j)}<button class="btn quiet sm" onclick="openJob='${j.id}';activity(document.getElementById('main'))">${j.id===openJob?"Showing":"Show log"}</button></div>`).join("")}</div>`:empty("pulse","No jobs yet","When you create a video or approve one, progress appears here.",`<button class="btn" onclick="go('create')">Go to Create</button>`)}</div>
   ${S.jobs.length?`<div class="sec"><h2>Log</h2><pre class="log" id="log">Loading…</pre></div>`:""}`;
@@ -1098,7 +1100,7 @@ async function growth(m){
 
   <div class="sec"><h2>Competitors I watch (${comp.length})</h2><div class="panel">${comp.length?`<div class="rows">${comp.map(x=>`<div><div class="grow"><div class="ttl">${esc(x.name)}</div><div class="mute">${esc(x.line)}</div></div>${x.mine?badge("You added","mute"):badge("Found by the agent","ok")}</div>`).join("")}</div>`:empty("plugs-connected","None yet","The agent finds competitors on its own during the first run.")}</div></div>
 
-  <div class="sec"><h2>What the agent did</h2><div class="panel">${A.events.length?`<div class="rows">${A.events.map(e=>`<div><div class="grow"><div class="ttl">${e.read?"":"&#9679; "}${esc(e.title)}</div><div class="mute">${esc(e.detail)} ${ago(Date.parse(e.at)/1000)}</div></div>${badge(...(AG_EVENT[e.kind]||AG_EVENT.info))}</div>`).join("")}</div>`:empty("pulse","Nothing yet","Every step the agent takes is written here in plain words.")}</div></div>`;
+  <div class="sec"><h2>What the agent did</h2><div class="panel">${A.events.length?`<div class="rows">${A.events.map(e=>`<div><div class="grow"><div class="ttl">${e.read?"":"&#9679; "}${esc(e.title)}</div><div class="mute evd">${esc(e.detail)}</div><div class="mute">${ago(Date.parse(e.at)/1000)}</div></div>${badge(...(AG_EVENT[e.kind]||AG_EVENT.info))}</div>`).join("")}</div>`:empty("pulse","Nothing yet","Every step the agent takes is written here in plain words.")}</div></div>`;
   m.firstElementChild.classList.add("view");
 }
 
