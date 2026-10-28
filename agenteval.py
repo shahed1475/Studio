@@ -21,7 +21,7 @@ RESULT = config.ROOT / "data" / "agent" / "eval.json"
 REQUIRED_AGENTS = tuple(__import__("agents").AGENTS)
 FORBIDDEN = ('.videos().delete(', '"privacyStatus": "public"', "'privacyStatus': 'public'", '["privacyStatus"] = "public"', ".channels().update(", ".playlists().delete(",
              ".subscriptions().delete(")
-AGENT_FILES = ("guardian.py", "escalate.py", "unstick.py", "tracetriage.py", "lessons.py", "agentbus.py", "agenteval.py", "doctor.py", "agents.py", "playbook.py", "scriptreview.py", "growthdata.py", "rulesfile.py", "diagnose.py")
+AGENT_FILES = ("guardian.py", "escalate.py", "unstick.py", "tracetriage.py", "lessons.py", "agentbus.py", "agenteval.py", "doctor.py", "agents.py", "playbook.py", "scriptreview.py", "growthdata.py", "rulesfile.py", "diagnose.py", "secondsources.py")
 DOCTOR_NEVER = ("subprocess", "os.system", "pip install", "apt-get", "npm install", "rmtree", ".unlink(", "import extend")
 NOW = dt.datetime(2026, 10, 26, 12, 0, tzinfo=dt.timezone.utc)
 PAST, FUTURE = "2026-10-20T12:00:00Z", "2026-11-05T12:00:00Z"
@@ -453,6 +453,23 @@ def case_generator_style_rules_only_warn_and_read_their_limits_from_the_rules_fi
     return ok, "style rules from the content prompt are warnings and take their limits from the rules file" if ok else f"only_warn={only_warn} literal={literal}"
 
 
+def case_second_sources_are_off_by_default_and_only_verified_pages_count():
+    import autopilot
+    import secondsources as ss
+
+    page = "<html><title>T</title><p>" + ("Filler words here. " * 60) + "The merchant carried the old ledgers across the stone bridge at dawn before the market opened.</p></html>"
+    quote = "The merchant carried the old ledgers across the stone bridge at dawn before the market opened"
+    good = ss.verify_candidate({"url": "https://a.example.org/x", "passage": quote}, {"https://a.example.org/x"}, lambda u: page)
+    bad = [ss.verify_candidate({"url": "https://a.example.org/x", "passage": quote}, set(), lambda u: page),
+           ss.verify_candidate({"url": "https://en.wikipedia.org/wiki/X", "passage": quote}, {"https://en.wikipedia.org/wiki/X"}, lambda u: page),
+           ss.verify_candidate({"url": "https://a.example.org/x", "passage": "an invented sentence the page never contains anywhere at all in it"}, {"https://a.example.org/x"}, lambda u: page)]
+    text = (config.ROOT / "secondsources.py").read_text()
+    writes = [w for w in (".videos().update(", ".thumbnails().set(", "subprocess", "os.system") if w in text]
+    off = autopilot.DEFAULTS["second_sources"]["enabled"] is False and not ss.enabled(autopilot.DEFAULTS, 99.0)
+    ok = off and bool(good) and not any(bad) and not writes
+    return ok, "second sources are off until the owner switches them on and count only pages we fetched and quoted from" if ok else f"off={off} good={bool(good)} bad={[bool(b) for b in bad]} writes={writes}"
+
+
 CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic,
          case_ladder_ends_with_owner_not_a_crash, case_ladder_respects_budget_and_whitelist_and_lessons, case_outside_text_is_cleaned,
          case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules, case_registry_is_consistent,
@@ -462,7 +479,8 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_scriptreview_asks_the_doctor_once_and_the_doctor_closes_the_loop, case_creator_house_style_is_funded_new_only_and_off_by_default,
          case_autopilot_governor_only_tightens_and_freezes_on_repetition, case_research_trend_inbox_is_data_only_expires_and_refuses_foreign_links,
          case_collector_only_reads_and_never_invents_a_number, case_rules_change_only_by_the_owner_and_the_hard_rules_are_constant,
-         case_diagnoser_uses_the_rules_file_never_guesses_and_never_writes_to_youtube, case_generator_style_rules_only_warn_and_read_their_limits_from_the_rules_file]
+         case_diagnoser_uses_the_rules_file_never_guesses_and_never_writes_to_youtube, case_generator_style_rules_only_warn_and_read_their_limits_from_the_rules_file,
+         case_second_sources_are_off_by_default_and_only_verified_pages_count]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:

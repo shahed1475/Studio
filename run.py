@@ -222,6 +222,25 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
     return folder
 
 
+def _second_sources(topic: str, arts: list[dict]) -> tuple[bool, dict | None]:
+    """(attempted, what was found): two pages beyond Wikipedia and one original element, only when the owner switched `second_sources` on and the credit covers
+    it (secondsources.py). Any failure means "not attempted": a video is never stopped for this."""
+    try:
+        import autopilot
+        import risk
+        import secondsources
+
+        credit = risk.credit_left(llm.api_key()) if llm.api_key() else None
+        if not secondsources.enabled(autopilot.load_config(), credit):
+            return False, None
+        extra = secondsources.gather(topic, [a["title"] for a in arts])
+        print(f"  second sources: {len(extra['items']) if extra else 0} verified beyond Wikipedia" + (f", original element: {extra['element']['kind']}" if extra and extra.get("element") else ""))
+        return True, extra
+    except Exception as e:
+        print(f"  second sources skipped: {type(e).__name__}")
+        return False, None
+
+
 def cmd_doc(topic: str | None = None, photo: bool = False) -> Path:
     return _charged(lambda t: _cmd_doc(t, photo), topic)
 
@@ -268,18 +287,25 @@ def _cmd_doc(topic: str | None = None, photo: bool = False) -> Path:
     arts = arts[:2]
     src = (arts[0]["title"], "\n\n".join(f"[{a['title']}]\n{a['text']}" for a in arts)) if arts else None
     print(f"  source articles: {', '.join(a['title'] for a in arts) or 'none found (script will be flagged for a human check)'}")
+    attempted, extra = _second_sources(topic, arts) if src else (False, None)
+    gtext = (src[1] + ("\n\n" + extra["text"] if extra else "")) if src else None  # the article text, plus the verified passages when second sources are on
     for attempt in range(4):
         try:
-            data = scriptgen.doc_script(topic, grounded=src[1] if src else None)
+            data = scriptgen.doc_script(topic, grounded=gtext)
             if scriptgen.thin_script(data["lines"]):
                 raise ValueError("the script admits its sources say little")
             pairs = packaging.script_repeats([l["text"] for l in data["lines"]])  # a chapter that retells the opening: drop the retelling
             if pairs:
                 data["lines"], data["chapters"] = scriptgen.remove_lines(data["lines"], data["chapters"], {j for _, j in pairs})
                 print(f"  removed {len(pairs)} retold line(s)")
-            data = _script_gate(data, src[1] if src else "", topic)
+            data = _script_gate(data, gtext or "", topic)
             if src:
                 data["sources"] = [f"Wikipedia: {a['title']} (CC BY-SA 4.0), retold in our own words" for a in arts] + [a["url"] for a in arts]
+            if attempted:
+                data["sources_extra"] = (extra or {}).get("items", [])
+                data["sources"] = [*data.get("sources", []), *[f"{i['title']}: {i['url']}" for i in data["sources_extra"]]]
+                if extra and extra.get("element"):
+                    data["original_element"] = extra["element"]
             data["anchors"] = anchor_terms(topic, data.get("anchors", []), src[0] if src else "")
             break
         except Exception as e:

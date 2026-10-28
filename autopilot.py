@@ -44,6 +44,9 @@ DEFAULTS = {
     "shorts_per_day": 1,
     "max_waiting_shorts": 3,     # finished Shorts not yet uploaded
     "short_slots": scheduler.SHORT_SLOTS_DEFAULT,
+    "second_sources": {          # two pages beyond Wikipedia and one original element per documentary (secondsources.py): OFF until the owner tops up; about two small model calls a video
+        "enabled": False, "min_credit": 3.0,
+    },
     "house_style": {             # 3D animated-film look plus a few moving clips for NEW videos, only while the OpenRouter credit is at least min_credit (about $3 for a documentary)
         "enabled": False, "min_credit": 8.0,
         "doc": {"clips": 4, "budget": 1.5},

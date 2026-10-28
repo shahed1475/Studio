@@ -234,6 +234,10 @@ def generator_checks(meta: dict, probe: dict, rules: dict | None = None) -> list
             marks.append(probe["duration"])
             gap = max(b_ - a for a, b_ in zip(marks, marks[1:]))
             out.append(_c("rehook_gap", gap <= b["rehook_max_seconds"], f"longest stretch without a question or a turn is about {gap:.0f} s (aim for {b['rehook_max_seconds']} or less; a proxy)", "warn"))
+        if "sources_extra" in meta:  # second sources were tried for this video (secondsources.py, off until the owner switches it on)
+            n = len(meta.get("sources_extra") or [])
+            out.append(_c("sources_beyond_wikipedia", n >= 2, f"{n} source(s) beyond Wikipedia were read and quoted (target 2)", "warn"))
+            out.append(_c("original_element", bool(meta.get("original_element")), "an original element is recorded" if meta.get("original_element") else "no original element recorded", "warn"))
         out.append(_c("no_outro", not any(OUTRO.search(t) for t in lines[-2:]), "ends on the story, not on a thanks or a subscribe line" if not any(OUTRO.search(t) for t in lines[-2:]) else "the last lines read like an outro (thanks, subscribe)", "warn"))
     if kind == "short" and probe.get("duration"):
         lo, hi = b["shorts_min_seconds"], b["shorts_max_seconds"]
