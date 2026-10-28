@@ -9,6 +9,7 @@ ourselves, it is not behind a paywall or a login; and the passage the model quot
 the model). Page text is untrusted data: it is never sent to a model except the short verified passages, labelled as data, and never followed."""
 import datetime as dt
 import html
+import http.client
 import ipaddress
 import re
 import socket
@@ -44,6 +45,7 @@ def _is_ip(host: str) -> bool:
         return False
 
 
+_URLCHARS = re.compile(r"[A-Za-z0-9\-._~:/?#@!$&()*+,;=%\[\]]+")
 _URLISH = re.compile(r"(?i)\b(?:https?://|www\.)\S+")
 _INJECTION = re.compile(r"(?i)ignore (all |any |the )?(previous|prior|above)|disregard|system prompt|you are now|new instructions|do not follow|override")
 
@@ -55,37 +57,63 @@ def _safe(text, limit: int) -> str:
 
 def allowed(url: str) -> bool:
     """A public https address by name: not Wikipedia, video or social, not an IP number, not localhost or an internal name."""
-    p = urllib.parse.urlparse(str(url))
+    if not (isinstance(url, str) and len(url) <= 300 and _URLCHARS.fullmatch(url)):  # no spaces, quotes, angle brackets, backslashes, control or non-ASCII characters
+        return False
+    p = urllib.parse.urlparse(url)
     host = (p.hostname or "").lower()
     internal = host in ("localhost",) or host.endswith((".local", ".internal", ".localhost", ".lan", ".home", ".corp"))
     return p.scheme == "https" and bool(host) and "." in host and not _is_ip(host) and not internal and not any(d in host for d in DENY)
 
 
-def public_host(host: str, resolver=socket.getaddrinfo) -> bool:
-    """True only when the name resolves and EVERY address it resolves to is a public one (not private, loopback, link-local, reserved, multicast or unspecified,
-    also when an IPv6 address wraps an IPv4 one). A fetch from this server must never reach its own network or a cloud metadata address."""
+_TUNNELS = (ipaddress.ip_network("64:ff9b::/96"), ipaddress.ip_network("64:ff9b:1::/48"), ipaddress.ip_network("2002::/16"), ipaddress.ip_network("2001::/32"))  # NAT64, 6to4, Teredo
+_CGNAT = ipaddress.ip_network("100.64.0.0/10")
+
+
+def _global(ip) -> bool:
+    ip = ip.ipv4_mapped if getattr(ip, "ipv4_mapped", None) else ip
+    if ip.version == 6 and any(ip in n for n in _TUNNELS):
+        return False  # these forms wrap another address (possibly an internal one): a public web page does not need them
+    return ip.is_global and ip not in _CGNAT and not ip.is_multicast
+
+
+def public_ip(host: str, resolver=socket.getaddrinfo) -> str | None:
+    """The address to connect to, or None. The name is resolved once; it is accepted only when EVERY address it resolves to is globally routable (an allowlist:
+    ip.is_global, minus carrier-grade NAT, multicast and the NAT64, 6to4 and Teredo forms that wrap another address). A fetch from this server must never reach its
+    own network or a cloud metadata address."""
     try:
-        addrs = {a[4][0].split("%")[0] for a in resolver(host, 443)}
-    except (OSError, UnicodeError):
-        return False
-    if not addrs:
-        return False
-    for a in addrs:
-        ip = ipaddress.ip_address(a)
-        ip = ip.ipv4_mapped if getattr(ip, "ipv4_mapped", None) else ip
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
-            return False
-    return True
+        addrs = sorted({a[4][0].split("%")[0] for a in resolver(host, 443)}, key=lambda x: ":" in x)  # IPv4 first
+        ips = [ipaddress.ip_address(a) for a in addrs]
+    except (OSError, UnicodeError, ValueError):
+        return None
+    return addrs[0] if ips and all(_global(i) for i in ips) else None
 
 
-def page_text(raw: str) -> str:
-    raw = re.sub(r"(?is)<(script|style|noscript)\b.*?</\1>", " ", raw)
-    return re.sub(r"\s+", " ", html.unescape(re.sub(r"(?s)<[^>]+>", " ", raw))).strip()
+def public_host(host: str, resolver=socket.getaddrinfo) -> bool:
+    return public_ip(host, resolver) is not None
 
 
-def page_date(raw: str) -> str:
-    m = re.search(r'(?i)(?:article:modified_time|article:published_time|datemodified|datepublished)["\']?\s*(?:content=|:)\s*["\']?(\d{4}-\d{2}-\d{2})', raw)
-    return m.group(1) if m else ""
+class _Pinned(http.client.HTTPSConnection):
+    """An HTTPS connection to one already-checked address: the certificate and the SNI are still those of the original host name, so a DNS answer that changes
+    after the check cannot send the request somewhere else."""
+    pinned = ""
+
+    def connect(self):
+        sock = socket.create_connection((self.pinned, self.port or 443), self.timeout, self.source_address)
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+
+
+class _PinnedHandler(urllib.request.HTTPSHandler):
+    def __init__(self, ip: str):
+        super().__init__()
+        self._ip = ip
+
+    def https_open(self, req):
+        ip = self._ip
+
+        class Conn(_Pinned):
+            pinned = ip
+
+        return self.do_open(Conn, req, context=self._context)
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -100,13 +128,16 @@ def fetch(url: str, resolver=socket.getaddrinfo, opener=None) -> str | None:
     """The page's HTML, or None (not found, not text, too big, an error, or any address that is not a public https one). A plain GET of one public page; no
     login, no cookies. Every address, and every redirect hop, is checked with allowed() and public_host() before it is requested. Limit: the name is resolved
     again by the connection itself, so a DNS answer that changes between the check and the request is not caught (pages are public and the module is off by default)."""
-    opener = opener or urllib.request.build_opener(_NoRedirect)
     for _ in range(MAX_HOPS + 1):
-        if not allowed(url) or not public_host(urllib.parse.urlparse(url).hostname, resolver):
+        if not allowed(url):
             return None
+        ip = public_ip(urllib.parse.urlparse(url).hostname, resolver)
+        if not ip:
+            return None
+        hop = opener or urllib.request.build_opener(_NoRedirect, _PinnedHandler(ip))  # a test passes its own opener; the real one connects to the checked address
         try:
             req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "text/html,text/plain"})
-            with opener.open(req, timeout=15) as r:
+            with hop.open(req, timeout=15) as r:
                 if r.status != 200 or not str(r.headers.get("Content-Type", "")).lower().startswith(("text/html", "text/plain")):
                     return None
                 return r.read(MAX_PAGE_BYTES).decode(r.headers.get_content_charset() or "utf-8", "replace")
@@ -118,6 +149,16 @@ def fetch(url: str, resolver=socket.getaddrinfo, opener=None) -> str | None:
         except Exception:
             return None
     return None
+
+
+def page_text(raw: str) -> str:
+    raw = re.sub(r"(?is)<(script|style|noscript)\b.*?</\1>", " ", raw)
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"(?s)<[^>]+>", " ", raw))).strip()
+
+
+def page_date(raw: str) -> str:
+    m = re.search(r'(?i)(?:article:modified_time|article:published_time|datemodified|datepublished)["\']?\s*(?:content=|:)\s*["\']?(\d{4}-\d{2}-\d{2})', raw)
+    return m.group(1) if m else ""
 
 
 _WORD = re.compile(r"[A-Za-z0-9']+")
