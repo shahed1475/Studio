@@ -342,9 +342,9 @@ def llm_review(meta: dict, source: str = "") -> list[dict]:
                  "so count only details it does not support. It must not change policy_risk, misleading_title or anything else.\n"
                  f"<article>\n{article}\n</article>\n\n" if source else "")
     try:
-        r = scriptgen._review_chat(
-            "You check a YouTube video script before it is published. Be strict.\n"
-            f"{grounding}Title: {meta.get('title')}\nDescription: {description_head(meta)}\n"
+        r = scriptgen._review_chat(llm.cached(
+            "You check a YouTube video script before it is published. Be strict.\n" + grounding,  # the article: the same for a re-review of the same script, so a cache block
+            f"Title: {meta.get('title')}\nDescription: {description_head(meta)}\n"
             + (f"Chapter titles (shown in the description): {'; '.join(c.get('title', '') for c in meta['chapters'])[:500]}\n" if meta.get("chapters") else "")
             + (f"Thumbnail text: {meta['thumb_hook']}\n" if meta.get("thumb_hook") else "") + f"Narration: {text}\n\n"
             "Score 0 to 10: invented_facts_risk (specific names, dates, numbers or quotes that look made up or are "
@@ -354,7 +354,7 @@ def llm_review(meta: dict, source: str = "") -> list[dict]:
             'passing, a legend it says does not exist). When misleading_title is true also give title_reason (the promise and what the narration says instead), '
             'covers (one sentence on what the narration really covers) and better_titles (three honest titles under 65 characters that promise only what it covers). '
             'Return JSON: {"invented_facts_risk": 0, "policy_risk": 0, "misleading_title": false, "title_reason": "", "covers": "", "better_titles": [], "misleading_thumbnail": false, "thumbnail_reason": "", '
-            '"issues": []}. Put a real, specific issue in issues, or leave it empty.')
+            '"issues": []}. Put a real, specific issue in issues, or leave it empty.'))
         facts, policy = int(r["invented_facts_risk"]), int(r["policy_risk"])
         issues = [str(i) for i in r.get("issues", [])[:3]]
         note = "; ".join(issues)

@@ -107,12 +107,13 @@ def support_filter(lines: list[dict], chapters: list[dict], sources: str) -> tup
     """Drop narration lines the source article does not support; keep everything if the judge condemns too much."""
     numbered = "\n".join(f"{i}: {l['text']}" for i, l in enumerate(lines))
     try:
-        out = _review_chat(
+        out = _review_chat(llm.cached(
+            "SOURCES:\n" + sources + "\n\n",
             "You are a strict fact-checker. SOURCES is the only truth. List the numbers of narration lines that state a "
             "fact, date, number, place, quote or event that SOURCES do not support or that contradicts SOURCES or another "
-            "line. Atmospheric wording without a factual claim is fine.\nSOURCES:\n" + sources + "\n\nLINES:\n" + numbered +
+            "line. Atmospheric wording without a factual claim is fine.\n\nLINES:\n" + numbered +
             '\n\nReturn JSON: {"unsupported": [numbers]}'
-        )
+        ))
         bad = {int(n) for n in out.get("unsupported", []) if str(n).lstrip("-").isdigit() and 0 <= int(n) < len(lines)}
     except Exception:
         return lines, chapters
@@ -129,11 +130,12 @@ def unsupported(lines: list[dict], sources: str) -> dict[int, str]:
     """Line number -> why, for every narration line stating something SOURCES do not support. A judge that cannot answer raises: an unchecked script is not passed on."""
     numbered = "\n".join(f"{i}: {l['text']}" for i, l in enumerate(lines))
     try:
-        out = _review_chat(
+        out = _review_chat(llm.cached(
+            "SOURCES:\n" + sources + "\n\n",
             "You are a strict fact-checker. SOURCES is the only truth. List every narration line that states a fact, date, number, place, quote, "
             "name, tradition or event that SOURCES do not support, or that contradicts SOURCES or another line. Knowledge from outside SOURCES counts as "
-            "unsupported even when it is true. Atmospheric wording without a factual claim is fine.\nSOURCES:\n" + sources + "\n\nLINES:\n" + numbered +
-            '\n\nReturn JSON: {"unsupported": [{"n": line number, "why": "one short sentence"}]}')
+            "unsupported even when it is true. Atmospheric wording without a factual claim is fine.\n\nLINES:\n" + numbered +
+            '\n\nReturn JSON: {"unsupported": [{"n": line number, "why": "one short sentence"}]}'))
         found = {}
         for item in out.get("unsupported", []):
             n = item.get("n") if isinstance(item, dict) else item
@@ -158,11 +160,12 @@ def verify_and_revise(lines: list[dict], chapters: list[dict], sources: str, rou
         if r == rounds:
             return _drop_lines(lines, chapters, set(bad))
         listing = "\n".join(f"{n}: {lines[n]['text']}  (problem: {bad[n] or 'not in SOURCES'})" for n in sorted(bad))
-        got = _script_chat(
+        got = _script_chat(llm.cached(
+            "SOURCES:\n" + sources + "\n\n",
             "Rewrite each flagged narration line so it says only what SOURCES state, in your own words, 16 to 24 words, with a 'visual' (2 to 4 words naming a real "
             "place, person or object in the line). If SOURCES hold no fact that fits the place of that line, return an empty text and it is removed. Add nothing "
-            "from outside SOURCES.\nSOURCES:\n" + sources + "\n\nFLAGGED LINES:\n" + listing +
-            '\n\nReturn JSON: {"lines": [{"n": line number, "text": "...", "visual": "..."}]}')
+            "from outside SOURCES.\n\nFLAGGED LINES:\n" + listing +
+            '\n\nReturn JSON: {"lines": [{"n": line number, "text": "...", "visual": "..."}]}'))
         drop = set(bad)  # a flagged line the writer did not answer is not kept either
         for item in got.get("lines", []) if isinstance(got, dict) else []:
             n, text = item.get("n"), str(item.get("text", "")).strip()
@@ -325,9 +328,10 @@ def doc_script(topic: str, facts: str | None = None, grounded: str | None = None
     chapters, lines, told = [], [], ""
     for n, ch in enumerate(outline["chapters"][:n_chapters], 1):
         for _ in range(3):
-            part = _script_chat(
+            part = _script_chat(llm.cached(
                 f"You are narrating a documentary titled '{outline['title']}' about: {topic}.\n"
-                f"Style: {nc['style']}\n{rules}\n\nStory so far: {told or '(nothing yet, this is the opening)'}\n\n"
+                f"Style: {nc['style']}\n{rules}\n\n",  # the same for every chapter, source article included: sent once as a cache block
+                f"Story so far: {told or '(nothing yet, this is the opening)'}\n\n"
                 f"Write chapter {n}: '{ch.get('title', '')}' - {ch.get('summary', '')}\n"
                 f"Write {n_lines} narration lines of 16 to 24 words each. Do not repeat earlier chapters: a name, date or event already told in the story so far is never told again, "
                 "and an opening only teases its payoff in one line, saving the details for the chapter where they belong. "
@@ -336,7 +340,7 @@ def doc_script(topic: str, facts: str | None = None, grounded: str | None = None
                 "object, map or artwork named in the line; always include the name of the place or subject, for example "
                 "'Hamelin church', never just 'old manuscript'). "
                 'Return JSON: {"lines": [{"text": "...", "visual": "..."}]}'
-            )
+            ))
             got = [
                 {"text": str(l["text"]).strip(), "visual": str(l.get("visual", "")).strip()}
                 for l in part.get("lines", []) if str(l.get("text", "")).strip()

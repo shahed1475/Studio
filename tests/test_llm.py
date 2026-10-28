@@ -275,3 +275,63 @@ def test_a_make_function_charges_its_spend_to_the_new_videos_folder(monkeypatch,
 
     folder = run._charged(make, "A topic")
     assert folder.name == "doc-new-video" and llm.video_cost("doc-new-video") == pytest.approx(0.3)
+
+
+# ---- prompt caching (28 Oct 2026) ----
+BIG = "SOURCE ARTICLE. " * 200  # about 3,200 characters: over the cache minimum
+
+
+def test_a_long_repeated_part_is_sent_as_a_cache_block_with_the_rest_after_it(monkeypatch):
+    enable(monkeypatch, models={"script": "anthropic/claude-sonnet-5.5", "review": "anthropic/claude-haiku-5.5", "cheap": "anthropic/claude-haiku-5.5"})
+    sent = []
+    monkeypatch.setattr(llm, "_post", lambda payload, key: sent.append(payload) or reply('{"ok": 1}'))
+    assert llm.chat(llm.cached(BIG, "Write chapter 3."), "script", fallback=LOCAL, now=NOW) == {"ok": 1}
+    blocks = sent[0]["messages"][0]["content"]
+    assert blocks[0] == {"type": "text", "text": BIG, "cache_control": {"type": "ephemeral"}}
+    assert blocks[1]["text"].endswith("Write chapter 3.") and "cache_control" not in blocks[1]
+    assert llm.CACHE_MARK not in json.dumps(blocks)
+
+
+def test_the_acting_agents_playbook_goes_after_the_cached_part_so_every_agent_shares_one_cache(monkeypatch):
+    import playbook
+    enable(monkeypatch, models={"script": "anthropic/claude-sonnet-5.5", "review": "anthropic/claude-haiku-5.5", "cheap": "anthropic/claude-haiku-5.5"})
+    sent = []
+    monkeypatch.setattr(llm, "_post", lambda payload, key: sent.append(payload) or reply('{"ok": 1}'))
+    for agent in ("seo", "fixer"):
+        with playbook.acting_as(agent):
+            llm.chat(llm.cached(BIG, "task"), "script", fallback=LOCAL, now=NOW)
+    first, second = (s["messages"][0]["content"] for s in sent)
+    assert first[0] == second[0] == {"type": "text", "text": BIG, "cache_control": {"type": "ephemeral"}}
+    assert "Playbook of the" in first[1]["text"] and first[1]["text"] != second[1]["text"]
+
+
+def test_a_short_part_or_a_model_that_is_not_anthropic_is_sent_as_plain_text(monkeypatch):
+    enable(monkeypatch)  # vendor/writer
+    sent = []
+    monkeypatch.setattr(llm, "_post", lambda payload, key: sent.append(payload) or reply('{"ok": 1}'))
+    llm.chat(llm.cached(BIG, "rest"), "script", fallback=LOCAL, now=NOW)
+    assert sent[-1]["messages"][0]["content"] == BIG + "rest"
+    enable(monkeypatch, models={"script": "anthropic/claude-sonnet-5.5", "review": "b/x", "cheap": "c/x"})
+    llm.chat(llm.cached("short", "rest"), "script", fallback=LOCAL, now=NOW)
+    assert sent[-1]["messages"][0]["content"] == "shortrest"
+
+
+def test_the_mark_never_reaches_the_local_model_or_the_free_models(monkeypatch):
+    seen = []
+    assert llm.chat(llm.cached(BIG, "rest"), "script", fallback=lambda p: seen.append(p) or {"from": "local"}, now=NOW) == {"from": "local"}
+    assert seen == [BIG + "rest"]
+    enable(monkeypatch, free=True, models={"script": "", "review": "", "cheap": ""})
+    free = []
+    monkeypatch.setattr(llm, "_free_chat", lambda prompt, *a: free.append(prompt) or {"free": 1})
+    llm.chat(llm.cached(BIG, "rest"), "cheap", now=NOW)
+    assert free == [BIG + "rest"]
+
+
+def test_cached_input_tokens_are_counted_next_to_the_real_cost(monkeypatch):
+    enable(monkeypatch, models={"script": "anthropic/claude-sonnet-5.5", "review": "b/x", "cheap": "c/x"})
+    body = reply('{"ok": 1}', cost=0.01)
+    body["usage"]["prompt_tokens_details"] = {"cached_tokens": 800}
+    monkeypatch.setattr(llm, "_post", lambda payload, key: body)
+    llm.chat(llm.cached(BIG, "rest"), "script", fallback=LOCAL, now=NOW)
+    day = json.loads(llm.USAGE_FILE.read_text())["2026-10-19"]
+    assert day["by_role"]["script"]["cached_in"] == 800 and day["usd"] == pytest.approx(0.01)

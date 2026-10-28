@@ -13,6 +13,7 @@ What the code already does, so do not repeat it by hand:
 - `thumbnail.hook_for` prefers text that names the subject and adds a word the title lacks (3 to 5 words, supported by the narration).
 - `topicrank.pop_best` ranks topics with `seo.demand` (YouTube autocomplete); `scriptgen.country_ideas` asks for short subject names.
 - `compliance.final_description` adds one playlist link from `data/playlists.json` ("cta"); `upload.join_playlists` adds each new upload to the playlists in that file.
+- `kinds.py` (config/kinds.json): the video's kind (legend, mystery, event, person, place) is chosen by free keyword rules and its card line goes into the SEO, thumbnail and Short-hook prompts; `packaging.rank_titles(..., kind)` nudges words people type for that kind. `finish_video` stores `kind`.
 - `titletest.py` (daily 08:00 UTC, mode in `data/titletest.json`): a weak video gets one new title; Analytics watch percentage under 25% means the content, not the title, is the problem.
 
 Rules that stay human decisions: channel About, trailer, banner, name (owner approval), public/private state, deleting anything.

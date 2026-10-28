@@ -1,0 +1,20 @@
+# Kind skill cards and prompt caching (28 Oct 2026)
+
+Status: built, tested, deployed the same day. Owner's request: check title, thumbnail and SEO of the Cambyses film, check Autopilot, make a Short from it, give Autopilot a skill per kind of video, spend fewer tokens, send every prompt through OpenRouter as JSON.
+
+## What the research found
+- **Prompt caching** (OpenRouter docs, read 28 Oct 2026, openrouter.ai/docs/guides/best-practices/prompt-caching): `cache_control: {"type": "ephemeral"}` on a content block; minimum 512 tokens for Sonnet 5.5 and Haiku 5.5; 5-minute life by default; cache write costs 1.25x the input price, a read 0.1x; `usage.prompt_tokens_details.cached_tokens` reports hits. Our calls sent plain strings, so the source article was paid for in full on every chapter, fact-check and review.
+- **Structured output** (openrouter.ai/docs/guides/features/structured-outputs): `json_schema` with `strict`, support differs by endpoint. Not adopted: the invalid-JSON retries in `data/llm_usage.json` came from the free models on 19, 20 and 23 Oct and were zero on 24 to 28 Oct, so a schema would fix a problem that has gone, and `require_parameters` can make a call fail instead.
+- **Routing audit**: every paid text call already goes through `llm.chat` to OpenRouter with `response_format: json_object`, a role temperature and an output cap. Three helpers (`webcheck`, `secondsources`, `aiart`) send their own payload (web plugin, image output) through `llm._post`: still OpenRouter, same key and cap. `tests/test_model_routing.py` pins this.
+- **Where the money goes** (28 Oct): pictures about 65 percent, review about 20, script about 13, small jobs under 1. So caching helps the text third; the pictures are a style decision for the owner (realistic style draws about 48 scenes a film).
+- **YouTube ranking** (vendor blogs, not YouTube: kolsquare.com, vidiq.com): click-through rate and watch time carry the most weight; title and thumbnail must keep the video's promise. Used only as a check on rules we already have.
+- **GitHub** (AgriciDaniel/claude-youtube, MIT, read as data): its idea of one template per kind of channel, three title and three thumbnail variants. Nothing copied or installed (CLAUDE.md: third-party skills are advice only).
+
+## Built
+1. `llm.cached(stable, rest)` marks the repeated part of a prompt; `llm._content` sends it as a cache block for `anthropic/` models above 2,400 characters and strips the mark everywhere else (free models, local model). The agent's playbook goes after the cached part so every agent shares one cache. Usage records `cached_in` per role next to the real cost.
+2. Applied to the three series of calls that repeat the source article: chapter writing (`scriptgen.doc_script`), fact-check and rewrite (`unsupported`, `support_filter`, `verify_and_revise`, sources first so one block serves all), and the review (`reviewer.llm_review`).
+3. `kinds.py` and `config/kinds.json`: five kinds (legend, mystery, event, person, place) and a default, chosen by fixed keyword rules from the topic, title, anchors, chapter titles and opening lines (no model, no tokens). A card line for `seo`, `thumb` or `hook` (under 300 characters) goes into `seo._make`, `thumbnail.hook_for` and `clipper.hook`; `packaging.title_score` adds at most 0.4 for the words people type for that kind; `finish_video` records `kind` in the video's record.
+4. Tests: `tests/test_prompt_cache.py`, `tests/test_kinds.py`, `tests/test_model_routing.py`, five cache tests in `tests/test_llm.py`, agenteval case `kind_cards_are_free_short_advice_and_the_repeated_part_of_a_prompt_is_cached_not_leaked` (30 cases). Mutation checks: dropping the cache block, removing the source from one call, a model call inside `kinds.py` and a leaking mark each fail a test.
+
+## Limits
+Savings are measured only by the next real videos (`cached_in` in `data/llm_usage.json`); the 5-minute life means a review run long after the script was written pays the write price again. The kind rules are keyword matches: a topic with no kind word gets the default card. Cards advise packaging only; nothing on a card relaxes a reviewer check.

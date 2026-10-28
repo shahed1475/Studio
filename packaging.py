@@ -5,6 +5,7 @@ Rules come from the packaging skills (.claude/skills/studio-packaging, yt-title-
 import difflib
 import re
 
+import kinds
 import rulesfile
 
 SEARCH_WORDS = {"real", "story", "legend", "mystery", "mysteries", "myth", "myths", "history", "truth", "origin", "origins", "who", "what", "why",
@@ -23,7 +24,7 @@ def _key_words(core: str) -> list[str]:
     return [w for w in _words(core) if len(w) > 3]
 
 
-def title_score(title: str, core: str = "", others=()) -> float:
+def title_score(title: str, core: str = "", others=(), kind: str = "") -> float:
     """Higher is better. Rewards: the search phrase inside the first 40 characters, a length of 40 to 62, words people type, a proper name.
     Penalises: a vague 'what do ... actually ...?' question, shouting, being near-identical to another title."""
     t = (title or "").strip()
@@ -40,6 +41,7 @@ def title_score(title: str, core: str = "", others=()) -> float:
     n = len(t)
     score += 1.5 if TITLE_BEST[0] <= n <= TITLE_BEST[1] else (0.5 if n <= TITLE_HARD_MAX else -2.0)
     score += 0.4 * min(len(SEARCH_WORDS & set(_words(t))), 3)
+    score += 0.2 * min(len(kinds.title_words(kind) & set(_words(t))), 2)  # the words people type for this kind of video (kinds.py), a small nudge
     if re.search(r"\b[A-Z][a-z]+\b", t[1:]):
         score += 0.5  # a named subject, not a label
     if VAGUE_START.match(t):
@@ -52,9 +54,9 @@ def title_score(title: str, core: str = "", others=()) -> float:
     return round(score, 2)
 
 
-def rank_titles(titles: list[str], core: str = "", others=()) -> list[str]:
+def rank_titles(titles: list[str], core: str = "", others=(), kind: str = "") -> list[str]:
     """The same titles, best first (ties keep the writer's order)."""
-    return [t for _, _, t in sorted(((-title_score(t, core, others), i, t) for i, t in enumerate(titles)))]
+    return [t for _, _, t in sorted(((-title_score(t, core, others, kind), i, t) for i, t in enumerate(titles)))]
 
 
 _STOP = set("the a an and of to in on at for with from by is was were are be been it its this that these those as but or not no yet then there their they he she his her "

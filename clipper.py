@@ -8,6 +8,7 @@ import re
 
 import config
 import filelock
+import kinds
 import scriptgen
 
 MAX_CLIPS = 3  # per documentary
@@ -106,7 +107,7 @@ def hook(meta: dict, w: dict, chat=None) -> dict:
     try:
         got = chat(f"Documentary: {meta['title']}. This part is called '{w['chapter']}'. Story part:\n{story}\n\n"
                    "Write a first line for a YouTube Short that makes a viewer need the answer (a question or a surprising claim, "
-                   "under 12 words, true to the story, no clickbait lies) and a title under 70 characters. "
+                   "under 12 words, true to the story, no clickbait lies) and a title under 70 characters. " + kinds.brief(meta, "hook") + " "
                    'Return JSON {"hook": "...", "title": "..."}')
         h, t = str(got["hook"]).strip(), str(got["title"]).strip()
         if h and t:

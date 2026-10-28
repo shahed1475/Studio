@@ -208,12 +208,14 @@ def _add_video_cost(slug: str, usd: float) -> None:
         filelock.write_atomic(path, json.dumps(data, indent=2))
 
 
-def record(now: dt.datetime, role: str, model: str, tin: int, tout: int, usd: float) -> None:
+def record(now: dt.datetime, role: str, model: str, tin: int, tout: int, usd: float, cached: int = 0) -> None:
     def add(day):
         day["usd"] = round(day["usd"] + usd, 6)
         day["calls"] += 1
         r = day["by_role"].setdefault(role, {"usd": 0.0, "calls": 0, "tokens_in": 0, "tokens_out": 0, "model": model})
         r.update(usd=round(r["usd"] + usd, 6), calls=r["calls"] + 1, tokens_in=r["tokens_in"] + tin, tokens_out=r["tokens_out"] + tout, model=model)
+        if cached:
+            r["cached_in"] = r.get("cached_in", 0) + cached  # input tokens read back from the cache at a tenth of the price
     _save_day(now, add)
     if _video.get():
         _add_video_cost(_video.get(), usd)
@@ -307,8 +309,30 @@ def _post(payload: dict, key: str) -> dict:
 TEMPERATURE = {"review": 0.0, "cheap": 0.3, "script": 0.7}
 
 
+# Prompt caching (OpenRouter, Anthropic models): the part of a prompt that repeats from call to call (the source article, the standing rules) is read back at a
+# tenth of the input price, written once at 1.25 times, and lives 5 minutes (checked 28 Oct 2026 against openrouter.ai/docs/guides/best-practices/prompt-caching).
+# A caller marks the boundary with `cached(stable, rest)`: the invisible CACHE_MARK sits between the two parts, so every function that passes a prompt along
+# keeps its signature. Below CACHE_MIN_CHARS (about 600 tokens, over the 512 of the Claude 5.5 models) or for a model that is not anthropic/, it is only removed.
+CACHE_MARK = "\u2063"
+CACHE_MIN_CHARS = 2400
+
+
+def cached(stable: str, rest: str) -> str:
+    """A prompt whose first part (`stable`) is the same on every call of a series: it is sent as a cache block."""
+    return stable.replace(CACHE_MARK, "") + CACHE_MARK + rest.replace(CACHE_MARK, "")
+
+
+def _content(model: str, prompt: str):
+    stable, mark, rest = prompt.partition(CACHE_MARK)
+    if not mark:
+        return prompt
+    if model.startswith("anthropic/") and len(stable) >= CACHE_MIN_CHARS and rest.strip():
+        return [{"type": "text", "text": stable, "cache_control": {"type": "ephemeral"}}, {"type": "text", "text": rest}]
+    return stable + rest
+
+
 def _payload(model: str, prompt: str, max_tokens: int, json_mode: bool = True, role: str = "script") -> dict:
-    p = {"model": model, "messages": [{"role": "user", "content": prompt}], "max_tokens": max_tokens, "temperature": TEMPERATURE.get(role, 0.7), "usage": {"include": True}}
+    p = {"model": model, "messages": [{"role": "user", "content": _content(model, prompt)}], "max_tokens": max_tokens, "temperature": TEMPERATURE.get(role, 0.7), "usage": {"include": True}}
     if json_mode:  # some free models reject JSON mode: they are asked again without it
         p["response_format"] = {"type": "json_object"}
     return p
@@ -318,7 +342,7 @@ def _account(now, role, model, body) -> float:
     u = body.get("usage") or {}
     tin, tout = int(u.get("prompt_tokens", 0)), int(u.get("completion_tokens", 0))
     usd = float(u["cost"]) if u.get("cost") is not None else _usd(model, tin, tout)
-    record(now, role, model, tin, tout, usd)
+    record(now, role, model, tin, tout, usd, cached=int((u.get("prompt_tokens_details") or {}).get("cached_tokens") or 0))
     return usd
 
 
@@ -376,7 +400,10 @@ def chat(prompt: str, role: str = "cheap", fallback=None, now: dt.datetime | Non
     """JSON from the model assigned to this role, or from the local fallback when that is not possible."""
     import playbook
 
-    prompt = playbook.inject(prompt)  # the acting agent's role and limits ride along with every call it makes
+    stable, mark, rest = prompt.partition(CACHE_MARK)
+    # the acting agent's role and limits ride along with every call it makes: after the cached part, so the cache is the same for every agent
+    prompt = stable + mark + playbook.inject(rest) if mark else playbook.inject(prompt)
+    plain = prompt.replace(CACHE_MARK, "")
     now = now or _now()
     cfg, key = load_config(), api_key()
     model = cfg["models"].get(role, "")
@@ -403,14 +430,14 @@ def chat(prompt: str, role: str = "cheap", fallback=None, now: dt.datetime | Non
                 _note(now, f"{role}: invalid JSON from {model}, used the local model")
     if cfg["free"] and api_key() and role != "review":  # free models never judge a video: their answers are too unreliable to pass or fail one
         key = api_key()
-        got = _free_chat(prompt, role, cfg, key, now)
+        got = _free_chat(plain, role, cfg, key, now)
         if got is not None:
             return got
     if fallback is None or not cfg.get("local_fallback"):
         if capped:
             raise ModelUnavailable(f"the daily spending cap (${cfg['daily_budget_usd']:.2f}) is used up and the free models did not answer the {role} job; raise the cap in Settings or wait for tomorrow (UTC)")
         raise ModelUnavailable(f"no cloud model answered the {role} job; it will be tried again later")
-    return fallback(prompt)
+    return fallback(plain)
 
 
 def decide(question: str, state: str, options: list[str], role: str = "cheap", fallback=None) -> dict:

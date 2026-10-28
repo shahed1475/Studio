@@ -575,6 +575,9 @@ def finish_video(folder: Path) -> None:
 
     p = folder / "meta.json"
     meta = json.loads(p.read_text())
+    import kinds
+
+    records.merge(folder, {"kind": kinds.classify(meta)})  # free keyword rules: the kind's small skill card goes into the packaging prompts
     seo.make(folder)  # research first (search phrase, rivals, autocomplete), then the title; the thumbnail text is written against the final title
     meta = json.loads(p.read_text())
     import fixer
@@ -584,7 +587,7 @@ def finish_video(folder: Path) -> None:
     if titles:
         import packaging
 
-        meta["title"] = packaging.rank_titles(titles, (meta.get("seo") or {}).get("core", ""), others)[0]  # the best-scoring option, not just the first
+        meta["title"] = packaging.rank_titles(titles, (meta.get("seo") or {}).get("core", ""), others, meta.get("kind", ""))[0]  # the best-scoring option, not just the first
     import seo
 
     tags = fixer.clean_tags(meta)

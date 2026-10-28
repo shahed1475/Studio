@@ -7,6 +7,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageStat
 
 import config
+import kinds
 import records
 import llm
 import reviewer
@@ -49,6 +50,7 @@ def hook_for(meta: dict, avoid=(), chat=None) -> str:
             "not describe, no clickbait lies, no punctuation except ? or !. Name the subject: at least one of the 3 texts must contain its best-known "
             f"name or word ({meta.get('topic', '')[:60]}) plus one concrete thing from the story that the title does not say (a place, a year, an object), so a viewer sees "
             "what it is about. Never use the words REAL STORY, TRUTH or EXPLAINED: every video on the channel would look the same. "
+            + kinds.brief(meta, "thumb") + " "
             + (f"Not these (already used): {sorted(used)}. " if used else "") + 'Return JSON: {"hooks": ["..."]}'
         )
         candidates = out.get("hooks") or ([out["hook"]] if out.get("hook") else [])

@@ -21,7 +21,7 @@ RESULT = config.ROOT / "data" / "agent" / "eval.json"
 REQUIRED_AGENTS = tuple(__import__("agents").AGENTS)
 FORBIDDEN = ('.videos().delete(', '"privacyStatus": "public"', "'privacyStatus': 'public'", '["privacyStatus"] = "public"', ".channels().update(", ".playlists().delete(",
              ".subscriptions().delete(")
-AGENT_FILES = ("guardian.py", "escalate.py", "unstick.py", "tracetriage.py", "lessons.py", "agentbus.py", "agenteval.py", "doctor.py", "agents.py", "playbook.py", "scriptreview.py", "growthdata.py", "rulesfile.py", "diagnose.py", "secondsources.py", "actionlog.py", "policyclass.py", "drift.py", "learner.py")
+AGENT_FILES = ("guardian.py", "escalate.py", "unstick.py", "tracetriage.py", "lessons.py", "agentbus.py", "agenteval.py", "doctor.py", "agents.py", "playbook.py", "scriptreview.py", "growthdata.py", "rulesfile.py", "diagnose.py", "secondsources.py", "actionlog.py", "policyclass.py", "drift.py", "learner.py", "kinds.py")
 DOCTOR_NEVER = ("subprocess", "os.system", "pip install", "apt-get", "npm install", "rmtree", ".unlink(", "import extend")
 NOW = dt.datetime(2026, 10, 26, 12, 0, tzinfo=dt.timezone.utc)
 PAST, FUTURE = "2026-10-20T12:00:00Z", "2026-11-05T12:00:00Z"
@@ -594,6 +594,31 @@ def case_learner_reads_and_reports_queues_at_most_one_viable_subject_and_only_pr
     return ok, "the learner only reads and reports, queues at most one subject with a source article and never changes a rule or a video" if ok else f"writes={writes} thin={thin} guard={guard}"
 
 
+def case_kind_cards_are_free_short_advice_and_the_repeated_part_of_a_prompt_is_cached_not_leaked():
+    import kinds
+    import llm
+
+    def no_model(*a, **k):
+        raise AssertionError("choosing a kind must not call a model")
+
+    real, llm.chat = llm.chat, no_model
+    try:
+        kind = kinds.classify({"topic": "Lost Army of Cambyses", "title": "The Lost Army of Cambyses", "anchors": ["Siwa Oasis"]})
+        junk = kinds.classify({"topic": None, "lines": "x"})
+    finally:
+        llm.chat = real
+    text = " ".join(kinds.card(k, p) for k in kinds.names() for p in kinds.PARTS).lower()
+    lies = [w for w in ("you won't believe", "shocking", "invent", "fake", "make up") if w in text]
+    source = (config.ROOT / "kinds.py").read_text()
+    reaches_out = [w for w in ("requests", "urllib", "subprocess", "import llm", "scriptgen") if w in source]
+    block = llm._payload("anthropic/claude-sonnet-5.5", llm.cached("S" * 3000, "task"), 100)["messages"][0]["content"]
+    plain = llm._payload("vendor/free-model:free", llm.cached("S" * 3000, "task"), 100)["messages"][0]["content"]
+    cached_ok = isinstance(block, list) and block[0].get("cache_control") == {"type": "ephemeral"} and plain == "S" * 3000 + "task" and llm.CACHE_MARK not in str(block)
+    ok = kind == "mystery" and junk == "story" and not kinds.problems() and not lies and not reaches_out and cached_ok
+    return ok, ("kind cards are chosen without a model, stay short and advise only; the repeated source is a cache block and the mark never leaves llm.py" if ok
+                else f"kind={kind} junk={junk} problems={kinds.problems()} lies={lies} reaches_out={reaches_out} cached_ok={cached_ok}")
+
+
 CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic,
          case_ladder_ends_with_owner_not_a_crash, case_ladder_respects_budget_and_whitelist_and_lessons, case_outside_text_is_cleaned,
          case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules, case_registry_is_consistent,
@@ -606,7 +631,8 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_diagnoser_uses_the_rules_file_never_guesses_and_never_writes_to_youtube, case_generator_style_rules_only_warn_and_read_their_limits_from_the_rules_file,
          case_second_sources_are_off_by_default_and_only_verified_pages_count, case_public_video_changes_are_only_proposed_and_every_write_is_logged_and_reversible,
          case_policy_changes_are_classified_proposed_and_held_without_an_agent_releasing_them, case_drift_needs_several_videos_sustained_over_days_and_only_tells_the_owner,
-         case_learner_reads_and_reports_queues_at_most_one_viable_subject_and_only_proposes_rules]
+         case_learner_reads_and_reports_queues_at_most_one_viable_subject_and_only_proposes_rules,
+         case_kind_cards_are_free_short_advice_and_the_repeated_part_of_a_prompt_is_cached_not_leaked]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:

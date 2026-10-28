@@ -10,10 +10,10 @@ After the script is final and before the thumbnail: research, then title, descri
 2. Five honest titles: the phrase in the first 40 characters, 40 to 62 characters, the known name first then the twist, stake or mystery. Rank them; take the best that is not near-identical to our own.
 3. Description: the first 150 characters carry the phrase and the hook (all that shows before Show more), then sources, chapters named with real search words, one playlist link.
 4. Tags: only phrases that appear in the video itself.
-5. Thumbnail text: 2 to 4 words that name the subject and add a word the title lacks.
-6. A viewer who is promised something the video does not deliver leaves and does not subscribe: promise one specific thing the video shows.
+5. Thumbnail text: 2 to 4 words that name the subject and add a word the title lacks. The kind card (kinds.py) advises per kind of video.
+6. Promise one specific thing the video shows: a viewer promised more leaves and does not subscribe.
 ## Tools
-seo.make, seo.enforce, seo.repair, packaging.rank_titles, thumbnail.hook_for, titletest (owner mode).
+seo.make, seo.enforce, seo.repair, packaging.rank_titles, thumbnail.hook_for, kinds.brief, titletest (owner mode).
 ## Never
 Invent a fact, a statistic or a source. Copy a rival's title. Use links, ALL CAPS, emojis or clickbait lies. Change a public video's content.
 ## Escalate
