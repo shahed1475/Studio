@@ -50,7 +50,7 @@ def test_a_verified_source_has_url_title_passage_and_dates():
 
 
 @pytest.mark.parametrize("why,c,cited,getter", [
-    ("not returned by the search", cand(), set(), lambda u: page()),
+    ("an address that is not allowed", cand("http://archive.example.org/ledgers"), {URL1}, lambda u: page()),
     ("wikipedia", cand("https://en.wikipedia.org/wiki/X"), {"https://en.wikipedia.org/wiki/X"}, lambda u: page()),
     ("page not found", cand(), {URL1}, lambda u: None),
     ("a paywall", cand(), {URL1}, lambda u: page(body="Subscribe to continue reading. " + "word " * 300)),
@@ -325,3 +325,10 @@ def test_an_empty_search_always_says_why(monkeypatch):
     assert ss.search("Topic", [], NOW) == ([], set()) and ss.LAST_PROBLEM.startswith("the search failed")
     monkeypatch.setattr(llm, "load_config", lambda: {"enabled": False, "daily_budget_usd": 5.0, "models": {}})
     assert ss.search("Topic", [], NOW) == ([], set()) and "paid models are off" in ss.LAST_PROBLEM
+
+
+def test_an_address_the_search_did_not_cite_still_counts_when_its_page_holds_the_quote_and_it_is_recorded():
+    rec = ss.verify_candidate(cand(), set(), lambda u: page(), NOW)
+    assert rec and rec["cited_by_search"] is False and "well-known" in rec["passage"]
+    assert ss.verify_candidate(cand(), {URL1}, lambda u: page(), NOW)["cited_by_search"] is True
+    assert ss.verify_candidate(cand(passage="a made up sentence that appears nowhere on that page at all, honestly"), set(), lambda u: page(), NOW) is None  # no quote on the page: no source

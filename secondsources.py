@@ -4,8 +4,8 @@ The content rules ask for at least two sources beyond Wikipedia and one original
 sources) because YouTube's inauthentic-content check looks for videos with little of their own. This module is OFF until the owner switches it on in
 autopilot.json (`second_sources.enabled`) and only runs while the OpenRouter credit is at least `min_credit`: it costs two small model calls a video.
 
-A source counts only when ALL of this holds: the search returned its address; it is https; it is not Wikipedia, a video or social site; we fetched the page
-ourselves, it is not behind a paywall or a login; and the passage the model quoted really is on the page (the passage we keep is cut from the page, not from
+A source counts only when ALL of this holds: it is https; it is not Wikipedia, a video or social site; we fetched the page
+ourselves, it is not behind a paywall or a login; and the passage the model quoted really is on the page (the proof that matters: a made-up address has no such passage; whether the search also cited the address is recorded as `cited_by_search`) (the passage we keep is cut from the page, not from
 the model). Page text is untrusted data: it is never sent to a model except the short verified passages, labelled as data, and never followed."""
 import datetime as dt
 import html
@@ -194,7 +194,7 @@ def find_passage(text: str, quoted: str) -> str:
 def verify_candidate(c: dict, cited: set[str], getter=fetch, now: dt.datetime | None = None) -> dict | None:
     """The source record when the candidate passes every test, else None."""
     url = str(c.get("url", ""))
-    if url not in cited or not allowed(url):
+    if not allowed(url):  # a public https page by name; whether the search also cited it is recorded, not required (the plugin returned no citations on 28 Oct 2026 with four good pages)
         return None
     raw = getter(url)
     if not raw:
@@ -207,7 +207,7 @@ def verify_candidate(c: dict, cited: set[str], getter=fetch, now: dt.datetime | 
         return None
     title = re.search(r"(?is)<title[^>]*>(.*?)</title>", raw)
     return {"url": url, "title": _safe(html.unescape(title.group(1)) if title else c.get("title", ""), 120) or urllib.parse.urlparse(url).hostname,
-            "passage": _safe(passage, PASSAGE_CAP), "retrieved": (now or llm._now()).strftime("%Y-%m-%d"), "page_date": page_date(raw) or "not stated"}
+            "passage": _safe(passage, PASSAGE_CAP), "cited_by_search": url in cited, "retrieved": (now or llm._now()).strftime("%Y-%m-%d"), "page_date": page_date(raw) or "not stated"}
 
 
 def search(topic: str, wiki_titles: list[str], now: dt.datetime | None = None) -> tuple[list[dict], set[str]]:

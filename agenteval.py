@@ -469,7 +469,7 @@ def case_second_sources_are_off_by_default_and_only_verified_pages_count():
     page = "<html><title>T</title><p>" + ("Filler words here. " * 60) + "The merchant carried the old ledgers across the stone bridge at dawn before the market opened.</p></html>"
     quote = "The merchant carried the old ledgers across the stone bridge at dawn before the market opened"
     good = ss.verify_candidate({"url": "https://a.example.org/x", "passage": quote}, {"https://a.example.org/x"}, lambda u: page)
-    bad = [ss.verify_candidate({"url": "https://a.example.org/x", "passage": quote}, set(), lambda u: page),
+    bad = [ss.verify_candidate({"url": "http://a.example.org/x", "passage": quote}, {"http://a.example.org/x"}, lambda u: page),
            ss.verify_candidate({"url": "https://en.wikipedia.org/wiki/X", "passage": quote}, {"https://en.wikipedia.org/wiki/X"}, lambda u: page),
            ss.verify_candidate({"url": "https://a.example.org/x", "passage": "an invented sentence the page never contains anywhere at all in it"}, {"https://a.example.org/x"}, lambda u: page)]
     text = (config.ROOT / "secondsources.py").read_text()
