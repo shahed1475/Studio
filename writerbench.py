@@ -112,7 +112,7 @@ def run(models: list[str], cs: list[dict], ask=None, now: dt.datetime | None = N
             got, why = ask(model, scriptgen.short_prompt(c["topic"], c["source"]))
             res = score(got, c["source"])
             rows.append({"model": model, "topic": c["topic"], "seconds": round(time.time() - start, 1), "reason": why, "score": res["score"] if got else 0.0,
-                         "hard_fail": res["hard_fail"] if got else ["no answer"], "failed": [k for k, v in res["checks"].items() if not v[0]] if got else [], "answered": got is not None})
+                         "script": got if isinstance(got, dict) else None, "hard_fail": res["hard_fail"] if got else ["no answer"], "failed": [k for k, v in res["checks"].items() if not v[0]] if got else [], "answered": got is not None})
             time.sleep(pause if pause else 0)
     out = {"at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "cases": [c["topic"] for c in cs], "rows": rows, "summary": summarize(rows)}
     if write:

@@ -52,6 +52,7 @@ def test_the_run_scores_every_model_on_every_case_and_ranks_the_usable_first(tmp
 
     res = writerbench.run(["bad/model:free", "good/model:free"], cs, ask=ask, pause=0)
     assert len(res["rows"]) == 4 and [s["model"] for s in res["summary"]] == ["good/model:free", "bad/model:free"]
+    assert next(r for r in res["rows"] if r["model"] == "good/model:free")["script"]["title"] == "The Lost Army"  # kept, so a fact-check can read it later
     assert res["summary"][0]["usable"] == 2 and res["summary"][1]["usable"] == 0 and res["summary"][1]["answered"] == 0
     assert all(p == scriptgen.short_prompt(c["topic"], c["source"]) for p, c in zip(prompts[:2], cs))  # the production prompt, not a copy
     saved = json.loads(next(tmp_path.glob("*.json")).read_text())
@@ -77,3 +78,16 @@ def test_the_bench_never_calls_a_claude_model_or_the_review_role():
     text = open(writerbench.__file__).read()
     for banned in ("scriptgen._review_chat", "llm.chat(", "anthropic/", "role=\"review\""):
         assert banned not in text.split('"""', 2)[2], banned
+
+
+def test_the_judge_reads_only_the_models_usable_scripts_and_a_failing_checker_is_not_a_pass(tmp_path):
+    import benchjudge
+    rows = [{"model": "m", "topic": "A", "script": good_script(), "hard_fail": []}, {"model": "m", "topic": "B", "script": good_script(), "hard_fail": ["grounded_numbers"]},
+            {"model": "other", "topic": "A", "script": good_script(), "hard_fail": []}, {"model": "m", "topic": "C", "script": None, "hard_fail": ["no answer"]}]
+    f = tmp_path / "bench.json"
+    f.write_text(json.dumps({"rows": rows}))
+    rep = benchjudge.check(f, "m", {"A": SOURCE, "B": SOURCE}, ask=lambda lines, src: {2: "not in the source"})
+    assert [s["topic"] for s in rep["scripts"]] == ["A"] and rep["lines_flagged"] == 1 and rep["scripts"][0]["unsupported"] == {"2": "not in the source"}
+    broke = benchjudge.check(f, "m", {"A": SOURCE}, ask=lambda lines, src: 1 / 0)
+    assert broke["judged"] == 0 and "error" in broke["scripts"][0] and broke["lines_ok_pct"] is None
+    assert "label" in rep["note"]

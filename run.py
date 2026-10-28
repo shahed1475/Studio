@@ -642,6 +642,16 @@ def main() -> None:
         for s in res["summary"]:
             print(f"  usable {s['usable']}/{s['tries']}  answered {s['answered']}  mean {s['mean_score']:.2f}  {s['seconds']}s  {s['model']}  often fails: {', '.join(s['often_fails']) or '-'}")
         print("Saved in data/writerbench/. Free rules only: facts beyond numbers and years are NOT checked.")
+    elif a[0] == "writer-bench-judge":  # a few cents: Claude as the fact-check JUDGE of one bench model's scripts; a report, never training data
+        import benchjudge
+
+        f = sorted((config.ROOT / "data" / "writerbench").glob("2*.json"))[-1] if len(a) < 3 else config.ROOT / "data" / "writerbench" / a[2]
+        srcs = {c["topic"]: c["source"] for c in __import__("writerbench").cases(12)}
+        rep = benchjudge.check(f, a[1], srcs)
+        (config.ROOT / "data" / "writerbench" / ("judge-" + f.name)).write_text(json.dumps(rep, indent=1))
+        for s_ in rep["scripts"]:
+            print(f"  {s_['topic'][:34]:35} {s_['lines']} lines  " + (s_["error"] if "error" in s_ else ("all lines supported" if s_["ok"] else f"{len(s_['unsupported'])} unsupported: " + "; ".join(f"{n}: {w[:60]}" for n, w in s_["unsupported"].items()))))
+        print(f"{rep['model']}: {rep['judged']} scripts judged, {rep['lines_flagged']} lines flagged, {rep['lines_ok_pct']}% of lines supported. Report only: not a label, not training data.")
     elif a[0] == "trainset":
         import trainset
 
