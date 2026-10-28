@@ -147,21 +147,38 @@ def failing(result: dict) -> list[str]:
     return [c["name"] for c in result.get("checks", []) if not c["ok"] and c["severity"] == "block" and c["name"] != "llm_review"]
 
 
-def push_metadata(yt, meta: dict) -> None:
-    """videos.update replaces the whole snippet: send back everything that was there with only the title, description and tags changed."""
+def push_metadata(yt, meta: dict, source: str = "recheck", why: str = "") -> None:
+    """videos.update replaces the whole snippet: send back everything that was there with only the title, description and tags changed. Logged with its before and
+    after (actionlog), so the owner can see it and roll it back. Only ever called for a video that is not public yet (see proposal_fields for public ones)."""
+    import actionlog
     import compliance
 
     sn = yt.videos().list(part="snippet", id=meta["video_id"]).execute()["items"][0]["snippet"]
+    before = actionlog.snap(sn)
     sn["title"], sn["description"], sn["tags"] = meta["title"], compliance.final_description(meta), meta.get("tags", sn.get("tags", []))
     yt.videos().update(part="snippet", body={"id": meta["video_id"], "snippet": {k: sn[k] for k in ("title", "description", "categoryId", "tags", "defaultLanguage") if k in sn}}).execute()
+    actionlog.record(meta["video_id"], before, actionlog.snap(sn), source, why)
+
+
+def proposal_fields(yt, meta: dict, work: dict) -> tuple[dict, dict]:
+    """(what the video says on YouTube now, what it would say after the repair): the pair a proposal for a public video is made of."""
+    import actionlog
+    import compliance
+
+    live = actionlog.snap(actionlog._live(yt, meta["video_id"]))
+    return live, {"title": work["title"], "description": compliance.final_description(work), "tags": work.get("tags", live.get("tags", []))}
 
 
 def take_back(yt, video_id: str) -> None:
     """A scheduled video becomes plain private (no time): it cannot go public by itself."""
+    import actionlog
+
     st = yt.videos().list(part="status", id=video_id).execute()["items"][0]["status"]
+    before = {"privacyStatus": st.get("privacyStatus"), "publishAt": st.get("publishAt")}
     st.pop("publishAt", None)
     st["privacyStatus"] = "private"
     yt.videos().update(part="status", body={"id": video_id, "status": st}).execute()
+    actionlog.record(video_id, before, {"privacyStatus": "private", "publishAt": None}, "recheck", "a failing scheduled video was taken back to private", kind="status")
 
 
 def repair_metadata(folder, meta: dict, bad: list[str], chat=None) -> list[str]:
@@ -240,7 +257,22 @@ def check_one(now: dt.datetime, folder, meta: dict, yt, review, chat=None, may_e
                     work["title"] = meta["title"]
                     done = [d for d in done if not d.startswith("new title")] + [f"kept the old title: the new one was not accepted ({why[:80]})"]
             if work.get("title") != meta.get("title") or work.get("description") != meta.get("description") or work.get("tags") != meta.get("tags"):
-                push_metadata(yt, work)
+                if public:  # an agent never changes a video that is already public: the owner gets a proposal with the exact commands
+                    import actionlog
+
+                    try:
+                        live, after = proposal_fields(yt, meta, work)
+                        pid = actionlog.propose(meta["video_id"], folder.name, live, after, "recheck", "; ".join(done), now=now)
+                    except Exception as e:
+                        pid = None
+                        agentlog.event("found", f"Re-check: could not prepare a change for a public video ({title})", f"{type(e).__name__}: {str(e)[:100]}", now=now)
+                    if pid:
+                        agentlog.event("found", f"Re-check: a public video needs a metadata change ({title})",
+                                       f"Not applied, it is public. Look at it with `python run.py edits`, then `python run.py edits approve {pid}` or `reject {pid}`.", notify=True, now=now)
+                    out["actions"] += [*done, "public video: metadata change proposed, owner decides"]
+                    _merge(folder, {"recheck": {"at": rec["at"], "verdict": "metadata", "content_fails": 0, "problems": bad, "edits": rec.get("edits", 0)}})
+                    return out
+                push_metadata(yt, work, "recheck", "; ".join(done))
                 _merge(folder, _changed(before, work))
                 rec["edits"] = edits + 1
                 agentlog.event("applied", f"Re-check: repaired the metadata of an uploaded video ({title})", "; ".join(done), now=now)

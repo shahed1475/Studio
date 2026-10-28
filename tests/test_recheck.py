@@ -234,9 +234,9 @@ def test_a_title_is_repaired_once_and_only_to_one_the_reviewer_accepts(vid, monk
     recheck.check_one(NOW, vid, meta_of(vid), yt, lambda f: result("fail", "title_matches"), may_edit=True)
     assert not yt.updates and meta_of(vid)["title"] == "Old title"  # rejected title: nothing pushed
     monkeypatch.setattr(reviewer, "title_ok", lambda meta, title: (True, ""))
-    recheck.check_one(NOW + dt.timedelta(hours=13), vid, meta_of(vid), yt, lambda f: result("fail", "title_matches"), may_edit=True)
+    recheck.check_one(NOW + dt.timedelta(hours=2), vid, meta_of(vid), yt, lambda f: result("fail", "title_matches"), may_edit=True)  # still before the 14:00 publish time
     assert len(yt.updates) == 1 and meta_of(vid)["title"] == "Second Title"
-    recheck.check_one(NOW + dt.timedelta(hours=26), vid, meta_of(vid), yt, lambda f: result("fail", "title_matches"), may_edit=True)
+    recheck.check_one(NOW + dt.timedelta(hours=3), vid, meta_of(vid), yt, lambda f: result("fail", "title_matches"), may_edit=True)
     assert len(yt.updates) == 1  # a second repair is the owner's
 
 

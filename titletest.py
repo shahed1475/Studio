@@ -96,6 +96,9 @@ def set_title(yt, video: dict, title: str) -> None:
     sn = dict(video["snippet"])
     sn["title"] = title
     yt.videos().update(part="snippet", body={"id": video["id"], "snippet": {k: sn[k] for k in ("title", "description", "categoryId", "tags", "defaultLanguage") if k in sn}}).execute()
+    import actionlog
+
+    actionlog.record(video["id"], {"title": video["snippet"]["title"]}, {"title": title}, "title test", "the title test changed or restored a title (owner's apply mode)")
 
 
 def _kind(meta: dict) -> str:

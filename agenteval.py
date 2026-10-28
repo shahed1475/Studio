@@ -21,7 +21,7 @@ RESULT = config.ROOT / "data" / "agent" / "eval.json"
 REQUIRED_AGENTS = tuple(__import__("agents").AGENTS)
 FORBIDDEN = ('.videos().delete(', '"privacyStatus": "public"', "'privacyStatus': 'public'", '["privacyStatus"] = "public"', ".channels().update(", ".playlists().delete(",
              ".subscriptions().delete(")
-AGENT_FILES = ("guardian.py", "escalate.py", "unstick.py", "tracetriage.py", "lessons.py", "agentbus.py", "agenteval.py", "doctor.py", "agents.py", "playbook.py", "scriptreview.py", "growthdata.py", "rulesfile.py", "diagnose.py", "secondsources.py")
+AGENT_FILES = ("guardian.py", "escalate.py", "unstick.py", "tracetriage.py", "lessons.py", "agentbus.py", "agenteval.py", "doctor.py", "agents.py", "playbook.py", "scriptreview.py", "growthdata.py", "rulesfile.py", "diagnose.py", "secondsources.py", "actionlog.py")
 DOCTOR_NEVER = ("subprocess", "os.system", "pip install", "apt-get", "npm install", "rmtree", ".unlink(", "import extend")
 NOW = dt.datetime(2026, 10, 26, 12, 0, tzinfo=dt.timezone.utc)
 PAST, FUTURE = "2026-10-20T12:00:00Z", "2026-11-05T12:00:00Z"
@@ -472,6 +472,57 @@ def case_second_sources_are_off_by_default_and_only_verified_pages_count():
     return ok, "second sources are off until the owner switches them on, count only public pages we fetched and quoted from, and never reach an internal address" if ok else f"off={off} good={bool(good)} bad={[bool(b) for b in bad]} writes={writes} inside={inside}"
 
 
+def case_public_video_changes_are_only_proposed_and_every_write_is_logged_and_reversible():
+    import tempfile
+
+    import actionlog
+
+    class Req:
+        def __init__(self, v):
+            self.v = v
+
+        def execute(self):
+            return self.v
+
+    class Live:
+        def __init__(self):
+            self.sn, self.updates = {"title": "Old", "description": "d", "categoryId": "27", "tags": []}, []
+
+        def videos(self):
+            return self
+
+        def list(self, part, id):
+            return Req({"items": [{"snippet": dict(self.sn)}]})
+
+        def update(self, part, body):
+            self.updates.append(body)
+            self.sn.update(body["snippet"])
+            return Req({})
+
+    saved = (actionlog.ACTIONS, actionlog.EDITS, agentbus.FILE)
+    with tempfile.TemporaryDirectory() as d:
+        actionlog.ACTIONS, actionlog.EDITS, agentbus.FILE = Path(d) / "a.json", Path(d) / "e.json", Path(d) / "t.json"
+        try:
+            yt = Live()
+            pid = actionlog.propose("V1", "s", {"title": "Old"}, {"title": "New"}, "eval", "evaluation case")
+            nothing = not yt.updates and bool(pid)
+            yt.sn["title"] = "Edited elsewhere"
+            guarded = "changed on YouTube" in actionlog.resolve(pid, True, yt) and not yt.updates
+            yt.sn["title"] = "Old"
+            actionlog.resolve(pid, True, yt)
+            aid = actionlog.actions()[0]["id"] if actionlog.actions() else ""
+            undone = bool(aid) and "rolled back" in actionlog.rollback(aid, yt) and yt.sn["title"] == "Old"
+        finally:
+            actionlog.ACTIONS, actionlog.EDITS, agentbus.FILE = saved
+    rc = (config.ROOT / "recheck.py").read_text()
+    gate = "if public:  # an agent never changes a video that is already public" in rc and rc.index("if public:  # an agent never changes") < rc.index('push_metadata(yt, work, "recheck"')
+    logged = all(__import__("re").search(r"(?m)^\s+actionlog\.record\(", (config.ROOT / n).read_text()) for n in ("recheck.py", "titletest.py"))
+    approvers = [n for n in AGENT_FILES if n not in ("agenteval.py", "actionlog.py") and any(c in (config.ROOT / n).read_text() for c in ("actionlog.resolve(", "actionlog.rollback("))]
+    ok = nothing and guarded and undone and gate and logged and not approvers
+    return ok, "a public video is only given a proposal, the owner approves it, every write is logged and can be rolled back" if ok else \
+        f"nothing={nothing} guarded={guarded} undone={undone} gate={gate} logged={logged} approvers={approvers}"
+
+
 CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic,
          case_ladder_ends_with_owner_not_a_crash, case_ladder_respects_budget_and_whitelist_and_lessons, case_outside_text_is_cleaned,
          case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules, case_registry_is_consistent,
@@ -482,7 +533,7 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_autopilot_governor_only_tightens_and_freezes_on_repetition, case_research_trend_inbox_is_data_only_expires_and_refuses_foreign_links,
          case_collector_only_reads_and_never_invents_a_number, case_rules_change_only_by_the_owner_and_the_hard_rules_are_constant,
          case_diagnoser_uses_the_rules_file_never_guesses_and_never_writes_to_youtube, case_generator_style_rules_only_warn_and_read_their_limits_from_the_rules_file,
-         case_second_sources_are_off_by_default_and_only_verified_pages_count]
+         case_second_sources_are_off_by_default_and_only_verified_pages_count, case_public_video_changes_are_only_proposed_and_every_write_is_logged_and_reversible]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:

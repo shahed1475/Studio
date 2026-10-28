@@ -740,6 +740,27 @@ def main() -> None:
 
         print(json.dumps(diagnose.run(), indent=2))
         print(diagnose.report())
+    elif a[0] == "edits":  # changes to videos on YouTube: proposals for public videos (owner approves) and the log of what was changed
+        import actionlog
+
+        sub = a[1] if len(a) > 1 else "list"
+        if sub in ("approve", "reject") and len(a) > 2:
+            yt = None
+            if sub == "approve":
+                import trendwatch
+
+                yt = trendwatch._service()
+            print(actionlog.resolve(a[2], sub == "approve", yt))
+        else:
+            for r in actionlog.pending():
+                print(f"pending {r['id']} {r['slug']}: {r['source']} wants to change {', '.join(k for k in r['after'] if r['before'].get(k) != r['after'][k])} | {r['why'][:100]}")
+            for r in actionlog.actions(10):
+                print(f"{r['id']} {r['at']} {r['video_id']} {r['kind']} by {r['source']}{' (rolled back)' if r.get('rolled_back') else ''}: {r['why'][:80]}")
+    elif a[0] == "rollback" and len(a) > 1:  # put back what a logged change replaced (owner command)
+        import actionlog
+        import trendwatch
+
+        print(actionlog.rollback(a[1], trendwatch._service()))
     elif a[0] == "rules":  # the growth rules file: only the owner approves a proposed change
         import rulesfile
 
