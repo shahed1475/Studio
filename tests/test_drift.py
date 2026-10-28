@@ -96,3 +96,11 @@ def test_a_finding_goes_to_the_owner_once_with_the_rule_changes_of_that_window_a
 
 def test_with_no_file_yet_the_detector_reports_no_history_and_does_not_crash(tmp_path):
     assert drift.run(NOW, tmp_path / "missing.json")["status"] == "not enough history"
+
+
+def test_days_before_the_channel_had_any_views_are_not_history():
+    zeros = {str(END - dt.timedelta(days=i)): 0 for i in range(88, 7, -1)}
+    week = {str(END - dt.timedelta(days=i)): 10 for i in range(6, -1, -1)}
+    res = drift.detect({"videos": {"V": {**zeros, **week}}, "traffic": {}})
+    assert res["status"] == "not enough history" and res["have_days"] == 7 and res["events"] == []
+    assert drift.detect({"videos": {}, "traffic": {}})["have_days"] == 0

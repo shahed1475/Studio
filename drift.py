@@ -42,7 +42,10 @@ def detect(daily: dict, rules: dict | None = None, policy_changes: list[dict] | 
     """{"status", "have_days", "need_days", "events": [...]}. Not enough history is said plainly, never guessed around."""
     b = (rules or rulesfile.load())["benchmarks"]
     base, rec, sigma, need_v = int(b["drift_baseline_days"]), int(b["drift_recent_days"]), b["drift_sigma"], int(b["drift_min_videos"])
+    active = {d for v in (daily.get("videos") or {}).values() for d, n in v.items() if n} | {d for d, t in (daily.get("traffic") or {}).items() if sum(t.values())}
+    first = min(active) if active else None  # the API fills the days before the channel existed with zeros: history starts at the first day with any views
     days = sorted({d for v in (daily.get("videos") or {}).values() for d in v} | set(daily.get("traffic") or {}))
+    days = [d for d in days if first and d >= first]
     out = {"status": "ok", "have_days": len(days), "need_days": base + rec, "events": []}
     if len(days) < base + rec:
         out["status"] = "not enough history"
