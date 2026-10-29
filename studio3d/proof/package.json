@@ -1,0 +1,2 @@
+{"name":"studio3d-proof","private":true,"version":"0.0.1","type":"module","scripts":{"render":"remotion render src/index.ts Army out/army.mp4 --gl=swangle"},
+ "dependencies":{"remotion":"4.0.539","@remotion/cli":"4.0.539","@remotion/three":"4.0.539","@remotion/google-fonts":"4.0.539","three":"0.186.1","@react-three/fiber":"9.8.2","@react-three/drei":"10.7.9","@react-three/postprocessing":"3.2.2","postprocessing":"6.39.5","react":"19","react-dom":"19","typescript":"5","@types/react":"19","@types/three":"0.186"}}
