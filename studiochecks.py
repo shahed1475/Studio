@@ -122,6 +122,21 @@ def _decode_errors(path: Path) -> str:
     return (r.stderr or "").strip()[:300]
 
 
+FREEZE_MAX = 1.5  # seconds a picture may stand perfectly still before it reads as lag
+
+
+def frozen_stretches(path: Path, noise: float = 0.003, min_seconds: float = 0.5) -> list[float]:
+    """The lengths in seconds of every stretch where the picture does not change at all (ffmpeg's freezedetect). [] when nothing stands still or ffmpeg gave no answer."""
+    r = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", str(path), "-vf", f"freezedetect=n={noise}:d={min_seconds}", "-an", "-f", "null", "-"], capture_output=True, text=True)
+    return [float(x) for x in re.findall(r"freeze_duration:\s*([0-9.]+)", r.stderr or "")]
+
+
+def freeze_checks(path: Path) -> list[dict]:
+    got = frozen_stretches(path)
+    worst = max(got, default=0.0)
+    return [row("no_frozen_picture", worst <= FREEZE_MAX, f"the picture stands still for {worst:.1f} s at the longest ({len(got)} stretch(es) over 0.5 s; aim for {FREEZE_MAX:g} s or less)" if got else "the picture never stands still for half a second", "warn")]
+
+
 def parse_srt(text: str) -> list[tuple[float, float, str]]:
     cues = []
     for block in re.split(r"\n\s*\n", text.strip()):
@@ -206,6 +221,7 @@ def check_video(folder: Path, meta: dict, quick: bool = False) -> list[dict]:
     if not quick:
         err = _decode_errors(path)
         out.append(row("decodes_cleanly", not err, err or "full decode finished without errors"))
+        out += freeze_checks(path)
     out += caption_checks(folder, meta, probe["duration"])
     return out
 

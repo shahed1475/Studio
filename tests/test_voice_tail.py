@@ -72,3 +72,22 @@ def test_dead_air_between_lines_of_a_short_is_warned_about_and_a_tight_one_is_no
     tight = rows(_words((0, 4), (4.5, 9), (9.5, 14)))
     assert tight["no_dead_air"]["ok"]
     assert "no_dead_air" not in rows(_words((0, 4), (5.2, 9)), fmt="doc")  # a documentary keeps its own, longer pauses
+
+
+# ---- a picture that stands still (29 Oct 2026): the other cause of "lag" ----
+def _clip(path, still_seconds, moving_seconds=2.0):
+    """A test video: `still_seconds` of one unchanging picture, then a moving one."""
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", f"color=c=0x335577:s=160x90:r=30:d={still_seconds}", "-f", "lavfi", "-i", f"testsrc2=s=160x90:r=30:d={moving_seconds}",
+                    "-filter_complex", "[0:v][1:v]concat=n=2:v=1:a=0[o]", "-map", "[o]", "-pix_fmt", "yuv420p", "-c:v", "libopenh264" if "libx264" not in subprocess.run(["ffmpeg", "-hide_banner", "-encoders"], capture_output=True, text=True).stdout else "libx264", str(path)], check=True)
+
+
+def test_a_picture_frozen_for_long_is_found_and_a_moving_one_is_not(tmp_path):
+    still, moving = tmp_path / "still.mp4", tmp_path / "moving.mp4"
+    _clip(still, 3.0)
+    _clip(moving, 0.0 + 0.1)
+    found = studiochecks.frozen_stretches(still)
+    assert found and found[0] >= 2.5
+    assert studiochecks.frozen_stretches(moving) == []
+    rows = {r["name"]: r for r in studiochecks.freeze_checks(still)}
+    assert not rows["no_frozen_picture"]["ok"] and rows["no_frozen_picture"]["severity"] == "warn" and "3." in rows["no_frozen_picture"]["detail"]
+    assert studiochecks.freeze_checks(moving)[0]["ok"]

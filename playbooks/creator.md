@@ -11,7 +11,7 @@ Autopilot starts one video per due slot, from the best topic in the queue.
 3. Real public-domain or CC0 pictures first, labelled AI art for the rest. Captions follow the final script.
 4. House style (house_style, on and credit at least min_credit): a NEW video is drawn in 3D with moving clips inside a dollar budget; `doc --photo` draws realistic invented people, held. Never on a redo or repair.
 5. Documentary: open cold, a new question or turn about every 90 s, explanations labelled, no outro. Short: line 1 a question or turn in 12 words or fewer; the line before the invite pays it off (an answer, or where sources differ), never a new question or loop; say subscribe, not follow. The reviewer only warns on these.
-6. If second_sources is on (off until a top-up): two fetched, quoted pages beyond Wikipedia and one original element go into SOURCES.
+6. second_sources (off until a top-up): two quoted pages, one original element. Free motion: switches parallax, graphics (runbook).
 7. seo writes the title and description, then the reviewer.
 ## Tools
 scriptgen, tts, aiart, render, subtitles, run.cmd_doc.

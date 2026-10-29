@@ -511,8 +511,19 @@ def case_a_styled_voice_cuts_the_services_silent_tail_and_a_long_gap_between_lin
     never_pads = tts.line_length(4.7, [(0.1, 4.662, "w")], 0.25, 0.15) == 4.7 + 0.25
     words = lambda gap: [{"s": 0, "e": 4, "w": "a", "i": 0}, {"s": 4 + gap, "e": 9, "w": "b", "i": 1}]
     flags = studiochecks.longest_gap(words(1.2)) > studiochecks.DEAD_AIR_MAX >= studiochecks.longest_gap(words(0.5))
-    ok = cut and never_pads and flags
-    return ok, "an energetic line keeps only a short tail after its last word (never padded), the default voice is unchanged, and a 1.2 s silence between lines is flagged" if ok else f"cut={cut} never_pads={never_pads} flags={flags}"
+    from pathlib import Path
+
+    real = studiochecks.frozen_stretches
+    try:  # a picture that stands still for 2.4 s is warned about, one that stops for 0.6 s is not
+        studiochecks.frozen_stretches = lambda path, **k: [2.4]
+        stuck = studiochecks.freeze_checks(Path("x.mp4"))[0]
+        studiochecks.frozen_stretches = lambda path, **k: [0.6]
+        brief = studiochecks.freeze_checks(Path("x.mp4"))[0]
+    finally:
+        studiochecks.frozen_stretches = real
+    freezes = not stuck["ok"] and stuck["severity"] == "warn" and brief["ok"]
+    ok = cut and never_pads and flags and freezes
+    return ok, "an energetic line keeps only a short tail after its last word (never padded), the default voice is unchanged, a 1.2 s silence between lines is flagged and so is a picture that stands still for seconds" if ok else f"cut={cut} never_pads={never_pads} flags={flags} freezes={freezes}"
 
 
 def case_a_shorts_hook_is_an_open_question_and_a_yes_or_no_hook_that_holds_the_answer_is_warned():
