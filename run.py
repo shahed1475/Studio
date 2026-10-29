@@ -837,6 +837,12 @@ def main() -> None:
         print(f"{len(ch)} rule pages changed" if ch else "no rule page changed (first run only saves a copy)")
         for c in ch:
             print(f"- {c['page']}: {(c['added'] or c['removed'])[0]}")
+    elif a[0] == "depth-setup":  # fetch the depth model once (27 MB, hash-checked) so this machine can make its own depth maps for camera motion
+        import depth
+
+        f = depth.ensure_model()
+        rt = depth._runtime()
+        print(f"model: {f} ({f.stat().st_size:,} bytes, SHA-256 checked)\nnumpy and onnxruntime: {'installed' if rt else 'NOT installed: pictures get approximate depth'}")
     elif a[0] == "repair" and len(a) > 1:
         import fixer
 

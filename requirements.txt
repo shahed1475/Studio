@@ -5,3 +5,5 @@ edge-tts>=6.1
 requests>=2.31
 Pillow>=10.0
 pytest>=8.0
+numpy>=1.26  # depth maps for camera motion (depth.py); the studio works without them, with approximate depth
+onnxruntime>=1.18

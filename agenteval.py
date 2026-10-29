@@ -574,6 +574,43 @@ def case_camera_motion_moves_only_drawn_pictures_and_graphics_show_only_what_the
     return ok, "only a drawn picture gets camera motion (reused when cached), graphics show only years and chapters the script has and stay off the hook, and lost clips are warned about" if ok else f"motion={motion} years={years} quiet={quiet} flagged={flagged}"
 
 
+def case_the_depth_model_is_only_kept_when_its_hash_is_the_checked_one_and_a_picture_without_it_gets_approximate_depth():
+    import tempfile
+    from pathlib import Path
+
+    from PIL import Image
+
+    import config
+    import depth
+
+    saved = (config.ROOT, config.CACHE, depth._download, depth._runtime)
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            config.ROOT, config.CACHE = Path(d), Path(d) / "cache"
+            (config.CACHE / "art").mkdir(parents=True)
+            depth._download = lambda url, dest: dest.write_bytes(b"not the model")
+            try:
+                depth.ensure_model()
+                refused = False
+            except RuntimeError:
+                refused = True
+            clean = not depth.model_path().exists() and not list(depth.model_path().parent.glob("*.part"))
+            depth._download = saved[2]
+            try:
+                depth._download("https://example.com/model.onnx", Path(d) / "x")
+                host = False
+            except RuntimeError:
+                host = True
+            pic = config.CACHE / "art" / "a.jpg"
+            Image.new("RGB", (64, 36), (9, 9, 9)).save(pic)
+            depth._runtime = lambda: None
+            approx = depth.depth_for(pic)[1] == "approximate"
+    finally:
+        config.ROOT, config.CACHE, depth._download, depth._runtime = saved
+    ok = refused and clean and host and approx
+    return ok, "a model with another hash is refused and removed, only the checked host is used, and with no runtime a picture gets approximate depth" if ok else f"refused={refused} clean={clean} host={host} approx={approx}"
+
+
 def case_second_sources_are_off_by_default_and_only_verified_pages_count():
     import autopilot
     import secondsources as ss
@@ -762,7 +799,7 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_autopilot_governor_only_tightens_and_freezes_on_repetition, case_research_trend_inbox_is_data_only_expires_and_refuses_foreign_links,
          case_collector_only_reads_and_never_invents_a_number, case_rules_change_only_by_the_owner_and_the_hard_rules_are_constant,
          case_diagnoser_uses_the_rules_file_never_guesses_and_never_writes_to_youtube, case_generator_style_rules_only_warn_and_read_their_limits_from_the_rules_file, case_short_structure_rules_only_warn_ask_for_a_payoff_never_for_loops_and_keep_the_creators_safety_rules_in_its_prompt,
-         case_a_shorts_closing_invitation_says_subscribe_never_follow_and_story_lines_are_left_alone, case_a_styled_voice_cuts_the_services_silent_tail_and_a_long_gap_between_lines_is_flagged, case_a_shorts_hook_is_an_open_question_and_a_yes_or_no_hook_that_holds_the_answer_is_warned, case_camera_motion_moves_only_drawn_pictures_and_graphics_show_only_what_the_script_says, case_second_sources_are_off_by_default_and_only_verified_pages_count, case_public_video_changes_are_only_proposed_and_every_write_is_logged_and_reversible,
+         case_a_shorts_closing_invitation_says_subscribe_never_follow_and_story_lines_are_left_alone, case_a_styled_voice_cuts_the_services_silent_tail_and_a_long_gap_between_lines_is_flagged, case_a_shorts_hook_is_an_open_question_and_a_yes_or_no_hook_that_holds_the_answer_is_warned, case_camera_motion_moves_only_drawn_pictures_and_graphics_show_only_what_the_script_says, case_the_depth_model_is_only_kept_when_its_hash_is_the_checked_one_and_a_picture_without_it_gets_approximate_depth, case_second_sources_are_off_by_default_and_only_verified_pages_count, case_public_video_changes_are_only_proposed_and_every_write_is_logged_and_reversible,
          case_policy_changes_are_classified_proposed_and_held_without_an_agent_releasing_them, case_drift_needs_several_videos_sustained_over_days_and_only_tells_the_owner,
          case_learner_reads_and_reports_queues_at_most_one_viable_subject_and_only_proposes_rules,
          case_kind_cards_are_free_short_advice_and_the_repeated_part_of_a_prompt_is_cached_not_leaked,

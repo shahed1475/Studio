@@ -667,3 +667,27 @@ def test_the_camera_motion_case_passes_and_fails_when_its_rules_are_broken(monke
     monkeypatch.setattr(reviewer, "generator_checks", lambda meta, probe, rules=None: [c for c in real(meta, probe, rules) if c["name"] != "parallax_clips"])  # mutation: lost clips are not reported
     ok, detail = case()
     assert not ok and "flagged=False" in detail
+
+
+def test_the_depth_model_case_passes_and_fails_when_its_rules_are_broken(monkeypatch):
+    import hashlib
+
+    import depth
+
+    name = "case_the_depth_model_is_only_kept_when_its_hash_is_the_checked_one_and_a_picture_without_it_gets_approximate_depth"
+    case = getattr(agenteval, name)
+    assert case in agenteval.CASES
+    ok, detail = case()
+    assert ok, detail
+    monkeypatch.setattr(depth, "MODEL_SHA256", hashlib.sha256(b"not the model").hexdigest())  # mutation: any file with a hash is accepted
+    ok, detail = case()
+    assert not ok and "refused=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(depth, "_download", lambda url, dest: dest.write_bytes(b"x"))  # mutation: any host may be used
+    ok, detail = case()
+    assert not ok and "host=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(depth, "make_and_store", lambda path: depth.approximate_depth())  # mutation: a made-up map is called a model map
+    monkeypatch.setattr(depth, "load_depth", lambda path: None)
+    ok, detail = case()
+    assert not ok and "approx=False" in detail

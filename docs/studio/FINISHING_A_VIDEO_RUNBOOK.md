@@ -27,7 +27,7 @@ How a held or draft video is checked, fixed and made ready, in the order it was 
 | Plain captions only | none | 2D chapter cards and date badges: `motiongraphics.py`; switch `graphics` | tests/test_motiongraphics.py |
 | Quieter than the rest | target -16 | per-video `target_lufs` inside -17.5 to -12 (`editprofile.lufs_for`) | `ebur128` |
 
-To render: set the switches with `records.merge`, then `run.cmd_redo(slug)` (documentary) or `run.cmd_redo_short(slug)` under the lock. Depth maps: on a machine with onnxruntime and numpy, `python tools/make_depth.py MODEL.onnx <pictures or folder> --out DIR`, copy the PNGs into the server's `cache/depth/` (the model is pinned by SHA-256 in the script). A picture with no map gets an approximate depth and is counted in `meta["parallax"]["approximate"]`.
+To render: set the switches with `records.merge`, then `run.cmd_redo(slug)` (documentary) or `run.cmd_redo_short(slug)` under the lock. Depth maps: the server makes its own (numpy and onnxruntime installed with the owner's yes on 30 Oct; `python run.py depth-setup` fetches the pinned model once, then `depth.depth_for` makes and keeps a map for any new picture). On another machine, `python tools/make_depth.py MODEL.onnx <pictures or folder> --out DIR` and copy the PNGs into `cache/depth/`. A picture with no map and no model gets an approximate depth and is counted in `meta["parallax"]["approximate"]`.
 
 ## 4. Packaging (title, thumbnail, description, tags)
 1. **Look at what ranks**: `seo.competitors("<search phrase>")` (YouTube Data API; public titles, views, channel size), then view the public thumbnails of the top results. Note the patterns; do not copy a title or a picture.

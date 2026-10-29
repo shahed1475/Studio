@@ -11,41 +11,18 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-PINNED_SHA256 = "fcf51f1b230362b28690bb9d1809bf0431f29cad20534e3f589bd7285547f20d"
-SIDE = 518  # the model reads a multiple of 14 pixels; 518 on the long edge is its native size
+import depth
 
-
-def sha256(path: Path) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
+PINNED_SHA256 = depth.MODEL_SHA256
+sha256 = depth.sha256_of
 
 
 def make_map(session, picture: Path):
-    import numpy as np
-    from PIL import Image, ImageFilter
-
-    import depth
-
-    img = Image.open(picture).convert("RGB")
-    W, H = img.size
-    w, h = (SIDE, int(round(SIDE * H / W / 14)) * 14) if W >= H else (int(round(SIDE * W / H / 14)) * 14, SIDE)
-    x = np.asarray(img.resize((w, h), Image.BICUBIC), dtype=np.float32) / 255.0
-    x = ((x - np.array([0.485, 0.456, 0.406], np.float32)) / np.array([0.229, 0.224, 0.225], np.float32)).transpose(2, 0, 1)[None]
-    d = session.run(None, {session.get_inputs()[0].name: x})[0][0]
-    lo, hi = np.percentile(d, 2), np.percentile(d, 98)
-    d = np.clip((d - lo) / max(hi - lo, 1e-6), 0, 1)
-    small = Image.fromarray((d * 255).astype(np.uint8)).resize((depth.MAP_WIDTH, max(8, round(depth.MAP_WIDTH * H / W))), Image.LANCZOS)
-    return small.filter(ImageFilter.GaussianBlur(1.2))
+    return depth.make_map(session, picture)
 
 
 def main(argv: list[str]) -> int:
     import onnxruntime as ort
-
-    import config
-    import depth
 
     args = [a for a in argv if not a.startswith("--")]
     out = Path(argv[argv.index("--out") + 1]) if "--out" in argv else depth.depth_dir()
