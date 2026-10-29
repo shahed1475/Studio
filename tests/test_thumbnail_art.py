@@ -106,8 +106,26 @@ def test_make_puts_the_art_first_and_adds_the_credit_once(art, monkeypatch, tmp_
     for _ in range(2):  # a second run must not add the credit again
         names = thumbnail.make(folder, hook="BELL WITCH VOICE")
     meta = json.loads((folder / "meta.json").read_text())
-    assert names[:2] == ["thumbs/art-a.jpg", "thumbs/art-b.jpg"] and names[2:] == ["thumbs/thumb-1.jpg", "thumbs/thumb-2.jpg", "thumbs/thumb-3.jpg"]
+    # 30 Oct 2026 (thumbnail system v2): with drawn art a video is offered only drawn thumbnails, never the three frame thumbnails (one template) beside them. This hook repeats the title's words,
+    # so every new composition fails its check and the two old layouts on the drawn picture are the fallback, recorded as the old template.
+    assert names[:2] == ["thumbs/art-a.jpg", "thumbs/art-b.jpg"] and not [n for n in names if "thumb-" in n] and len(set(names)) == len(names)
+    assert meta["thumbnails"] == names and meta["thumb_style"] == "classic_a" and meta["thumb_variants"] == []
     assert meta["thumbnail"] == "thumbs/art-a.jpg" and meta["credits"].count(aiart.CREDIT) == 1 and meta["thumb_art"] == "ai"
+
+
+def test_make_draws_different_compositions_for_words_that_are_not_the_titles_and_records_them(art, monkeypatch, tmp_path):
+    """The new path: words that add something the title lacks give distinct compositions, and the first one's composition is saved so the next video looks different."""
+    folder = tmp_path / "v"
+    folder.mkdir()
+    (folder / "video.mp4").write_bytes(b"x")
+    (folder / "meta.json").write_text(json.dumps({**META, "kind": "mystery", "subtitles": None, "credits": []}))
+    monkeypatch.setattr(thumbnail, "art_subject", lambda meta, chat=None: "a lone log farmhouse")
+    names = thumbnail.make(folder, hook="KNOCKS OR HOAX?")
+    meta = json.loads((folder / "meta.json").read_text())
+    kinds = [v["archetype"] for v in meta["thumb_variants"]]
+    assert len(names) >= 2 and meta["thumbnails"] == names and len(set(names)) == len(names) and not [n for n in names if "thumb-" in n]
+    assert len(kinds) == len(names) and len(set(kinds)) == len(kinds) and "classic_a" not in kinds[:1]  # every thumbnail a different composition
+    assert meta["thumb_style"] == kinds[0] and meta["thumbnail"] == names[0]
 
 
 def test_the_thumbnail_and_the_scene_pictures_use_their_own_configured_models(art, monkeypatch):

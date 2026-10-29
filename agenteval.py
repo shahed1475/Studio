@@ -628,6 +628,37 @@ def case_a_documentary_is_written_in_the_owners_shape_and_length_and_warned_abou
     return ok, "a documentary is asked for as hook, curiosity, story, then a closing chapter of value, in 8 to 10 minutes, and a length outside that is warned about" if ok else f"shape={shape} room={room} warns={warns}"
 
 
+def case_thumbnails_differ_from_the_recent_ones_claim_only_devices_the_words_have_and_never_repeat_the_title():
+    import tempfile
+    from pathlib import Path
+
+    from PIL import Image, ImageDraw
+
+    import thumbnail
+    import thumbstyle
+
+    asked = []
+    thumbnail.hook_options({"title": "T", "lines": [{"text": "x"}], "chapters": []}, chat=lambda p: asked.append(p) or {"hooks": []})
+    prompt = (asked[0] if asked else "").lower()
+    asks = "different device" in prompt and "only if the narration" in prompt and "do not repeat the title" in prompt
+    fresh = thumbstyle.choose("WHERE DID THEY GO?", ["foreground", "corner"], 1)
+    differs = len(fresh) == 3 and len(set(fresh)) == 3 and not set(fresh) & {"foreground", "corner"}  # the channel's two newest compositions are not used again
+    honest = thumbstyle.device_for("3100 YEARS AGO") == "number" and thumbstyle.device_for("SANDSTORM OR AMBUSH?") == "choice" and thumbstyle.device_for("NEVER FOUND") == "plain"
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = Path(tmp) / "v"
+        folder.mkdir()
+        pic = Path(tmp) / "p.jpg"
+        im = Image.new("RGB", (thumbstyle.W, thumbstyle.H), (205, 175, 125))
+        ImageDraw.Draw(im).rectangle([0, int(thumbstyle.H * 0.58), thumbstyle.W, thumbstyle.H], fill=(35, 28, 20))
+        im.save(pic, quality=92)
+        out = thumbstyle.variants(folder, {"title": "The Lost Army of Cambyses, Said to Vanish", "kind": "mystery"}, [pic], "LOST ARMY OF CAMBYSES", recent=[],
+                                  hooks=["LOST ARMY OF CAMBYSES", "SANDSTORM OR AMBUSH?", "WHERE DID THEY GO?", "NEVER FOUND"])
+    distinct = len(out) >= 2 and len({v["archetype"] for v in out}) == len(out)  # each candidate its own composition
+    clean = bool(out) and all(v["hook"] != "LOST ARMY OF CAMBYSES" for v in out)  # words that repeat the title are dropped
+    ok = asks and differs and honest and distinct and clean
+    return ok, "thumbnail words are asked for with a different, honest device each, the newest compositions are not reused, every candidate differs and none repeats the title" if ok else f"asks={asks} differs={differs} honest={honest} distinct={distinct} clean={clean}"
+
+
 def case_the_ai_review_reads_the_whole_narration_of_a_long_documentary_and_not_only_its_start():
     import reviewer
     import scriptgen
@@ -858,6 +889,7 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_learner_reads_and_reports_queues_at_most_one_viable_subject_and_only_proposes_rules,
          case_kind_cards_are_free_short_advice_and_the_repeated_part_of_a_prompt_is_cached_not_leaked,
          case_an_agent_cannot_set_a_profile_the_reviewer_rejects_and_a_short_fits_its_length_and_nothing_uploaded_is_re_encoded,
+         case_thumbnails_differ_from_the_recent_ones_claim_only_devices_the_words_have_and_never_repeat_the_title,
          case_the_ai_review_reads_the_whole_narration_of_a_long_documentary_and_not_only_its_start,
          case_a_quotation_is_sourced_by_its_own_words_and_an_invented_one_stays_open_with_no_passage]
 

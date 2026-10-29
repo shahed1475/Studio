@@ -27,12 +27,29 @@ def _font(size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.load_default(size)
 
 
+# The curiosity devices the writer may use (docs/studio/THUMBNAIL_CURIOSITY_RESEARCH_2026-10-30.md): each only when the narration really has it, so a thumbnail never promises what the video lacks.
+HOOK_DEVICES = ("Give each of the 3 texts a different device, each used only if the narration really has it: a year or number the story states, a choice between two answers the "
+                "narration really weighs (A OR B?), or one concrete object or place plus a gap the viewer can almost close. Do not repeat the title's words. ")
 GENERIC_HOOK_WORDS = {"real", "story", "truth", "true", "explained", "legend", "mystery", "secret", "secrets", "unsolved", "history"}  # words any video could carry: they do not make a hook specific
 
 
 def hook_for(meta: dict, avoid=(), chat=None) -> str:
-    """2 to 4 words that make someone curious and that the narration actually delivers: the writer sees what the narration covers and may not promise a
-    question or debate it never raises; a candidate the narration does not support, or one used before, is skipped; the title's own words are the fallback."""
+    """The best thumbnail words for this video (the first of hook_options)."""
+    return hook_options(meta, avoid, chat)[0]
+
+
+def hook_alternatives(meta: dict, hook: str, n: int = 2) -> list[str]:
+    """Other words for the same video, each different from `hook`; [] when the writer cannot be reached (the caller then reuses its one hook)."""
+    try:
+        return [h for h in hook_options(meta, avoid=[hook])[:n + 1] if h.strip().upper() != hook.strip().upper()][:n]
+    except Exception:
+        return []
+
+
+def hook_options(meta: dict, avoid=(), chat=None) -> list[str]:
+    """2 to 4 words that make someone curious and that the narration actually delivers, best first (never an empty list): the writer sees what the narration covers and may not
+    promise a question or debate it never raises; a candidate the narration does not support, or one used before, is skipped; the title's own words are the fallback.
+    Research (docs/studio/THUMBNAIL_CURIOSITY_RESEARCH_2026-10-30.md): curiosity needs one concrete anchor and one gap the viewer can almost close."""
     import compliance
 
     lines = [l["text"] for l in meta.get("lines", [])]
@@ -47,7 +64,7 @@ def hook_for(meta: dict, avoid=(), chat=None) -> str:
             f"Write 3 different texts for a YouTube thumbnail about: {meta['title']}.\n"
             f"What the narration really covers: {outline[:500]}. It opens: {' '.join(lines[:2])[:300]}\n"
             "Rules: 2 to 4 words, ALL CAPS, creates curiosity, promises only something the narration says or shows: no question it does not answer, no debate it does "
-            "not describe, no clickbait lies, no punctuation except ? or !. Name the subject: at least one of the 3 texts must contain its best-known "
+            "not describe, no clickbait lies, no punctuation except ? or !. " + HOOK_DEVICES + "Name the subject: at least one of the 3 texts must contain its best-known "
             f"name or word ({meta.get('topic', '')[:60]}) plus one concrete thing from the story that the title does not say (a place, a year, an object), so a viewer sees "
             "what it is about. Never use the words REAL STORY, TRUTH or EXPLAINED: every video on the channel would look the same. "
             + kinds.brief(meta, "thumb") + " "
@@ -67,10 +84,10 @@ def hook_for(meta: dict, avoid=(), chat=None) -> str:
     in_title = set(re.findall(r"[a-z0-9']+", meta["title"].lower()))
     named.sort(key=lambda h: 0 if set(re.findall(r"[a-z0-9']+", h.lower())) - in_title - GENERIC_HOOK_WORDS else 1)  # and one that adds a real detail the title lacks comes first
     if named or ok:
-        return (named or ok)[0]
+        return list(dict.fromkeys(named + ok))
     words = re.sub(r"[^A-Za-z0-9 ']", "", meta["title"]).upper().split()
     skip = {"THE", "OF", "A", "AN", "AND", "IN", "ON"}
-    return " ".join([w for w in words if w not in skip][:3]) or "UNSOLVED"
+    return [" ".join([w for w in words if w not in skip][:3]) or "UNSOLVED"]
 
 
 def frame_filter(drop: str | None = None) -> str:
@@ -269,14 +286,21 @@ def art_subject(meta: dict, chat=None) -> str:
     return f"A dramatic, moody scene from the story of {topic}"
 
 
-def make_art(folder: Path, meta: dict, hook: str, now=None, chat=None) -> list[str]:
-    """Two thumbnails on a freshly drawn picture (hook bottom left, hook centred). Empty when nothing could be drawn: the caller then uses the video's frames."""
+def make_art(folder: Path, meta: dict, hook: str, now=None, chat=None, hooks: list[str] | None = None) -> list[str]:
+    """Up to three thumbnails on a freshly drawn picture, each a different composition (thumbstyle.py: a line across the foreground, a giant number, a pointer, a corner stack and the
+    old layouts), chosen to differ from the channel's recent thumbnails and checked. Empty when nothing could be drawn: the caller then uses the video's frames."""
     import aiart
+    import config
+    import thumbstyle
 
     got = aiart.thumbnail_art(art_subject(meta, chat), now, **({"style": meta["art_style"]} if meta.get("art_style") in ("3d", "photo") else {}))  # a 3D or realistic video gets a thumbnail in its own look
     if not got:
         return []
-    out = folder / "thumbs"
+    recent = thumbstyle.recent_archetypes(config.OUT, exclude=folder)
+    made = thumbstyle.variants(folder, meta, [got[0]], hook, kind=meta.get("kind"), recent=recent, title=meta.get("title", ""), hooks=hooks or [hook])
+    if made:
+        return [v["file"] for v in made]
+    out = folder / "thumbs"  # every composition failed a check (words that are the title's own, say): the two old layouts, as before
     out.mkdir(exist_ok=True)
     names = []
     for tag, layout in (("a", _layout_a), ("b", _layout_b)):
@@ -295,38 +319,47 @@ def make(folder: Path, hook: str | None = None) -> list[str]:
     meta = json.loads((folder / "meta.json").read_text())
     if not (folder / "video.mp4").exists():
         raise SystemExit(f"{folder.name}: no video.mp4")
+    given = bool(hook)
     hook = (hook or meta.get("thumb_hook") or hook_for(meta)).strip().upper()
-    work = folder / "work_thumbs"
-    import editprofile
+    hooks = [hook] if given else [hook, *hook_alternatives(meta, hook)]  # an owner's own words are used as they are; otherwise a few others for the other candidates
+    art = make_art(folder, meta, hook, hooks=hooks)  # a freshly drawn picture first (one clear subject, strong mood), in compositions that differ from the channel's recent ones
+    names = list(art)
+    if not art:  # nothing could be drawn: the sharpest frames of the video, in the three old layouts
+        work = folder / "work_thumbs"
+        import editprofile
 
-    drop = (editprofile.load().get("caption_pos") == "top" and "top" or "bottom") if meta.get("subtitles") == "burned" else None
-    ranked = _best(_frames(folder / "video.mp4", work, drop=drop), 6)  # the six sharpest, then a reading of which of them show the story
-    best = prefer_fitting(ranked, fit_frames(ranked, meta.get("topic") or meta["title"]))
-    out = folder / "thumbs"
-    out.mkdir(exist_ok=True)
-    names = []
-    for i, (layout, frame) in enumerate(zip((_layout_a, _layout_b, _layout_c), best), 1):
-        img = layout(frame, hook).convert("RGB")
-        path = out / f"thumb-{i}.jpg"
-        q = 90
-        img.save(path, quality=q, optimize=True)
-        while path.stat().st_size > 1_900_000 and q > 60:  # YouTube limit is 2 MB
-            q -= 8
+        drop = (editprofile.load().get("caption_pos") == "top" and "top" or "bottom") if meta.get("subtitles") == "burned" else None
+        ranked = _best(_frames(folder / "video.mp4", work, drop=drop), 6)  # the six sharpest, then a reading of which of them show the story
+        best = prefer_fitting(ranked, fit_frames(ranked, meta.get("topic") or meta["title"]))
+        out = folder / "thumbs"
+        out.mkdir(exist_ok=True)
+        for i, (layout, frame) in enumerate(zip((_layout_a, _layout_b, _layout_c), best), 1):
+            img = layout(frame, hook).convert("RGB")
+            path = out / f"thumb-{i}.jpg"
+            q = 90
             img.save(path, quality=q, optimize=True)
-        names.append(f"thumbs/{path.name}")
-    for p in work.glob("*"):
-        p.unlink()
-    work.rmdir()
-    art = make_art(folder, meta, hook)  # a freshly drawn picture first (one clear subject, strong mood); the frames above stay as the fallback and as options
-    names = art + names
+            while path.stat().st_size > 1_900_000 and q > 60:  # YouTube limit is 2 MB
+                q -= 8
+                img.save(path, quality=q, optimize=True)
+            names.append(f"thumbs/{path.name}")
+        for p in work.glob("*"):
+            p.unlink()
+        work.rmdir()
     import thumbscore
 
     scores = thumbscore.score([folder / n for n in names], meta.get("title", ""), hook)  # a vision model reads every candidate; no answer keeps the order above
     thumb_scores = {names[s["index"]]: s["total"] for s in scores or []}
     names = thumbscore.order(names, scores)
 
+    try:
+        made = {v["file"]: v for v in json.loads((folder / "thumbs" / "variants.json").read_text())} if art else {}
+    except (OSError, ValueError):
+        made = {}
+
     def apply(d):
         d["thumb_hook"], d["thumbnails"], d["thumbnail"] = hook, names, names[0]
+        d["thumb_style"] = made.get(names[0], {}).get("archetype", "classic_a")  # the channel's recent thumbnails are read from this, so the next video looks different
+        d["thumb_variants"] = [{"file": n, "archetype": made[n]["archetype"], "hook": made[n]["hook"]} for n in names if n in made]
         if thumb_scores:
             d["thumb_scores"] = thumb_scores
         else:

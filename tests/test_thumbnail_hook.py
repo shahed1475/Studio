@@ -12,6 +12,16 @@ def test_the_hook_is_one_the_narration_supports_and_not_one_already_used():
     assert "Navel of the World" in asked[0] and "1893" in asked[0] and "PROPHECY" not in asked[0].split("Not these")[0]
 
 
+def test_the_prompt_asks_for_three_different_curiosity_devices_that_the_video_really_has_and_not_the_titles_words():
+    """docs/studio/THUMBNAIL_CURIOSITY_RESEARCH_2026-10-30.md: one concrete anchor and one gap the viewer can almost close; each device only when the narration supports it."""
+    asked = []
+    thumbnail.hook_options(META, chat=lambda p: asked.append(p) or {"hooks": ["THE OMPHALOS STONE?"]})
+    low = asked[0].lower()
+    assert "different device" in low and "year or number" in low and "choice between two" in low and "concrete" in low
+    assert "only if the narration" in low and "do not repeat the title" in low
+    assert "never use the words real story, truth or explained" in low  # the older rules stay
+
+
 def test_the_hook_falls_back_to_the_title_words_when_nothing_usable_comes_back():
     def broken(p):
         raise RuntimeError("model down")

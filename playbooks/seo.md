@@ -10,7 +10,7 @@ After the script is final and before the thumbnail: research, then title, descri
 2. Five honest titles: the phrase in the first 40 characters, 40 to 62 characters, the known name first then the twist, stake or mystery. Rank them; take the best that is not near-identical to our own.
 3. Description: the first 150 characters carry the phrase and the hook (all that shows before Show more), then sources, chapters named with real search words, one playlist link.
 4. Tags: only phrases that appear in the video itself.
-5. Thumbnail text: 2 to 4 words that name the subject and add a word the title lacks. The kind card (kinds.py) advises per kind of video.
+5. Thumbnail text: 2 to 4 words that name the subject and add a word the title lacks, using a device the video really has (a year or number, a choice between two answers it weighs, one concrete object plus a gap). thumbstyle.py draws a composition that differs from the channel's recent ones. The kind card (kinds.py) advises per kind of video.
 6. Promise one specific thing the video shows: a viewer promised more leaves and does not subscribe.
 ## Tools
 seo.make, seo.enforce, seo.repair, packaging.rank_titles, thumbnail.hook_for, kinds.brief, titletest (owner mode).

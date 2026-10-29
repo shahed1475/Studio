@@ -720,6 +720,31 @@ def test_the_documentary_shape_case_passes_and_fails_when_its_rules_are_broken(m
     assert not ok and "warns=False" in detail
 
 
+def test_the_thumbnail_case_passes_and_fails_when_its_rules_are_broken(monkeypatch):
+    import thumbnail
+    import thumbstyle
+
+    case = getattr(agenteval, "case_thumbnails_differ_from_the_recent_ones_claim_only_devices_the_words_have_and_never_repeat_the_title")
+    assert case in agenteval.CASES
+    ok, detail = case()
+    assert ok, detail
+    monkeypatch.setattr(thumbnail, "HOOK_DEVICES", "")  # mutation: the writer is not asked for different, honest devices
+    ok, detail = case()
+    assert not ok and "asks=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(thumbstyle, "choose", lambda hook, recent, pictures=1, n=3, also_avoid=(): list(thumbstyle.PREFER["question"])[:n])  # mutation: the recent compositions are ignored
+    ok, detail = case()
+    assert not ok and "differs=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(thumbstyle, "device_for", lambda hook: "number")  # mutation: every hook is claimed as a number
+    ok, detail = case()
+    assert not ok and "honest=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(thumbstyle, "check", lambda t, hook, title: [{"name": "all", "ok": True, "detail": ""}])  # mutation: words that repeat the title are no longer refused
+    ok, detail = case()
+    assert not ok and "clean=False" in detail
+
+
 def test_the_whole_narration_case_passes_and_fails_with_the_old_7000_character_cut(monkeypatch):
     import reviewer
 

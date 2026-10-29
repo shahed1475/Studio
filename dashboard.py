@@ -222,6 +222,23 @@ def state() -> dict:
     }
 
 
+def thumb_option(folder: Path, meta: dict, n) -> str | None:
+    """The n-th (1 is the first) entry of a video's `thumbnails` list as a path inside its thumbs folder, or None when n is not a whole number in the list or the file is missing
+    or outside the folder. (The page lists options by position; the old routes read `thumb-<n>.jpg` instead, so a drawn thumbnail could never be seen or chosen.)"""
+    try:
+        i = int(n) - 1
+        entries = meta.get("thumbnails", [])
+        rel = entries[i] if 0 <= i < len(entries) else None
+        if not rel:
+            return None
+        f = (Path(folder) / rel).resolve()
+        if (Path(folder) / "thumbs").resolve() not in f.parents or not f.is_file():
+            return None
+        return rel
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
 def safe_slug(raw: str) -> str:
     """Video folder names are lowercase letters, digits, hyphens and underscores, never a path."""
     if not isinstance(raw, str) or not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", raw):
@@ -790,8 +807,12 @@ class H(BaseHTTPRequestHandler):
             self.serve_static(u.path[8:])
         elif u.path.startswith("/thumbopt/"):
             slug, _, n = u.path[10:].partition("/")
-            f = config.OUT / safe_slug(slug) / "thumbs" / f"thumb-{re.sub(r'[^0-9]', '', n)}.jpg"
-            self.send_bytes(f.read_bytes(), "image/jpeg") if f.exists() else self.send_error(404)
+            vf = config.OUT / safe_slug(slug)
+            try:
+                rel = thumb_option(vf, json.loads((vf / "meta.json").read_text()), re.sub(r"[^0-9]", "", n))
+            except (OSError, ValueError):
+                rel = None
+            self.send_bytes((vf / rel).read_bytes(), "image/jpeg") if rel else self.send_error(404)
         elif u.path.startswith("/cover/"):
             self.serve_cover(u.path[7:])
         elif u.path.startswith("/thumb/"):
@@ -1047,9 +1068,9 @@ class H(BaseHTTPRequestHandler):
         if path == "/api/thumbs/choose":
             p = config.OUT / safe_slug(b["slug"]) / "meta.json"
             d = json.loads(p.read_text())
-            if f"thumbs/thumb-{int(b['n'])}.jpg" not in d.get("thumbnails", []):
+            chosen = thumb_option(p.parent, d, b.get("n"))
+            if not chosen:
                 raise ValueError("no such thumbnail")
-            chosen = f"thumbs/thumb-{int(b['n'])}.jpg"
             import reviewer
 
             def pick_thumb(r):
