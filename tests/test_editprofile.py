@@ -110,3 +110,43 @@ def test_caption_position_is_a_validated_choice():
     assert editprofile.validate({"caption_pos": "top"}) == {"caption_pos": "top"}
     assert editprofile.validate({"caption_pos": "middle"}) == {}
     assert editprofile.validate({"caption_pos": 3}) == {}
+
+
+# ---- an energetic voice for a Short, and a loudness target of its own (29 Oct 2026) ----
+def test_the_energetic_voice_lifts_the_hook_and_the_questions_and_settles_the_payoff():
+    lines = ["Did a sandstorm really swallow them?", "Herodotus wrote that it did.", "So where did they go?", "Kaper argued a rebel ambushed them.", "Follow along, and I'll tell you the next story."]
+    style = lambda i: tts.line_prosody("energetic", lines[i], i, len(lines))
+    base = tts.VOICE_STYLES["energetic"]
+    assert style(0)["pitch"] != style(1)["pitch"] and style(0)["rate"] != style(1)["rate"]  # the hook has its own lift
+    assert style(2)["pitch"] != style(1)["pitch"]  # a question rises
+    assert style(3)["rate"] != style(1)["rate"]  # the payoff is settled, not rushed
+    assert style(4)["rate"] != style(1)["rate"]  # the invitation is bright
+    assert all(style(i)["voice"] == base["voice"] for i in range(len(lines)))
+    assert tts.line_prosody(None, lines[0], 0, 5) is None and tts.line_prosody("no-such-style", lines[0], 0, 5) is None  # no style, no change
+
+
+def test_a_style_reaches_the_voice_service_and_no_style_leaves_the_old_call_alone(tmp_path, monkeypatch):
+    import asyncio
+    seen = []
+
+    class FakeComm:
+        def __init__(self, text, voice, **kw):
+            seen.append((voice, kw))
+
+        async def stream(self):
+            yield {"type": "audio", "data": b"x"}
+
+    monkeypatch.setattr(tts.edge_tts, "Communicate", FakeComm)
+    asyncio.run(tts._synth_once("hello", tmp_path / "a.mp3"))
+    asyncio.run(tts._synth_once("hello?", tmp_path / "b.mp3", tts.line_prosody("energetic", "Why?", 0, 5)))
+    assert seen[0][0] == tts.config.VOICE and seen[0][1]["rate"] == tts.config.VOICE_RATE and seen[0][1]["pitch"] == tts.config.VOICE_PITCH
+    assert seen[1][0] == tts.VOICE_STYLES["energetic"]["voice"] and seen[1][1]["rate"].startswith("+")
+
+
+def test_a_video_may_ask_for_a_louder_target_but_never_outside_what_the_reviewer_accepts():
+    import editprofile
+    prof = {"target_lufs": -16.0}
+    assert editprofile.lufs_for({"target_lufs": -13.0}, prof) == -13.0
+    assert editprofile.lufs_for({}, prof) == -16.0
+    for bad in (-9.0, -30.0, "loud", None):
+        assert editprofile.lufs_for({"target_lufs": bad}, prof) == -16.0  # outside LIMITS or not a number: the profile's own target

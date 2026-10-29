@@ -45,3 +45,13 @@ def update(changes: dict) -> dict:
 def short_pause(profile: dict | None = None) -> float:
     """Seconds of breath after each line of a Short: the profile's pause, never more than SHORT_PAUSE_MAX_MS. A documentary keeps the profile's own pause."""
     return min((profile or load())["sentence_pause_ms"], SHORT_PAUSE_MAX_MS) / 1000
+
+
+def lufs_for(meta: dict, profile: dict | None = None) -> float:
+    """The loudness target of one video: its own `target_lufs` (a Short made loud on purpose) when it is a number inside LIMITS, else the profile's. The quiet end of
+    LIMITS stays inside what the reviewer accepts, so a video's own choice can never fail the loudness check."""
+    lo, hi = LIMITS["target_lufs"]
+    own = (meta or {}).get("target_lufs")
+    if isinstance(own, (int, float)) and not isinstance(own, bool) and lo <= own <= hi:
+        return float(own)
+    return (profile or load())["target_lufs"]

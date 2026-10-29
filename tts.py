@@ -1,6 +1,7 @@
 """US-English neural voice (free, edge-tts) plus word-timed captions."""
 import asyncio
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -17,19 +18,52 @@ def _duration(path: Path) -> float:
     return float(out.decode().strip())
 
 
-async def _synth_line(text: str, mp3: Path) -> list[tuple[float, float, str]]:
+# An opt-in delivery for a Short (a video's `voice_style`): quicker, brighter, with the hook, the questions and the closing invitation lifted and the payoff settled.
+# The default voice (Andrew, -6% speed, -3 Hz) is a calm bedtime reader. Measured 29 Oct 2026 on the same two lines: rate and pitch change the delivery (+8% rate made the
+# line 15% faster, +2 Hz raised its median pitch), while the `volume` setting only moves the raw level, which the renderer's loudness target replaces; so loudness is set
+# there (editprofile.lufs_for), not here. Judged by measurement, not by ear.
+VOICE_STYLES = {
+    "energetic": {"voice": "en-US-GuyNeural", "rate": "+10%", "pitch": "+2Hz",  # Guy is tagged "Passion"; his register is brighter than Andrew's
+                  "hook": {"rate": "+14%", "pitch": "+6Hz"}, "question": {"rate": "+8%", "pitch": "+7Hz"},
+                  "payoff": {"rate": "+3%", "pitch": "+0Hz"}, "invite": {"rate": "+12%", "pitch": "+5Hz"}},
+}
+INVITE = re.compile(r"\bfollow\b|subscribe|next story", re.I)
+
+
+def line_prosody(style: str | None, text: str, index: int, total: int) -> dict | None:
+    """{voice, rate, pitch} for one narration line of a styled video, or None for the studio's default voice. The hook is line 0, the invitation is a closing line that
+    asks to follow, the payoff is the line before it, and any other question rises."""
+    spec = VOICE_STYLES.get(style or "")
+    if not spec:
+        return None
+    last_is_invite = total > 1 and bool(INVITE.search(text if index == total - 1 else ""))
+    if index == 0:
+        part = spec["hook"]
+    elif last_is_invite:
+        part = spec["invite"]
+    elif index == total - 2:
+        part = spec["payoff"]
+    elif text.rstrip().endswith("?"):
+        part = spec["question"]
+    else:
+        part = spec
+    return {"voice": spec["voice"], "rate": part["rate"], "pitch": part["pitch"]}
+
+
+async def _synth_line(text: str, mp3: Path, prosody: dict | None = None) -> list[tuple[float, float, str]]:
     """The voice service sometimes returns no audio for a line. Try again with a growing wait before giving up."""
     for attempt, wait in enumerate((1, 3, 8, 0)):
         try:
-            return await _synth_once(text, mp3)
+            return await (_synth_once(text, mp3) if prosody is None else _synth_once(text, mp3, prosody))
         except Exception:
             if not wait:
                 raise
             await asyncio.sleep(wait)
 
 
-async def _synth_once(text: str, mp3: Path) -> list[tuple[float, float, str]]:
-    comm = edge_tts.Communicate(text, config.VOICE, rate=config.VOICE_RATE, pitch=config.VOICE_PITCH, boundary="WordBoundary")
+async def _synth_once(text: str, mp3: Path, prosody: dict | None = None) -> list[tuple[float, float, str]]:
+    voice, rate, pitch = (prosody["voice"], prosody["rate"], prosody["pitch"]) if prosody else (config.VOICE, config.VOICE_RATE, config.VOICE_PITCH)
+    comm = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch, boundary="WordBoundary")
     words = []
     with open(mp3, "wb") as f:
         async for ev in comm.stream():
@@ -161,14 +195,15 @@ def _ass_plain(words: list[tuple[float, float, str]]) -> str:
     return head + "\n".join(rows) + "\n"
 
 
-def narrate(lines: list[str], work: Path, pause: float = 0.12, motion: int = 0, pos: str = "bottom") -> tuple[Path, Path, list[float]]:
-    """Return (narration.mp3, captions.ass, per-line durations in seconds)."""
+def narrate(lines: list[str], work: Path, pause: float = 0.12, motion: int = 0, pos: str = "bottom", style: str | None = None) -> tuple[Path, Path, list[float]]:
+    """Return (narration.mp3, captions.ass, per-line durations in seconds). style: an opt-in delivery from VOICE_STYLES, else the default voice."""
     work.mkdir(parents=True, exist_ok=True)
     all_words, durations, parts = [], [], []
     offset = 0.0
     for i, text in enumerate(lines):
         mp3 = work / f"line{i:02d}.mp3"
-        words = asyncio.run(_synth_line(text, mp3))
+        pros = line_prosody(style, text, i, len(lines))
+        words = asyncio.run(_synth_line(text, mp3) if pros is None else _synth_line(text, mp3, pros))
         d = _duration(mp3) + pause  # small breath between lines
         all_words += [(s + offset, e + offset, w, i) for s, e, w in words]
         durations.append(d)

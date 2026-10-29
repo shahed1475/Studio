@@ -101,3 +101,17 @@ def test_the_short_prompt_asks_for_a_payoff_before_the_invitation_and_never_for_
     assert "never end on a new question" in low
     assert "loop" not in low  # a hard rule: never ask people to loop videos
     assert "under 12 words" in low
+
+
+def test_the_short_prompt_teaches_the_four_beats_attribution_and_a_voice_for_the_ear():
+    """29 Oct 2026, from three drafts of the same Short: the payoff was a vague 'experts doubt it' until the prompt asked for the strongest specific finding and for who
+    said it; drafts also invented a place ('excavations at Dakhla') that the article never names."""
+    import scriptgen
+    low = scriptgen.short_prompt("The Lost Army of Cambyses").lower()
+    assert "line 1 is the hook" in low and "startling" in low and "no greeting" in low
+    assert "keep the answer back" in low and "second, smaller question" in low  # curiosity: the answer waits
+    assert "strongest specific finding" in low and "who said it and when" in low  # payoff
+    assert "never a vague" in low
+    assert "name who says each disputed claim" in low and "never present a legend or one scholar's theory as settled fact" in low
+    assert "for the ear" in low
+    assert "loop" not in low and low.index("payoff") < low.index("invitation")

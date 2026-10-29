@@ -127,6 +127,43 @@ def _best_topic(fmt: str) -> str | None:
         return None
 
 
+SHORT_SOURCE_CHARS = 7000  # a Short is written from the whole article: with 3,500 the writer never saw the newest explanation of the Lost Army (the article is 5,700 characters)
+
+
+def _make_options(args: list[str]) -> tuple[str | None, dict]:
+    """`run.py make TOPIC [--draw-all] [--voice STYLE] [--lufs N] [--hold]`: the topic, and the settings of this one Short. --draw-all draws every scene in the 3D film look
+    (the archive search only looked at file names and filled a Short with pictures that did not show its story); --voice an opt-in delivery from tts.VOICE_STYLES;
+    --lufs a loudness target of its own inside editprofile.LIMITS; --hold keeps it away from Autopilot until the owner releases it."""
+    words, extra, i = [], {}, 0
+    while i < len(args):
+        a = args[i]
+        if a == "--draw-all":
+            extra.update(art_style="3d", draw_all=True)
+        elif a == "--hold":
+            extra["hold"] = True
+        elif a in ("--voice", "--lufs"):
+            if i + 1 >= len(args):
+                raise SystemExit(f"{a} needs a value")
+            i += 1
+            if a == "--voice":
+                if args[i] not in tts.VOICE_STYLES:
+                    raise SystemExit(f"unknown voice style {args[i]!r}: choose from {', '.join(tts.VOICE_STYLES)}")
+                extra["voice_style"] = args[i]
+            else:
+                lo, hi = editprofile.LIMITS["target_lufs"]
+                try:
+                    value = float(args[i])
+                except ValueError:
+                    raise SystemExit(f"--lufs needs a number, got {args[i]!r}")
+                if not lo <= value <= hi:
+                    raise SystemExit(f"--lufs must be between {lo:g} and {hi:g}")
+                extra["target_lufs"] = value
+        else:
+            words.append(a)
+        i += 1
+    return (" ".join(words) or None), extra
+
+
 def _charged(make, topic):
     """Run a make function, charging its spend to the new video: its folder does not exist while the script is written, so the cost is kept under a
     temporary name and moved to the folder's name when it is known."""
@@ -141,11 +178,11 @@ def _charged(make, topic):
     return folder
 
 
-def cmd_make(topic: str | None = None) -> Path:
-    return _charged(_cmd_make, topic)
+def cmd_make(topic: str | None = None, extra: dict | None = None) -> Path:
+    return _charged(lambda t: _cmd_make(t, extra), topic)
 
 
-def _cmd_make(topic: str | None = None) -> Path:
+def _cmd_make(topic: str | None = None, extra: dict | None = None) -> Path:
     if not topic:
         topic = _best_topic("short")
         if not topic:
@@ -157,7 +194,7 @@ def _cmd_make(topic: str | None = None) -> Path:
     data = None
     import wikipedia
 
-    src = wikipedia.facts_for(topic, chars=3500)
+    src = wikipedia.facts_for(topic, chars=SHORT_SOURCE_CHARS)
     for attempt in range(3):
         try:
             data = scriptgen.script(topic, grounded=src[1] if src else None)
@@ -170,6 +207,7 @@ def _cmd_make(topic: str | None = None) -> Path:
             print(f"  script attempt {attempt + 1} failed: {e}")
     if not data:
         raise SystemExit("could not generate a script")
+    data.update(extra or {})
     return _produce_short(data, topic)
 
 
@@ -190,7 +228,8 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
         raise SystemExit("the Short's script admits its sources say little; not made")
     print("Voice + captions...")
     prof = editprofile.load()
-    narration, ass, durations = tts.narrate([l["text"] for l in data["lines"]], work, editprofile.short_pause(prof), prof["motion"], prof["caption_pos"])
+    voice = {"style": data["voice_style"]} if data.get("voice_style") else {}  # only a video that asks for one gets a styled voice
+    narration, ass, durations = tts.narrate([l["text"] for l in data["lines"]], work, editprofile.short_pause(prof), prof["motion"], prof["caption_pos"], **voice)
     print("Footage...")
     if config.PEXELS_KEY:
         clips = [footage.clip_for(l["visual"]) for l in data["lines"]]
@@ -216,7 +255,7 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
         data["animation"] = anim
         print(f"  animation: {anim['animated']} new clip(s), {anim['cached']} from the cache, {anim['failed']} failed, ${anim['spent']:.2f} spent")
     print("Rendering...")
-    render.render(clips, durations, narration, ass, work, folder / "video.mp4", loudness=prof["target_lufs"], shots=prof["motion"] >= 1,
+    render.render(clips, durations, narration, ass, work, folder / "video.mp4", loudness=editprofile.lufs_for(data, prof), shots=prof["motion"] >= 1,
                   crossfade=0.3 if prof["motion"] >= 2 and len(clips) <= 20 else 0.0, grain=prof["motion"] >= 2)
     shutil.copy(work / "words.json", folder / "words.json")
     subtitles.write_files(folder, subtitles.with_punctuation(subtitles.load_words(work / "words.json"), [l["text"] for l in data["lines"]]))
@@ -471,6 +510,8 @@ def _forced_art(data: dict) -> set[str]:
     """Narration lines that are always drawn, whatever a picture search finds: the lines flagged for a redraw, and for a 3D video also the first four (the hook is the
     drawn, animated scene, never a museum photo: the first remake showed photos for the first 75 seconds)."""
     forced = set(data.get("redraw_lines") or [])
+    if data.get("draw_all"):  # the owner asked for a Short whose every scene is drawn in one look
+        forced |= {l["text"] for l in data["lines"]}
     if data.get("art_style") == "photo":  # every scene is drawn: no reused picture, no chart or faded sketch from the archive (the first two realistic videos showed both)
         forced |= {l["text"] for l in data["lines"]}
     if data.get("art_style") == "3d":
@@ -560,7 +601,8 @@ def main() -> None:
     elif a[0] == "research":
         cmd_research(int(a[1]) if len(a) > 1 else 3)
     elif a[0] == "make":
-        cmd_make(" ".join(a[1:]) or None)
+        topic, extra = _make_options(a[1:])
+        cmd_make(topic, extra)
     elif a[0] == "redo":
         cmd_redo(a[1])
     elif a[0] == "doc":
