@@ -675,6 +675,18 @@ def case_an_animated_clip_is_asked_to_show_only_what_its_picture_already_shows()
     return ok, "an animation prompt forbids invented fire, explosions, people and objects" if ok else f"banned={banned} calm={calm}"
 
 
+def case_a_clip_plays_once_and_a_picture_with_people_never_bends_or_pushes_in_hard():
+    import parallax
+    import render
+
+    f, hold = render.clip_fit(8.0, 10.2)
+    once = abs(f - 1.25) < 1e-6 and abs(hold - 0.2) < 1e-6 and render.clip_fit(8.0, 7.8) == (1.0, 0.0)  # slowed a little and held, never looped
+    people_flat = (not parallax.depth_safe("Siwa Oasis")) and (not parallax.depth_safe("a soldier at a well")) and parallax.depth_safe("empty dunes, no people")
+    gentle = all(parallax.gentle(render.shot_plan(k))["z1"] - parallax.gentle(render.shot_plan(k))["z0"] <= 0.08 + 1e-9 for k in range(len(render.SHOTS)))
+    ok = once and people_flat and gentle
+    return ok, "a clip fills its scene once, and a scene with people gets a flat gentle zoom" if ok else f"once={once} people_flat={people_flat} gentle={gentle}"
+
+
 def case_second_sources_are_off_by_default_and_only_verified_pages_count():
     import autopilot
     import secondsources as ss
@@ -870,7 +882,8 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_an_agent_cannot_set_a_profile_the_reviewer_rejects_and_a_short_fits_its_length_and_nothing_uploaded_is_re_encoded,
          case_the_ai_review_reads_the_whole_narration_of_a_long_documentary_and_not_only_its_start,
          case_a_quotation_is_sourced_by_its_own_words_and_an_invented_one_stays_open_with_no_passage,
-         case_an_animated_clip_is_asked_to_show_only_what_its_picture_already_shows]
+         case_an_animated_clip_is_asked_to_show_only_what_its_picture_already_shows,
+         case_a_clip_plays_once_and_a_picture_with_people_never_bends_or_pushes_in_hard]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:

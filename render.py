@@ -53,6 +53,23 @@ def _picture_filter(w: int, h: int, frames: int, shot: dict | None, i: int) -> s
             f"zoompan={move}:d={frames}:s={w}x{h}:fps={config.FPS},setsar=1,eq=brightness=-0.05:saturation=0.85")
 
 
+def clip_fit(clip_s: float, scene_s: float, max_slow: float = 1.25) -> tuple[float, float]:
+    """(slow-down factor for setpts, seconds to hold the last frame) so a clip fills its scene once and is never looped (a loop plays the same footage twice). A clip that is
+    long enough is cut; a shorter one is slowed by at most max_slow and the rest is held on its last frame."""
+    if clip_s <= 0 or scene_s <= clip_s:
+        return 1.0, 0.0
+    factor = min(scene_s / clip_s, max_slow)
+    return factor, max(0.0, scene_s - clip_s * factor)
+
+
+def _clip_seconds(path) -> float:
+    try:
+        out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)], capture_output=True, text=True, timeout=60).stdout.strip()
+        return float(out)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return 0.0
+
+
 def _render_ungated(clips, durations, narration: Path, ass: Path | None, work: Path, out: Path,
            size: tuple[int, int] | None = None, music: Path | None = None, loudness: float | None = None,
            shots: bool = False, crossfade: float = 0.0, grain: bool = False) -> Path:
@@ -76,7 +93,12 @@ def _render_ungated(clips, durations, narration: Path, ass: Path | None, work: P
         elif clip:
             vf = (f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},"
                   f"fps={config.FPS},setsar=1" + ("" if Path(clip).parent.name == "anim" else ",eq=brightness=-0.08"))  # stock clips are darkened a little; generated animation keeps its light
-            _ff("-stream_loop", "-1", "-i", str(clip), "-vf", vf, *enc, cwd=work)
+            if Path(clip).parent.name == "anim":  # generated animation and camera clips play once: slowed a little and held, never looped
+                factor, hold = clip_fit(_clip_seconds(clip), length)
+                vf += (f",setpts={factor:.4f}*PTS,framerate=fps={config.FPS}" if factor > 1.0001 else "") + (f",tpad=stop_mode=clone:stop_duration={hold:.3f}" if hold > 0.001 else "")
+                _ff("-i", str(clip), "-vf", vf, *enc, cwd=work)
+            else:
+                _ff("-stream_loop", "-1", "-i", str(clip), "-vf", vf, *enc, cwd=work)
         else:
             _ff("-f", "lavfi", "-i", f"color=c={PALETTE[i % len(PALETTE)]}:s={w}x{h}:r={config.FPS}", *enc, cwd=work)
         segs.append(seg)

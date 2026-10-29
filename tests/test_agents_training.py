@@ -758,3 +758,24 @@ def test_the_animation_prompt_case_passes_and_fails_when_the_ban_on_invented_eve
     monkeypatch.setattr(animate, "motion_prompt", lambda line, visual="": "Gentle animation of this scene. Slow camera push-in, warm light flickering. No text.")  # mutation: the old wording
     ok, detail = case()
     assert not ok and "banned=False" in detail
+
+
+def test_the_clip_and_people_case_passes_and_fails_when_a_clip_may_loop_or_a_face_may_bend(monkeypatch):
+    import parallax
+    import render
+
+    case = getattr(agenteval, "case_a_clip_plays_once_and_a_picture_with_people_never_bends_or_pushes_in_hard")
+    assert case in agenteval.CASES
+    ok, detail = case()
+    assert ok, detail
+    monkeypatch.setattr(render, "clip_fit", lambda clip_s, scene_s, max_slow=1.25: (1.0, 0.0))  # mutation: a short clip is not fitted, so it would loop
+    ok, detail = case()
+    assert not ok and "once=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(parallax, "depth_safe", lambda note: True)  # mutation: every picture may bend with depth
+    ok, detail = case()
+    assert not ok and "people_flat=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(parallax, "gentle", lambda plan: plan)  # mutation: faces may be pushed to 1.45x
+    ok, detail = case()
+    assert not ok and "gentle=False" in detail

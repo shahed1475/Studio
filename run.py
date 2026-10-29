@@ -502,7 +502,7 @@ def _parallax(data: dict, clips: list, durations: list, size: tuple[int, int]) -
     import parallax
 
     try:
-        clips, stats = parallax.apply(clips, durations, size)
+        clips, stats = parallax.apply(clips, durations, size, flat=parallax.flat_scenes(data["lines"]) if len(data.get("lines", [])) == len(clips) else None)
     except Exception as e:
         data["parallax"] = {"failed": True, "reason": type(e).__name__}
         print(f"  camera motion skipped ({type(e).__name__}): the usual camera moves are used")

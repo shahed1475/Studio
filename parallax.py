@@ -7,6 +7,7 @@ near object, and a small move keeps it invisible). Only pictures in cache/art (d
 Nothing here needs more than Pillow and ffmpeg, which the server already has."""
 import hashlib
 import math
+import re
 import subprocess
 import time
 from concurrent.futures import ProcessPoolExecutor
@@ -25,6 +26,26 @@ GAIN = 0.03       # sideways shift of the nearest parts against the farthest at 
 CELL = 40         # output pixels per warp cell
 MARGIN = 0.6      # seconds a clip runs past its scene, so it never loops
 WORKERS = 3       # the server has 4 cores; one stays free for the dashboard
+
+
+# A picture may bend with depth only when its note says it has no people: the bend stretches a nose or a hand (the owner's complaint of 30 Oct 2026), and a picture drawn from an
+# old short note ("Siwa Oasis") often shows a face. Everything else gets the same smooth sub-pixel zoom with no sideways depth shift (sway 0).
+NO_PEOPLE = re.compile(r"\b(no people|no faces|no close faces|still life|aerial view)\b", re.I)
+
+
+def depth_safe(note: str) -> bool:
+    return bool(NO_PEOPLE.search(note or ""))
+
+
+def gentle(plan: dict) -> dict:
+    """The camera for a scene that shows people: start near the full frame and push in by at most 8 percent. The usual plans zoom up to 1.45x (a face fills the screen)."""
+    z0 = min(max(plan["z0"], MIN_ZOOM), 1.10)
+    return {**plan, "z0": z0, "z1": min(max(plan["z1"], z0), z0 + 0.08)}
+
+
+def flat_scenes(lines: list[dict]) -> set[int]:
+    """The scene numbers whose picture may show people: they get a flat zoom, never a depth bend."""
+    return {i for i, l in enumerate(lines) if not depth_safe(l.get("visual", ""))}
 
 
 def camera(plan: dict, t: float, sway: int = 1) -> dict:
@@ -101,7 +122,7 @@ def _job(job: tuple) -> str:
     return out
 
 
-def apply(clips: list, durations: list[float], size: tuple[int, int], workers: int = WORKERS) -> tuple[list, dict]:
+def apply(clips: list, durations: list[float], size: tuple[int, int], workers: int = WORKERS, flat: set | None = None) -> tuple[list, dict]:
     """(new clips list, stats). Each drawn picture becomes a clip as long as its scene (plus a margin); anything else is returned as it was. The input list is not changed.
     A clip made before is reused; a clip that fails leaves the picture in place (the still-picture path then gives it a plain camera move)."""
     out = list(clips)
@@ -115,7 +136,9 @@ def apply(clips: list, durations: list[float], size: tuple[int, int], workers: i
             continue
         dmap, how = depth.depth_for(clip)
         stats[how] += 1
-        plan, sway = render.shot_plan(i), 1 if i % 2 == 0 else -1
+        plan, sway = render.shot_plan(i), (0 if i in (flat or ()) else 1 if i % 2 == 0 else -1)  # sway 0: no sideways depth shift, only the smooth zoom
+        if sway == 0 and i in (flat or ()):
+            plan = gentle(plan)
         secs = math.ceil((dur + MARGIN) * 2) / 2
         key = hashlib.md5(Path(clip).read_bytes() + dmap.tobytes() + repr((plan, sway, size, secs, VERSION, MIN_ZOOM, GAIN)).encode()).hexdigest()[:20]
         dest = cache / f"px-{key}.mp4"
