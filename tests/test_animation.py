@@ -221,3 +221,20 @@ def test_the_motion_prompt_forbids_anything_the_scene_does_not_already_show():
     p = animate.motion_prompt("An army marched into the desert.", "dunes").lower()
     assert "no fire" in p and "no explosions" in p and "no new people or objects" in p and "does not already show" in p
     assert "flickering" not in p  # the word that invited flames
+
+
+def test_chosen_scene_numbers_are_animated_in_that_order_and_an_archive_picture_is_never_taken(scenes):
+    """30 Oct 2026: the spread picked close-up faces, the risk the owner named; a video can now name its own scenes (record key animate_scenes)."""
+    clips, lines = scenes
+    assert animate.pinned_scenes(clips, [5, 0, 2]) == [5, 0, 2]
+    assert animate.pinned_scenes(clips, [1, 4, 3, 99, -1, 3]) == [3]  # 1 and 4 are archive pictures, 99 and -1 do not exist, a repeat counts once
+    made, calls = [], []
+
+    def gen(prompt, first_frame):
+        calls.append(prompt)
+        p = Path(config.CACHE) / f"c{len(calls)}.mp4"
+        p.write_bytes(b"x")
+        return p, 0.24
+
+    out, st = animate.animate_scenes(clips, lines, 2, 5.0, gen, scenes=[3, 5])
+    assert st["scenes"] == [3, 5] and st["animated"] == 2 and len(calls) == 2 and out[0] == clips[0]

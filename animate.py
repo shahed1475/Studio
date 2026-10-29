@@ -33,6 +33,15 @@ def pick_scenes(clips: list, n: int) -> list[int]:
     return [drawn[round(k * (len(drawn) - 1) / (n - 1))] for k in range(n)]
 
 
+def pinned_scenes(clips: list, wanted) -> list[int]:
+    """The scene numbers a video asked for, in its order, keeping only drawn ones that exist (an archive picture is never animated; a repeat counts once)."""
+    out = []
+    for i in wanted or []:
+        if isinstance(i, int) and 0 <= i < len(clips) and _drawn(clips[i]) and i not in out:
+            out.append(i)
+    return out
+
+
 def motion_prompt(line: str, visual: str = "") -> str:
     import seo
 
@@ -50,13 +59,13 @@ def frame_url(path, size: tuple[int, int] = (1280, 720)) -> str:
     return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
-def animate_scenes(clips: list, lines: list[dict], n: int, budget_usd: float, gen, estimate: float = CLIP_ESTIMATE, size: tuple[int, int] = (1280, 720)) -> tuple[list, dict]:
+def animate_scenes(clips: list, lines: list[dict], n: int, budget_usd: float, gen, estimate: float = CLIP_ESTIMATE, size: tuple[int, int] = (1280, 720), scenes: list | None = None) -> tuple[list, dict]:
     """(new clips list, stats). gen(prompt, first_frame_data_url) -> (mp4 path, dollars spent) or raises. The input list is not changed."""
     out = list(clips)
     stats = {"animated": 0, "cached": 0, "failed": 0, "spent": 0.0, "scenes": []}
     cache = Path(config.CACHE) / "anim"
     fails = 0
-    for i in pick_scenes(clips, n):
+    for i in (pinned_scenes(clips, scenes) if scenes else pick_scenes(clips, n)):  # a video can name its own scenes (wide shots, no close faces)
         prompt = motion_prompt(lines[i].get("text", "") if i < len(lines) else "", lines[i].get("visual", "") if i < len(lines) else "")
         key = hashlib.sha256(Path(clips[i]).read_bytes() + prompt.encode()).hexdigest()[:20]
         hit = cache / f"{key}.mp4"
