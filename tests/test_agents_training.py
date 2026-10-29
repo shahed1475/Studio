@@ -632,3 +632,34 @@ def test_the_hook_question_case_passes_and_fails_when_its_rules_are_broken(monke
     monkeypatch.setattr(reviewer, "YES_NO", re.compile(r".*"))  # mutation: every hook counts as yes/no, so an open question is warned about too
     ok, detail = case()
     assert not ok and "warns=False" in detail
+
+
+def test_the_camera_motion_case_passes_and_fails_when_its_rules_are_broken(monkeypatch):
+    import re
+
+    import animate
+    import motiongraphics
+    import reviewer
+
+    name = "case_camera_motion_moves_only_drawn_pictures_and_graphics_show_only_what_the_script_says"
+    case = getattr(agenteval, name)
+    assert case in agenteval.CASES
+    ok, detail = case()
+    assert ok, detail
+    monkeypatch.setattr(animate, "_drawn", lambda path: True)  # mutation: an archive picture would be animated too
+    ok, detail = case()
+    assert not ok and "motion=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(motiongraphics, "YEAR", re.compile(r"(\d{4}|\d,\d{3})"))  # mutation: any four digits, or 1,000 style numbers, become a year
+    monkeypatch.setattr(motiongraphics, "ERA", re.compile(r"(\d{4})(x)"))
+    ok, detail = case()
+    assert not ok
+    monkeypatch.undo()
+    monkeypatch.setattr(motiongraphics, "HOOK_CLEAR", 0.0)  # mutation: graphics may cover the hook
+    ok, detail = case()
+    assert not ok and "quiet=False" in detail
+    monkeypatch.undo()
+    real = reviewer.generator_checks
+    monkeypatch.setattr(reviewer, "generator_checks", lambda meta, probe, rules=None: [c for c in real(meta, probe, rules) if c["name"] != "parallax_clips"])  # mutation: lost clips are not reported
+    ok, detail = case()
+    assert not ok and "flagged=False" in detail

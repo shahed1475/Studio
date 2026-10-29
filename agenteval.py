@@ -529,6 +529,40 @@ def case_a_shorts_hook_is_an_open_question_and_a_yes_or_no_hook_that_holds_the_a
     return ok, "a yes/no hook is warned about, an open question is not, and the writer is asked for an open question that keeps the answer back" if ok else f"warns={warns} asks={asks}"
 
 
+def case_camera_motion_moves_only_drawn_pictures_and_graphics_show_only_what_the_script_says():
+    import tempfile
+    from pathlib import Path
+
+    from PIL import Image
+
+    import config
+    import motiongraphics as mg
+    import parallax
+    import reviewer
+
+    old_cache = config.CACHE
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            config.CACHE = Path(d) / "cache"
+            (config.CACHE / "art").mkdir(parents=True)
+            drawn, archive = config.CACHE / "art" / "d.jpg", Path(d) / "archive.jpg"
+            Image.new("RGB", (64, 36), (120, 90, 60)).save(drawn)
+            Image.new("RGB", (64, 36), (60, 90, 120)).save(archive)
+            moved, stats = parallax.apply([drawn, archive], [0.5, 0.5], (64, 36), workers=1)
+            again, stats2 = parallax.apply([drawn, archive], [0.5, 0.5], (64, 36), workers=1)
+            motion = str(moved[0]).endswith(".mp4") and moved[1] == archive and stats["made"] == 1 and stats2["cached"] == 1 and again == moved
+    finally:
+        config.CACHE = old_cache
+    years = mg.year_label("In 525 BC an army set out.") == "525 BC" and mg.year_label("They carried 50,000 spears in the 1970s film.") is None
+    doc = {"lines": [{"text": "In 2015 a scholar argued it."}, {"text": "In 1983 a team went out."}] + [{"text": "Plain."}] * 4, "chapters": [{"start_line": 0, "title": "A"}, {"start_line": 2, "title": "B"}]}
+    ev = mg.graphics_events(doc, [2.0] * 6, (1920, 1080))
+    quiet = not any("2015" in e for e in ev) and not any(",Badge," in e and e.split(",")[1] < "0:00:04.00" for e in ev) and any("CHAPTER 2" in e for e in ev)  # nothing over the hook, a card for the second chapter
+    warns = {c["name"]: c for c in reviewer.generator_checks({"format": "doc", "lines": [], "parallax": {"failed": 3, "made": 5, "scenes": 8}}, {"duration": 400})}.get("parallax_clips")
+    flagged = bool(warns) and not warns["ok"] and warns["severity"] == "warn"
+    ok = motion and years and quiet and flagged
+    return ok, "only a drawn picture gets camera motion (reused when cached), graphics show only years and chapters the script has and stay off the hook, and lost clips are warned about" if ok else f"motion={motion} years={years} quiet={quiet} flagged={flagged}"
+
+
 def case_second_sources_are_off_by_default_and_only_verified_pages_count():
     import autopilot
     import secondsources as ss
@@ -717,7 +751,7 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_autopilot_governor_only_tightens_and_freezes_on_repetition, case_research_trend_inbox_is_data_only_expires_and_refuses_foreign_links,
          case_collector_only_reads_and_never_invents_a_number, case_rules_change_only_by_the_owner_and_the_hard_rules_are_constant,
          case_diagnoser_uses_the_rules_file_never_guesses_and_never_writes_to_youtube, case_generator_style_rules_only_warn_and_read_their_limits_from_the_rules_file, case_short_structure_rules_only_warn_ask_for_a_payoff_never_for_loops_and_keep_the_creators_safety_rules_in_its_prompt,
-         case_a_shorts_closing_invitation_says_subscribe_never_follow_and_story_lines_are_left_alone, case_a_styled_voice_cuts_the_services_silent_tail_and_a_long_gap_between_lines_is_flagged, case_a_shorts_hook_is_an_open_question_and_a_yes_or_no_hook_that_holds_the_answer_is_warned, case_second_sources_are_off_by_default_and_only_verified_pages_count, case_public_video_changes_are_only_proposed_and_every_write_is_logged_and_reversible,
+         case_a_shorts_closing_invitation_says_subscribe_never_follow_and_story_lines_are_left_alone, case_a_styled_voice_cuts_the_services_silent_tail_and_a_long_gap_between_lines_is_flagged, case_a_shorts_hook_is_an_open_question_and_a_yes_or_no_hook_that_holds_the_answer_is_warned, case_camera_motion_moves_only_drawn_pictures_and_graphics_show_only_what_the_script_says, case_second_sources_are_off_by_default_and_only_verified_pages_count, case_public_video_changes_are_only_proposed_and_every_write_is_logged_and_reversible,
          case_policy_changes_are_classified_proposed_and_held_without_an_agent_releasing_them, case_drift_needs_several_videos_sustained_over_days_and_only_tells_the_owner,
          case_learner_reads_and_reports_queues_at_most_one_viable_subject_and_only_proposes_rules,
          case_kind_cards_are_free_short_advice_and_the_repeated_part_of_a_prompt_is_cached_not_leaked,

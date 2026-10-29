@@ -258,6 +258,10 @@ def generator_checks(meta: dict, probe: dict, rules: dict | None = None) -> list
     if kind == "short" and probe.get("duration"):
         lo, hi = b["shorts_min_seconds"], b["shorts_max_seconds"]
         out.append(_c("short_target_length", lo <= probe["duration"] <= hi, f"{probe['duration']:.0f} s (target {lo} to {hi})", "warn"))
+    if isinstance(meta.get("parallax"), dict) and "failed" in meta["parallax"]:  # 2.5D camera motion was asked for (parallax.py): say when scenes kept the plain camera move
+        px = meta["parallax"]
+        lost = px["failed"] if isinstance(px["failed"], int) and not isinstance(px["failed"], bool) else px.get("scenes", 0)
+        out.append(_c("parallax_clips", not px["failed"], f"camera motion made for {px.get('made', 0) + px.get('cached', 0)} scene(s); {lost if px['failed'] is not True else 'all'} kept the plain camera move" if px["failed"] else f"camera motion on {px.get('made', 0) + px.get('cached', 0)} scene(s), {px.get('model', 0)} with a depth map and {px.get('approximate', 0)} with an approximate one", "warn"))
     if meta.get("description"):
         out.append(_c("description_hook", not meta["description"].lstrip().lower().startswith("sources"), "the description opens with its hook, not with the sources" if not meta["description"].lstrip().lower().startswith("sources") else "the description starts with 'Sources:': the first lines are what search shows", "warn"))
     return out

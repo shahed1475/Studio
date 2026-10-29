@@ -206,12 +206,14 @@ def _ass_plain(words: list[tuple[float, float, str]]) -> str:
     return head + "\n".join(rows) + "\n"
 
 
-def narrate(lines: list[str], work: Path, pause: float = 0.12, motion: int = 0, pos: str = "bottom", style: str | None = None) -> tuple[Path, Path, list[float]]:
-    """Return (narration.mp3, captions.ass, per-line durations in seconds). style: an opt-in delivery from VOICE_STYLES, else the default voice."""
+def narrate(lines: list[str], work: Path, pause: float = 0.12, motion: int = 0, pos: str = "bottom", style: str | None = None, tail: float | None = None) -> tuple[Path, Path, list[float]]:
+    """Return (narration.mp3, captions.ass, per-line durations in seconds). style: an opt-in delivery from VOICE_STYLES, else the default voice. tail: seconds of the
+    service's silence kept after each line's last word (a video's own `voice_tail`); None keeps the style's tail, or the whole file when the voice has no style."""
     work.mkdir(parents=True, exist_ok=True)
     all_words, durations, parts = [], [], []
     offset = 0.0
-    tail = (VOICE_STYLES.get(style or "") or {}).get("tail")  # only a styled voice trims the service's silent tail; the default voice is made exactly as before
+    if tail is None:
+        tail = (VOICE_STYLES.get(style or "") or {}).get("tail")  # only a styled voice, or a video that asks, trims the service's silent tail; the default voice is made exactly as before
     for i, text in enumerate(lines):
         mp3 = work / f"line{i:02d}.mp3"
         pros = line_prosody(style, text, i, len(lines))

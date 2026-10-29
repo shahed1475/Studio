@@ -232,6 +232,8 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
     print("Voice + captions...")
     prof = editprofile.load()
     voice = {"style": data["voice_style"]} if data.get("voice_style") else {}  # only a video that asks for one gets a styled voice
+    if data.get("voice_tail") is not None:
+        voice["tail"] = data["voice_tail"]
     narration, ass, durations = tts.narrate([l["text"] for l in data["lines"]], work, editprofile.short_pause(prof), prof["motion"], prof["caption_pos"], **voice)
     print("Footage...")
     if config.PEXELS_KEY:
@@ -254,6 +256,7 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
             shutil.rmtree(folder, ignore_errors=True)
         raise SystemExit("not enough footage found for this Short" + (("; topic moved to the back of the queue" if kept else "; topic dropped after two failed tries") if requeue else ""))
     clips, credits, anim = _animate(data, clips, credits, vertical=True)  # a 3D Short can have a few moving clips
+    clips = _parallax(data, clips, durations, (config.WIDTH, config.HEIGHT))  # free 2.5D camera motion when the Short asks for it
     if anim:
         data["animation"] = anim
         print(f"  animation: {anim['animated']} new clip(s), {anim['cached']} from the cache, {anim['failed']} failed, ${anim['spent']:.2f} spent")
@@ -420,7 +423,8 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
             pass
     print("Voice...")
     prof = editprofile.load()
-    narration, _ass, durations = tts.narrate([l["text"] for l in data["lines"]], work, prof["sentence_pause_ms"] / 1000)
+    tail = {"tail": data["voice_tail"]} if data.get("voice_tail") is not None else {}  # a video that asks keeps less of the voice service's silence after each line
+    narration, _ass, durations = tts.narrate([l["text"] for l in data["lines"]], work, prof["sentence_pause_ms"] / 1000, **tail)
     print("Archival images (only pictures that name the subject)...")
     anchors = data.get("anchors") or []
     import aiart
@@ -439,6 +443,7 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
     if anim:
         data["animation"] = anim
         print(f"  animation: {anim['animated']} new clip(s), {anim['cached']} from the cache, {anim['failed']} failed, ${anim['spent']:.2f} spent")
+    clips = _parallax(data, clips, durations, (1920, 1080))  # free 2.5D camera motion when the video asks for it
     music = sorted(Path("music").glob("*.mp3")) if Path("music").exists() else []
     print(f"Rendering ({sum(c is not None for c in clips)}/{len(clips)} scenes have footage)...")
     words = subtitles.with_punctuation(subtitles.load_words(work / "words.json"), [l["text"] for l in data["lines"]])
@@ -446,8 +451,15 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
     if config.DOC_SUBTITLES:
         doc_ass = work / "doc_captions.ass"
         doc_ass.write_text(subtitles.to_ass(subtitles.build_cues(words), (1920, 1080), prof["caption_pos"]))
+        if data.get("graphics"):  # 2D chapter title cards and date badges, from the chapter list and the years the script writes
+            import motiongraphics
+
+            events = motiongraphics.graphics_events(data, durations, (1920, 1080))
+            motiongraphics.add_to_ass(doc_ass, events, (1920, 1080))
+            data["graphics"] = {"events": len(events)}
+            print(f"  2D graphics: {len(events)} animated event(s)")
     render.render(clips, durations, narration, doc_ass, work, folder / "video.mp4",
-                  size=(1920, 1080), music=random.choice(music) if music else None, loudness=prof["target_lufs"], shots=prof["motion"] >= 1)
+                  size=(1920, 1080), music=random.choice(music) if music else None, loudness=editprofile.lufs_for(data, prof), shots=prof["motion"] >= 1)
     shutil.copy(work / "words.json", folder / "words.json")
     subtitles.write_files(folder, words)
     shutil.rmtree(work)
@@ -480,6 +492,24 @@ def cmd_redo_short(name: str) -> None:
     _refuse_if_uploaded(name)
     data = reset_for_rerender(json.loads((config.OUT / name / "meta.json").read_text()))
     _produce_short(data, data["topic"], requeue=False, folder=config.OUT / name)
+
+
+def _parallax(data: dict, clips: list, durations: list, size: tuple[int, int]) -> list:
+    """2.5D camera motion on the drawn pictures when the video asks for it (data["parallax"]); the stats replace the switch. Any failure leaves the plain camera moves:
+    a video is never stopped for this."""
+    if not data.get("parallax"):
+        return clips
+    import parallax
+
+    try:
+        clips, stats = parallax.apply(clips, durations, size)
+    except Exception as e:
+        data["parallax"] = {"failed": True, "reason": type(e).__name__}
+        print(f"  camera motion skipped ({type(e).__name__}): the usual camera moves are used")
+        return clips
+    data["parallax"] = stats
+    print(f"  camera motion: {stats['made']} new clip(s), {stats['cached']} from the cache, {stats['failed']} failed ({stats['model']} with a depth map, {stats['approximate']} approximate)")
+    return clips
 
 
 def _house_style(kind: str) -> dict:
