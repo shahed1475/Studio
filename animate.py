@@ -37,8 +37,8 @@ def motion_prompt(line: str, visual: str = "") -> str:
     import seo
 
     scene = seo.clean_sentences(str(line))[:220] or seo.plain(visual)[:80] or "the scene"
-    return (f"Gentle cinematic animation of this 3D animated storybook scene: {scene} Slow camera push-in, soft mist or water or air drifting, warm light flickering, subtle natural "
-            "movement of the characters, hair and cloth. No text, no cuts, no sudden changes.")
+    return (f"Gentle cinematic animation of this scene: {scene} Slow camera push-in, wind moving sand, cloth, hair and dust, soft natural light. Keep the same people, place and time of day. "
+            "Show only what the picture already shows: no fire, no explosions, no new people or objects, nothing that the picture does not already show. No text, no cuts, no sudden changes.")
 
 
 def frame_url(path, size: tuple[int, int] = (1280, 720)) -> str:

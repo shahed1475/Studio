@@ -746,3 +746,15 @@ def test_the_quotation_case_passes_and_fails_when_the_finder_never_matches_or_al
     monkeypatch.setattr(reviewer, "claim_span", lambda source, claim: (0, 10))  # mutation: anything is "found", so an invented quotation would be verified
     ok, detail = case()
     assert not ok and "open=False" in detail
+
+
+def test_the_animation_prompt_case_passes_and_fails_when_the_ban_on_invented_events_is_removed(monkeypatch):
+    import animate
+
+    case = getattr(agenteval, "case_an_animated_clip_is_asked_to_show_only_what_its_picture_already_shows")
+    assert case in agenteval.CASES
+    ok, detail = case()
+    assert ok, detail
+    monkeypatch.setattr(animate, "motion_prompt", lambda line, visual="": "Gentle animation of this scene. Slow camera push-in, warm light flickering. No text.")  # mutation: the old wording
+    ok, detail = case()
+    assert not ok and "banned=False" in detail

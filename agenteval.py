@@ -665,6 +665,16 @@ def case_a_quotation_is_sourced_by_its_own_words_and_an_invented_one_stays_open_
     return ok, "a quotation whose own words are in the source is verified with its passage; an invented or altered one stays open" if ok else f"found={found} open={open_}"
 
 
+def case_an_animated_clip_is_asked_to_show_only_what_its_picture_already_shows():
+    import animate
+
+    p = animate.motion_prompt("An army marched into the desert.", "dunes").lower()
+    banned = "no fire" in p and "no explosions" in p and "no new people or objects" in p and "does not already show" in p
+    calm = "flickering" not in p and "no text" in p
+    ok = banned and calm
+    return ok, "an animation prompt forbids invented fire, explosions, people and objects" if ok else f"banned={banned} calm={calm}"
+
+
 def case_second_sources_are_off_by_default_and_only_verified_pages_count():
     import autopilot
     import secondsources as ss
@@ -859,7 +869,8 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_kind_cards_are_free_short_advice_and_the_repeated_part_of_a_prompt_is_cached_not_leaked,
          case_an_agent_cannot_set_a_profile_the_reviewer_rejects_and_a_short_fits_its_length_and_nothing_uploaded_is_re_encoded,
          case_the_ai_review_reads_the_whole_narration_of_a_long_documentary_and_not_only_its_start,
-         case_a_quotation_is_sourced_by_its_own_words_and_an_invented_one_stays_open_with_no_passage]
+         case_a_quotation_is_sourced_by_its_own_words_and_an_invented_one_stays_open_with_no_passage,
+         case_an_animated_clip_is_asked_to_show_only_what_its_picture_already_shows]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:
