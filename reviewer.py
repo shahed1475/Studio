@@ -209,6 +209,7 @@ def variety_checks(meta: dict, recent: list[dict]) -> list[dict]:
 LOOP = re.compile(r"\?|\b(but|yet|however|except|until|strangest|stranger|no one|nobody|never|still)\b", re.I)  # a proxy for an open loop or a turn in the story
 GREETING = re.compile(r"^\W*(welcome|hello|hi|hey|what's up|in this video|today,? we|before we begin)\b", re.I)
 OUTRO = re.compile(r"thanks? for watching|like and subscribe|subscribe|see you (next|in the)|until next time|don't forget to", re.I)
+FOLLOW = re.compile(r"\bfollow\b|subscribe|next story|for more", re.I)  # the short invitation that closes a Short: it comes after the payoff, so it is not the payoff line
 
 
 def generator_checks(meta: dict, probe: dict, rules: dict | None = None) -> list[dict]:
@@ -239,6 +240,15 @@ def generator_checks(meta: dict, probe: dict, rules: dict | None = None) -> list
             out.append(_c("sources_beyond_wikipedia", n >= 2, f"{n} source(s) beyond Wikipedia were read and quoted (target 2)", "warn"))
             out.append(_c("original_element", bool(meta.get("original_element")), "an original element is recorded" if meta.get("original_element") else "no original element recorded", "warn"))
         out.append(_c("no_outro", not any(OUTRO.search(t) for t in lines[-2:]), "ends on the story, not on a thanks or a subscribe line" if not any(OUTRO.search(t) for t in lines[-2:]) else "the last lines read like an outro (thanks, subscribe)", "warn"))
+    if kind == "short" and lines:
+        # YouTube ranks a Short on the share of viewers who chose to view it and on how much of it they watch (Help: Shorts search and discovery tips), so the first line
+        # must earn the stay and the story must pay it off. Proxies only, and only warnings.
+        first = lines[0].strip()
+        words, gap = len(first.split()), bool(LOOP.search(first))
+        out.append(_c("short_hook", words <= b["short_hook_max_words"] and gap, f"line 1 is {words} words (aim for {b['short_hook_max_words']} or fewer) and " + ("raises a question or a turn (a proxy)" if gap else "raises no question or turn that a proxy can see"), "warn"))
+        body = lines[:-1] if len(lines) > 1 and FOLLOW.search(lines[-1]) else lines
+        payoff = body[-1].strip()
+        out.append(_c("short_payoff", bool(payoff) and not payoff.endswith("?"), "the story ends on an answer, then the invitation" if payoff and not payoff.endswith("?") else "the line before the invitation asks a new question instead of paying off the hook", "warn"))
     if kind == "short" and probe.get("duration"):
         lo, hi = b["shorts_min_seconds"], b["shorts_max_seconds"]
         out.append(_c("short_target_length", lo <= probe["duration"] <= hi, f"{probe['duration']:.0f} s (target {lo} to {hi})", "warn"))

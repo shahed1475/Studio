@@ -50,3 +50,54 @@ def test_the_limits_come_from_the_rules_file(tmp_path):
     r["benchmarks"]["rehook_max_seconds"] = 20
     loose = by_name(reviewer.generator_checks(doc(([PLAIN] * 5 + [TURN]) * 7), {"duration": 400}, r))
     assert not loose["rehook_gap"]["ok"] and "20" in loose["rehook_gap"]["detail"]
+
+
+# ---- a Short's hook and payoff (29 Oct 2026) ----
+HOOK = "No one has ever found the army that vanished."
+PAYOFF = "Only the desert knows, and it has never said."
+INVITE = "Follow for the next story."
+
+
+def short(lines):
+    return {"format": "short", "lines": [{"text": t} for t in lines], "description": "A hook first."}
+
+
+def test_a_short_whose_first_line_is_a_question_or_turn_in_few_words_passes_and_a_flat_long_one_warns():
+    good = by_name(reviewer.generator_checks(short([HOOK, PLAIN, PAYOFF, INVITE]), {"duration": 50}))["short_hook"]
+    assert good["ok"] and good["severity"] == "warn"
+    flat = by_name(reviewer.generator_checks(short([PLAIN, PAYOFF, INVITE]), {"duration": 50}))["short_hook"]
+    assert not flat["ok"] and "proxy" in flat["detail"]
+    long = "No one can say why the whole army walked into the great sand sea that day and never walked back out of it again."
+    assert not by_name(reviewer.generator_checks(short([long, PAYOFF, INVITE]), {"duration": 50}))["short_hook"]["ok"]
+
+
+def test_the_line_before_the_follow_invitation_must_pay_off_not_ask_a_new_question():
+    ok = by_name(reviewer.generator_checks(short([HOOK, PLAIN, PAYOFF, INVITE]), {"duration": 50}))["short_payoff"]
+    assert ok["ok"]
+    hanging = by_name(reviewer.generator_checks(short([HOOK, PLAIN, "But what if it is still out there?", INVITE]), {"duration": 50}))["short_payoff"]
+    assert not hanging["ok"]
+    no_invite = by_name(reviewer.generator_checks(short([HOOK, PLAIN, "Who gave the order?"]), {"duration": 50}))["short_payoff"]
+    assert not no_invite["ok"]  # without an invitation the last line itself is the payoff line
+
+
+def test_the_short_hook_limit_comes_from_the_rules_file():
+    r = rulesfile.load()
+    r["benchmarks"]["short_hook_max_words"] = 5
+    tight = by_name(reviewer.generator_checks(short([HOOK, PAYOFF, INVITE]), {"duration": 50}, r))["short_hook"]
+    assert not tight["ok"] and "5" in tight["detail"]
+
+
+def test_a_documentary_gets_no_short_checks():
+    names = set(by_name(reviewer.generator_checks(doc([PLAIN] * 5), {"duration": 400})))
+    assert "short_hook" not in names and "short_payoff" not in names
+
+
+def test_the_short_prompt_asks_for_a_payoff_before_the_invitation_and_never_for_loops():
+    import scriptgen
+    prompt = scriptgen.short_prompt("The Lost Army of Cambyses")
+    low = prompt.lower()
+    assert "payoff" in low and "answers" in low  # the hook's question is answered, or the sources' disagreement is said plainly
+    assert low.index("payoff") < low.index("invitation")  # the payoff comes first, the invitation is the last line
+    assert "never end on a new question" in low
+    assert "loop" not in low  # a hard rule: never ask people to loop videos
+    assert "under 12 words" in low

@@ -529,3 +529,32 @@ def test_the_trend_inbox_case_passes_and_fails_when_the_link_rule_is_broken(monk
     monkeypatch.setattr(trendinbox, "WATCH", re.compile(r".*"))  # mutation: any link accepted
     ok, detail = agenteval.case_research_trend_inbox_is_data_only_expires_and_refuses_foreign_links()
     assert not ok and "refused=False" in detail
+
+
+def test_the_short_structure_case_passes_and_fails_when_its_rules_are_broken(monkeypatch):
+    import re
+
+    import reviewer
+    import scriptgen
+
+    name = "case_short_structure_rules_only_warn_ask_for_a_payoff_never_for_loops_and_keep_the_creators_safety_rules_in_its_prompt"
+    case = getattr(agenteval, name)
+    assert case in agenteval.CASES
+    ok, detail = case()
+    assert ok, detail
+    real = scriptgen.short_prompt
+    monkeypatch.setattr(scriptgen, "short_prompt", lambda *a, **k: real(*a, **k).replace("payoff", "ending"))  # mutation: the writer is not asked for a payoff
+    ok, detail = case()
+    assert not ok and "asks=False" in detail
+    monkeypatch.setattr(scriptgen, "short_prompt", real)
+    monkeypatch.setattr(reviewer, "LOOP", re.compile(r".*"))  # mutation: any first line counts as a hook
+    ok, detail = case()
+    assert not ok and "catches=False" in detail
+
+    monkeypatch.undo()
+    import playbook
+
+    real_brief = playbook.brief
+    monkeypatch.setattr(playbook, "brief", lambda agent, **k: real_brief(agent, max_chars=700))  # mutation: the prompt cuts off the creator's Never rules
+    ok, detail = case()
+    assert not ok and "safe=False" in detail

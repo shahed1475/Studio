@@ -38,7 +38,8 @@
     "thumb_words": [
       2,
       4
-    ]
+    ],
+    "short_hook_max_words": 12
   },
   "limits": {
     "doc_duration_s": [
@@ -53,9 +54,9 @@
   "policy_constraints": [
     {
       "id": "inauthentic_content",
-      "status": "UNVERIFIED",
-      "source": "owner's content prompt, 'clarified July 2026'; not re-read from YouTube's page",
-      "summary": "No generic, template or mass-produced videos with little variation; an original element and two sources beyond Wikipedia."
+      "status": "VERIFIED",
+      "source": "YouTube Help, 'YouTube channel monetization policies' (support.google.com/youtube/answer/1311392), section 'Generic or repetitive content', renamed 'inauthentic content' on 15 Jul 2025; read 29 Oct 2026",
+      "summary": "Not eligible: content that looks made from a template, has minimal variation, or is AI content from generic templates giving the impression of mass production; original, authentic insight or perspective is needed. Two sources beyond Wikipedia and an original element are the studio's own safeguard, not YouTube's wording."
     },
     {
       "id": "synthetic_disclosure",
@@ -68,6 +69,12 @@
       "status": "UNVERIFIED",
       "source": "owner's content prompt, 'July 2026'",
       "summary": "No distressing or shock content made to farm views."
+    },
+    {
+      "id": "misleading_thumbnails_titles",
+      "status": "VERIFIED",
+      "source": "YouTube Help, 'Thumbnails policy' (answer/9229980) and 'Spam Policy' (answer/2801973), item on misleading metadata; read 29 Oct 2026",
+      "summary": "A thumbnail that misleads viewers to think they will see something that is not in the video is not allowed, and maliciously misleading titles, thumbnails or descriptions can cost a strike, monetization or the channel. Documentary context may earn an exception at YouTube's discretion."
     }
   ],
   "banned_patterns": [
@@ -85,6 +92,7 @@
   "unverified": [
     "A Short's related video, a pinned comment and Test and Compare can be set through the API (the spec assumes it).",
     "A unique-viewers metric: the Analytics API answered 'Unknown identifier' for uniques on 28 Oct 2026, so views per unique viewer cannot be read from it.",
-    "Every channel figure quoted in the owner's prompts (CTR, retention, unique viewers)."
+    "Every channel figure quoted in the owner's prompts (CTR, retention, unique viewers).",
+    "The Analytics API's engagedViews ('viewed past the first frame') and the Help definition of Shorts engaged views ('past the initial seconds, not including loops') are worded differently, and whether 'Stayed to watch' can be read from the API is unknown: probe a live query before the collector uses either (29 Oct 2026)."
   ]
 }

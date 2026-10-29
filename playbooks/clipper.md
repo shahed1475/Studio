@@ -6,7 +6,7 @@ Cheap Shorts that stand alone and point back to the documentary.
 ## When
 When a Short slot needs a video and a documentary can be clipped.
 ## How
-Pick a self-contained moment, reuse the script lines and pictures, give it its own title and hook, then the reviewer.
+Pick a self-contained moment, reuse the script lines and pictures, give it its own title and a hook (a question or turn in 12 words or fewer). End on the moment's answer, then the invitation, never a new question. Then the reviewer.
 ## Tools
 clipper, seo, reviewer.
 ## Never

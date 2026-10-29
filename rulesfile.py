@@ -28,7 +28,7 @@ SPECS = {
         "shorts_stayed_target_pct": ("num", 5, 100), "shorts_min_seconds": ("num", 5, 120), "shorts_max_seconds": ("num", 10, 180),
         "long_min_minutes": ("num", 1, 60), "long_max_minutes": ("num", 2, 120),
         "views_per_unique_flag": ("num", 1, 50), "topic_repeat_block_days": ("num", 1, 365),
-        "hook_max_seconds": ("num", 3, 60), "rehook_max_seconds": ("num", 20, 300), "title_hard_max": ("num", 40, 100),
+        "hook_max_seconds": ("num", 3, 60), "short_hook_max_words": ("num", 4, 30), "rehook_max_seconds": ("num", 20, 300), "title_hard_max": ("num", 40, 100),
         "min_impressions_for_ctr": ("num", 20, 100000), "min_views_for_diagnosis": ("num", 5, 10000), "retention_drop_pp": ("num", 3, 80),
         "drift_sigma": ("num", 1, 6), "drift_recent_days": ("num", 3, 30), "drift_baseline_days": ("num", 7, 90), "drift_min_videos": ("num", 2, 50),
         "title_chars": ("pair", 10, 100), "pace_wpm": ("pair", 60, 250), "pace_target_wpm": ("pair", 60, 250), "thumb_words": ("pair", 1, 12),
@@ -41,19 +41,19 @@ DEFAULTS = {
     "benchmarks": {
         "ctr_target": 0.04, "ctr_retest_below": 0.03, "retention_target_pct": 50, "retention_at_30s_min_pct": 40,
         "shorts_stayed_target_pct": 70, "shorts_min_seconds": 35, "shorts_max_seconds": 58, "long_min_minutes": 8, "long_max_minutes": 14,
-        "views_per_unique_flag": 3, "topic_repeat_block_days": 30, "hook_max_seconds": 15, "rehook_max_seconds": 90,
+        "views_per_unique_flag": 3, "topic_repeat_block_days": 30, "hook_max_seconds": 15, "short_hook_max_words": 12, "rehook_max_seconds": 90,
         "min_impressions_for_ctr": 200, "min_views_for_diagnosis": 30, "retention_drop_pp": 15,
         "drift_sigma": 2, "drift_recent_days": 7, "drift_baseline_days": 28, "drift_min_videos": 3,
         "title_chars": [40, 62], "title_hard_max": 70, "pace_wpm": [105, 175], "pace_target_wpm": [140, 155], "thumb_words": [2, 4],
     },
     "limits": {"doc_duration_s": [180, 900], "short_duration_s": [20, 180]},  # what the reviewer blocks on: unchanged until the owner raises the minimum length
     "policy_constraints": [
-        {"id": "inauthentic_content", "status": "UNVERIFIED", "source": "owner's content prompt, 'clarified July 2026'; not re-read from YouTube's page",
-         "summary": "No generic, template or mass-produced videos with little variation; an original element and two sources beyond Wikipedia."},
+        {"id": "inauthentic_content", "status": "VERIFIED", "source": "YouTube Help, 'YouTube channel monetization policies' (support.google.com/youtube/answer/1311392), section 'Generic or repetitive content', renamed 'inauthentic content' on 15 Jul 2025; read 29 Oct 2026", "summary": "Not eligible: content that looks made from a template, has minimal variation, or is AI content from generic templates giving the impression of mass production; original, authentic insight or perspective is needed. Two sources beyond Wikipedia and an original element are the studio's own safeguard, not YouTube's wording."},
         {"id": "synthetic_disclosure", "status": "VERIFIED", "source": "compliance.RULES ai_disclosure, YouTube Help page watched daily",
          "summary": "Disclose realistic altered or synthetic media; every upload sets containsSyntheticMedia."},
         {"id": "distressing_content", "status": "UNVERIFIED", "source": "owner's content prompt, 'July 2026'",
          "summary": "No distressing or shock content made to farm views."},
+        {"id": "misleading_thumbnails_titles", "status": "VERIFIED", "source": "YouTube Help, 'Thumbnails policy' (answer/9229980) and 'Spam Policy' (answer/2801973), item on misleading metadata; read 29 Oct 2026", "summary": "A thumbnail that misleads viewers to think they will see something that is not in the video is not allowed, and maliciously misleading titles, thumbnails or descriptions can cost a strike, monetization or the channel. Documentary context may earn an exception at YouTube's discretion."},
     ],
     "banned_patterns": ["description starts with 'Sources:'", "encyclopedia-style titles", "title longer than title_hard_max"],
     "insights": {"winning_title_patterns": [], "winning_topics": [], "losing_patterns": []},
@@ -63,6 +63,7 @@ DEFAULTS = {
         "A Short's related video, a pinned comment and Test and Compare can be set through the API (the spec assumes it).",
         "A unique-viewers metric: the Analytics API answered 'Unknown identifier' for uniques on 28 Oct 2026, so views per unique viewer cannot be read from it.",
         "Every channel figure quoted in the owner's prompts (CTR, retention, unique viewers).",
+        "The Analytics API's engagedViews ('viewed past the first frame') and the Help definition of Shorts engaged views ('past the initial seconds, not including loops') are worded differently, and whether 'Stayed to watch' can be read from the API is unknown: probe a live query before the collector uses either (29 Oct 2026).",
     ],
 }
 LISTS = ("policy_constraints", "banned_patterns", "pending_changes", "history", "unverified")
