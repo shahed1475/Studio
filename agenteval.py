@@ -522,8 +522,9 @@ def case_a_styled_voice_cuts_the_services_silent_tail_and_a_long_gap_between_lin
     finally:
         studiochecks.frozen_stretches = real
     freezes = not stuck["ok"] and stuck["severity"] == "warn" and brief["ok"]
-    ok = cut and never_pads and flags and freezes
-    return ok, "an energetic line keeps only a short tail after its last word (never padded), the default voice is unchanged, a 1.2 s silence between lines is flagged and so is a picture that stands still for seconds" if ok else f"cut={cut} never_pads={never_pads} flags={flags} freezes={freezes}"
+    says = tts.spoken("the Oracle of Amun.") == "the Oracle of Ahmoon." and tts.spoken("Amunet") == "Amunet"
+    ok = cut and never_pads and flags and freezes and says
+    return ok, "an energetic line keeps only a short tail after its last word (never padded), the default voice is unchanged, a 1.2 s silence between lines is flagged and so is a picture that stands still for seconds" if ok else f"cut={cut} never_pads={never_pads} flags={flags} freezes={freezes} says={says}"
 
 
 def case_a_shorts_hook_is_an_open_question_and_a_yes_or_no_hook_that_holds_the_answer_is_warned():

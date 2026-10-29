@@ -611,6 +611,10 @@ def test_the_voice_tail_case_passes_and_fails_when_its_rules_are_broken(monkeypa
     monkeypatch.setattr(studiochecks, "FREEZE_MAX", 99.0)  # mutation: a frozen picture is never flagged
     ok, detail = case()
     assert not ok and "freezes=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(tts, "PRONUNCIATION", {})  # mutation: the voice is given the plain spelling again
+    ok, detail = case()
+    assert not ok and "says=False" in detail
 
 
 def test_the_hook_question_case_passes_and_fails_when_its_rules_are_broken(monkeypatch):

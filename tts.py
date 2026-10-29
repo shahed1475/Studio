@@ -33,6 +33,18 @@ VOICE_STYLES = {
 INVITE = re.compile(r"\bfollow\b|subscribe|next story", re.I)
 
 
+# How a name is SAID, for names the voice gets wrong. 30 Oct 2026: the voice read "Amun" as "ah-mo-nee-us"; a Gemini model listened to four spellings and heard "ah-moon" only for
+# "Ahmoon". Only the text sent to the voice changes: the script, the captions (matched to the script word by word) and the description keep the real spelling, so a respelling
+# must stay ONE word.
+PRONUNCIATION = {"Amun": "Ahmoon"}
+
+
+def spoken(text: str) -> str:
+    for word, said in PRONUNCIATION.items():
+        text = re.sub(rf"(?<![\w]){re.escape(word)}(?![\w])", said, text)
+    return text
+
+
 def line_length(duration: float, words: list[tuple], pause: float, tail: float | None) -> float:
     """Seconds one narration line takes, breath included. With a `tail` the silence the service leaves after the last spoken word is cut to that length (the file
     is never padded, and a line with no word timings keeps the whole file); with None the whole file is kept."""
@@ -102,7 +114,7 @@ def timings(lines: list[str], work: Path) -> list[dict]:
     words, offset = [], 0.0
     for i, text in enumerate(lines):
         mp3 = work / f"t{i:02d}.mp3"
-        got = asyncio.run(_synth_line(text, mp3))
+        got = asyncio.run(_synth_line(spoken(text), mp3))
         words += [(s + offset, e + offset, w, i) for s, e, w in got]
         offset += _duration(mp3) + 0.12
     words_to_json(words, work / "words.json")
@@ -217,7 +229,8 @@ def narrate(lines: list[str], work: Path, pause: float = 0.12, motion: int = 0, 
     for i, text in enumerate(lines):
         mp3 = work / f"line{i:02d}.mp3"
         pros = line_prosody(style, text, i, len(lines))
-        words = asyncio.run(_synth_line(text, mp3) if pros is None else _synth_line(text, mp3, pros))
+        said = spoken(text)
+        words = asyncio.run(_synth_line(said, mp3) if pros is None else _synth_line(said, mp3, pros))
         d = line_length(_duration(mp3), words, pause, tail)  # small breath between lines
         all_words += [(s + offset, e + offset, w, i) for s, e, w in words]
         durations.append(d)

@@ -91,3 +91,26 @@ def test_a_picture_frozen_for_long_is_found_and_a_moving_one_is_not(tmp_path):
     rows = {r["name"]: r for r in studiochecks.freeze_checks(still)}
     assert not rows["no_frozen_picture"]["ok"] and rows["no_frozen_picture"]["severity"] == "warn" and "3." in rows["no_frozen_picture"]["detail"]
     assert studiochecks.freeze_checks(moving)[0]["ok"]
+
+
+# ---- how a name is said (30 Oct 2026): the voice read "Amun" as "ah-mo-nee-us"; Gemini listened to four spellings and heard "ah-moon" only for "Ahmoon" ----
+def test_a_name_the_voice_gets_wrong_is_spelled_for_the_ear_only_and_the_word_count_stays():
+    assert tts.spoken("the Oracle of Amun at the Siwa Oasis.") == "the Oracle of Ahmoon at the Siwa Oasis."
+    assert tts.spoken("Amun's temple") == "Ahmoon's temple" and tts.spoken("Amunet") == "Amunet"  # whole words only
+    text = "The legend says Cambyses sent them to subjugate the Oracle of Amun, and they were never seen again."
+    assert len(tts.spoken(text).split()) == len(text.split())  # captions are matched to the script word by word, so the count must not change
+
+
+def test_narrate_sends_the_spelled_form_to_the_voice_and_nothing_else_changes(tmp_path, monkeypatch):
+    import subprocess
+    sent = []
+
+    async def fake(text, mp3, prosody=None):
+        sent.append(text)
+        return [(0.0, 0.5, "hi")]
+
+    monkeypatch.setattr(tts, "_synth_line", fake)
+    monkeypatch.setattr(tts, "_duration", lambda p: 1.0)
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: None)
+    tts.narrate(["Oracle of Amun here.", "No change here."], tmp_path, pause=0.1)
+    assert sent == ["Oracle of Ahmoon here.", "No change here."]
