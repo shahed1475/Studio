@@ -140,3 +140,14 @@ def test_problems_at_a_time_after_the_end_of_the_video_are_dropped_and_counted(w
     got = videoinspect.gemini_analyze(world, post=lambda b, k: answer({"summary": "ok", "problems": [{"at_s": 75, "what": "Wrong house", "severity": "low"}, {"at_s": 453, "what": "Repeated image", "severity": "medium"},
                                                                                                   {"at_s": 540, "what": "Another repeat", "severity": "medium"}]}))
     assert [p["at_s"] for p in got["problems"]] == [75] and got["ignored_impossible_times"] == 2
+
+
+def test_a_nine_minute_documentary_gets_its_whole_script_and_more_output_room(world):
+    """Real run, 30 Oct 2026: the 556 s Cambyses documentary (1,325 words) used up max_tokens 8000 (finish_reason length) and nothing was kept; the script was also cut at 6,000 characters."""
+    meta = json.loads((world / "meta.json").read_text())
+    meta["lines"] = [{"text": f"Line {i} " + "word " * 24 + "ends here."} for i in range(57)] + [{"text": "THE VERY LAST WORDS OF THE FILM."}]
+    (world / "meta.json").write_text(json.dumps(meta))
+    sent = []
+    videoinspect.gemini_analyze(world, post=lambda b, k: sent.append(b) or answer({"summary": "ok", "problems": []}))
+    prompt = sent[0]["messages"][0]["content"][0]["text"]
+    assert "THE VERY LAST WORDS OF THE FILM." in prompt and sent[0]["max_tokens"] >= 16000

@@ -695,3 +695,54 @@ def test_the_depth_model_case_passes_and_fails_when_its_rules_are_broken(monkeyp
     monkeypatch.setattr(depth, "load_depth", lambda path: None)
     ok, detail = case()
     assert not ok and "approx=False" in detail
+
+
+def test_the_documentary_shape_case_passes_and_fails_when_its_rules_are_broken(monkeypatch):
+    import reviewer
+    import scriptgen
+
+    name = "case_a_documentary_is_written_in_the_owners_shape_and_length_and_warned_about_when_it_is_outside_it"
+    case = getattr(agenteval, name)
+    assert case in agenteval.CASES
+    ok, detail = case()
+    assert ok, detail
+    monkeypatch.setattr(scriptgen, "DOC_STRUCTURE", scriptgen.DOC_STRUCTURE.replace("The LAST chapter gives value", "The last chapter says goodbye"))  # mutation: no closing chapter of value
+    ok, detail = case()
+    assert not ok and "shape=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(scriptgen, "MAX_DOC_LINES", 50)  # mutation: the old cap, 7.6 minutes
+    ok, detail = case()
+    assert not ok and "room=False" in detail
+    monkeypatch.undo()
+    real = reviewer.generator_checks
+    monkeypatch.setattr(reviewer, "generator_checks", lambda meta, probe, rules=None: [c for c in real(meta, probe, rules) if c["name"] != "doc_length"])  # mutation: a wrong length is not reported
+    ok, detail = case()
+    assert not ok and "warns=False" in detail
+
+
+def test_the_whole_narration_case_passes_and_fails_with_the_old_7000_character_cut(monkeypatch):
+    import reviewer
+
+    case = getattr(agenteval, "case_the_ai_review_reads_the_whole_narration_of_a_long_documentary_and_not_only_its_start")
+    assert case in agenteval.CASES
+    ok, detail = case()
+    assert ok, detail
+    monkeypatch.setattr(reviewer, "REVIEW_TEXT_CHARS", 7000)  # mutation: the old cut that dropped the closing chapter
+    ok, detail = case()
+    assert not ok and "whole=False" in detail
+
+
+def test_the_quotation_case_passes_and_fails_when_the_finder_never_matches_or_always_matches(monkeypatch):
+    import reviewer
+
+    case = getattr(agenteval, "case_a_quotation_is_sourced_by_its_own_words_and_an_invented_one_stays_open_with_no_passage")
+    assert case in agenteval.CASES
+    ok, detail = case()
+    assert ok, detail
+    monkeypatch.setattr(reviewer, "claim_span", lambda source, claim: None)  # mutation: the old behaviour, a sourced quotation is never found
+    ok, detail = case()
+    assert not ok and "found=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(reviewer, "claim_span", lambda source, claim: (0, 10))  # mutation: anything is "found", so an invented quotation would be verified
+    ok, detail = case()
+    assert not ok and "open=False" in detail

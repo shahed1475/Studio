@@ -40,7 +40,7 @@ DEFAULTS = {
     "last_verified": "2026-10-28",
     "benchmarks": {
         "ctr_target": 0.04, "ctr_retest_below": 0.03, "retention_target_pct": 50, "retention_at_30s_min_pct": 40,
-        "shorts_stayed_target_pct": 70, "shorts_min_seconds": 35, "shorts_max_seconds": 58, "long_min_minutes": 8, "long_max_minutes": 14,
+        "shorts_stayed_target_pct": 70, "shorts_min_seconds": 35, "shorts_max_seconds": 58, "long_min_minutes": 8, "long_max_minutes": 10,
         "views_per_unique_flag": 3, "topic_repeat_block_days": 30, "hook_max_seconds": 15, "short_hook_max_words": 12, "rehook_max_seconds": 90,
         "min_impressions_for_ctr": 200, "min_views_for_diagnosis": 30, "retention_drop_pp": 15,
         "drift_sigma": 2, "drift_recent_days": 7, "drift_baseline_days": 28, "drift_min_videos": 3,
