@@ -249,6 +249,8 @@ def generator_checks(meta: dict, probe: dict, rules: dict | None = None) -> list
         body = lines[:-1] if len(lines) > 1 and FOLLOW.search(lines[-1]) else lines
         payoff = body[-1].strip()
         out.append(_c("short_payoff", bool(payoff) and not payoff.endswith("?"), "the story ends on an answer, then the invitation" if payoff and not payoff.endswith("?") else "the line before the invitation asks a new question instead of paying off the hook", "warn"))
+        says_follow = scriptgen.follow_invitation(lines[-1])  # YouTube has subscribers, not followers: the closing invitation says subscribe
+        out.append(_c("invite_wording", not says_follow, "the closing line asks people to follow; on YouTube they subscribe (say 'subscribe')" if says_follow else "the closing invitation, if any, does not say 'follow'", "warn"))
     if kind == "short" and probe.get("duration"):
         lo, hi = b["shorts_min_seconds"], b["shorts_max_seconds"]
         out.append(_c("short_target_length", lo <= probe["duration"] <= hi, f"{probe['duration']:.0f} s (target {lo} to {hi})", "warn"))

@@ -558,3 +558,30 @@ def test_the_short_structure_case_passes_and_fails_when_its_rules_are_broken(mon
     monkeypatch.setattr(playbook, "brief", lambda agent, **k: real_brief(agent, max_chars=700))  # mutation: the prompt cuts off the creator's Never rules
     ok, detail = case()
     assert not ok and "safe=False" in detail
+
+
+def test_the_subscribe_wording_case_passes_and_fails_when_its_rules_are_broken(monkeypatch):
+    import reviewer
+    import scriptgen
+
+    name = "case_a_shorts_closing_invitation_says_subscribe_never_follow_and_story_lines_are_left_alone"
+    case = getattr(agenteval, name)
+    assert case in agenteval.CASES
+    ok, detail = case()
+    assert ok, detail
+    real = scriptgen.short_prompt
+    monkeypatch.setattr(scriptgen, "short_prompt", lambda *a, **k: real(*a, **k).replace("invitation to subscribe", "invitation to follow"))  # mutation: the writer is asked to follow again
+    ok, detail = case()
+    assert not ok and "asks=False" in detail
+    monkeypatch.setattr(scriptgen, "short_prompt", real)
+    monkeypatch.setattr(scriptgen, "subscribe_invitation", lambda lines: (lines, 0))  # mutation: the rule does nothing
+    ok, detail = case()
+    assert not ok and "fixes=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(scriptgen, "follow_invitation", lambda text: False)  # mutation: the reviewer no longer sees a 'follow' invitation
+    ok, detail = case()
+    assert not ok and "warns=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(scriptgen, "INVITE_CUE", __import__("re").compile(r".*"))  # mutation: any closing line with the word counts, so a story line is rewritten
+    ok, detail = case()
+    assert not ok and "fixes=False" in detail

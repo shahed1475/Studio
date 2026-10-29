@@ -114,7 +114,7 @@ def test_caption_position_is_a_validated_choice():
 
 # ---- an energetic voice for a Short, and a loudness target of its own (29 Oct 2026) ----
 def test_the_energetic_voice_lifts_the_hook_and_the_questions_and_settles_the_payoff():
-    lines = ["Did a sandstorm really swallow them?", "Herodotus wrote that it did.", "So where did they go?", "Kaper argued a rebel ambushed them.", "Follow along, and I'll tell you the next story."]
+    lines = ["Did a sandstorm really swallow them?", "Herodotus wrote that it did.", "So where did they go?", "Kaper argued a rebel ambushed them.", "Subscribe, and I'll tell you the next story."]
     style = lambda i: tts.line_prosody("energetic", lines[i], i, len(lines))
     base = tts.VOICE_STYLES["energetic"]
     assert style(0)["pitch"] != style(1)["pitch"] and style(0)["rate"] != style(1)["rate"]  # the hook has its own lift

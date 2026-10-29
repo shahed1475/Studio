@@ -468,8 +468,8 @@ def case_short_structure_rules_only_warn_ask_for_a_payoff_never_for_loops_and_ke
     import scriptgen
 
     line = lambda t: {"text": t}
-    bad = {"format": "short", "description": "A hook first.", "lines": [line("The merchant carried the ledgers across the old stone bridge at dawn."), line("Time passed."), line("But what if it is still out there?"), line("Follow for the next story.")]}
-    good = {**bad, "lines": [line("No one has ever found the army that vanished."), line("Time passed."), line("Only the desert knows, and it has never said."), line("Follow for the next story.")]}
+    bad = {"format": "short", "description": "A hook first.", "lines": [line("The merchant carried the ledgers across the old stone bridge at dawn."), line("Time passed."), line("But what if it is still out there?"), line("Subscribe for the next story.")]}
+    good = {**bad, "lines": [line("No one has ever found the army that vanished."), line("Time passed."), line("Only the desert knows, and it has never said."), line("Subscribe for the next story.")]}
     got_bad = {c["name"]: c for c in reviewer.generator_checks(bad, {"duration": 50})}
     got_good = {c["name"]: c for c in reviewer.generator_checks(good, {"duration": 50})}
     names = ("short_hook", "short_payoff")
@@ -480,6 +480,26 @@ def case_short_structure_rules_only_warn_ask_for_a_payoff_never_for_loops_and_ke
     safe = bool(never) and brief.endswith(never)  # a longer playbook once pushed the safety rules out of the 1500 characters a prompt gets
     ok = catches and asks and safe
     return ok, "a Short's weak hook and a hanging end are warned about, the writer is asked for a payoff and never for loops, and the creator's prompt keeps its Never rules whole" if ok else f"catches={catches} asks={asks} safe={safe}"
+
+
+def case_a_shorts_closing_invitation_says_subscribe_never_follow_and_story_lines_are_left_alone():
+    import reviewer
+    import scriptgen
+
+    line = lambda t: {"text": t, "visual": "v"}
+    old = [line("No one has ever found the army that vanished."), line("The children follow the piper out of town."), line("Follow for the next story.")]
+    fixed, n = scriptgen.subscribe_invitation(old)
+    story = [line("A hook."), line("The old man whispered one word: follow.")]  # a closing story line (no invitation cue) is not an invitation
+    fixes = n == 1 and fixed[-1]["text"] == "Subscribe for the next story." and fixed[1] == old[1] and scriptgen.subscribe_invitation(fixed)[1] == 0 \
+        and scriptgen.subscribe_invitation(story)[1] == 0
+    meta = lambda ls: {"format": "short", "description": "A hook first.", "lines": ls}
+    warn = {c["name"]: c for c in reviewer.generator_checks(meta(old), {"duration": 50})}.get("invite_wording")
+    calm = {c["name"]: c for c in reviewer.generator_checks(meta(fixed), {"duration": 50})}.get("invite_wording")
+    warns = bool(warn) and not warn["ok"] and warn["severity"] == "warn" and bool(calm) and calm["ok"]
+    low = scriptgen.short_prompt("A test topic").lower()
+    asks = "invitation to subscribe" in low and "invitation to follow" not in low
+    ok = fixes and warns and asks
+    return ok, "a closing 'follow' becomes 'subscribe' (story lines untouched), the reviewer warns about it, and the writer is asked to subscribe" if ok else f"fixes={fixes} warns={warns} asks={asks}"
 
 
 def case_second_sources_are_off_by_default_and_only_verified_pages_count():
@@ -670,7 +690,7 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_autopilot_governor_only_tightens_and_freezes_on_repetition, case_research_trend_inbox_is_data_only_expires_and_refuses_foreign_links,
          case_collector_only_reads_and_never_invents_a_number, case_rules_change_only_by_the_owner_and_the_hard_rules_are_constant,
          case_diagnoser_uses_the_rules_file_never_guesses_and_never_writes_to_youtube, case_generator_style_rules_only_warn_and_read_their_limits_from_the_rules_file, case_short_structure_rules_only_warn_ask_for_a_payoff_never_for_loops_and_keep_the_creators_safety_rules_in_its_prompt,
-         case_second_sources_are_off_by_default_and_only_verified_pages_count, case_public_video_changes_are_only_proposed_and_every_write_is_logged_and_reversible,
+         case_a_shorts_closing_invitation_says_subscribe_never_follow_and_story_lines_are_left_alone, case_second_sources_are_off_by_default_and_only_verified_pages_count, case_public_video_changes_are_only_proposed_and_every_write_is_logged_and_reversible,
          case_policy_changes_are_classified_proposed_and_held_without_an_agent_releasing_them, case_drift_needs_several_videos_sustained_over_days_and_only_tells_the_owner,
          case_learner_reads_and_reports_queues_at_most_one_viable_subject_and_only_proposes_rules,
          case_kind_cards_are_free_short_advice_and_the_repeated_part_of_a_prompt_is_cached_not_leaked,

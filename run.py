@@ -215,6 +215,9 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
     """Voice, footage, render and metadata for a finished Short script. requeue: put the topic back in the queue if footage is missing.
     folder: re-render inside this existing folder (it is never removed if the footage is missing)."""
     data = _apply_house_style(data, "short", folder)
+    data["lines"], n = scriptgen.subscribe_invitation(data["lines"])  # every render path (new, redo, repair, clip): the voice and the captions say "subscribe", never "follow"
+    if n:
+        print("  closing invitation reworded: subscribe, not follow")
     slug = re.sub(r"[^a-z0-9]+", "-", data["title"].lower()).strip("-")[:50]
     in_place = folder is not None
     folder = folder or unique_folder(config.OUT / slug)

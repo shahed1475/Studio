@@ -99,7 +99,7 @@ def short_prompt(topic: str, grounded: str | None = None) -> str:
         "- Where SOURCES say who told the story or how we know it, use that as a curiosity line: how we know it is part of the answer.\n"
         "- Write for the ear, as a lively storyteller who has just found something astonishing: plain American English, short punchy sentences, one idea per line, rhythm that builds; no emojis, no hashtags in narration.\n"
         "- The payoff is the line before the last and it is the strongest specific finding in SOURCES that answers line 1: the newest or best-supported explanation, with who said it and when. Never a vague 'experts doubt it' or 'it remains a mystery'. Only if SOURCES truly give no answer, say exactly what each side claims. Never end on a new question.\n"
-        "- The last line is a short invitation to follow for the next story.\n"
+        "- The last line is a short invitation to subscribe to the channel for the next story. Say 'subscribe': YouTube has subscribers, not followers, so never 'follow'.\n"
         "- For every line give 'visual': 2 to 3 words to search for a picture of (e.g. 'Knossos palace'); name the real place, person or object.\n"
         f"{src}\n"
         'Return JSON: {"title": "under 70 chars, no clickbait lies", "description": "2 sentences", '
@@ -118,6 +118,7 @@ def script(topic: str, grounded: str | None = None) -> dict:
     words = sum(len(l["text"].split()) for l in lines)
     if len(lines) < 9 or words < 85:
         raise ValueError(f"script too thin ({len(lines)} lines, {words} words)")
+    lines, _ = subscribe_invitation(lines)
     return {
         "topic": topic, "grounded": bool(grounded), "script_model": _writer_model(),
         "anchors": [str(a).strip() for a in data.get("anchors", []) if str(a).strip()][:5],
@@ -219,6 +220,46 @@ def _drop_lines(lines: list[dict], chapters: list[dict], bad: set[int]) -> tuple
             seen.add(start)
             fixed.append({**c, "start_line": start})
     return [lines[i] for i in keep], fixed
+
+
+# YouTube has subscribers, not followers. The Short prompt once asked the writer for "an invitation to follow", and nine Shorts ended "Follow for the next story."
+# Only the closing invitation is rewritten: a story line ("the children follow the piper", "Mammy Water will follow") is never touched.
+INVITE_CUE = re.compile(r"\b(?:next|more|stor(?:y|ies)|tales?|mysteries|channel|updates?|episodes?)\b", re.I)
+INVITE_MAX_WORDS = 30
+FOLLOW_ASK = re.compile(
+    r"(?P<pre>^|[.!?,;:]\s+|\b(?:and|please|hit|just|then|so|to|do|now)\s+)(?P<word>follow)"
+    r"(?:(?P<drop>\s+(?:along|us)\b)|(?P<chan>\s+(?:this|our|the)\s+channel\b))?"
+    r"(?=\s*(?:[.!?,;:]|$)|\s+(?:for|so|and|to|if|or)\b)", re.I)
+
+
+def _subscribe_for_follow(text: str) -> str:
+    if len(text.split()) > INVITE_MAX_WORDS or not INVITE_CUE.search(text):
+        return text
+
+    def swap(m: re.Match) -> str:
+        w = m.group("word")
+        word = "SUBSCRIBE" if w.isupper() else "Subscribe" if w[0].isupper() else "subscribe"
+        chan = m.group("chan")
+        return m.group("pre") + word + (" to" + chan if chan else "")
+
+    return FOLLOW_ASK.sub(swap, text)
+
+
+def follow_invitation(text: str) -> bool:
+    """True when a closing line asks people to 'follow' (a story line that merely uses the word is not an invitation)."""
+    return _subscribe_for_follow(text) != text
+
+
+def subscribe_invitation(lines: list[dict]) -> tuple[list[dict], int]:
+    """A Short's closing invitation says 'subscribe', never 'follow'. Returns (lines, changed): only the last line can change, the input is not changed in place, and
+    a second pass changes nothing."""
+    if not lines:
+        return lines, 0
+    last = str(lines[-1].get("text", ""))
+    fixed = _subscribe_for_follow(last)
+    if fixed == last:
+        return lines, 0
+    return [*lines[:-1], {**lines[-1], "text": fixed}], 1
 
 
 def label_of(text: str) -> str | None:

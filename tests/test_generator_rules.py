@@ -55,7 +55,7 @@ def test_the_limits_come_from_the_rules_file(tmp_path):
 # ---- a Short's hook and payoff (29 Oct 2026) ----
 HOOK = "No one has ever found the army that vanished."
 PAYOFF = "Only the desert knows, and it has never said."
-INVITE = "Follow for the next story."
+INVITE = "Subscribe for the next story."
 
 
 def short(lines):
@@ -71,7 +71,7 @@ def test_a_short_whose_first_line_is_a_question_or_turn_in_few_words_passes_and_
     assert not by_name(reviewer.generator_checks(short([long, PAYOFF, INVITE]), {"duration": 50}))["short_hook"]["ok"]
 
 
-def test_the_line_before_the_follow_invitation_must_pay_off_not_ask_a_new_question():
+def test_the_line_before_the_subscribe_invitation_must_pay_off_not_ask_a_new_question():
     ok = by_name(reviewer.generator_checks(short([HOOK, PLAIN, PAYOFF, INVITE]), {"duration": 50}))["short_payoff"]
     assert ok["ok"]
     hanging = by_name(reviewer.generator_checks(short([HOOK, PLAIN, "But what if it is still out there?", INVITE]), {"duration": 50}))["short_payoff"]
