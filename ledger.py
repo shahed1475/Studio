@@ -18,11 +18,10 @@ CONFIDENCE = {"VERIFIED": "high", "PARTIALLY_VERIFIED": "medium", "CONFLICTING":
 
 def excerpt(source: str, claim: str, width: int = 170) -> str:
     """The passage of the source around the claim, trimmed to whole words."""
-    key = re.sub(r"^(named|called|known as)\s+", "", claim, flags=re.I).strip()
-    i = source.lower().find(key.lower()) if key else -1
-    if i < 0:
+    span = reviewer.claim_span(source, claim)  # the same finder that decided VERIFIED, so a verdict never comes without its passage
+    if span is None:
         return ""
-    a, b = max(0, i - width // 2), min(len(source), i + len(key) + width // 2)
+    a, b = max(0, span[0] - width // 2), min(len(source), span[1] + width // 2)
     return " ".join(source[a:b].split())
 
 

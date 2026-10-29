@@ -612,6 +612,59 @@ def case_the_depth_model_is_only_kept_when_its_hash_is_the_checked_one_and_a_pic
     return ok, "a model with another hash is refused and removed, only the checked host is used, and with no runtime a picture gets approximate depth" if ok else f"refused={refused} clean={clean} host={host} approx={approx}"
 
 
+def case_a_documentary_is_written_in_the_owners_shape_and_length_and_warned_about_when_it_is_outside_it():
+    import reviewer
+    import scriptgen
+
+    low = scriptgen.DOC_STRUCTURE.lower()
+    marks = ["chapter 1 is the hook", "chapter 2 builds curiosity", "middle chapters are the story", "last chapter gives value"]
+    shape = all(m in low for m in marks) and [low.index(m) for m in marks] == sorted(low.index(m) for m in marks) and "promise" in low and "weigh" in low
+    room = 56 <= scriptgen.MAX_DOC_LINES <= 64
+    meta = {"format": "doc", "description": "d", "lines": [{"text": "Where did it go?"}] * 3}
+    got = lambda sec: {c["name"]: c for c in reviewer.generator_checks(meta, {"duration": sec})}.get("doc_length")
+    short, right = got(456), got(540)
+    warns = bool(short) and not short["ok"] and short["severity"] == "warn" and bool(right) and right["ok"]
+    ok = shape and room and warns
+    return ok, "a documentary is asked for as hook, curiosity, story, then a closing chapter of value, in 8 to 10 minutes, and a length outside that is warned about" if ok else f"shape={shape} room={room} warns={warns}"
+
+
+def case_the_ai_review_reads_the_whole_narration_of_a_long_documentary_and_not_only_its_start():
+    import reviewer
+    import scriptgen
+
+    seen = []
+    real = scriptgen._review_chat
+    scriptgen._review_chat = lambda prompt, *a, **k: seen.append(str(prompt)) or {"invented_facts_risk": 1, "policy_risk": 1, "misleading_title": False}
+    try:
+        lines = [{"text": f"Line {i} " + "word " * 24 + "ends here."} for i in range(57)] + [{"text": "THE VERY LAST WORDS OF THE FILM."}]
+        meta = {"title": "T", "description": "d", "lines": lines}
+        long_enough = sum(len(l["text"]) + 1 for l in lines) > 7000  # the size of an 8 to 10 minute documentary
+        reviewer.llm_review(meta)
+        reviewer.title_ok(meta, "Another title")
+    finally:
+        scriptgen._review_chat = real
+    whole = len(seen) == 2 and all("THE VERY LAST WORDS OF THE FILM." in p for p in seen)
+    ok = long_enough and whole
+    return ok, "the AI review and the title check read a documentary's closing lines" if ok else f"long_enough={long_enough} whole={whole}"
+
+
+def case_a_quotation_is_sourced_by_its_own_words_and_an_invented_one_stays_open_with_no_passage():
+    import ledger
+    import reviewer
+
+    src = 'Zahi Hawass has said in a press release that media reports of the discovery "are unfounded and misleading" and that the brothers had no permission.'
+    meta = {"title": "T", "sources": ["Wikipedia: A (CC BY-SA 4.0)"],
+            "lines": [{"text": 'Zahi Hawass called the reports "unfounded and misleading," noting the brothers had no permission.'},
+                      {"text": 'Hawass also called the whole affair "a shameful circus run by treasure hunters," in that same press release.'}]}
+    rows = {r["claim_text"]: r for r in ledger.build(meta, src)}
+    real = rows.get('"unfounded and misleading,"', {})
+    fake = rows.get('"a shameful circus run by treasure hunters,"', {})
+    found = real.get("verification_status") == "VERIFIED" and "unfounded and misleading" in real.get("evidence_excerpt", "")  # verified only with the passage to show
+    open_ = fake.get("verification_status") == "UNVERIFIED" and fake.get("evidence_excerpt") == "" and not reviewer._in_source('"unfounded and deeply misleading,"', src)
+    ok = found and open_
+    return ok, "a quotation whose own words are in the source is verified with its passage; an invented or altered one stays open" if ok else f"found={found} open={open_}"
+
+
 def case_second_sources_are_off_by_default_and_only_verified_pages_count():
     import autopilot
     import secondsources as ss
@@ -800,11 +853,13 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_autopilot_governor_only_tightens_and_freezes_on_repetition, case_research_trend_inbox_is_data_only_expires_and_refuses_foreign_links,
          case_collector_only_reads_and_never_invents_a_number, case_rules_change_only_by_the_owner_and_the_hard_rules_are_constant,
          case_diagnoser_uses_the_rules_file_never_guesses_and_never_writes_to_youtube, case_generator_style_rules_only_warn_and_read_their_limits_from_the_rules_file, case_short_structure_rules_only_warn_ask_for_a_payoff_never_for_loops_and_keep_the_creators_safety_rules_in_its_prompt,
-         case_a_shorts_closing_invitation_says_subscribe_never_follow_and_story_lines_are_left_alone, case_a_styled_voice_cuts_the_services_silent_tail_and_a_long_gap_between_lines_is_flagged, case_a_shorts_hook_is_an_open_question_and_a_yes_or_no_hook_that_holds_the_answer_is_warned, case_camera_motion_moves_only_drawn_pictures_and_graphics_show_only_what_the_script_says, case_the_depth_model_is_only_kept_when_its_hash_is_the_checked_one_and_a_picture_without_it_gets_approximate_depth, case_second_sources_are_off_by_default_and_only_verified_pages_count, case_public_video_changes_are_only_proposed_and_every_write_is_logged_and_reversible,
+         case_a_shorts_closing_invitation_says_subscribe_never_follow_and_story_lines_are_left_alone, case_a_styled_voice_cuts_the_services_silent_tail_and_a_long_gap_between_lines_is_flagged, case_a_shorts_hook_is_an_open_question_and_a_yes_or_no_hook_that_holds_the_answer_is_warned, case_camera_motion_moves_only_drawn_pictures_and_graphics_show_only_what_the_script_says, case_the_depth_model_is_only_kept_when_its_hash_is_the_checked_one_and_a_picture_without_it_gets_approximate_depth, case_a_documentary_is_written_in_the_owners_shape_and_length_and_warned_about_when_it_is_outside_it, case_second_sources_are_off_by_default_and_only_verified_pages_count, case_public_video_changes_are_only_proposed_and_every_write_is_logged_and_reversible,
          case_policy_changes_are_classified_proposed_and_held_without_an_agent_releasing_them, case_drift_needs_several_videos_sustained_over_days_and_only_tells_the_owner,
          case_learner_reads_and_reports_queues_at_most_one_viable_subject_and_only_proposes_rules,
          case_kind_cards_are_free_short_advice_and_the_repeated_part_of_a_prompt_is_cached_not_leaked,
-         case_an_agent_cannot_set_a_profile_the_reviewer_rejects_and_a_short_fits_its_length_and_nothing_uploaded_is_re_encoded]
+         case_an_agent_cannot_set_a_profile_the_reviewer_rejects_and_a_short_fits_its_length_and_nothing_uploaded_is_re_encoded,
+         case_the_ai_review_reads_the_whole_narration_of_a_long_documentary_and_not_only_its_start,
+         case_a_quotation_is_sourced_by_its_own_words_and_an_invented_one_stays_open_with_no_passage]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:

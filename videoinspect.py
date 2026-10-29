@@ -501,7 +501,7 @@ def gemini_analyze(folder: Path, post=None) -> dict:
                     break
         if not data_url:
             return {"error": f"the video is too large to send even at {ANALYSIS_HEIGHTS[-1]}p ({ANALYSIS_MAX_BYTES // 1_000_000} MB limit); nothing was sent"}
-        script = " ".join(l.get("text", "") for l in meta.get("lines", []))[:6000]
+        script = " ".join(l.get("text", "") for l in meta.get("lines", []))[:12000]  # a 9 minute documentary is about 8,000 characters; 6000 hid its ending
         outline = "; ".join(c.get("title", "") for c in meta.get("chapters", []))[:400]
         prompt = ("You are reviewing OUR OWN finished YouTube video before viewers see more of it. Watch and listen to it. Report what is wrong or weak: pictures that do not fit what the narration "
                   "says at that moment, garbled or fake-looking text inside pictures, caption errors, audio problems, jarring cuts, long dull stretches where nothing changes, and anything that "
@@ -509,7 +509,7 @@ def gemini_analyze(folder: Path, post=None) -> dict:
                   f"Title: {str(meta.get('title', ''))[:120]}\nChapters: {outline}\nScript: {script}\n"
                   'Reply JSON only: {"summary": "two sentences", "problems": [{"at_s": 0, "what": "...", "severity": "low|medium|high"}]}')
         body = (post or llm._post)({"model": model, "messages": [{"role": "user", "content": [{"type": "text", "text": prompt}, {"type": "video_url", "video_url": {"url": data_url}}]}],
-                                    "max_tokens": 8000, "temperature": 0.2, "reasoning": {"effort": "low"}, "usage": {"include": True}}, llm.key_for(model))  # a thinking model spends part of the limit thinking
+                                    "max_tokens": 16000, "temperature": 0.2, "reasoning": {"effort": "low"}, "usage": {"include": True}}, llm.key_for(model))  # a thinking model spends part of the limit thinking
         llm._account(_now(), "review", model, body)
         if body["choices"][0].get("finish_reason") == "length":
             return {"error": "the model ran out of output room before it finished its answer; nothing was kept"}

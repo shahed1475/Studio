@@ -329,7 +329,17 @@ def shape_for(topic: str) -> tuple[int, int]:
     return chapters, per
 
 
-MAX_DOC_LINES = 50
+MAX_DOC_LINES = 58  # about 9 minutes at 138 words a minute with the pauses (30 Oct 2026: the owner asked for 8 to 10; the old cap of 50 made 7.6)
+# The owner's shape for a documentary (30 Oct 2026): the hook, then curiosity, then the story, and it finishes with value.
+DOC_STRUCTURE = (
+    "Shape: chapter 1 is the hook: open cold on the strangest fact or the central question, no greeting, no channel name and no 'in this video'. Chapter 2 builds curiosity: in two or "
+    "three lines make the viewer a promise (the two or three questions this film will answer, and that by the end they will have a simple way to weigh a claim like this one) and "
+    "name what is still unknown. The middle chapters are the story: background and the main competing theories told fairly, each explanation labelled as legend, eyewitness claim, "
+    "historical record or scholarly theory, with a new question or turn about every 60 to 90 seconds of narration ('but that is not the strangest part'). One chapter near the end "
+    "says plainly what is documented, what is legend and what historians dispute. The LAST chapter gives value: two or three questions the viewer can use to weigh any claim like this "
+    "one (who is telling it and how do we know; does the physical evidence match; who gains from the story), each answered with facts already told in the film, never a new fact, "
+    "ending on the most reasonable reading of the evidence and one question left open. "
+)
 THIN = re.compile(r"(my|our|the)\s+(sources?|records?)\s+(say|tell|give|offer|have|contain)s?\s+(very\s+)?(little|nothing|almost nothing|few details)|"
                   r"(i|we)\s+(won'?t|will not|cannot|can'?t)\s+invent|my sources", re.I)  # first-person admissions only: "little is known" is honest history
 
@@ -379,13 +389,9 @@ def doc_script(topic: str, facts: str | None = None, grounded: str | None = None
             "opening. Invent no details to make it more dramatic.\nSOURCES:\n" + grounded
         )
     outline = _script_chat(
-        f"Plan a 6 to 8 minute YouTube documentary for a US audience.\nTopic: {topic}\nChannel: {nc['name']}\n"
-        f"Style: {nc['style']}\n{rules}\n\nGive {n_chapters} chapters in story order: chapter 1 opens with a hook that raises "
-        "the central question, the middle chapters cover background and the main competing theories fairly, one chapter near the end says plainly "
-        "what is documented, what is legend and what historians dispute, and the last has a closing thought. "
-        "Structure: open cold, the first sentence is the strangest fact or the central question, with no greeting, no channel name and no 'in this video'. "
-        "About every 60 to 90 seconds of narration raise a new question or turn ('but that is not the strangest part'). Label each explanation as legend, eyewitness claim, "
-        "historical record or scholarly theory. Near the end give the most reasonable reading of the evidence, using only what the sources support, and leave one question open. "
+        f"Plan an 8 to 10 minute YouTube documentary for a US audience.\nTopic: {topic}\nChannel: {nc['name']}\n"
+        f"Style: {nc['style']}\n{rules}\n\nGive {n_chapters} chapters in story order. {DOC_STRUCTURE}"
+        "The first sentence is the strangest fact or the central question. Use only what the sources support. "
         "End on the story: no thanks, no subscribe line. "
         'Return JSON: {"title": "under 70 chars", "description": "3 sentences", '
         '"tags": ["..."], "anchors": ["3 to 6 real names of the places, people and things at the heart of this '

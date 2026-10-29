@@ -10,7 +10,7 @@
     "shorts_min_seconds": 35,
     "shorts_max_seconds": 58,
     "long_min_minutes": 8,
-    "long_max_minutes": 14,
+    "long_max_minutes": 10,
     "views_per_unique_flag": 3,
     "topic_repeat_block_days": 30,
     "hook_max_seconds": 15,
