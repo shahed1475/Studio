@@ -167,7 +167,7 @@ def test_animated_clips_are_not_darkened_like_stock_footage(tmp_path, monkeypatc
     for clip in (tmp_path / "stock.mp4", tmp_path / "anim" / "gen.mp4"):
         seen.clear()
         render._render_ungated([clip], [3.0], tmp_path / "n.wav", None, tmp_path, tmp_path / "out.mp4")
-        vf = next(a[a.index("-vf") + 1] for a in seen if "-stream_loop" in a)
+        vf = next(a[a.index("-vf") + 1] for a in seen if "-vf" in a and str(clip) in a)  # the scene command (generated clips no longer use -stream_loop)
         assert ("eq=brightness" in vf) == (clip.parent.name != "anim")
 
 
