@@ -214,3 +214,10 @@ def test_a_3d_short_is_cut_from_a_named_documentary_and_the_chapter_is_recorded(
     assert got == tmp_path / "short-1" and data["source_doc"] == "doc-a" and data["art_style"] == "3d" and data["animate"] == 2 and data["hold"] is True and kw["requeue"] is False
     assert json.loads((tmp_path / "doc-a" / "meta.json").read_text())["clips"] == [data["clip_start_line"]]
     assert clipper.make_from("no-such-doc", {}, produce=produce) is None
+
+
+def test_the_motion_prompt_forbids_anything_the_scene_does_not_already_show():
+    """Real clip, 30 Oct 2026: 'warm light flickering' on a desert soldier gave fire and explosions after 3 seconds, events no source states. A documentary must not show them."""
+    p = animate.motion_prompt("An army marched into the desert.", "dunes").lower()
+    assert "no fire" in p and "no explosions" in p and "no new people or objects" in p and "does not already show" in p
+    assert "flickering" not in p  # the word that invited flames
