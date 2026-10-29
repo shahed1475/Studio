@@ -585,3 +585,25 @@ def test_the_subscribe_wording_case_passes_and_fails_when_its_rules_are_broken(m
     monkeypatch.setattr(scriptgen, "INVITE_CUE", __import__("re").compile(r".*"))  # mutation: any closing line with the word counts, so a story line is rewritten
     ok, detail = case()
     assert not ok and "fixes=False" in detail
+
+
+def test_the_voice_tail_case_passes_and_fails_when_its_rules_are_broken(monkeypatch):
+    import studiochecks
+    import tts
+
+    name = "case_a_styled_voice_cuts_the_services_silent_tail_and_a_long_gap_between_lines_is_flagged"
+    case = getattr(agenteval, name)
+    assert case in agenteval.CASES
+    ok, detail = case()
+    assert ok, detail
+    monkeypatch.setitem(tts.VOICE_STYLES["energetic"], "tail", 5.0)  # mutation: the tail is not really cut
+    ok, detail = case()
+    assert not ok and "cut=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(tts, "line_length", lambda duration, words, pause, tail: (min(duration, 1.0) if tail is not None else duration) + pause + 5)  # mutation: a line gains time
+    ok, detail = case()
+    assert not ok
+    monkeypatch.undo()
+    monkeypatch.setattr(studiochecks, "DEAD_AIR_MAX", 9.0)  # mutation: nothing is ever flagged
+    ok, detail = case()
+    assert not ok and "flags=False" in detail

@@ -25,9 +25,20 @@ def _duration(path: Path) -> float:
 VOICE_STYLES = {
     "energetic": {"voice": "en-US-GuyNeural", "rate": "+10%", "pitch": "+2Hz",  # Guy is tagged "Passion"; his register is brighter than Andrew's
                   "hook": {"rate": "+14%", "pitch": "+6Hz"}, "question": {"rate": "+8%", "pitch": "+7Hz"},
-                  "payoff": {"rate": "+3%", "pitch": "+0Hz"}, "invite": {"rate": "+12%", "pitch": "+5Hz"}},
+                  "payoff": {"rate": "+3%", "pitch": "+0Hz"}, "invite": {"rate": "+12%", "pitch": "+5Hz"},
+                  # The service ends every line with silence after its last word: 0.83 s for this voice (29 Oct 2026: the last word ends at 4.66 s, the file runs to 5.52 s). With the
+                  # renderer's own breath that was 1.1 to 1.2 s of no voice, no caption and a still picture before every line. Keep only this much after the last word.
+                  "tail": 0.15},
 }
 INVITE = re.compile(r"\bfollow\b|subscribe|next story", re.I)
+
+
+def line_length(duration: float, words: list[tuple], pause: float, tail: float | None) -> float:
+    """Seconds one narration line takes, breath included. With a `tail` the silence the service leaves after the last spoken word is cut to that length (the file
+    is never padded, and a line with no word timings keeps the whole file); with None the whole file is kept."""
+    if tail is not None and words:
+        duration = min(duration, words[-1][1] + tail)
+    return duration + pause
 
 
 def line_prosody(style: str | None, text: str, index: int, total: int) -> dict | None:
@@ -200,11 +211,12 @@ def narrate(lines: list[str], work: Path, pause: float = 0.12, motion: int = 0, 
     work.mkdir(parents=True, exist_ok=True)
     all_words, durations, parts = [], [], []
     offset = 0.0
+    tail = (VOICE_STYLES.get(style or "") or {}).get("tail")  # only a styled voice trims the service's silent tail; the default voice is made exactly as before
     for i, text in enumerate(lines):
         mp3 = work / f"line{i:02d}.mp3"
         pros = line_prosody(style, text, i, len(lines))
         words = asyncio.run(_synth_line(text, mp3) if pros is None else _synth_line(text, mp3, pros))
-        d = _duration(mp3) + pause  # small breath between lines
+        d = line_length(_duration(mp3), words, pause, tail)  # small breath between lines
         all_words += [(s + offset, e + offset, w, i) for s, e, w in words]
         durations.append(d)
         offset += d

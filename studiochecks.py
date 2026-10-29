@@ -137,6 +137,19 @@ def _norm_words(text: str) -> list[str]:
     return re.findall(r"[a-z0-9']+", text.lower())
 
 
+DEAD_AIR_MAX = 0.9  # seconds between the last word of one Short line and the first of the next; the default voice breathes about 0.65 s, the untrimmed energetic voice left 1.1 to 1.2 s
+
+
+def longest_gap(words: list[dict]) -> float:
+    """The longest silence between the end of one narration line and the start of the next, from words.json."""
+    ends, starts = {}, {}
+    for w in words:
+        i = w.get("i", 0)
+        starts[i] = min(w["s"], starts.get(i, w["s"]))
+        ends[i] = max(w["e"], ends.get(i, w["e"]))
+    return max((starts[i] - ends[i - 1] for i in starts if i - 1 in ends), default=0.0)
+
+
 def caption_checks(folder: Path, meta: dict, duration: float) -> list[dict]:
     """Captions in order, inside the video, and matching the final script word for word (burned-in captions are checked through the same words)."""
     out = []
@@ -168,6 +181,9 @@ def caption_checks(folder: Path, meta: dict, duration: float) -> list[dict]:
 
         words = json.loads(words_file.read_text())
         out.append(row("voice_timing_matches_length", subtitles.timings_match(words, duration, 1.5), f"speech ends at {words[-1]['e']:.1f} s of {duration:.1f} s" if words else "no word timings"))
+        if meta.get("format") != "doc" and words:
+            gap = longest_gap(words)
+            out.append(row("no_dead_air", gap <= DEAD_AIR_MAX, f"the longest silence between two lines is {gap:.1f} s (aim for {DEAD_AIR_MAX:g} or less: a still picture and no voice reads as lag on a phone)", "warn"))
     return out
 
 
