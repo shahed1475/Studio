@@ -607,3 +607,28 @@ def test_the_voice_tail_case_passes_and_fails_when_its_rules_are_broken(monkeypa
     monkeypatch.setattr(studiochecks, "DEAD_AIR_MAX", 9.0)  # mutation: nothing is ever flagged
     ok, detail = case()
     assert not ok and "flags=False" in detail
+
+
+def test_the_hook_question_case_passes_and_fails_when_its_rules_are_broken(monkeypatch):
+    import re
+
+    import reviewer
+    import scriptgen
+
+    name = "case_a_shorts_hook_is_an_open_question_and_a_yes_or_no_hook_that_holds_the_answer_is_warned"
+    case = getattr(agenteval, name)
+    assert case in agenteval.CASES
+    ok, detail = case()
+    assert ok, detail
+    real = scriptgen.short_prompt
+    monkeypatch.setattr(scriptgen, "short_prompt", lambda *a, **k: real(*a, **k).replace("never as a yes/no question", "any kind of question"))  # mutation: the writer may open with a yes/no again
+    ok, detail = case()
+    assert not ok and "asks=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(reviewer, "YES_NO", re.compile(r"^\b$"))  # mutation: a yes/no hook is never seen
+    ok, detail = case()
+    assert not ok and "warns=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(reviewer, "YES_NO", re.compile(r".*"))  # mutation: every hook counts as yes/no, so an open question is warned about too
+    ok, detail = case()
+    assert not ok and "warns=False" in detail

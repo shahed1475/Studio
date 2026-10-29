@@ -515,6 +515,20 @@ def case_a_styled_voice_cuts_the_services_silent_tail_and_a_long_gap_between_lin
     return ok, "an energetic line keeps only a short tail after its last word (never padded), the default voice is unchanged, and a 1.2 s silence between lines is flagged" if ok else f"cut={cut} never_pads={never_pads} flags={flags}"
 
 
+def case_a_shorts_hook_is_an_open_question_and_a_yes_or_no_hook_that_holds_the_answer_is_warned():
+    import reviewer
+    import scriptgen
+
+    meta = lambda first: {"format": "short", "description": "A hook first.", "lines": [{"text": t} for t in (first, "Around 525 BC the king sent them out.", "Only the desert knows.", "Subscribe for the next story.")]}
+    got = lambda first: {c["name"]: c for c in reviewer.generator_checks(meta(first), {"duration": 45})}.get("short_hook_open")
+    weak, good = got("Did a sandstorm really swallow 50,000 soldiers?"), got("Where did an army of fifty thousand Persian soldiers go?")
+    warns = bool(weak) and not weak["ok"] and weak["severity"] == "warn" and bool(good) and good["ok"]
+    low = scriptgen.short_prompt("A test topic").lower()
+    asks = "never as a yes/no question" in low and "keep the explanation out of the hook" in low
+    ok = warns and asks
+    return ok, "a yes/no hook is warned about, an open question is not, and the writer is asked for an open question that keeps the answer back" if ok else f"warns={warns} asks={asks}"
+
+
 def case_second_sources_are_off_by_default_and_only_verified_pages_count():
     import autopilot
     import secondsources as ss
@@ -703,7 +717,7 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_autopilot_governor_only_tightens_and_freezes_on_repetition, case_research_trend_inbox_is_data_only_expires_and_refuses_foreign_links,
          case_collector_only_reads_and_never_invents_a_number, case_rules_change_only_by_the_owner_and_the_hard_rules_are_constant,
          case_diagnoser_uses_the_rules_file_never_guesses_and_never_writes_to_youtube, case_generator_style_rules_only_warn_and_read_their_limits_from_the_rules_file, case_short_structure_rules_only_warn_ask_for_a_payoff_never_for_loops_and_keep_the_creators_safety_rules_in_its_prompt,
-         case_a_shorts_closing_invitation_says_subscribe_never_follow_and_story_lines_are_left_alone, case_a_styled_voice_cuts_the_services_silent_tail_and_a_long_gap_between_lines_is_flagged, case_second_sources_are_off_by_default_and_only_verified_pages_count, case_public_video_changes_are_only_proposed_and_every_write_is_logged_and_reversible,
+         case_a_shorts_closing_invitation_says_subscribe_never_follow_and_story_lines_are_left_alone, case_a_styled_voice_cuts_the_services_silent_tail_and_a_long_gap_between_lines_is_flagged, case_a_shorts_hook_is_an_open_question_and_a_yes_or_no_hook_that_holds_the_answer_is_warned, case_second_sources_are_off_by_default_and_only_verified_pages_count, case_public_video_changes_are_only_proposed_and_every_write_is_logged_and_reversible,
          case_policy_changes_are_classified_proposed_and_held_without_an_agent_releasing_them, case_drift_needs_several_videos_sustained_over_days_and_only_tells_the_owner,
          case_learner_reads_and_reports_queues_at_most_one_viable_subject_and_only_proposes_rules,
          case_kind_cards_are_free_short_advice_and_the_repeated_part_of_a_prompt_is_cached_not_leaked,

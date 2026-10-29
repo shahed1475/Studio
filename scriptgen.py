@@ -90,7 +90,7 @@ def short_prompt(topic: str, grounded: str | None = None) -> str:
         f"Style: {nc['style']}\n\nRules:\n"
         f"- Tell it as a short story in 10 to 12 lines of 8 to 12 words each, {lo_words} to {hi_words} words in total, never more (it must run under a minute: competitor Shorts that reached 20,000 views ran 51 seconds at the median).\n"
         "- Story arc: a hook that raises a question, the setting, rising tension, the twist or turning point, then the payoff.\n"
-        "- Line 1 is the hook: the most startling concrete fact or the central question, in under 12 words, no greeting, never 'imagine' or 'have you ever'.\n"
+        "- Line 1 is the hook: the most startling concrete fact or the central question, in under 12 words, no greeting, never 'imagine' or 'have you ever'. Ask it openly (who, what, where, why or how), never as a yes/no question, and name who or what the story is about so a stranger understands it at once; keep the explanation out of the hook (\"Where did an army of fifty thousand Persian soldiers go?\", not \"Did a sandstorm swallow them?\").\n"
         "- Curiosity: keep the answer back. Each middle line adds ONE new specific fact from SOURCES (a name, a year, a number or a place) that makes the viewer need the next line, and one middle line raises a second, smaller question.\n"
         "- Retell it entirely in your own original words. Never copy sentences from any book, article or film.\n"
         "- If the story is real history or a real mystery, use only well-documented facts and say 'legend says' or 'some historians believe' for anything uncertain. Invent no names, dates or quotes.\n"

@@ -209,6 +209,7 @@ def variety_checks(meta: dict, recent: list[dict]) -> list[dict]:
 LOOP = re.compile(r"\?|\b(but|yet|however|except|until|strangest|stranger|no one|nobody|never|still)\b", re.I)  # a proxy for an open loop or a turn in the story
 GREETING = re.compile(r"^\W*(welcome|hello|hi|hey|what's up|in this video|today,? we|before we begin)\b", re.I)
 OUTRO = re.compile(r"thanks? for watching|like and subscribe|subscribe|see you (next|in the)|until next time|don't forget to", re.I)
+YES_NO = re.compile(r"^\W*(?:did|do|does|is|are|was|were|can|could|will|would|has|have|had|should|shall|may|might)\b", re.I)  # a question that can be answered yes or no
 FOLLOW = re.compile(r"\bfollow\b|subscribe|next story|for more", re.I)  # the short invitation that closes a Short: it comes after the payoff, so it is not the payoff line
 
 
@@ -246,6 +247,9 @@ def generator_checks(meta: dict, probe: dict, rules: dict | None = None) -> list
         first = lines[0].strip()
         words, gap = len(first.split()), bool(LOOP.search(first))
         out.append(_c("short_hook", words <= b["short_hook_max_words"] and gap, f"line 1 is {words} words (aim for {b['short_hook_max_words']} or fewer) and " + ("raises a question or a turn (a proxy)" if gap else "raises no question or turn that a proxy can see"), "warn"))
+        opening = re.split(r"(?<=[.?!])\s", first)[0]
+        yes_no = opening.endswith("?") and bool(YES_NO.search(opening))
+        out.append(_c("short_hook_open", not yes_no, "line 1 is a yes/no question: ask who, what, where or why, name who the story is about and keep the explanation out of it (the studio's own rule)" if yes_no else "line 1 is not a yes/no question", "warn"))
         body = lines[:-1] if len(lines) > 1 and FOLLOW.search(lines[-1]) else lines
         payoff = body[-1].strip()
         out.append(_c("short_payoff", bool(payoff) and not payoff.endswith("?"), "the story ends on an answer, then the invitation" if payoff and not payoff.endswith("?") else "the line before the invitation asks a new question instead of paying off the hook", "warn"))
