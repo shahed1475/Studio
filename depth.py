@@ -133,6 +133,8 @@ def make_map(session, picture) -> Image.Image:
 def make_and_store(path) -> Image.Image | None:
     """Make the picture's map with the model and keep it in cache/depth/; None when the model cannot run here or fails (the caller then uses the approximate map)."""
     try:
+        if _runtime() is None or not model_path().exists():  # a session made earlier must not outlive the runtime or the model file
+            return None
         session = _session()
         if session is None:
             return None

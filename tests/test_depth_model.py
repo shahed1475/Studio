@@ -88,3 +88,10 @@ def test_a_map_made_by_the_model_is_stored_and_found_next_time_without_running_i
     got, how = depth.depth_for(p)
     assert how == "model" and len(runs) == 1  # the second call read the stored map
     assert (config.CACHE / "depth" / f"{depth.depth_key(p)}.png").exists()
+
+
+def test_a_session_made_earlier_is_not_used_once_the_model_file_is_gone(tmp_path, monkeypatch):
+    p = picture(tmp_path)
+    monkeypatch.setattr(depth, "_runtime", lambda: object())
+    monkeypatch.setattr(depth, "_session", lambda: pytest.fail("the model must not be asked for when its file is missing"))
+    assert depth.make_and_store(p) is None
