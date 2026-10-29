@@ -561,8 +561,9 @@ def _animate(data: dict, clips: list, credits: list, vertical: bool = False) -> 
     import animate
     import modelcfg
 
+    pinned = {"scenes": data["animate_scenes"]} if data.get("animate_scenes") else {}  # a video that names its own scenes; otherwise they are spread across it
     new, stats = animate.animate_scenes(clips, data["lines"], n, float(data.get("animate_budget", 3.0)), animate.clip_generator(vertical=vertical),
-                                        size=(720, 1280) if vertical else (1280, 720))
+                                        size=(720, 1280) if vertical else (1280, 720), **pinned)
     if stats["animated"] or stats["cached"]:
         credits = [*credits, animate.credit(modelcfg.get("video_generation"))]
     return new, credits, stats
