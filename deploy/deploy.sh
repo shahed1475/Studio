@@ -35,8 +35,10 @@ if [[ "${DRY:-0}" == "1" ]]; then
   echo "Files that would change: $(echo "$changed" | grep -c . || true)"; echo "$changed" | sed 's/^/  /'
   if echo "$changed" | grep -qE '^(Dockerfile|requirements.*\.txt|docker-compose\.yml)$'; then echo "Would rebuild the containers."; fi
   if echo "$changed" | grep -qE '^worker\.py$'; then echo "Would restart the worker."; fi
-  if echo "$changed" | grep -qE '^(dashboard\.(py|html)|webauth\.py|login\.html|risk\.py|static/)'; then echo "Would restart the dashboard."; fi
+  if echo "$changed" | grep -qE '^[^/]+\.py$'; then echo "Would restart the dashboard (a Python file changed; pages and styles alone need no restart)."; fi
   renders=$(docker exec studio-worker sh -c 'for p in /proc/[0-9]*/cmdline; do tr "\0" " " < "$p" 2>/dev/null; echo; done' 2>/dev/null | grep -E 'run\.py (doc|make|redo|clip|newsvideo|batch|autopilot)' | head -3 || true)
+  dashjobs=$(docker exec studio-dashboard sh -c 'for p in /proc/[0-9]*/cmdline; do tr "\0" " " < "$p" 2>/dev/null; echo; done' 2>/dev/null | grep -E 'run\.py (doc|make|redo|clip|newsvideo|batch|autopilot)' | head -3 || true)  # a build started from the dashboard runs inside the dashboard container: a restart of it ends that build
+  if [[ -n "$dashjobs" ]]; then renders="$renders"$'\n'"$dashjobs (started from the dashboard)"; fi
   if [[ -n "$renders" ]]; then echo "Renders are running now:"; echo "$renders"; else echo "No render is running."; fi
   exit 0
 fi
@@ -46,6 +48,7 @@ NEW=$(git rev-parse HEAD)
 changed=$(git diff --name-only "$OLD" "$NEW" || true)
 export STUDIO_UID=$(id -u) STUDIO_GID=$(id -g)
 renders=$(docker exec studio-worker sh -c 'for p in /proc/[0-9]*/cmdline; do tr "\0" " " < "$p" 2>/dev/null; echo; done' 2>/dev/null | grep -E 'run\.py (doc|make|redo|clip|newsvideo|batch|autopilot)' | head -3 || true)
+dashjobs=$(docker exec studio-dashboard sh -c 'for p in /proc/[0-9]*/cmdline; do tr "\0" " " < "$p" 2>/dev/null; echo; done' 2>/dev/null | grep -E 'run\.py (doc|make|redo|clip|newsvideo|batch|autopilot)' | head -3 || true)
 if [[ "$OLD" == "$NEW" ]]; then echo "Already up to date ($NEW)."; fi
 if echo "$changed" | grep -qE '^(Dockerfile|requirements.*\.txt|docker-compose\.yml)$'; then
   if [[ -n "$renders" && "${FORCE:-0}" != "1" ]]; then
@@ -60,7 +63,15 @@ elif echo "$changed" | grep -qE '^worker\.py$'; then
     docker compose restart worker
   fi
 fi
-if echo "$changed" | grep -qE '^(dashboard\.(py|html)|webauth\.py|login\.html|risk\.py|static/)'; then docker compose restart dashboard; fi
+# Python files are loaded once when the dashboard starts, so any change to one needs a restart; dashboard.html and static/ are read from disk on every request and need none.
+# A build the owner started from the dashboard runs inside that container: restarting it would end the build, so it waits (FORCE=1 overrides).
+if echo "$changed" | grep -qE '^[^/]+\.py$'; then
+  if [[ -n "$dashjobs" && "${FORCE:-0}" != "1" ]]; then
+    echo "Python files changed but a build started from the dashboard is running: the dashboard is NOT restarted (that would end the build). Restart it after the build ends."; echo "$dashjobs"
+  else
+    docker compose restart dashboard
+  fi
+fi
 docker compose ps --format '{{.Name}} {{.Status}}'
 echo "Deployed ${NEW:0:7}. Changed files: $(echo "$changed" | grep -c . || true)"
 REMOTE

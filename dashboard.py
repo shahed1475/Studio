@@ -213,7 +213,7 @@ def state() -> dict:
             "pexels": bool(pexels_key()), "voice": config.VOICE, "disk_free_gb": round(shutil.disk_usage(config.ROOT).free / 1e9, 1),
         },
         "youtube": {"secret": SECRET.exists(), "token": TOKEN.exists(), "connecting": YT_STATE["connecting"], "error": YT_STATE["error"], "web": __import__("ytweb").available()},
-        "jobs": sorted(({k: v for k, v in j.items() if k != "proc"} for j in JOBS.values()), key=lambda j: -j["started"])[:30],
+        "jobs": state_jobs(),
         "autopilot": {"enabled": autopilot_cfg().get("enabled", False), "needs_you": len(autopilot_view()["needs_you"]), "next": next_slot_view(), "busy": __import__("autopilot").is_running()},
         "agent": {"unread": __import__("agentlog").unread()},
         "tenant": __import__("tenantmode").is_tenant(), "niche_confirmed": __import__("niche").current()["brief"] is not None and bool((__import__("niche").current()["brief"] or {}).get("confirmed")),
@@ -297,6 +297,22 @@ def notifications_view() -> dict:
     failed = [{"id": j["id"], "cmd": j["cmd"]} for j in JOBS.values() if j["status"] == "failed" and time.time() - (j.get("ended") or 0) < 86400]
     return notifyview.build(risks=safe(lambda: risk_view()["rows"], []), needs_you=safe(lambda: len(autopilot_view()["needs_you"]), 0),
                             growth=safe(lambda: __import__("growthview").view(), {}), failed_jobs=failed)
+
+
+def growth_view() -> dict:
+    """Everything the Growth page shows, each source read on its own so one that fails leaves the rest (growthpage.py shapes it)."""
+    import growth
+    import growthdata
+    import growthpage
+    import growthview
+
+    def safe(fn, default):
+        try:
+            return fn()
+        except Exception:
+            return default
+
+    return growthpage.build(safe(agent_view, {}), safe(lambda: growth.load_snapshots(60), []), safe(growthview.view, {}), safe(growthdata.load, {}))
 
 
 def agent_view() -> dict:
@@ -410,8 +426,10 @@ def start_job(cmd: str, args: list[str]) -> str:
     env = dict(os.environ, PYTHONUNBUFFERED="1")
     if pexels_key():
         env["PEXELS_API_KEY"] = pexels_key()
-    proc = subprocess.Popen([PY, "run.py", cmd, *args], cwd=config.ROOT, stdout=log.open("w"), stderr=subprocess.STDOUT, env=env)
-    job = {"id": jid, "cmd": f"{cmd} {' '.join(args)}".strip(), "status": "running", "started": time.time(), "ended": None, "proc": proc}
+    before = sorted(x.name for x in config.OUT.iterdir()) if config.OUT.exists() else []  # what exists now: a stopped job sets aside only what it began
+    # its own process group, so stopping it reaches what it started too (ffmpeg, downloads)
+    proc = subprocess.Popen([PY, "run.py", cmd, *args], cwd=config.ROOT, stdout=log.open("w"), stderr=subprocess.STDOUT, env=env, start_new_session=True)
+    job = {"id": jid, "cmd": f"{cmd} {' '.join(args)}".strip(), "status": "running", "started": time.time(), "ended": None, "proc": proc, "before": before}
     JOBS[jid] = job
     if cmd != "autopilot":  # tells the autopilot timer to stay out of the way
         autopilot.JOB_FILE.write_text(str(proc.pid))
@@ -420,10 +438,67 @@ def start_job(cmd: str, args: list[str]) -> str:
         rc = proc.wait()
         if autopilot.JOB_FILE.exists() and autopilot.JOB_FILE.read_text().strip() == str(proc.pid):
             autopilot.JOB_FILE.unlink(missing_ok=True)
-        job.update(status="done" if rc == 0 else "failed", ended=time.time())
+        job.update(status="stopped" if job.get("stopping") else "done" if rc == 0 else "failed", ended=time.time())
 
     threading.Thread(target=watch, daemon=True).start()
     return jid
+
+
+def state_jobs() -> list[dict]:
+    """The jobs for the page: never the process object or the bookkeeping."""
+    return sorted(({k: v for k, v in j.items() if k not in ("proc", "before", "stopping")} for j in JOBS.values()), key=lambda j: -j["started"])[:30]
+
+
+def stop_job(jid: str) -> dict:
+    """Stop a job the dashboard started: its whole process group gets SIGTERM (then SIGKILL after a few seconds), Autopilot is released, and a video the job began but
+    did not finish is moved to output_old (never deleted). {"ok": True, "archived": [slug, ...]}."""
+    import signal
+
+    import fixer
+
+    job = JOBS.get(jid)
+    if not job or job["status"] != "running":
+        raise ValueError("that job is not running")
+    proc, job["stopping"] = job["proc"], True
+    try:
+        pgid = os.getpgid(proc.pid)
+    except ProcessLookupError:
+        pgid = None
+    shared = pgid == os.getpgrp()  # a job that shares the dashboard's own group: signalling the group would stop the dashboard too, so only the job's process is signalled
+    for sig, wait in ((signal.SIGTERM, 8), (signal.SIGKILL, 5)):
+        if pgid is None or proc.poll() is not None:
+            break
+        try:
+            os.kill(proc.pid, sig) if shared else os.killpg(pgid, sig)
+        except ProcessLookupError:
+            break
+        try:
+            proc.wait(timeout=wait)
+        except subprocess.TimeoutExpired:
+            continue
+    job.update(status="stopped", ended=time.time())
+    import autopilot
+
+    if autopilot.JOB_FILE.exists() and autopilot.JOB_FILE.read_text().strip() == str(proc.pid):
+        autopilot.JOB_FILE.unlink(missing_ok=True)
+    archived = []
+    before = set(job.get("before") or [])
+    for d in sorted(config.OUT.iterdir()) if config.OUT.exists() else []:
+        if d.name in before or not d.is_dir():
+            continue
+        try:
+            meta = json.loads((d / "meta.json").read_text()) if (d / "meta.json").exists() else {}
+        except ValueError:
+            meta = {}
+        if not (d / "video.mp4").exists() and not meta.get("video_id"):
+            fixer.archive(d)
+            archived.append(d.name)
+    try:
+        with (LOGS / f"{jid}.log").open("a") as f:
+            f.write("\nStopped by you." + (f" The unfinished video was set aside in output_old: {', '.join(archived)}." if archived else "") + "\n")
+    except OSError:
+        pass
+    return {"ok": True, "archived": archived}
 
 
 # ---------- http ----------
@@ -641,6 +716,8 @@ class H(BaseHTTPRequestHandler):
             self.send_page_file("notifications.html")
         elif u.path == "/api/notifications":
             self.send_json(notifications_view())
+        elif u.path == "/api/growth":
+            self.send_json(growth_view())
         elif u.path == "/now":
             self.send_page_file("now.html")
         elif u.path == "/api/now":
@@ -854,6 +931,8 @@ class H(BaseHTTPRequestHandler):
             self.send_json({"error": f"{e}"}, 400)
 
     def route(self, path, b):
+        if path == "/api/job/stop":
+            return stop_job(str(b.get("id", "")))
         if path == "/api/job":
             import tenantmode
 

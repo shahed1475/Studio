@@ -365,7 +365,16 @@ const stateBadge=s=>badge(...STATE[s]);
 const ago=t=>{const s=Math.max(0,Date.now()/1000-t);return s<60?"just now":s<3600?Math.round(s/60)+" min ago":s<86400?Math.round(s/3600)+" h ago":Math.round(s/86400)+" d ago"};
 const dur=s=>s<90?Math.round(s)+" s":Math.round(s/60)+" min";
 const running=()=>S&&S.jobs.find(j=>j.status==="running");
-const jobBadge=j=>badge(j.status==="done"?"Finished":j.status==="failed"?"Failed":"Running",j.status==="done"?"ok":j.status==="failed"?"bad":"warn");
+const jobBadge=j=>badge(j.status==="done"?"Finished":j.status==="failed"?"Failed":j.status==="stopped"?"Stopped":"Running",j.status==="done"?"ok":j.status==="failed"?"bad":j.status==="stopped"?"mute":"warn");
+/* stop: the first click asks, the second one stops (no pop-up, works the same on a phone) */
+const stopBtn=(id,cls="sm")=>`<button type="button" class="btn danger ${cls} stopbtn" onclick="stopJob('${esc(id)}',this)">${ico("x-circle")}<span>Stop</span></button>`;
+async function stopJob(id,btn){
+  const label=btn.querySelector("span");
+  if(!btn.dataset.armed){btn.dataset.armed="1";btn.classList.add("armed");label.textContent="Click again to stop";setTimeout(()=>{if(btn.isConnected&&btn.dataset.armed&&!btn.disabled){delete btn.dataset.armed;btn.classList.remove("armed");label.textContent="Stop"}},4000);return}
+  btn.disabled=true;label.textContent="Stopping";
+  try{const r=await api("/api/job/stop",{id});toast(r.archived&&r.archived.length?"Stopped. The unfinished video was set aside in output_old, nothing was deleted.":"Stopped.")}catch(e){btn.disabled=false;delete btn.dataset.armed;btn.classList.remove("armed");label.textContent="Stop";return}
+  await refresh(true);pollLive();
+}
 const empty=(icon,title,text,btn="")=>`<div class="empty">${ico(icon)}<b>${title}</b><span>${text}</span>${btn}</div>`;
 
 function setTheme(t){safe(()=>localStorage.setItem("theme",t));document.documentElement.dataset.theme=t;const l=document.getElementById("themelbl");if(l)l.textContent=t==="dark"?"Switch to light":"Switch to dark";
@@ -385,7 +394,7 @@ function toggleTheme(ev){
 }
 setTheme(safe(()=>localStorage.getItem("theme"))||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"));
 
-function go(t,opts={}){sheet(false);weekDone=false;if(opts.slug!==undefined)openSlug=opts.slug;tab=t;location.hash=t;clearInterval(logTimer);render(true)}
+function go(t,opts={}){sheet(false);weekDone=false;window.scrollTo(0,0);if(opts.slug!==undefined)openSlug=opts.slug;tab=t;location.hash=t;clearInterval(logTimer);render(true)}
 async function job(cmd,args=[]){const r=await api("/api/job",{cmd,args});openJob=r.id;toast("Started. It keeps running if you close this page.");await refresh(true);go("activity")}
 
 async function refresh(force){
@@ -459,7 +468,7 @@ document.addEventListener("pointermove",e=>{
 new IntersectionObserver(([e])=>document.getElementById("topbar").classList.toggle("stuck",!e.isIntersecting)).observe(document.getElementById("sentinel"));
 
 /* ---------- Notifications: bell, panel, toasts, desktop alerts ---------- */
-let NT=null,ntFilter="all",ntOpen=false,ntSeen=null,ntOpenedAt=0,lastBadge=0;
+let NT=null,ntSig="",ntFilter="all",ntOpen=false,ntSeen=null,ntOpenedAt=0,lastBadge=0;
 const SRC_ICON={Warnings:"warning-circle",Growth:"chart-line-up",Activity:"pulse",Autopilot:"robot"};
 const alertsOn=()=>safe(()=>localStorage.getItem("alerts"))==="on"&&"Notification" in window&&Notification.permission==="granted";
 async function pollNotes(){
@@ -468,8 +477,9 @@ async function pollNotes(){
   if(r.status===401){location.href="/login";return}
   let d;try{d=await r.json()}catch(e){return}
   const fresh=ntSeen?d.items.filter(i=>!i.pinned&&i.unread&&!ntSeen.has(i.id)):[];
-  ntSeen=new Set(d.items.map(i=>i.id));NT=d;paintBell();if(ntOpen)paintNotes();
-  fresh.slice(0,3).forEach(toastNote);
+  ntSeen=new Set(d.items.map(i=>i.id));NT=d;paintBell();
+  if(ntOpen&&notesSig()!==ntSig)paintNotes();  // only when something changed: a rebuild replays every row's entrance and loses the reader's place
+  if(!ntOpen)fresh.slice(0,3).forEach(toastNote);  // an open panel lists them itself, and a toast over its chips takes the click meant for a chip
 }
 function paintBell(){
   const n=NT?NT.counts.badge:0,b=document.getElementById("bellbadge"),bell=document.getElementById("bell");if(!b)return;
@@ -482,20 +492,24 @@ function paintBell(){
 function noteRow(i,k){
   return `<button type="button" class="nrow ${esc(i.level)} ${i.unread?"unread":""}" style="--i:${Math.min(k,8)}" onclick="noteGo('${esc(i.tab)}')"><span class="nic">${ico(SRC_ICON[i.source]||"pulse")}</span><span class="nb"><b>${esc(i.title)}</b>${i.detail?`<span>${esc(i.detail)}</span>`:""}<small><span>${esc(i.source)}</span>${i.pinned?"":`<time>${agoIso(i.at)}</time>`}</small></span></button>`;
 }
+const notesSig=()=>NT?ntFilter+JSON.stringify(NT.items.map(i=>[i.id,i.unread,i.title]))+JSON.stringify(NT.counts):"";
 function paintNotes(){
+  ntSig=notesSig();  // what is on screen: a refresh repaints only when the data no longer matches it
   const d=NT||{items:[],sources:{},counts:{badge:0,waiting:0}};
   const keep=i=>ntFilter==="all"||(ntFilter==="needs"?i.pinned&&i.counted:i.source===ntFilter);
   const items=d.items.filter(keep),pin=items.filter(i=>i.pinned),ev=items.filter(i=>!i.pinned);let k=0;
   const chip=(key,l,n)=>`<button class="chip" type="button" aria-pressed="${ntFilter===key}" onclick="ntSet('${key}')">${l}<small>${n||0}</small></button>`;
   document.getElementById("nchips").innerHTML=chip("all","All",d.items.length)+chip("needs","Needs you",d.counts.waiting)+chip("Growth","Growth",d.sources.Growth)+chip("Activity","Activity",d.sources.Activity)+chip("Warnings","Warnings",d.sources.Warnings);
-  document.getElementById("nlist").innerHTML=!items.length?empty("bell","All quiet","New reports from Autopilot and the agents show up here as they happen."):
+  const list=document.getElementById("nlist"),keep0=list.scrollTop;
+  list.innerHTML=!items.length?empty("bell","All quiet","New reports from Autopilot and the agents show up here as they happen."):
     (pin.length?`<div class="ngroup">Waiting for you</div>`+pin.map(i=>noteRow(i,k++)).join(""):"")+(ev.length?`<div class="ngroup">Recent</div>`+ev.map(i=>noteRow(i,k++)).join(""):"");
+  list.scrollTop=keep0;
   paintAlertSw();
 }
 function ntSet(k){ntFilter=k;paintNotes()}
 function toggleNotes(e){e&&e.stopPropagation();ntOpen?closeNotes():openNotes()}
 function openNotes(){
-  ntOpen=true;ntOpenedAt=Date.now();const n=document.getElementById("notes");n.classList.add("open");document.getElementById("bell").setAttribute("aria-expanded","true");paintNotes();pollNotes();n.focus({preventScroll:true});
+  ntOpen=true;ntOpenedAt=Date.now();const n=document.getElementById("notes");n.classList.add("open");document.getElementById("bell").setAttribute("aria-expanded","true");document.querySelectorAll("#toasts .nt").forEach(t=>t.remove());paintNotes();pollNotes();n.focus({preventScroll:true});
 }
 function closeNotes(){
   if(!ntOpen)return;ntOpen=false;document.getElementById("notes").classList.remove("open");const b=document.getElementById("bell");b.setAttribute("aria-expanded","false");b.focus({preventScroll:true});
@@ -504,7 +518,8 @@ function closeNotes(){
 async function notesRead(quiet){try{await api("/api/notifications/read",{})}catch(e){return}if(!quiet)toast("All marked as read");pollNotes()}
 function noteGo(t){closeNotes();go(t,{slug:null})}
 function popNotes(){const w=window.open("/notifications","studio-notifications","popup=yes,width=420,height=580");if(!w)toast("Your browser blocked the window. Allow pop-ups for this page, or open /notifications in a new tab.")}
-document.addEventListener("click",e=>{if(ntOpen&&!e.target.closest("#notes")&&!e.target.closest("#bell"))closeNotes()});
+// the path is fixed when the click happens: a click on a chip that re-renders itself is still a click inside the panel
+document.addEventListener("click",e=>{if(ntOpen&&!e.composedPath().some(n=>n.id==="notes"||n.id==="bell"))closeNotes()});
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&ntOpen)closeNotes()});
 function toastNote(i){
   const host=document.getElementById("toasts");if(!host)return;
@@ -550,6 +565,12 @@ function railHTML(){
   const st=L.stage,on=wasBusy();
   return `<div class="rail" role="list" aria-label="Build stages">${st.steps.map((x,i)=>{const c=on&&st.index!=null?(i<st.index?"done":i===st.index?"now":""):"";return `<div class="st ${c}" role="listitem" ${c==="now"?'aria-current="step"':""}><i>${c==="done"?ico("check"):""}</i><span>${esc(x.label)}</span></div>`}).join("")}</div>`;
 }
+function liveControls(){
+  const r=running();
+  if(r)return `<div class="livectl">${stopBtn(r.id,"")}<span class="mute">You started this ("${esc(r.cmd)}"). Stopping ends it and everything it started; a video it had not finished is set aside, not deleted.</span></div>`;
+  if(L&&L.pass_running)return `<div class="livectl"><button type="button" class="btn danger" onclick="apSet({enabled:false})">${ico("x-circle")}Turn Autopilot off</button><span class="mute">Autopilot is working. Its current step finishes safely; turning it off keeps it from starting anything new.</span></div>`;
+  return "";
+}
 function heroHTML(){
   const st=L.stage,on=wasBusy(),m=L.money,cr=L.credit,stale=on&&st.age_s>90;
   const title=on?(st.topic?"Making "+esc(st.topic):"Working on a video"):(L.autopilot_on?"Idle, waiting for the next slot":"Idle, Autopilot is off");
@@ -559,7 +580,7 @@ function heroHTML(){
   if(m){const pct=m.cap>0?Math.min(100,Math.round(100*m.spent_today/m.cap)):0,cls=m.left<0?"bad":pct>=80?"warn":"";
     money=`<div class="money"><span class="mute">Spent today</span><div class="big mono">$${m.spent_today.toFixed(2)} <small>of $${m.cap.toFixed(2)}</small></div><div class="mbar ${cls}" role="img" aria-label="${pct} percent of the daily cap used"><i style="width:${pct}%"></i></div><span class="mute">${m.left<0?"Over the cap. New paid work waits until tomorrow (UTC).":"$"+m.left.toFixed(2)+" left today"}</span></div>`}
   if(cr)money+=`<div class="money"><span class="mute">OpenRouter credit</span><div class="big mono">$${cr.left.toFixed(2)}</div><span class="mute">${cr.left<1.5?`${badge("Low","warn")} Below the $1.50 needed to start a video. `:""}Read ${secs(cr.age_s)} ago</span></div>`;
-  return `<div><div class="livestate"><span class="dot-live ${on?(stale?"bad":"on"):""}"></span>${on?"Working now":"Idle"}${badge(L.autopilot_on?"Autopilot on":"Autopilot off",L.autopilot_on?"ok":"mute")}</div><div class="livetitle">${title}</div>${railHTML()}${beat}</div><div>${money||'<p class="mute">Spend is not available right now.</p>'}</div>`;
+  return `<div><div class="livestate"><span class="dot-live ${on?(stale?"bad":"on"):""}"></span>${on?"Working now":"Idle"}${badge(L.autopilot_on?"Autopilot on":"Autopilot off",L.autopilot_on?"ok":"mute")}</div><div class="livetitle">${title}</div>${liveControls()}${railHTML()}${beat}</div><div>${money||'<p class="mute">Spend is not available right now.</p>'}</div>`;
 }
 const SLOT={ready:["Ready","ok"],coming:["Coming","mute"],too_soon:["Too soon","mute"],paused:["Paused","warn"],hold:["On hold","warn"],uploaded:["On YouTube","ok"],scheduled:["Scheduled","ok"]};
 function nextHTML(){
@@ -632,7 +653,7 @@ async function channels(m){
 function nextStep(){
   const r=running();
   if(!r&&S.tenant&&!S.niche_confirmed)return{icon:"list-checks",title:"Choose your niche",text:"Pick what your channel is about. The studio then researches it and writes you a plan to read before anything is made.",btn:`<button class="btn" onclick="go('niche')">Choose your niche</button>`};
-  if(r)return{icon:"hourglass-medium",title:"Working on it",text:`Running: ${esc(r.cmd)}. A documentary takes a while, you can leave this page open.`,btn:`<button class="btn" onclick="openJob='${r.id}';go('activity')">Watch progress</button>`};
+  if(r)return{icon:"hourglass-medium",title:"Working on it",text:`Running: ${esc(r.cmd)}. A documentary takes a while, you can leave this page open.`,btn:`<span style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn" onclick="openJob='${r.id}';go('activity')">Watch progress</button>${stopBtn(r.id,"")}</span>`};
   if(S.autopilot.needs_you)return{icon:"hand-palm",title:"A video needs your decision",text:`The reviewer agent flagged ${S.autopilot.needs_you===1?"a video":S.autopilot.needs_you+" videos"}. Nothing goes live until you decide.`,btn:`<button class="btn" onclick="go('autopilot')">See what was flagged</button>`};
   if(S.autopilot.enabled){const n=S.autopilot.next;return{icon:"robot",title:"Autopilot is running",text:n?`Next post: ${n.format==="doc"?"documentary":"Short"} on ${esc(n.us)} US Eastern (${otherTime(n)})${n.title?", \""+esc(n.title)+"\"":""}. ${n.status==="later"?"Autopilot starts on it "+esc(n.starts_us)+".":(PLAN_WORDS[n.status]||"")}`:"It repairs, checks and schedules videos by itself. Nothing for you to do.",btn:`<button class="btn" onclick="go('autopilot')">See the plan</button>`}}
   const rev=S.videos.find(v=>v.state==="needs review");
@@ -641,7 +662,7 @@ function nextStep(){
   if(ap&&S.youtube.token)return{icon:"upload-simple",title:"Ready to upload",text:`"${esc(ap.title)}" is approved. It uploads as private first, so nothing goes public by accident.`,btn:`<button class="btn" onclick="go('videos',{slug:'${ap.slug}'})">Open and upload</button>`};
   if(ap)return{icon:"plugs-connected",title:"Connect YouTube to upload",text:`"${esc(ap.title)}" is approved, but no channel is connected yet.`,btn:`<button class="btn" onclick="go('youtube')">Connect YouTube</button>`};
   if(!S.queue.length)return{icon:"lightning",title:"Add some topics",text:"The queue is empty. Let the writer suggest ideas, or type your own.",btn:`<button class="btn" onclick="go('create')">Find topics</button>`};
-  return{icon:"film-strip",title:"Make the next documentary",text:`Up next: "${esc(S.queue[0])}"`,btn:`<button class="btn" onclick="go('create')">Go to Create</button>`};
+  return{icon:"film-strip",title:"Create the next video",text:`Up next: "${esc(S.queue[0])}"`,btn:`<button class="btn" onclick="go('create')">Go to Create</button>`};
 }
 function homeVideos(){
   const long=S.videos.filter(v=>v.format==="doc").sort((a,b)=>(b.when.at||"").localeCompare(a.when.at||"")).slice(0,3);
@@ -842,14 +863,18 @@ function upl(slug,pub){
 }
 
 /* ---------- Create ---------- */
+function capNote(){
+  const m=L&&L.money;
+  return m&&m.left<0?`<p class="help" style="margin-top:12px">Today's spend is $${m.spent_today.toFixed(2)} against a $${m.cap.toFixed(2)} cap, so a new video can only use the free models until tomorrow (UTC). Raise the cap in Settings if you want it to use paid models.</p>`:"";
+}
 function create(m){
   const busy=!!running();
   m.innerHTML=`<div class="head"><h1>Create</h1><p class="sub">Pick a format. The system writes the script, records the narration, finds images and renders the video. You review it before anything is uploaded.</p></div>
   <div class="choices">
-    <div class="panel choice">${ico("film-strip","lg")}<h2>Documentary</h2><p>Widescreen, around five minutes, archive images and chapters. Takes a while to render.</p><button class="btn" ${busy?"disabled":""} onclick="job('doc')">Make documentary</button></div>
-    <div class="panel choice">${ico("lightning","lg")}<h2>Short</h2><p>Vertical, under a minute, with captions over stock footage.</p><button class="btn quiet" ${busy?"disabled":""} onclick="job('make')">Make short</button></div>
+    <div class="panel choice">${ico("film-strip","lg")}<h2>Documentary</h2><p>Widescreen, around five minutes, archive images and chapters. Takes a while to render.</p><button class="btn" ${busy?"disabled":""} aria-label="Create documentary video" onclick="job('doc')">Create video</button></div>
+    <div class="panel choice">${ico("lightning","lg")}<h2>Short</h2><p>Vertical, under a minute, with captions over stock footage.</p><button class="btn quiet" ${busy?"disabled":""} aria-label="Create Short video" onclick="job('make')">Create Short</button></div>
   </div>
-  ${busy?`<p class="help" style="margin-top:12px">Another job is running. Wait for it to finish first.</p>`:""}
+  ${busy?`<div class="panel pad" style="margin-top:12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span class="dot-live on"></span><div class="grow"><b>Creating a video now</b><div class="mute">One at a time. Watch it on the Live page, or stop it here.</div></div><button type="button" class="btn quiet sm" onclick="go('live')">Watch</button>${stopBtn(running().id)}</div>`:capNote()}
   <div class="sec"><h2>Topic queue</h2>
     <div class="panel">
       <div class="pad" style="display:flex;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--line)">
@@ -1039,7 +1064,7 @@ async function activity(m){
   m.innerHTML=`<div class="head"><h1>Activity</h1><p class="sub">What the automation did on its own, then every job the dashboard started with its live log.</p></div>
   <div class="sec"><h2>What Autopilot and the agents did</h2><div class="panel">${EV.length?`<div class="rows">${EV.slice(0,30).map(e=>`<div><div class="grow"><div class="ttl">${esc(e.title)}</div><div class="mute evd">${esc(e.detail)}</div><div class="mute">${ago(Date.parse(e.at)/1000)}</div></div>${badge(...(AG_EVENT[e.kind]||AG_EVENT.info))}</div>`).join("")}</div>`:empty("pulse","Nothing yet","Every step the automation takes is written here in plain words.")}</div></div>
   <div class="sec"><h2>Jobs you started</h2></div>
-  <div class="panel">${S.jobs.length?`<div class="rows">${S.jobs.map(j=>`<div><div class="grow"><span class="ttl">${esc(j.cmd)}</span><div class="mute">${ago(j.started)}${j.ended?", took "+dur(j.ended-j.started):""}</div></div>${jobBadge(j)}<button class="btn quiet sm" onclick="openJob='${j.id}';activity(document.getElementById('main'))">${j.id===openJob?"Showing":"Show log"}</button></div>`).join("")}</div>`:empty("pulse","No jobs yet","When you create a video or approve one, progress appears here.",`<button class="btn" onclick="go('create')">Go to Create</button>`)}</div>
+  <div class="panel">${S.jobs.length?`<div class="rows">${S.jobs.map(j=>`<div><div class="grow"><span class="ttl">${esc(j.cmd)}</span><div class="mute">${ago(j.started)}${j.ended?", took "+dur(j.ended-j.started):""}</div></div>${jobBadge(j)}${j.status==="running"?stopBtn(j.id):""}<button class="btn quiet sm" onclick="openJob='${j.id}';activity(document.getElementById('main'))">${j.id===openJob?"Showing":"Show log"}</button></div>`).join("")}</div>`:empty("pulse","No jobs yet","When you create a video or approve one, progress appears here.",`<button class="btn" onclick="go('create')">Go to Create</button>`)}</div>
   ${S.jobs.length?`<div class="sec"><h2>Log</h2><pre class="log" id="log">Loading…</pre></div>`:""}`;
   m.firstElementChild.classList.add("view");
   const pull=async()=>{if(!openJob||tab!=="activity")return clearInterval(logTimer);try{const r=await api("/api/log?id="+openJob);const p=document.getElementById("log");if(!p)return;const bottom=p.scrollHeight-p.scrollTop-p.clientHeight<40;p.textContent=r.text||"(no output yet)";if(bottom)p.scrollTop=p.scrollHeight}catch(e){}};
@@ -1066,42 +1091,92 @@ function agCard(x){
   const prof=x.profile?`<div class="help">Changes: ${Object.entries(x.profile).map(([k,v])=>k==="target_lufs"?"loudness "+v+" LUFS":k==="motion"?"motion level "+v:"pause between sentences "+v+" ms").join(", ")}</div>`:"";
   const done=x.status==="applied"?badge("Applied","ok"):x.status==="dismissed"?badge("Dismissed","mute"):x.auto_ok?badge("You can apply this","warn"):badge("Advice for you to do","mute");
   const btns=x.status==="proposed"?`${x.auto_ok?`<button class="btn sm" onclick="agAct('${x.id}','apply')">Apply</button>`:""}<button class="btn quiet sm" onclick="agAct('${x.id}','dismiss')">${x.auto_ok?"Dismiss":"Got it"}</button>`:x.status==="dismissed"?`<button class="btn quiet sm" onclick="agAct('${x.id}','restore')">Bring back</button>`:"";
-  return `<div><div class="grow"><div class="ttl">${esc(x.text)}</div><div class="mute">${badge(AG_KIND[x.kind]||x.kind,"mute")} ${esc(x.why)}</div>${x.evidence.length?`<div class="help">Evidence: ${x.evidence.map(esc).join("; ")}</div>`:""}${prof}</div>${done}${btns}</div>`;
+  return `<div><div class="grow"><div class="ttl">${esc(x.text)}</div><div class="mute">${badge(AG_KIND[x.kind]||x.kind,"mute")} ${esc(x.why)}</div>${x.evidence.length?`<div class="help">Evidence: ${(x.evidence||[]).map(esc).join("; ")}</div>`:""}${prof}</div>${done}${btns}</div>`;
 }
-async function growth(m){
-  try{AG=await api("/api/agent");if(AG.unread)api("/api/agent/read",{}).catch(()=>{})}catch(e){return}
-  const A=AG,c=A.config,rep=A.report,an=rep?rep.analysis:null,busy=!!running();
-  const warn=[];if(!S.youtube.token)warn.push("YouTube is not connected, so the agent cannot read any channel numbers.");if(!A.timer_installed)warn.push("The daily timer is not installed. Run ./scripts/install-timers.sh once so the agent works every morning at 06:30.");
-  const open=A.strategies.filter(x=>x.status==="proposed"),past=A.strategies.filter(x=>x.status!=="proposed").slice(0,8);
-  const refs=new Set(A.refs),studied=rep?rep.studied:[],studiedIds=new Set(studied.map(x=>x.channel_id));
+/* ---------- Growth: your real numbers first (29 Oct 2026) ---------- */
+let GR=null,gSub=(()=>{try{return sessionStorage.getItem("gSub")||"overview"}catch(e){return "overview"}})(),gChart="views";
+const GSUBS=[["overview","Overview"],["videos","Videos"],["ideas","Suggestions"],["research","Research"],["controls","Controls"]];
+const fmtN=n=>n==null?null:Number(n).toLocaleString();
+const dShort=d=>{try{return new Date(d+"T00:00:00Z").toLocaleDateString(undefined,{day:"numeric",month:"short",timeZone:"UTC"})}catch(e){return String(d)}};
+const sgn=n=>(n>0?"+":n<0?"-":"")+Math.abs(n).toLocaleString();
+function niceTop(max){const p=Math.pow(10,Math.floor(Math.log10(Math.max(max,1))));for(const f of [1,1.5,2,2.5,3,4,5,6,8,10])if(f*p>=max*1.08)return f*p;return 10*p}
+function gChartSVG(ser,key){
+  if(ser.length<2)return `<p class="mute" style="padding:8px 0">The chart appears once there are two days of numbers. The studio saves one snapshot a day.</p>`;
+  const W=640,H=214,pl=50,pr=26,pt=20,pb=30,vals=ser.map(p=>p[key]),top=niceTop(Math.max(...vals)),x=i=>pl+(W-pl-pr)*i/(ser.length-1),y=v=>pt+(H-pt-pb)*(1-v/top);
+  const pts=ser.map((p,i)=>`${x(i).toFixed(1)},${y(p[key]).toFixed(1)}`).join(" "),last=ser.length-1,name=key==="views"?"views":"subscribers";
+  const grid=[0,top/2,top].map(v=>`<line class="gd" x1="${pl}" x2="${W-pr}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text x="${pl-8}" y="${(y(v)+4).toFixed(1)}" text-anchor="end">${fmtN(Math.round(v))}</text>`).join("");
+  const dots=ser.map((p,i)=>`<circle class="hit" cx="${x(i).toFixed(1)}" cy="${y(p[key]).toFixed(1)}" r="13"><title>${dShort(p.date)}: ${fmtN(p[key])} ${name}</title></circle>`).join("");
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`${name[0].toUpperCase()+name.slice(1)} went from ${fmtN(vals[0])} on ${dShort(ser[0].date)} to ${fmtN(vals[last])} on ${dShort(ser[last].date)}`)}">${grid}
+    <polyline class="ln" points="${pts}"/><circle class="ring" cx="${x(last).toFixed(1)}" cy="${y(vals[last]).toFixed(1)}" r="7"/><circle class="end" cx="${x(last).toFixed(1)}" cy="${y(vals[last]).toFixed(1)}" r="4.5"/>
+    <text class="val" x="${(x(last)-10).toFixed(1)}" y="${(y(vals[last])-12).toFixed(1)}" text-anchor="end">${fmtN(vals[last])}</text>
+    <text x="${pl}" y="${H-8}" text-anchor="start">${dShort(ser[0].date)}</text><text x="${W-pr}" y="${H-8}" text-anchor="end">${dShort(ser[last].date)}</text>${dots}</svg>`;
+}
+function gOverview(){
+  const G=GR.growth||{},L=GR.latest,ch=GR.change,rules=(G.rules||{}).pending||0,notes=[];
+  if(G.hold)notes.push(`<div class="err"><b>Policy hold.</b> A YouTube rule page changed in a way that may matter${(G.hold.pages||[]).length?" ("+esc(G.hold.pages.join(", "))+")":""}. Scheduling and uploads wait; research, writing and repairs go on. Release it with <span class="mono">run.py policy release</span> after you have read the change.</div>`);
+  if(rules)notes.push(`<div class="err">${rules} rule change${rules===1?"":"s"} wait${rules===1?"s":""} for you. Agents only propose; approve or reject with <span class="mono">run.py rules</span>.</div>`);
+  if(G.edits_pending)notes.push(`<div class="err">${G.edits_pending} edit${G.edits_pending===1?"":"s"} to public videos wait${G.edits_pending===1?"s":""} for your approval (<span class="mono">run.py edits</span>). An agent never changes a public video on its own.</div>`);
+  if(!GR.timer_installed)notes.push(`<div class="err">The daily timer is not installed. Run ./scripts/install-timers.sh once so the agent works every morning at 06:30.</div>`);
+  const kpi=(label,v,delta)=>`<div class="panel kpi"><span class="mute">${label}</span><b class="mono">${v==null?"n/a":fmtN(v)}</b><small>${delta||"&nbsp;"}</small></div>`;
+  const dl=k=>ch?`${sgn(ch[k])} in ${ch.days} day${ch.days===1?"":"s"}`:"";
+  const rep=G.report;
+  return `${notes.length?`<div class="stack" style="margin-bottom:6px">${notes.join("")}</div>`:""}
+  <div class="kpis">${kpi("Subscribers",L&&L.subscribers,dl("subscribers"))}${kpi("Views, all videos",L&&L.views,dl("views"))}${kpi("Videos on the channel",L&&L.videos,dl("videos"))}</div>
+  <div class="sec"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><h2>Over time</h2><div class="chips" style="margin:0">${[["views","Views"],["subscribers","Subscribers"]].map(([k,l])=>`<button type="button" class="chip" aria-pressed="${gChart===k}" onclick="gChartSet('${k}')">${l}</button>`).join("")}</div></div>
+    <div class="panel pad" style="margin-top:12px" id="gchart">${gChartSVG(GR.series,gChart)}${GR.series.length?`<details class="gnum"><summary class="mute">Show the numbers</summary><div style="overflow-x:auto"><table class="gtab"><thead><tr><th>Day</th><th>Subscribers</th><th>Views</th><th>Videos</th></tr></thead><tbody>${GR.series.slice().reverse().map(p=>`<tr><td>${dShort(p.date)}</td><td>${fmtN(p.subscribers)}</td><td>${fmtN(p.views)}</td><td>${fmtN(p.videos)}</td></tr>`).join("")}</tbody></table></div></details>`:""}</div></div>
+  <div class="sec"><h2>Road to monetization</h2>${agRoad(GR.monetization)}</div>
+  <div class="sec"><h2>This week</h2><div class="panel pad">${rep?`<pre class="mono" style="white-space:pre-wrap;margin:0;font-size:13px">${esc(rep)}</pre>`:`<p class="mute">The weekly report is written on Mondays, from your own numbers.</p>`}</div></div>`;
+}
+function gVideos(){
+  const rows=GR.videos,na=(why)=>`<b class="na" title="${esc(why||"not available yet")}">Not available</b>`;
+  const m=(label,v,unit,why)=>`<div class="vm"><span>${label}</span>${v==null?na(why):`<b class="mono">${typeof v==="number"&&unit==="%"?v.toFixed(1)+"%":fmtN(v)}</b>`}</div>`;
+  const when=iso=>{try{return new Date(iso).toLocaleDateString(undefined,{day:"numeric",month:"short",year:"numeric"})}catch(e){return ""}};
+  const diag=r=>{const d=r.diagnosis;if(!d)return "";return d.primary==="insufficient_data"||d.primary==="none"?`<div class="mute">Too early to judge: ${esc(d.evidence||"it needs more views")}.</div>`:`<div class="mute"><b>Main problem: ${esc(String(d.primary).replace(/_/g," "))}</b> (${esc(d.window)}). ${esc(d.evidence||"")}</div>`};
+  return `<p class="sub" style="margin-bottom:14px">One row per video, from the YouTube Analytics API. A number that YouTube has not given yet says so and shows why when you hold the pointer over it. Nothing here is estimated.</p>
+  <div class="panel">${rows.length?`<div class="rows">${rows.map(r=>`<div class="vrow"><div class="grow"><div class="ttl">${esc(r.title)}</div><div class="mute">${r.kind==="doc"?"Documentary":"Short"}${r.published?", "+esc(when(r.published)):""}${r.seconds?", "+Math.max(1,Math.round(r.seconds/60))+" min":""}</div>${diag(r)}</div>
+    <div class="vms">${m("Views",r.views,"",r.why.views)}${m("Watched",r.avg_pct_viewed,"%",r.why.avg_pct_viewed)}${m("Still watching at 30 s",r.retention_30s,"%",r.why.retention_30s)}${m("Click rate",r.ctr,"%",r.why.ctr)}</div></div>`).join("")}</div>`:empty("film-strip","No video numbers yet","The collector reads them every six hours once YouTube is connected.")}</div>
+  <p class="help" style="margin-top:10px">${GR.metrics_updated?`Collected ${esc(new Date(GR.metrics_updated).toLocaleString(undefined,{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}))}. `:""}${GR.metrics_problems.length?esc(GR.metrics_problems.join(" ")):""}</p>`;
+}
+function gIdeas(){
+  const c=GR.config,open=GR.strategies.filter(x=>x.status==="proposed"),past=GR.strategies.filter(x=>x.status!=="proposed").slice(0,8);
+  return `<div class="panel">${open.length?`<div class="rows">${open.map(agCard).join("")}</div>`:empty("sparkle","No open suggestions",c.mode==="off"?"Turn the agent on in Controls to get suggestions.":"New suggestions appear after the next research run.")}</div>
+  ${past.length?`<details style="margin-top:12px"><summary class="help">Earlier suggestions (${past.length})</summary><div class="panel" style="margin-top:8px"><div class="rows">${past.map(agCard).join("")}</div></div></details>`:""}`;
+}
+function gResearch(){
+  const busy=!!running(),c=GR.config,refs=new Set(GR.refs),rep=GR.report||{},studied=Array.isArray(rep.studied)?rep.studied:[],ids=new Set(studied.map(x=>x.channel_id));
   const comp=[...studied.map(x=>({name:x.channel||x.channel_id,line:`${(x.median_views||0).toLocaleString()} views for a typical video`,mine:refs.has(x.channel_id)})),
-    ...A.discovered.filter(d=>!studiedIds.has(d.id)).map(d=>({name:d.title,line:`${d.subscribers.toLocaleString()} subscribers, ${Math.round(d.score).toLocaleString()} views per video`,mine:false}))];
-  m.innerHTML=`<div class="head"><h1>Growth</h1><p class="sub">The agent studies our channel and our competitors every morning, then suggests how to get more views. Everything it does is listed here.</p></div>
-  <div class="panel pad stack"><h2>How much should it do by itself?</h2>
-    <div class="row" style="gap:8px;flex-wrap:wrap">${AG_MODES.map(([k,l])=>`<button class="btn ${c.mode===k?"":"quiet"}" aria-pressed="${c.mode===k}" onclick="agMode('${k}')">${l}</button>`).join("")}
-      <button class="btn quiet" ${busy||c.mode==="off"?"disabled":""} onclick="job('agent',['force'])">${ico("arrow-clockwise")}Research now</button></div>
-    <p class="sub">${esc(AG_MODES.find(x=>x[0]===c.mode)[2])}</p>
+    ...GR.discovered.filter(d=>d&&!ids.has(d.id)).map(d=>({name:d.title||d.id,line:`${(d.subscribers||0).toLocaleString()} subscribers, ${Math.round(d.score||0).toLocaleString()} views per video`,mine:false}))];
+  return `<div class="panel pad" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px"><div class="grow"><b>${comp.length}</b> channels watched, ${GR.refs.length} of them added by you</div><button class="btn quiet" ${busy||c.mode==="off"?"disabled":""} onclick="job('agent',['force'])">${ico("arrow-clockwise")}Research now</button></div>
+  <div class="panel">${comp.length?`<div class="rows">${comp.map(x=>`<div><div class="grow"><div class="ttl">${esc(x.name)}</div><div class="mute">${esc(x.line)}</div></div>${x.mine?badge("You added","mute"):badge("Found by the agent","ok")}</div>`).join("")}</div>`:empty("plugs-connected","None yet","The agent finds competitors on its own during its first research run.")}</div>`;
+}
+function gControls(){
+  const c=GR.config,p=GR.profile,busy=!!running();
+  return `<div class="panel pad stack"><h2>How much should it do by itself?</h2>
+    <div class="row" style="gap:8px;flex-wrap:wrap">${AG_MODES.map(([k,l])=>`<button class="btn ${c.mode===k?"":"quiet"}" aria-pressed="${c.mode===k}" onclick="agMode('${k}')">${l}</button>`).join("")}</div>
+    <p class="sub">${esc((AG_MODES.find(x=>x[0]===c.mode)||[])[2]||"")}</p>
     <p class="help">It only reads public numbers from YouTube. It never copies another channel's videos or scripts, and it never uploads anything.</p></div>
   <div class="panel pad stack" style="margin-top:12px"><h2>How new videos look</h2>
-    <div><label>Subtitles</label><div class="row" style="gap:8px">${[["bottom","Bottom"],["top","Top"]].map(([k,l])=>`<button class="btn ${A.profile.caption_pos===k?"":"quiet"}" aria-pressed="${A.profile.caption_pos===k}" onclick="agProfile('caption_pos','${k}')">${l}</button>`).join("")}</div>
-      <div class="help">Never in the middle of the picture. Bottom sits above YouTube's own title text. Important words are coloured: gold for people and places, blue for numbers and years, red for danger and mystery.</div></div>
-    <div><label>Movement</label><div class="row" style="gap:8px;flex-wrap:wrap">${[[0,"Plain"],[1,"Camera moves"],[2,"Full: dissolves and film grain"]].map(([k,l])=>`<button class="btn ${A.profile.motion===k?"":"quiet"}" aria-pressed="${A.profile.motion===k}" onclick="agProfile('motion',${k})">${l}</button>`).join("")}</div>
-      <div class="help">Camera moves give one picture several different shots. Loudness is ${A.profile.target_lufs} LUFS and the pause between sentences is ${A.profile.sentence_pause_ms} ms.</div></div></div>
-  ${warn.length?`<div class="err" style="margin-top:12px">${warn.map(esc).join("<br>")}</div>`:""}
-  ${rep&&rep.errors.length?`<div class="err" style="margin-top:12px">Last run had problems: ${rep.errors.map(esc).join(" | ")}</div>`:""}
-
-  <div class="sec"><h2>Road to monetization</h2>${agRoad(A.monetization)}</div>
-
-  <div class="sec"><h2>What I suggest (${open.length})</h2><div class="panel">${open.length?`<div class="rows">${open.map(agCard).join("")}</div>`:empty("sparkle","No open suggestions",c.mode==="off"?"Turn the agent on to get suggestions.":"New suggestions appear after the next research run.")}</div>
-  ${past.length?`<details style="margin-top:10px"><summary class="help">Earlier suggestions (${past.length})</summary><div class="panel" style="margin-top:8px"><div class="rows">${past.map(agCard).join("")}</div></div></details>`:""}</div>
-
-  <div class="sec"><h2>Our channel</h2><div class="panel pad">${A.own?`<div class="stack" style="gap:6px"><div><b>${A.own.subscribers.toLocaleString()}</b> subscribers, <b>${A.own.views.toLocaleString()}</b> views, <b>${A.own.videos}</b> videos</div>
-    ${an?`<div class="mute">Last 7 days: ${an.subs_delta_7d>=0?"+":""}${an.subs_delta_7d} subscribers, +${an.views_delta_7d.toLocaleString()} views. About ${an.uploads_per_week} uploads a week.${an.gap_ratio?` A typical video of ours gets ${Math.round(an.gap_ratio*100)}% of the views a competitor video gets.`:""}</div>`:""}</div>`:empty("youtube-logo","No numbers yet","They appear after the first research run, once YouTube is connected.")}</div></div>
-
-  <div class="sec"><h2>Competitors I watch (${comp.length})</h2><div class="panel">${comp.length?`<div class="rows">${comp.map(x=>`<div><div class="grow"><div class="ttl">${esc(x.name)}</div><div class="mute">${esc(x.line)}</div></div>${x.mine?badge("You added","mute"):badge("Found by the agent","ok")}</div>`).join("")}</div>`:empty("plugs-connected","None yet","The agent finds competitors on its own during the first run.")}</div></div>
-
-  <div class="sec"><h2>What the agent did</h2><div class="panel">${A.events.length?`<div class="rows">${A.events.map(e=>`<div><div class="grow"><div class="ttl">${e.read?"":"&#9679; "}${esc(e.title)}</div><div class="mute evd">${esc(e.detail)}</div><div class="mute">${ago(Date.parse(e.at)/1000)}</div></div>${badge(...(AG_EVENT[e.kind]||AG_EVENT.info))}</div>`).join("")}</div>`:empty("pulse","Nothing yet","Every step the agent takes is written here in plain words.")}</div></div>`;
-  m.firstElementChild.classList.add("view");
+    <div><label>Subtitles</label><div class="row" style="gap:8px">${[["bottom","Bottom"],["top","Top"]].map(([k,l])=>`<button class="btn ${p.caption_pos===k?"":"quiet"}" aria-pressed="${p.caption_pos===k}" onclick="agProfile('caption_pos','${k}')">${l}</button>`).join("")}</div>
+      <div class="help">Never in the middle of the picture. Bottom sits above YouTube's own title text.</div></div>
+    <div><label>Movement</label><div class="row" style="gap:8px;flex-wrap:wrap">${[[0,"Plain"],[1,"Camera moves"],[2,"Full: dissolves and film grain"]].map(([k,l])=>`<button class="btn ${p.motion===k?"":"quiet"}" aria-pressed="${p.motion===k}" onclick="agProfile('motion',${k})">${l}</button>`).join("")}</div>
+      <div class="help">Camera moves give one picture several different shots. Loudness is ${esc(p.target_lufs)} LUFS and the pause between sentences is ${esc(p.sentence_pause_ms)} ms.</div></div></div>`;
+}
+const GGROUP={overview:gOverview,videos:gVideos,ideas:gIdeas,research:gResearch,controls:gControls};
+function gSeg(){return GSUBS.map(([k,l])=>{const n=k==="ideas"?GR.strategies.filter(x=>x.status==="proposed").length:0;return `<button type="button" role="tab" id="gs-${k}" aria-selected="${gSub===k}" aria-controls="gwrap" onclick="gSubSet('${k}')">${l}${n?`<small>${n}</small>`:""}</button>`}).join("")}
+function gSubSet(k){
+  gSub=k;safe(()=>sessionStorage.setItem("gSub",k));const w=document.getElementById("gwrap");if(!w||!GR)return;
+  w.dataset.sub=k;w.setAttribute("aria-labelledby","gs-"+k);w.innerHTML=GGROUP[k]();
+  document.querySelectorAll("#gseg button").forEach(b=>b.setAttribute("aria-selected",b.id==="gs-"+k));
+  w.classList.remove("swap");void w.offsetWidth;w.classList.add("swap");
+}
+function gChartSet(k){gChart=k;const g=document.getElementById("gchart");if(g&&GR){g.innerHTML=gChartSVG(GR.series,k)+(g.querySelector(".gnum")?g.querySelector(".gnum").outerHTML:"")}document.querySelectorAll(".chips .chip[onclick^=gChartSet]").forEach(b=>b.setAttribute("aria-pressed",b.getAttribute("onclick")===`gChartSet('${k}')`))}
+async function growth(m){
+  try{GR=await api("/api/growth")}catch(e){return}
+  m=document.getElementById("main");if(!m||tab!=="growth")return;
+  m.innerHTML=`<div class="head"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap"><h1>Growth</h1><button class="btn quiet sm" onclick="growth()">${ico("arrow-clockwise")}Refresh</button></div><p class="sub">Your channel's real numbers, what the agent suggests, and how it works. Every number comes from YouTube's own API or your own files.</p></div>
+  <div class="seg" id="gseg" role="tablist" aria-label="Growth sections">${gSeg()}</div>
+  <div id="gwrap" data-sub="${gSub}" role="tabpanel" aria-labelledby="gs-${gSub}">${GGROUP[gSub]()}</div>`;
+  [...m.children].forEach((c,i)=>{c.classList.add("rise");c.style.setProperty("--i",Math.min(i,9))});
 }
 
 /* ---------- YouTube ---------- */
