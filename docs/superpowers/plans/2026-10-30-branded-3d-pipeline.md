@@ -54,3 +54,9 @@ Risks: CPU time on the shared server, the look (needs art direction and the owne
 2. Yes to stage 1 (a proof of the look on the PC, no server change).
 3. Style: low-poly stylised 3D, or a more painterly look.
 4. The channel's brand: name, colours, logo mark.
+
+## Update: look proof built (30 Oct, owner said yes to stages 0 and 1; style and brand left open, so low-poly stylised is the working style)
+- Source: `studio3d/proof/`. Result: a recognisable stylised look (golden-hour sky, ranked low-poly soldiers with helmets and shields, closing dust wall, drifting dust, bloom and vignette, a brand title with a gold rule drawn by Remotion). Private page with the video and frames: https://claude.ai/artifact/DNs4688H6VH7T1YE6q71oe.
+- Flaws (honest): the title overlaps the army, the army drifts out of frame, the storm wall is a flat blob, one angle and one figure type. It is a look test.
+- Speed correction: this richer scene is about 0.35 s a frame on CPU only (24 frames in 12 s with start-up) and about 0.43 s a frame on the GPU path (144 frames in 74 s including bundling). The first, simpler scene was 0.05 s a frame. The cost is frame capture and encode, so a GPU does not help much. Server speed is still unmeasured. Use 3D for set pieces (60 to 120 s a film, 10 to 50 minutes of background CPU), not for the whole film.
+- Stage 0 done: fixes deployed as b4399d0 and the Cambyses film re-rendered (see the next report). Daily cap still 7.5; restore to 3.5.
