@@ -87,6 +87,9 @@ def test_check_pauses_autopilot_and_reports_when_a_video_is_blocked(tmp_path, mo
 
 
 def test_check_skips_videos_not_due_and_already_confirmed(tmp_path, monkeypatch):
+    import reconcile
+
+    monkeypatch.setattr(reconcile, "run", lambda *a, **k: {})  # this test is about the health check itself; the reconciliation has its own tests
     monkeypatch.setattr(config, "OUT", tmp_path)
     make(tmp_path, "future", video_id="f", publish_at=iso(NOW + timedelta(hours=5)), uploaded_at=iso(NOW))
     make(tmp_path, "done", video_id="d", publish_at=iso(NOW - timedelta(hours=9)), health={"ok": True, "checked_at": iso(NOW - timedelta(hours=1))})
