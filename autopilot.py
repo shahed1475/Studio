@@ -194,6 +194,9 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict
     polishable = []                 # passed videos with a facts warning, edited before they are approved: only the soonest is worked on per tick
     fixable = []                    # broken videos that still have repair tries left: one of them is worked on at a time, and nothing new is made meanwhile
     for v in state["videos"]:
+        if v.get("lost") and not v["hold"] and v["fails"] < MAX_FAILS:
+            acts.append({"do": "reschedule", "slug": v["slug"]})  # on YouTube, approved, private with its schedule gone: the one repair that puts the time back (once)
+            continue
         if v["video_id"] or v["hold"] or v["fails"] >= MAX_FAILS:
             continue
         fmt = v.get("format") or "doc"
@@ -308,7 +311,7 @@ def build_state(now: dt.datetime, cfg: dict) -> dict:
             "hold": bool(d.get("hold")),
             "approved_by": d.get("approved_by"), "fix_attempts": d.get("fix_attempts", 0), "gave_up": bool(d.get("fix_gave_up")), "cost": llm.video_cost(m.parent.name), "cost_alerted": bool(d.get("cost_alerted")), "fix_limit": fixer.attempt_limit((d.get("review") or {}).get("checks", [])),
             "video_id": d.get("video_id"), "publish_at": d.get("publish_at") or ((d.get("upload_check") or {}).get("publishAt") if d.get("video_id") and not d.get("taken_back") and not d.get("hold") else None),
-            "fails": d.get("autopilot_fails", 0),
+            "fails": d.get("autopilot_fails", 0), "lost": __import__("reschedule").lost(d),
             "prelaunch_ok": bool((d.get("prelaunch") or {}).get("ok")),
             "facts_open": d.get("approved_by") != "you" and bool(fixer.watch_problems((d.get("review") or {}).get("checks", []))),
             "polish_wanted": fixer.polish_rounds(d) < fixer.POLISH_ROUNDS and d.get("approved_by") != "you" and bool(fixer.watch_problems((d.get("review") or {}).get("checks", []))),
@@ -525,7 +528,15 @@ def do_schedule(slug, cfg, now):
     if twin:
         hold_duplicate(slug, twin, now)
         return {"skipped": "duplicate"}
-    fmt = meta.get("format", "short")
+    at = free_slot(slug, meta.get("format", "short"), cfg, now)
+    if at is None:
+        return {"skipped": "no slot within the weekly pace limit"}
+    records.merge(config.OUT / slug, {"publish_at": scheduler.to_rfc3339(at)})
+    return None
+
+
+def free_slot(slug: str, fmt: str, cfg: dict, now: dt.datetime) -> dt.datetime | None:
+    """The next free publish slot of this format that stays within the weekly cap (YouTube's template-content rule), or None within three weeks."""
     taken, metas = [], []
     for m in config.OUT.glob("*/meta.json"):  # only same-format videos block a slot; a Short may publish near a documentary
         d = json.loads(m.read_text())
@@ -535,16 +546,21 @@ def do_schedule(slug, cfg, now):
     slots = cfg["short_slots"] if fmt == "short" else cfg["slots"]
     import governor
 
-    for _ in range(40):  # the next free slot that stays within the weekly cap (YouTube's template-content rule); none within three weeks: it waits
+    for _ in range(40):
         try:
             at = scheduler.next_slot(now, slots, taken, cfg["review_window_hours"])
         except ValueError:
-            return {"skipped": "no slot within the weekly pace limit"}
-        if governor.allowed(metas, fmt, at, cfg.get("_caps")):
-            records.merge(config.OUT / slug, {"publish_at": scheduler.to_rfc3339(at)})
             return None
+        if governor.allowed(metas, fmt, at, cfg.get("_caps")):
+            return at
         taken.append(at)
-    return {"skipped": "no slot within the weekly pace limit"}
+    return None
+
+
+def do_reschedule(slug, cfg, now):
+    import reschedule
+
+    return reschedule.apply(slug, cfg, now)
 
 
 def do_upload(slug, cfg, now):
@@ -636,7 +652,7 @@ def do_cost_stop(slug, cfg, now):
                    "It waits for you: approve it as it is, ask for one more try, or set it aside.", notify=True, now=now)
 
 
-EXECUTORS = {"cost_stop": do_cost_stop, "prelaunch": do_prelaunch, "review": do_review, "approve": do_approve, "fix": do_fix, "polish": do_polish, "schedule": do_schedule, "upload": do_upload,
+EXECUTORS = {"cost_stop": do_cost_stop, "prelaunch": do_prelaunch, "review": do_review, "approve": do_approve, "fix": do_fix, "polish": do_polish, "schedule": do_schedule, "upload": do_upload, "reschedule": do_reschedule,
              "ideas": do_ideas, "make": do_make, "make_short": do_make_short, "make_clip": do_make_clip, "make_news": do_make_news}
 
 

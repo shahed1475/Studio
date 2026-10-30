@@ -90,12 +90,12 @@ def test_a_good_overlay_replaces_the_video_only_when_its_length_matches(tmp_path
 
 def test_the_switch_can_turn_it_off_or_give_exact_times(tmp_path, monkeypatch):
     calls = []
-    monkeypatch.setattr(subscribe, "apply", lambda video, times, size, vertical, assets=None: calls.append(times) or True)
+    monkeypatch.setattr(subscribe, "apply", lambda video, times, size, vertical, assets=None, mark=False: calls.append(times) or True)
     d = doc_durations()
     data = {}
     subscribe.add_to(tmp_path / "v.mp4", data, "doc", d, [], (1920, 1080))
     assert len(calls[-1]) == 2 and data["subscribe_shown"]["at"] == calls[-1]
-    data = {"subscribe_pop": False}
+    data = {"subscribe_pop": False, "brand_mark": False}  # both off: nothing to lay over the video
     subscribe.add_to(tmp_path / "v.mp4", data, "doc", d, [], (1920, 1080))
     assert len(calls) == 1 and "subscribe_shown" not in data
     data = {"subscribe_pop": [75.5, 300]}
@@ -117,7 +117,7 @@ def test_a_user_studio_never_gets_the_owners_brand_pop_up(tmp_path, monkeypatch)
     import tenantmode
 
     calls = []
-    monkeypatch.setattr(subscribe, "apply", lambda video, times, size, vertical, assets=None: calls.append(times) or True)
+    monkeypatch.setattr(subscribe, "apply", lambda video, times, size, vertical, assets=None, mark=False: calls.append(times) or True)
     monkeypatch.setattr(tenantmode, "is_tenant", lambda: True)
     data = {}
     assert subscribe.add_to(tmp_path / "v.mp4", data, "doc", doc_durations(), [], (1920, 1080)) is False

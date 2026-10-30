@@ -56,6 +56,14 @@ def line_length(duration: float, words: list[tuple], pause: float, tail: float |
     return duration + pause
 
 
+def voice_used(style: str | None = None) -> dict:
+    """Which voice made a video's narration, for its record (the record did not say, so 'what voice did we use' needed the git history). A styled voice keeps its base
+    rate and pitch; each line then lifts them a little."""
+    spec = VOICE_STYLES.get(style or "")
+    return {"voice": spec["voice"] if spec else config.VOICE, "rate": spec["rate"] if spec else config.VOICE_RATE, "pitch": spec["pitch"] if spec else config.VOICE_PITCH,
+            "style": style or None, "finish_lufs": FINISH_LUFS}
+
+
 def line_prosody(style: str | None, text: str, index: int, total: int) -> dict | None:
     """{voice, rate, pitch} for one narration line of a styled video, or None for the studio's default voice. The hook is line 0, the invitation is a closing line that
     asks to follow, the payoff is the line before it, and any other question rises."""

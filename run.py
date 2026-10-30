@@ -235,6 +235,7 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
     if data.get("voice_tail") is not None:
         voice["tail"] = data["voice_tail"]
     narration, ass, durations = tts.narrate([l["text"] for l in data["lines"]], work, editprofile.short_pause(prof), prof["motion"], prof["caption_pos"], **voice)
+    data["voice_used"] = tts.voice_used(data.get("voice_style"))  # saved with the record at the end of this producer (a new video has no record yet)
     print("Footage...")
     if config.PEXELS_KEY:
         clips = [footage.clip_for(l["visual"]) for l in data["lines"]]
@@ -428,6 +429,7 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
     prof = editprofile.load()
     tail = {"tail": data["voice_tail"]} if data.get("voice_tail") is not None else {}  # a video that asks keeps less of the voice service's silence after each line
     narration, _ass, durations = tts.narrate([l["text"] for l in data["lines"]], work, prof["sentence_pause_ms"] / 1000, **tail)
+    data["voice_used"] = tts.voice_used(None)
     print("Archival images (only pictures that name the subject)...")
     anchors = data.get("anchors") or []
     import aiart
