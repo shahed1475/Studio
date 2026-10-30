@@ -331,6 +331,20 @@ def shape_for(topic: str) -> tuple[int, int]:
 
 MAX_DOC_LINES = 58  # about 9 minutes at 138 words a minute with the pauses (30 Oct 2026: the owner asked for 8 to 10; the old cap of 50 made 7.6)
 # The owner's shape for a documentary (30 Oct 2026): the hook, then curiosity, then the story, and it finishes with value.
+CASE_RULES = ("This is a real case with real victims and possibly living suspects. Use only documented facts and attribute each claim ('police said', 'the court found', 'the report states'). "
+              "Never call a named person guilty, the killer or the culprit unless a court did, and then say that a court did; say plainly what is still unproven. No graphic detail of injuries or "
+              "bodies and nothing meant to shock. Treat the victim with respect and never speak as the victim. Say once, early, that this is a documentary account of a real case built on the "
+              "public record, and say what remains unknown. (YouTube's own rules, read 30 Oct 2026: no shock violence, no realistic simulation of a victim describing their death, documentary context "
+              "must be in the video's own audio or pictures.)")
+
+
+def case_rules(topic: str) -> str:
+    """The extra writing rules for a real case or unsolved crime; empty for every other kind of topic."""
+    import kinds
+
+    return CASE_RULES if kinds.classify({"topic": topic}) == "case" else ""
+
+
 DOC_STRUCTURE = (
     "Shape: chapter 1 is the hook: open cold on the strangest fact or the central question, no greeting, no channel name and no 'in this video'. Chapter 2 builds curiosity: in two or "
     "three lines make the viewer a promise (the two or three questions this film will answer, and that by the end they will have a simple way to weigh a claim like this one) and "
@@ -391,6 +405,9 @@ def doc_script(topic: str, facts: str | None = None, grounded: str | None = None
             "never filler. Say 'historians disagree' at most once in the whole script and never repeat a sentence "
             "opening. Invent no details to make it more dramatic.\nSOURCES:\n" + grounded
         )
+    case = case_rules(topic)
+    if case:
+        rules += "\n" + case  # an unsolved crime or case: documented facts, attribution, nothing graphic, no accusation (the outline and every chapter share these rules)
     outline = _script_chat(
         f"Plan an 8 to 10 minute YouTube documentary for a US audience.\nTopic: {topic}\nChannel: {nc['name']}\n"
         f"Style: {nc['style']}\n{rules}\n\nGive {n_chapters} chapters in story order. {DOC_STRUCTURE}"

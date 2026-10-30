@@ -130,8 +130,9 @@ def premise_check(topic: str, article: str, made: list[str] | None = None, chat=
     return bool(out["ok"]), str(out.get("reason", ""))[:200]
 
 
-def pop_best(fmt: str = "doc", sig=None, article_of=None, premise_of=None, demand_of=None, dup_of=None) -> str | None:
-    """Take the best viable topic out of the queue. Topics that cannot be made well are dropped with a note; None when nothing is left."""
+def pop_best(fmt: str = "doc", sig=None, article_of=None, premise_of=None, demand_of=None, dup_of=None, want_kind: str | None = None) -> str | None:
+    """Take the best viable topic out of the queue. Topics that cannot be made well are dropped with a note; None when nothing is left. `want_kind` (the weekly programme, weekplan.py)
+    puts topics of that kind first, each group still in score order; "trending" or None is the plain ranking, and a kind nothing queued has falls back to the best topic, said in the feed."""
     sig = signals() if sig is None else sig
     if article_of is None and premise_of is None:
         premise_of = premise_check  # the real run asks Claude; a test that passes its own article_of opts out
@@ -154,6 +155,10 @@ def pop_best(fmt: str = "doc", sig=None, article_of=None, premise_of=None, deman
             return None
     queue = topicqueue.items()
     ranked = sorted(enumerate(queue), key=lambda x: (-(score(x[1], sig) + (demand_of(x[1]) if demand_of else 0.0)), x[0]))
+    if want_kind and want_kind != "trending":
+        import kinds
+
+        ranked.sort(key=lambda x: kinds.classify({"topic": x[1]}) != want_kind)  # a stable sort: the wanted kind first, each group in score order
     for _, topic in ranked:
         article = read_article(article_of, topic)
         ok, why = viable(topic, article)
@@ -167,7 +172,8 @@ def pop_best(fmt: str = "doc", sig=None, article_of=None, premise_of=None, deman
         if ok:
             topicqueue.remove_topic(topic)
             agentlog.event("info", f"Chose a topic: {topic[:70]}", f"Highest research score among the queue's viable topics ({score(topic, sig)}); its source article has {len(article or '')} characters"
-                           + ("; it passed the premise screen." if premise_of else "."))
+                           + ("; it passed the premise screen." if premise_of else ".")
+                           + (f" The weekly programme wanted a {want_kind} film" + (" and this is one." if __import__("kinds").classify({"topic": topic}) == want_kind else ": none was queued, so the best topic is made instead.") if want_kind and want_kind != "trending" else ""))
             return topic
         topicqueue.remove_topic(topic)
         agentlog.event("info", f"Dropped a topic: {topic[:70]}", why + ". The queue moves on to the next one.")

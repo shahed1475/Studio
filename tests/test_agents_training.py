@@ -1016,3 +1016,47 @@ def test_the_opening_case_passes_and_fails_when_the_hook_cue_warning_or_tenant_g
     monkeypatch.setattr(sfx, "add_to", lambda *a, **k: True)  # mutation: a user studio gets the cues
     ok, detail = case()
     assert not ok and "owner_only=False" in detail
+
+
+def test_the_weekly_case_passes_and_fails_when_the_rotation_the_sixth_short_or_the_winner_is_broken(monkeypatch):
+    import shortpick
+    import weekplan
+
+    case = getattr(agenteval, "case_the_weekly_programme_rotates_the_kinds_and_the_sixth_short_copies_the_winner")
+    assert case in agenteval.CASES
+    ok, detail = case()
+    assert ok, detail
+    monkeypatch.setattr(weekplan, "ORDER", ("person", "case", "mystery"))  # mutation: the owner's order is reversed
+    ok, detail = case()
+    assert not ok and "rotates=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(weekplan, "winner_due", lambda metas, cfg, now: True)  # mutation: every Short is a winner copy
+    ok, detail = case()
+    assert not ok and "sixth=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(shortpick, "MIN_VIEWS", 0)  # mutation: a ten-view Short is a pattern
+    ok, detail = case()
+    assert not ok and "winner=False" in detail
+
+
+def test_the_real_case_case_passes_and_fails_when_a_rule_a_warning_or_the_pictures_are_dropped(monkeypatch):
+    import re
+    import aiart
+    import reviewer
+    import scriptgen
+
+    case = getattr(agenteval, "case_a_real_case_is_written_and_drawn_with_care_and_a_careless_script_is_warned")
+    assert case in agenteval.CASES
+    ok, detail = case()
+    assert ok, detail
+    monkeypatch.setattr(scriptgen, "CASE_RULES", "")  # mutation: the writer is given no rules
+    ok, detail = case()
+    assert not ok and "rules=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(reviewer, "CASE_ACCUSE", re.compile(r"^never-matches$"))  # mutation: an unattributed accusation is no longer seen
+    ok, detail = case()
+    assert not ok and "warned=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(aiart, "CASE_PICTURES", "")  # mutation: a case's pictures may show anyone
+    ok, detail = case()
+    assert not ok and "pictures=False" in detail

@@ -919,6 +919,46 @@ def case_a_film_opens_with_its_question_on_screen_and_a_riser_and_a_film_with_no
     return ok, "a film opens with its question on screen and a riser, a film with no question in its first two lines is warned, and user studios get no cues" if ok else f"shown={shown} cued={cued} warned={warned} owner_only={owner_only}"
 
 
+def case_the_weekly_programme_rotates_the_kinds_and_the_sixth_short_copies_the_winner():
+    import shortpick
+    import weekplan
+
+    rotates = [weekplan.next_long_kind(r) for r in ([], ["mystery"], ["case", "mystery"], ["person", "case", "mystery"])] == ["mystery", "case", "person", "trending"]
+    now = dt.datetime(2026, 10, 30, 12, tzinfo=dt.timezone.utc)
+    week = lambda n: [{"format": "short", "made_at": f"2026-10-{24 + i}T00:00:00Z"} for i in range(n)]
+    cfg = {"weekly": {"enabled": True, "short_from_long": 5}}
+    sixth = weekplan.winner_due(week(5), cfg, now) and not weekplan.winner_due(week(4), cfg, now) and not weekplan.winner_due(week(6), cfg, now) and not weekplan.winner_due(week(5), {}, now)
+    rows = {"a": {"kind": "short", "views_90d": 329, "avg_pct_viewed": 54.0, "title": "The Voynich Manuscript: Dates, Owners and Failed Codebreakers"},
+            "b": {"kind": "short", "views_90d": 10, "avg_pct_viewed": 99.0, "title": "Too few views"}, "c": {"kind": "doc", "views_90d": 999, "avg_pct_viewed": 20.0, "title": "A film"}}
+    w = shortpick.winner(rows)
+    winner = bool(w) and w["title"].startswith("The Voynich") and w["kind"] == "mystery" and shortpick.winner({"c": rows["c"], "b": rows["b"]}) is None  # a film and a tiny sample are not a pattern
+    ok = rotates and sixth and winner
+    return ok, "films rotate mystery, case, person, trending; the sixth Short of the week copies our best Short's kind; off unless the owner switches it on" if ok else f"rotates={rotates} sixth={sixth} winner={winner}"
+
+
+def case_a_real_case_is_written_and_drawn_with_care_and_a_careless_script_is_warned():
+    import aiart
+    import reviewer
+    import scriptgen
+
+    given = scriptgen.case_rules("The Zodiac Killer unsolved murders").lower()
+    rules = "documented" in given and "never call a named" in given and "graphic" in given and scriptgen.case_rules("The Lost Army of Cambyses") == ""  # the words themselves, not a constant compared with itself
+    base = {"format": "doc", "kind": "case", "description": "A hook.", "topic": "The Zodiac Killer unsolved murders"}
+
+    def names(*lines):
+        m = {**base, "lines": [{"text": t} for t in lines]}
+        return {r["name"]: r for r in reviewer.generator_checks(m, {"duration": 500.0}) if r["name"].startswith("case_")}
+
+    careless = names("Why did he vanish?", "John Smith was the killer and the corpse was mutilated.")
+    careful = names("Why did he vanish?", "This documentary account sticks to the court records.", "Police said Smith was the killer, but he was never charged.")
+    warned = all(not careless[n]["ok"] for n in ("case_graphic", "case_accusation", "case_context")) and all(r["severity"] == "warn" for r in careless.values())
+    clean = all(r["ok"] for r in careful.values()) and bool(careful)
+    plain = aiart.prompt_for("He walked home.", "a street", "x", False, "photo")
+    pictures = "identifiable" in aiart.prompt_for("He walked home.", "a street", "x", False, "photo", case=True) and aiart.prompt_for("He walked home.", "a street", "x", False, "photo", case=False) == plain
+    ok = rules and warned and clean and pictures
+    return ok, "a real case gets the writing rules, no identifiable person in its pictures, and warnings for graphic wording, an unattributed accusation and no stated documentary purpose" if ok else f"rules={rules} warned={warned} clean={clean} pictures={pictures}"
+
+
 def case_the_narration_is_finished_to_the_target_loudness_and_the_channel_voice_is_the_owners_choice():
     import re
     import subprocess
@@ -1206,6 +1246,8 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_a_legend_film_that_opens_on_a_plain_fact_is_warned_and_a_framed_claim_is_not,
          case_the_owners_pause_stops_scheduling_and_uploading_but_not_repairing,
          case_a_film_opens_with_its_question_on_screen_and_a_riser_and_a_film_with_no_question_is_warned,
+         case_the_weekly_programme_rotates_the_kinds_and_the_sixth_short_copies_the_winner,
+         case_a_real_case_is_written_and_drawn_with_care_and_a_careless_script_is_warned,
          case_the_narration_is_finished_to_the_target_loudness_and_the_channel_voice_is_the_owners_choice,
          case_a_cleared_schedule_is_put_back_in_the_future_once_only_when_the_owner_asks_and_a_public_video_is_never_touched]
 
