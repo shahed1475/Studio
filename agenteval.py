@@ -897,6 +897,28 @@ def case_the_owners_pause_stops_scheduling_and_uploading_but_not_repairing():
     return ok, "the owner's pause stops slots and uploads and nothing else; it is off by default" if ok else f"works={works} stops={stops} repairs={repairs}"
 
 
+def case_a_film_opens_with_its_question_on_screen_and_a_riser_and_a_film_with_no_question_is_warned():
+    import motiongraphics
+    import reviewer
+    import sfx
+    import tenantmode
+
+    asked = {"lines": [{"text": "Where did fifty thousand soldiers go?"}, {"text": "The legend says a sandstorm."}], "chapters": [{"start_line": 0}, {"start_line": 1}]}
+    flat = {"format": "doc", "kind": "default", "description": "A hook.", "lines": [{"text": "Close to modern Mexico City, an ancient city burned."}, {"text": "Its people left stone and ash."}]}
+    shown = motiongraphics.hook_text(asked) == "WHERE DID FIFTY THOUSAND SOLDIERS GO?" and bool(motiongraphics.hook_events(asked)) and not motiongraphics.hook_events({**asked, "hook_text": False})
+    plan = sfx.cues("doc", [9.0] * 12, [{"start_line": 0}, {"start_line": 4}, {"start_line": 9}])
+    cued = plan[:2] == [(0.0, "riser"), (9.0, "hit")] and plan[-1][1] == "swell" and all(g <= -12 for g in sfx.GAIN_DB.values())  # a riser into the first word, quiet by design
+    row = next((r for r in reviewer.generator_checks(flat, {"duration": 500.0}) if r["name"] == "hook_question"), None)
+    warned = bool(row) and not row["ok"] and row["severity"] == "warn"
+    old, tenantmode.is_tenant = tenantmode.is_tenant, (lambda: True)
+    try:
+        owner_only = sfx.add_to(Path("none.mp4"), {}, "doc", [9.0] * 12, []) is False  # the cues are the owner's channel style: never in a user studio
+    finally:
+        tenantmode.is_tenant = old
+    ok = shown and cued and warned and owner_only
+    return ok, "a film opens with its question on screen and a riser, a film with no question in its first two lines is warned, and user studios get no cues" if ok else f"shown={shown} cued={cued} warned={warned} owner_only={owner_only}"
+
+
 def case_the_narration_is_finished_to_the_target_loudness_and_the_channel_voice_is_the_owners_choice():
     import re
     import subprocess
@@ -1183,6 +1205,7 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_the_narration_is_listened_to_blind_a_skipped_line_is_found_and_it_only_ever_warns,
          case_a_legend_film_that_opens_on_a_plain_fact_is_warned_and_a_framed_claim_is_not,
          case_the_owners_pause_stops_scheduling_and_uploading_but_not_repairing,
+         case_a_film_opens_with_its_question_on_screen_and_a_riser_and_a_film_with_no_question_is_warned,
          case_the_narration_is_finished_to_the_target_loudness_and_the_channel_voice_is_the_owners_choice,
          case_a_cleared_schedule_is_put_back_in_the_future_once_only_when_the_owner_asks_and_a_public_video_is_never_touched]
 

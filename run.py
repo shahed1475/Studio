@@ -267,6 +267,9 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
     import subscribe
 
     subscribe.add_to(folder / "video.mp4", data, "short", durations, subtitles.load_words(work / "words.json"), (config.WIDTH, config.HEIGHT))  # the pop-up lands on the spoken 'subscribe'
+    import sfx
+
+    sfx.add_to(folder / "video.mp4", data, "short", durations)  # a riser into the first word and a hit on the second line (audio only, the picture is copied)
     shutil.copy(work / "words.json", folder / "words.json")
     subtitles.write_files(folder, subtitles.with_punctuation(subtitles.load_words(work / "words.json"), [l["text"] for l in data["lines"]]))
     shutil.rmtree(work)
@@ -456,18 +459,26 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
     if config.DOC_SUBTITLES:
         doc_ass = work / "doc_captions.ass"
         doc_ass.write_text(subtitles.to_ass(subtitles.build_cues(words), (1920, 1080), prof["caption_pos"]))
-        if data.get("graphics"):  # 2D chapter title cards and date badges, from the chapter list and the years the script writes
-            import motiongraphics
+        import motiongraphics
 
+        if data.get("graphics"):  # 2D chapter title cards and date badges, from the chapter list and the years the script writes (and the hook question)
             events = motiongraphics.graphics_events(data, durations, (1920, 1080))
             motiongraphics.add_to_ass(doc_ass, events, (1920, 1080))
             data["graphics"] = {"events": len(events)}
             print(f"  2D graphics: {len(events)} animated event(s)")
+        else:  # a film that asks for no other graphics still opens with its question on screen (switch hook_text false)
+            events = motiongraphics.hook_events(data, (1920, 1080))
+            if events:
+                motiongraphics.add_to_ass(doc_ass, events, (1920, 1080))
+                print("  hook question on screen")
     render.render(clips, durations, narration, doc_ass, work, folder / "video.mp4",
                   size=(1920, 1080), music=random.choice(music) if music else None, loudness=editprofile.lufs_for(data, prof), shots=prof["motion"] >= 1)
     import subscribe
 
     subscribe.add_to(folder / "video.mp4", data, "doc", durations, [], (1920, 1080))  # one or two branded pop-ups at high points: the film itself ends on the story
+    import sfx
+
+    sfx.add_to(folder / "video.mp4", data, "doc", durations, data.get("chapters"))  # riser, hit on the reveal, whoosh at chapter changes, swell on the payoff
     shutil.copy(work / "words.json", folder / "words.json")
     subtitles.write_files(folder, words)
     shutil.rmtree(work)

@@ -989,3 +989,30 @@ def test_the_pause_case_passes_and_fails_when_the_switch_is_ignored_or_stops_too
     monkeypatch.setattr(autopilot, "plan_actions", lambda st, cfg, now, skip=(): [a for a in real(st, cfg, now, skip) if not (cfg.get("pause_scheduling") and a["do"] == "fix")])  # mutation: the pause also stops repairs
     ok, detail = case()
     assert not ok and "repairs=False" in detail
+
+
+def test_the_opening_case_passes_and_fails_when_the_hook_cue_warning_or_tenant_guard_is_broken(monkeypatch):
+    import motiongraphics
+    import reviewer
+    import sfx
+
+    case = getattr(agenteval, "case_a_film_opens_with_its_question_on_screen_and_a_riser_and_a_film_with_no_question_is_warned")
+    assert case in agenteval.CASES
+    ok, detail = case()
+    assert ok, detail
+    monkeypatch.setattr(motiongraphics, "hook_text", lambda data: None)  # mutation: no question is ever shown
+    ok, detail = case()
+    assert not ok and "shown=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(sfx, "cues", lambda kind, durations, chapters=None: [(0.0, "hit")])  # mutation: no riser into the first word
+    ok, detail = case()
+    assert not ok and "cued=False" in detail
+    monkeypatch.undo()
+    real = reviewer.generator_checks
+    monkeypatch.setattr(reviewer, "generator_checks", lambda m, p, r=None: [x for x in real(m, p, r) if x["name"] != "hook_question"])  # mutation: the warning is gone
+    ok, detail = case()
+    assert not ok and "warned=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(sfx, "add_to", lambda *a, **k: True)  # mutation: a user studio gets the cues
+    ok, detail = case()
+    assert not ok and "owner_only=False" in detail
