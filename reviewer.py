@@ -245,6 +245,8 @@ def generator_checks(meta: dict, probe: dict, rules: dict | None = None) -> list
         first = re.split(r"(?<=[.?!])\s", lines[0].strip())[0]
         max_words = round(b["hook_max_seconds"] * b["pace_target_wpm"][0] / 60)
         bad = len(first.split()) > max_words or bool(GREETING.search(lines[0]))
+        asked = any("?" in t for t in lines[:2])  # YouTube's own advice: start with a question (the first two lines are about five seconds)
+        out.append(_c("hook_question", asked, "the first two lines (about five seconds) hold a question" if asked else "no question in the first two lines (about five seconds): open with the central question and say what the viewer will know by the end", "warn"))
         if meta.get("kind") in ("legend", "mystery"):  # 30 Oct 2026: the Lost Army film opened "...simply vanished." as plain fact; the legend was named only in line 2
             framed = bool(HEDGE.search(first)) or first.rstrip().endswith("?")
             out.append(_c("hook_claims_as_fact", framed, "the first sentence frames its claim (a question, or 'said to', 'legend', 'according to')" if framed else
