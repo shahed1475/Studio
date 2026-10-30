@@ -177,3 +177,11 @@ def test_quotation_marks_around_words_are_not_part_of_the_words():
     r = voicecheck.compare("Korea's 'John Doe' novel may have an author named Ho Kyun, said the old book.", "Korea's John Doe novel may have an author named Ho Kyun said the old book")
     assert r["heard_as"] == [] and r["match"] > 0.99
     assert voicecheck.words("the 'quoted' word and kaper's name") == ["the", "quoted", "word", "and", "kaper's", "name"]
+
+
+def test_a_short_script_full_of_names_is_judged_on_gaps_and_a_slightly_lower_match():
+    """30 Oct 2026, the Hong Gildong Short: 89.4 percent, no gap, only Korean names heard differently: a false alarm at the film's 90 percent bar."""
+    assert voicecheck.ok({"match": 0.894, "gaps": [], "words": 134})
+    assert not voicecheck.ok({"match": 0.80, "gaps": [], "words": 134})
+    assert not voicecheck.ok({"match": 0.894, "gaps": [{"kind": "missing", "words": 7}], "words": 134})   # a real hole still fails
+    assert not voicecheck.ok({"match": 0.894, "gaps": [], "words": 1300})                                 # a long film keeps the 90 percent bar
