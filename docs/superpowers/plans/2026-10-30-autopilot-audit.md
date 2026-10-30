@@ -27,4 +27,6 @@ Not a defect, recorded: La Llorona's schedule loss has no cause in our code (onl
 - F5 built (voicecheck.py, run.py listen, gate --listen, approval hook, eval case): real run on the film: match 0.992 with gemini-3.1-flash-lite ($0.0056), 0.988 voxtral ($0.051), 0.974 gemini-2.5-flash-lite; leads Bahariya, Kaper, Cyrenaica, Chafetz.
 - F6, F7, F8 built with tests, mutation checks and eval cases.
 - F9 dry run: works (Herodotus at MIT Classics and Wikisource, contradiction element), nothing written to any video.
-- F10 and the pronunciation leads: see the end of this file when done.
+- F10 done: `run.py repair seven-sleepers-mystery` (a Short with wrong facts) worked as designed: title, description and tags fixed, the script set aside in `output_old/` (never deleted; backup in backups/manual), topic kept for a remake; no cost beyond a few cents; the old content task closed.
+- Pronunciation leads (Bahariya, Kaper, Cyrenaica): tested in the film's voice in isolation: the listener writes all three correctly even from the plain spelling (and even autocorrects wrong respellings), so the leads could not be reproduced and `tts.PRONUNCIATION` is NOT changed. Limit recorded: the listening check finds skipped, cut and repeated lines; it cannot judge pronunciation. Those names need a human ear.
+- Last fix: quotation marks around words ('John Doe') no longer count as differences (found on the Hong Gildong Short, 93.6 percent before).

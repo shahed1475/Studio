@@ -171,3 +171,9 @@ def test_accented_letters_are_compared_as_their_plain_letters():
 def test_little_words_that_differ_are_not_leads():
     r = voicecheck.compare("They found a tomb in the desert, with bones of the soldiers and a bracelet in the sand.", "They found the tomb in a desert, with bones of the soldiers and the bracelet in the sand.")
     assert r["heard_as"] == []
+
+
+def test_quotation_marks_around_words_are_not_part_of_the_words():
+    r = voicecheck.compare("Korea's 'John Doe' novel may have an author named Ho Kyun, said the old book.", "Korea's John Doe novel may have an author named Ho Kyun said the old book")
+    assert r["heard_as"] == [] and r["match"] > 0.99
+    assert voicecheck.words("the 'quoted' word and kaper's name") == ["the", "quoted", "word", "and", "kaper's", "name"]
