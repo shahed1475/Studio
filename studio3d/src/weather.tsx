@@ -5,10 +5,10 @@ import {rnd, terrainY} from './world';
 type IM = THREE.InstancedMesh;
 
 /** A wall of layered dust puffs (outer pale, inner dark) whose front moves with time. frontZ(t) is where the wall's face is. */
-export const StormWall: React.FC<{t: number; frontZ: number; width?: number; layers?: number}> = ({frontZ, width = 190, layers = 3}) => {
+export const StormWall: React.FC<{t: number; frontZ: number; width?: number; layers?: number}> = ({frontZ, width = 190, layers = 2}) => {
   const refs = [useRef<IM>(null), useRef<IM>(null), useRef<IM>(null)];
   const d = useMemo(() => new THREE.Object3D(), []);
-  const M = 54;
+  const M = 40;
   useLayoutEffect(() => {
     for (let L = 0; L < layers; L++) {
       for (let i = 0; i < M; i++) {
@@ -23,7 +23,7 @@ export const StormWall: React.FC<{t: number; frontZ: number; width?: number; lay
   }, [frontZ]);
   const colors = ['#d2a169', '#a8743f', '#6d4426'];
   const opac = [0.5, 0.6, 0.72];
-  return <>{refs.slice(0, layers).map((r, L) => <instancedMesh key={L} ref={r} args={[undefined, undefined, M]} frustumCulled={false}><icosahedronGeometry args={[1, 2]} /><meshStandardMaterial color={colors[L]} transparent opacity={opac[L]} depthWrite={false} roughness={1} /></instancedMesh>)}</>;
+  return <>{refs.slice(0, layers).map((r, L) => <instancedMesh key={L} ref={r} args={[undefined, undefined, M]} frustumCulled={false}><icosahedronGeometry args={[1, 1]} /><meshStandardMaterial color={colors[L]} transparent opacity={opac[L]} depthWrite={false} roughness={1} /></instancedMesh>)}</>;
 };
 
 /** Fast sand streaks blown along +x, thicker as `density` goes up. */
