@@ -1,0 +1,3 @@
+{"name":"gloamtale-studio3d","private":true,"version":"0.1.0","type":"module",
+ "scripts":{"render:march":"remotion render src/index.ts March out/March.mp4 --gl=swangle --crf=28","render:caravan":"remotion render src/index.ts Caravan out/Caravan.mp4 --gl=swangle --crf=28","render:storm":"remotion render src/index.ts Storm out/Storm.mp4 --gl=swangle --crf=28","render:subscribe":"remotion render src/index.ts SubscribePop out/subseq --sequence --image-format=png --gl=swangle"},
+ "dependencies":{"remotion":"4.0.539","@remotion/cli":"4.0.539","@remotion/three":"4.0.539","@remotion/google-fonts":"4.0.539","three":"0.186.1","@react-three/fiber":"9.8.2","@react-three/drei":"10.7.9","react":"19","react-dom":"19","typescript":"5","@types/react":"19","@types/three":"0.186"}}

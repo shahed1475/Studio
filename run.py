@@ -263,6 +263,9 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
     print("Rendering...")
     render.render(clips, durations, narration, ass, work, folder / "video.mp4", loudness=editprofile.lufs_for(data, prof), shots=prof["motion"] >= 1,
                   crossfade=0.3 if prof["motion"] >= 2 and len(clips) <= 20 else 0.0, grain=prof["motion"] >= 2)
+    import subscribe
+
+    subscribe.add_to(folder / "video.mp4", data, "short", durations, subtitles.load_words(work / "words.json"), (config.WIDTH, config.HEIGHT))  # the pop-up lands on the spoken 'subscribe'
     shutil.copy(work / "words.json", folder / "words.json")
     subtitles.write_files(folder, subtitles.with_punctuation(subtitles.load_words(work / "words.json"), [l["text"] for l in data["lines"]]))
     shutil.rmtree(work)
@@ -460,6 +463,9 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
             print(f"  2D graphics: {len(events)} animated event(s)")
     render.render(clips, durations, narration, doc_ass, work, folder / "video.mp4",
                   size=(1920, 1080), music=random.choice(music) if music else None, loudness=editprofile.lufs_for(data, prof), shots=prof["motion"] >= 1)
+    import subscribe
+
+    subscribe.add_to(folder / "video.mp4", data, "doc", durations, [], (1920, 1080))  # one or two branded pop-ups at high points: the film itself ends on the story
     shutil.copy(work / "words.json", folder / "words.json")
     subtitles.write_files(folder, words)
     shutil.rmtree(work)

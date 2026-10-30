@@ -779,3 +779,28 @@ def test_the_clip_and_people_case_passes_and_fails_when_a_clip_may_loop_or_a_fac
     monkeypatch.setattr(parallax, "gentle", lambda plan: plan)  # mutation: faces may be pushed to 1.45x
     ok, detail = case()
     assert not ok and "gentle=False" in detail
+
+
+def test_the_subscribe_case_passes_and_fails_when_the_timing_or_the_safety_is_broken(monkeypatch):
+    import subscribe
+
+    case = getattr(agenteval, "case_the_subscribe_pop_up_lands_on_the_spoken_word_or_at_high_points_and_never_breaks_a_video")
+    assert case in agenteval.CASES
+    ok, detail = case()
+    assert ok, detail
+    monkeypatch.setattr(subscribe, "LEAD", 0.0)  # mutation: the pop-up starts on the word, so the click comes after it
+    ok, detail = case()
+    assert not ok and "spoken=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(subscribe, "moments", lambda kind, durations, words=None: [0.0])  # mutation: it pops up at the very start
+    ok, detail = case()
+    assert not ok and "high=False" in detail
+    monkeypatch.undo()
+
+    def blind(cmd, **k):  # mutation: the length check is blind and a broken output replaces the video
+        open(cmd[-1], "wb").write(b"broken")
+
+    monkeypatch.setattr(subscribe.subprocess, "run", blind)
+    monkeypatch.setattr(subscribe, "_seconds", lambda p: 60.0)
+    ok, detail = case()
+    assert not ok and "safe=False" in detail

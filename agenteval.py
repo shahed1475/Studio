@@ -687,6 +687,25 @@ def case_a_clip_plays_once_and_a_picture_with_people_never_bends_or_pushes_in_ha
     return ok, "a clip fills its scene once, and a scene with people gets a flat gentle zoom" if ok else f"once={once} people_flat={people_flat} gentle={gentle}"
 
 
+def case_the_subscribe_pop_up_lands_on_the_spoken_word_or_at_high_points_and_never_breaks_a_video():
+    import tempfile
+    from pathlib import Path
+
+    import subscribe
+
+    spoken = subscribe.moments("short", [4.0, 4.0, 4.0, 6.0], [{"s": 15.0, "e": 15.4, "w": "Subscribe", "i": 3}]) == [13.8]  # 1.2 s before the word
+    d = [9.59] * 58
+    total = sum(d)
+    got = subscribe.moments("doc", d)
+    high = len(got) == 2 and got[0] >= 45 and got[-1] <= total - subscribe.POP_SECONDS - 25 and got[1] - got[0] >= 120  # not at the start or the end, not two close together
+    with tempfile.TemporaryDirectory() as tmp:
+        v = Path(tmp) / "video.mp4"
+        v.write_bytes(b"original")
+        safe = subscribe.apply(v, [10.0], (1920, 1080), False, assets=Path(tmp) / "none") is False and v.read_bytes() == b"original"  # a failed overlay changes nothing
+    ok = spoken and high and safe
+    return ok, "the pop-up starts before the spoken word, sits at high points in a documentary and never damages a video" if ok else f"spoken={spoken} high={high} safe={safe}"
+
+
 def case_second_sources_are_off_by_default_and_only_verified_pages_count():
     import autopilot
     import secondsources as ss
@@ -883,7 +902,8 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_the_ai_review_reads_the_whole_narration_of_a_long_documentary_and_not_only_its_start,
          case_a_quotation_is_sourced_by_its_own_words_and_an_invented_one_stays_open_with_no_passage,
          case_an_animated_clip_is_asked_to_show_only_what_its_picture_already_shows,
-         case_a_clip_plays_once_and_a_picture_with_people_never_bends_or_pushes_in_hard]
+         case_a_clip_plays_once_and_a_picture_with_people_never_bends_or_pushes_in_hard,
+         case_the_subscribe_pop_up_lands_on_the_spoken_word_or_at_high_points_and_never_breaks_a_video]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:
