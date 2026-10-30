@@ -19,8 +19,8 @@ def iso(d):
 class FakeYT:
     """Keeps one video's status the way YouTube would: update replaces what is sent, a read returns what is stored."""
 
-    def __init__(self, status):
-        self.status, self.updates = dict(status), []
+    def __init__(self, status, content=None):
+        self.status, self.updates, self.content = dict(status), [], content
 
     def videos(self):
         return self
@@ -39,7 +39,10 @@ class FakeYT:
             self.updates.append(self._body)
             self.status = dict(self._body["status"])
             return {}
-        return {"items": [{"id": "vid1", "status": dict(self.status)}]}
+        item = {"id": "vid1", "status": dict(self.status)}
+        if self.content is not None and "contentDetails" in self._op[1]:
+            item["contentDetails"] = self.content
+        return {"items": [item]}
 
 
 def folder(tmp_path, monkeypatch, **meta):
@@ -83,7 +86,7 @@ def test_it_sets_a_future_time_keeps_the_video_private_and_reads_it_back(tmp_pat
     assert meta["publish_at"] == sent["publishAt"]
     assert meta["rescheduled"]["to"] == sent["publishAt"] and meta["rescheduled"]["verified"] is True
     logged = actionlog.actions(5)[0]
-    assert logged["kind"] == "status" and logged["video_id"] == "vid1" and logged["source"] == "autopilot"
+    assert logged["kind"] == "status" and logged["video_id"] == "vid1" and logged["source"] == "owner command"
     assert logged["before"]["publishAt"] is None and logged["after"]["publishAt"] == sent["publishAt"]
 
 
@@ -145,11 +148,60 @@ def test_a_duplicate_story_is_held_not_rescheduled(tmp_path, monkeypatch):
     assert json.loads((d / "meta.json").read_text())["hold"] is True
 
 
-def test_autopilot_plans_the_repair_for_a_lost_video():
+def test_autopilot_never_reschedules_by_itself():
+    """A cleared schedule is most often a person's edit in YouTube Studio (safety.py says so): putting the video back on course to go public is the owner's decision, so Autopilot only
+    reports it (the safety pause) and the repair is a command the owner runs."""
     v = {"slug": "la-llorona", "video_id": "vid1", "hold": False, "fails": 0, "lost": True, "approved": True, "verdict": "pass", "publish_at": None}
     st = {"queue_len": 5, "connected": True, "busy": False, "uploads_today": 0, "news_pending": 0, "videos": [v]}
-    acts = [(a["do"], a.get("slug")) for a in autopilot.plan_actions(st, CFG, NOW)]
-    assert ("reschedule", "la-llorona") in acts
-    assert "reschedule" in autopilot.EXECUTORS
-    v["lost"] = False
-    assert ("reschedule", "la-llorona") not in [(a["do"], a.get("slug")) for a in autopilot.plan_actions(st, CFG, NOW)]
+    assert "reschedule" not in [a["do"] for a in autopilot.plan_actions(st, CFG, NOW)]
+    assert "reschedule" not in autopilot.EXECUTORS
+
+
+def test_it_refuses_in_a_user_studio(tmp_path, monkeypatch):
+    folder(tmp_path, monkeypatch)
+    monkeypatch.setenv("STUDIO_MODE", "tenant")
+    yt = FakeYT({"privacyStatus": "private", "uploadStatus": "processed"})
+    out = reschedule.apply("la-llorona", CFG, NOW, yt=yt)
+    assert out and "user studio" in out["skipped"] and yt.updates == []
+
+
+def test_it_refuses_while_an_invented_facts_warning_is_open_unless_the_owner_approved_the_video(tmp_path, monkeypatch):
+    import fixer
+
+    folder(tmp_path, monkeypatch)
+    monkeypatch.setattr(fixer, "watch_problems", lambda checks: ["a date the source does not give"])
+    yt = FakeYT({"privacyStatus": "private", "uploadStatus": "processed"})
+    out = reschedule.apply("la-llorona", CFG, NOW, yt=yt)
+    assert out and "facts" in out["skipped"] and yt.updates == []
+    folder(tmp_path, monkeypatch, approved_by="you")  # the owner read the video and approved it as it is
+    assert reschedule.apply("la-llorona", CFG, NOW, yt=yt) is None and len(yt.updates) == 1
+
+
+def test_it_refuses_a_video_youtube_rejected_or_blocked_in_countries(tmp_path, monkeypatch):
+    folder(tmp_path, monkeypatch)
+    rejected = FakeYT({"privacyStatus": "private", "uploadStatus": "rejected", "rejectionReason": "copyright"})
+    out = reschedule.apply("la-llorona", CFG, NOW, yt=rejected)
+    assert out and "rejected" in out["skipped"] and rejected.updates == []
+    blocked = FakeYT({"privacyStatus": "private", "uploadStatus": "processed"}, content={"regionRestriction": {"blocked": ["DE", "FR"]}})
+    out = reschedule.apply("la-llorona", CFG, NOW, yt=blocked)
+    assert out and "blocked" in out["skipped"] and blocked.updates == []
+
+
+def test_without_write_permission_no_connection_is_made(tmp_path, monkeypatch):
+    import titletest
+    import upload
+
+    folder(tmp_path, monkeypatch)
+    monkeypatch.setattr(titletest, "can_write", lambda token=None: False)
+    monkeypatch.setattr(upload, "_service", lambda: (_ for _ in ()).throw(AssertionError("must not connect")))
+    out = reschedule.apply("la-llorona", CFG, NOW)
+    assert out and "permission" in out["skipped"]
+
+
+def test_the_owner_runs_it_with_a_command_that_holds_the_autopilot_lock():
+    import inspect
+
+    import run
+
+    src = inspect.getsource(run.main)
+    assert 'a[0] == "reschedule"' in src and "exclusive()" in src.split('a[0] == "reschedule"')[1][:600]

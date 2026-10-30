@@ -108,7 +108,7 @@ def check(now: dt.datetime | None = None, yt=None) -> dict:
             autopilot.save_config({**cfg, "enabled": False})
             paused = True
         agentlog.event("error", "Autopilot paused: a published video has a problem" if paused else "A published video has a problem",
-                       "; ".join(problems[:3]) + (" Fix it in YouTube Studio, then turn Autopilot on again." if paused else ""), notify=True, now=now)
+                       "; ".join(problems[:3]) + (" Fix it in YouTube Studio, then turn Autopilot on again. If nobody took it down on purpose, `python run.py reschedule <video folder name>` puts it back on the next free slot (private until then)." if paused else ""), notify=True, now=now)
     return {"checked": len(due), "problems": problems, "paused": paused}
 
 
