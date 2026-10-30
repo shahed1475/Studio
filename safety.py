@@ -76,12 +76,20 @@ def _due(now: dt.datetime) -> list[tuple[Path, dict]]:
 
 def check(now: dt.datetime | None = None, yt=None) -> dict:
     now = now or dt.datetime.now(dt.timezone.utc)
+    lost = []
     try:
         import reconcile
 
-        reconcile.run(now, yt)  # the studio's records must say what YouTube says (a video YouTube no longer has is held and the owner told)
+        lost = reconcile.run(now, yt).get("gone_public", [])  # the studio's records must say what YouTube says (a video YouTube no longer has is held and the owner told)
     except Exception:  # never stops the health check
         pass
+    if lost:  # a video that was meant to be public is gone: the same pause as any other problem with a published video
+        cfg = autopilot.load_config()
+        paused = bool(cfg.get("enabled"))
+        if paused:
+            autopilot.save_config({**cfg, "enabled": False})
+        agentlog.event("error", "Autopilot paused: a published video has a problem" if paused else "A published video has a problem",
+                       "; ".join(f"{n}: the video is not on YouTube any more (deleted or removed)" for n in lost[:3]) + (" Check YouTube Studio, then turn Autopilot on again." if paused else ""), notify=True, now=now)
     due = _due(now)
     if not due:
         return {"checked": 0, "problems": [], "paused": False}
