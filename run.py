@@ -520,9 +520,17 @@ def _parallax(data: dict, clips: list, durations: list, size: tuple[int, int]) -
     return clips
 
 
+LOOKS = {  # what a new video asks for besides its pictures and clips. "photo" is the Lost Army film's look (the owner's choice, 30 Oct 2026): realistic AI scenes, free camera motion (flat gentle zoom where
+    # people may show), 2D chapter cards and date badges on a documentary, the shorter voice tail. "3d" is the storybook look Autopilot used before.
+    "photo": {"doc": {"parallax": True, "graphics": True, "voice_tail": 0.15}, "short": {"parallax": True}},
+    "3d": {"doc": {}, "short": {}},
+}
+DEFAULT_LOOK = "photo"
+
+
 def _house_style(kind: str) -> dict:
-    """What Autopilot adds to a NEW video of this kind (autopilot.json house_style): the 3D animated-film look and a few moving clips. Only when it is switched on and
-    the account can pay for it (credit known and at least min_credit: an animated documentary costs about $3, a stopped render wastes it). {} otherwise."""
+    """What Autopilot adds to a NEW video of this kind (autopilot.json house_style, `look` photo or 3d): the look, a few moving clips and its motion. Only when it is switched on and
+    the account can pay for it (credit known and at least min_credit: an animated documentary costs about $3 to $4, a stopped render wastes it). {} otherwise."""
     import autopilot
     import llm
     import risk
@@ -537,7 +545,8 @@ def _house_style(kind: str) -> dict:
         credit = None
     if credit is None or credit < float(hs.get("min_credit", 8.0)):
         return {}
-    return {"art_style": "3d", "animate": int(part.get("clips", 0)), "animate_budget": float(part.get("budget", 1.0)), "art_first": True, "house_style": True}
+    look = hs.get("look") if hs.get("look") in LOOKS else DEFAULT_LOOK  # an unknown look is the default, never an error in the middle of a build
+    return {"art_style": look, "animate": int(part.get("clips", 0)), "animate_budget": float(part.get("budget", 1.0)), "art_first": True, "house_style": True, **LOOKS[look].get(kind, {})}
 
 
 def _apply_house_style(data: dict, kind: str, folder) -> dict:

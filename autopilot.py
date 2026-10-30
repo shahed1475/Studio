@@ -47,8 +47,8 @@ DEFAULTS = {
     "second_sources": {          # two pages beyond Wikipedia and one original element per documentary (secondsources.py): OFF until the owner tops up; about two small model calls a video
         "enabled": False, "min_credit": 3.0,
     },
-    "house_style": {             # 3D animated-film look plus a few moving clips for NEW videos, only while the OpenRouter credit is at least min_credit (about $3 for a documentary)
-        "enabled": False, "min_credit": 8.0,
+    "house_style": {             # the look plus a few moving clips for NEW videos, only while the OpenRouter credit is at least min_credit (about $3 to $4 for a documentary). look: "photo" = the Lost Army film's realistic look with camera motion (default, owner's choice 30 Oct 2026), "3d" = storybook animated look
+        "enabled": False, "min_credit": 8.0, "look": "photo",
         "doc": {"clips": 4, "budget": 1.5},
         "short": {"clips": 1, "budget": 0.5},
     },

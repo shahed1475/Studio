@@ -352,8 +352,9 @@ def case_creator_house_style_is_funded_new_only_and_off_by_default():
         off = run._apply_house_style({"title": "t"}, "doc", None)
     finally:
         autopilot.load_config, risk.credit_left, llm.api_key = old
-    ok = funded.get("art_style") == "3d" and funded.get("animate") == 4 and "art_style" not in redo and "art_style" not in poor and "art_style" not in off and autopilot.DEFAULTS["house_style"]["enabled"] is False
-    return ok, "a new video gets the 3D animated style only when it is on and funded; a redo, a poor account and the default never do" if ok else f"funded={funded} redo={redo} poor={poor} off={off}"
+    looks = funded.get("art_style") == "photo" and funded.get("parallax") is True and funded.get("graphics") is True and funded.get("animate") == 4  # the Lost Army film's look, with its camera motion and chapter cards
+    ok = looks and "art_style" not in redo and "art_style" not in poor and "art_style" not in off and autopilot.DEFAULTS["house_style"]["enabled"] is False
+    return ok, "a new video gets the realistic look with camera motion only when it is on and funded; a redo, a poor account and the default never do" if ok else f"funded={funded} redo={redo} poor={poor} off={off}"
 
 
 def case_autopilot_governor_only_tightens_and_freezes_on_repetition():

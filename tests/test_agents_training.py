@@ -881,3 +881,23 @@ def test_the_channel_mark_case_passes_and_fails_when_the_timing_corner_switch_or
     monkeypatch.setattr(subscribe, "add_to", ignore_tenant)
     ok, detail = case()
     assert not ok and "switch=False" in detail
+
+
+def test_the_house_style_case_passes_and_fails_when_the_look_or_its_motion_or_the_funding_gate_is_broken(monkeypatch):
+    import run
+
+    case = getattr(agenteval, "case_creator_house_style_is_funded_new_only_and_off_by_default")
+    assert case in agenteval.CASES
+    ok, detail = case()
+    assert ok, detail
+    monkeypatch.setattr(run, "DEFAULT_LOOK", "3d")  # mutation: the default look goes back to the storybook style
+    ok, detail = case()
+    assert not ok and "funded=" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(run, "LOOKS", {"photo": {"doc": {}, "short": {}}, "3d": {"doc": {}, "short": {}}})  # mutation: the realistic look loses its camera motion and chapter cards
+    ok, detail = case()
+    assert not ok
+    monkeypatch.undo()
+    monkeypatch.setattr(run, "_apply_house_style", lambda data, kind, folder: {**data, **run._house_style(kind)})  # mutation: a re-render in place gets the new look too
+    ok, detail = case()
+    assert not ok
