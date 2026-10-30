@@ -29,7 +29,7 @@ def words(text: str) -> list[str]:
     """Lower-case words without punctuation, hyphens as spaces, digits and spoken numbers left out (the two cannot be compared)."""
     t = unicodedata.normalize("NFKD", str(text)).encode("ascii", "ignore").decode().lower().replace("-", " ")  # László -> laszlo, Hŏ -> ho: the listener writes plain letters
     t = re.sub(r"(?<=\d),(?=\d)", "", t.replace("’", "'"))
-    return [w for w in re.findall(r"[a-z0-9']+", t) if not any(c.isdigit() for c in w) and w not in NUMBER_WORDS]
+    return [w for w in (x.strip("'") for x in re.findall(r"[a-z0-9']+", t)) if w and not any(c.isdigit() for c in w) and w not in NUMBER_WORDS]  # 'John Doe' in quotation marks is John Doe
 
 
 def compare(script: str, heard: str) -> dict:
