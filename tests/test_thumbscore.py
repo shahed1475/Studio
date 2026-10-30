@@ -104,7 +104,7 @@ def test_make_puts_the_best_scored_thumbnail_first_and_remembers_the_scores(monk
     monkeypatch.setattr(thumbnail, "_best", lambda fr, k=3: fr[:k])
     monkeypatch.setattr(thumbnail, "fit_frames", lambda *a, **k: None)
     monkeypatch.setattr(thumbnail, "art_subject", lambda meta, chat=None: "a scene")  # no model call in this test
-    monkeypatch.setattr(aiart, "thumbnail_art", lambda scene, now=None: None)  # no drawing in this test: three frame thumbnails
+    monkeypatch.setattr(aiart, "thumbnail_art", lambda scene, now=None, **k: None)  # no drawing in this test: three frame thumbnails
     monkeypatch.setattr(thumbscore, "score", lambda paths, title, hook, post=None: [{"index": 0, "total": 5.0, "parts": {}}, {"index": 1, "total": 9.1, "parts": {}}, {"index": 2, "total": 6.0, "parts": {}}])
     names = thumbnail.make(folder, hook="HOOK")
     meta = json.loads((folder / "meta.json").read_text())

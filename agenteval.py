@@ -954,7 +954,10 @@ def case_a_real_case_is_written_and_drawn_with_care_and_a_careless_script_is_war
     warned = all(not careless[n]["ok"] for n in ("case_graphic", "case_accusation", "case_context")) and all(r["severity"] == "warn" for r in careless.values())
     clean = all(r["ok"] for r in careful.values()) and bool(careful)
     plain = aiart.prompt_for("He walked home.", "a street", "x", False, "photo")
-    pictures = "identifiable" in aiart.prompt_for("He walked home.", "a street", "x", False, "photo", case=True) and aiart.prompt_for("He walked home.", "a street", "x", False, "photo", case=False) == plain
+    short = {**base, "format": "short", "lines": [{"text": "John Smith was the killer."}]}
+    short_checked = any(r["name"] == "case_accusation" and not r["ok"] for r in reviewer.generator_checks(short, {"duration": 55.0}))  # a Short about a case gets the same warnings
+    pictures = ("identifiable" in aiart.prompt_for("He walked home.", "a street", "x", False, "photo", case=True) and aiart.prompt_for("He walked home.", "a street", "x", False, "photo", case=False) == plain
+                and "identifiable" in aiart.thumbnail_prompt("a river", None, case=True) and "identifiable" not in aiart.thumbnail_prompt("a river", None) and short_checked)
     ok = rules and warned and clean and pictures
     return ok, "a real case gets the writing rules, no identifiable person in its pictures, and warnings for graphic wording, an unattributed accusation and no stated documentary purpose" if ok else f"rules={rules} warned={warned} clean={clean} pictures={pictures}"
 

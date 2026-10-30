@@ -48,7 +48,7 @@ def test_run_takes_a_pinned_topic_before_the_ranking(tmp_path, monkeypatch):
 
     monkeypatch.setattr(config, "TOPICS_FILE", tmp_path / "topics.json")
     topicqueue._write(["A", "B"])
-    monkeypatch.setattr(topicrank, "pop_best", lambda fmt: "A")
+    monkeypatch.setattr(topicrank, "pop_best", lambda fmt, **k: "A")
     assert run._best_topic("doc") == "A"
     topicqueue.pin("B", "doc")
     assert run._best_topic("doc") == "B" and run._best_topic("doc") == "A"

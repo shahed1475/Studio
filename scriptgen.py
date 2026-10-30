@@ -85,6 +85,8 @@ def short_prompt(topic: str, grounded: str | None = None) -> str:
         "- Use ONLY the facts in SOURCES below, in your own words. Add no people, places, dates or details they do not "
         "state; say so plainly when they call something uncertain.\nSOURCES:\n" + grounded + "\n"
     ) if grounded else ""
+    case = case_rules(topic)
+    src += f"- {case}\n" if case else ""  # a real case or unsolved crime: documented facts, attribution, nothing graphic, no accusation
     return (
         f"Write a YouTube Short script for a US audience.\nTopic: {topic}\nNiche: {nc['name']}\n"
         f"Style: {nc['style']}\n\nRules:\n"
@@ -110,6 +112,8 @@ def short_prompt(topic: str, grounded: str | None = None) -> str:
 
 def script(topic: str, grounded: str | None = None) -> dict:
     data = _script_chat(short_prompt(topic, grounded))
+    if not case_rules(topic) and case_rules(topic, title=str(data.get("title", "")), anchors=data.get("anchors") or []):
+        data = _script_chat(short_prompt(topic, grounded) + "\n" + CASE_RULES)  # the title shows it is a real case: written again once, with the rules
     lines = [
         {"text": str(l["text"]).strip(), "visual": str(l.get("visual", "")).strip()}
         for l in data["lines"]
@@ -338,11 +342,12 @@ CASE_RULES = ("This is a real case with real victims and possibly living suspect
               "must be in the video's own audio or pictures.)")
 
 
-def case_rules(topic: str) -> str:
-    """The extra writing rules for a real case or unsolved crime; empty for every other kind of topic."""
+def case_rules(topic: str, title: str = "", anchors=(), chapters=()) -> str:
+    """The extra writing rules for a real case or unsolved crime; empty for every other kind of topic. The topic decides first; the title, anchors and chapter titles the writer produced decide
+    again (a topic such as "The Isdal Woman" has no crime word, its title may), so the rules are not keyed on one narrow input."""
     import kinds
 
-    return CASE_RULES if kinds.classify({"topic": topic}) == "case" else ""
+    return CASE_RULES if kinds.classify({"topic": topic, "title": title, "anchors": list(anchors), "chapters": list(chapters)}) == "case" else ""
 
 
 DOC_STRUCTURE = (
@@ -417,6 +422,8 @@ def doc_script(topic: str, facts: str | None = None, grounded: str | None = None
         '"tags": ["..."], "anchors": ["3 to 6 real names of the places, people and things at the heart of this '
         'story, as they appear in archive image titles"], "chapters": [{"title": "...", "summary": "one sentence of what this chapter covers"}]}'
     )
+    if not case and case_rules(topic, title=str(outline.get("title", "")), anchors=outline.get("anchors") or [], chapters=outline.get("chapters") or []):
+        rules += "\n" + CASE_RULES  # the outline's own title and chapters show it is a real case: every chapter is written under the rules
     chapters, lines, told = [], [], ""
     for n, ch in enumerate(outline["chapters"][:n_chapters], 1):
         for _ in range(3):

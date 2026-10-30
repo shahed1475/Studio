@@ -135,7 +135,7 @@ def test_a_3d_video_gets_a_3d_style_thumbnail_picture_and_the_plain_one_is_uncha
     folder.mkdir()
     thumbnail.make_art(folder, {**META, "art_style": "3d"}, "HOOK", now=NOW, chat=lambda p: {"scene": "A woman with a golden comb on a rock"})
     thumbnail.make_art(folder, META, "HOOK", now=NOW, chat=lambda p: {"scene": "A woman with a golden comb on a rock"})
-    assert seen == [{"style": "3d"}, {}]
+    assert seen == [{"case": False, "style": "3d"}, {"case": False}]
 
 
 def test_a_scene_set_by_hand_wins_over_the_writers_choice_and_is_cleaned():

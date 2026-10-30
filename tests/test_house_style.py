@@ -20,7 +20,7 @@ def test_autopilot_adds_the_realistic_look_motion_and_clips_to_a_new_documentary
     and date badges on a documentary, and the shorter voice tail."""
     fund(monkeypatch, 12.0)
     got = run._house_style("doc")
-    assert got == {"art_style": "photo", "animate": 4, "animate_budget": 1.5, "art_first": True, "house_style": True, "parallax": True, "graphics": True, "voice_tail": 0.15}
+    assert got == {"art_style": "photo", "animate": 4, "animate_budget": 1.5, "art_first": True, "house_style": True, "parallax": True, "graphics": True, "voice_tail": 0.15, "real_footage": 4}
     short = run._house_style("short")
     assert short == {"art_style": "photo", "animate": 1, "animate_budget": 0.5, "art_first": True, "house_style": True, "parallax": True}
 
