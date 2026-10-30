@@ -108,7 +108,7 @@ def check(now: dt.datetime | None = None, yt=None) -> dict:
         import reconcile
 
         reconcile.run(now, yt)  # the studio's records must say what YouTube says (a video YouTube no longer has is held and the owner told)
-    except Exception:  # never stops the health check
+    except (Exception, SystemExit):  # never stops the health check (upload._service() exits when there is no login: the check below reports that)
         pass
     _pause_for_lost(now)
     due = _due(now)

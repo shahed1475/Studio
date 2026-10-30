@@ -170,3 +170,11 @@ def test_a_gone_video_with_no_publish_time_uses_its_upload_time_like_the_health_
     reconcile.run(NOW, yt)
     out = reconcile.run(NOW, yt)
     assert out["gone_public"] == ["film"] and meta(d)["pause_pending"] is True
+
+
+def test_a_missing_login_that_exits_the_process_does_not_end_the_health_check(tmp_path, monkeypatch):
+    import upload
+
+    make(tmp_path, monkeypatch, "film", "GONE1")
+    monkeypatch.setattr(upload, "_service", lambda: (_ for _ in ()).throw(SystemExit("no login")))
+    assert "SystemExit" in reconcile.run(NOW)["error"]
