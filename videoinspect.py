@@ -406,8 +406,14 @@ def real_caption_issues(issues: list, folder: Path) -> list:
     return out
 
 
-def visual_review(folder: Path, frames: int = 10, post=None) -> list[dict]:
+def sample_frames(seconds: float | None) -> int:
+    """How many frames the picture review looks at: about one every 25 seconds, at least 10 and at most 24 (a few cents)."""
+    return 10 if not seconds else max(10, min(24, round(seconds / 25)))
+
+
+def visual_review(folder: Path, frames: int | None = None, post=None) -> list[dict]:
     """Rows for the quality gate from a vision reading of one of our own videos. Every row is a warning: a model's reading is a lead, not proof."""
+    frames = frames or sample_frames(_video_seconds(Path(folder) / "video.mp4"))
     report = inspect_source(str(folder.name), "Find defects: captions cut off or unreadable, pictures that do not fit the narration, repeated pictures, watermarks, artefacts.", frames, post=post)
     a = report.get("analysis")
     if not a:

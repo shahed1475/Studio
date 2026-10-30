@@ -229,6 +229,10 @@ YES_NO = re.compile(r"^\W*(?:did|do|does|is|are|was|were|can|could|will|would|ha
 FOLLOW = re.compile(r"\bfollow\b|subscribe|next story|for more", re.I)  # the short invitation that closes a Short: it comes after the payoff, so it is not the payoff line
 
 
+HEDGE = re.compile(r"\b(said to|is said|was said|were said|legend|legends|legendary|according to|claim|claims|claimed|believed|supposed|supposedly|reportedly|allegedly|alleged|tale|"
+                   r"story goes|tradition|myth|rumou?r|rumou?red|purported|purportedly|may have|might have|perhaps|some say|they say|is told|are told)\b", re.I)
+
+
 def generator_checks(meta: dict, probe: dict, rules: dict | None = None) -> list[dict]:
     """The content prompt's structure rules, as warnings only (a video that is otherwise fine is never failed for style): a cold open with no greeting, a new
     question or turn at least every `rehook_max_seconds`, no outro, a Short inside its length, a description that does not open with its sources.
@@ -241,6 +245,10 @@ def generator_checks(meta: dict, probe: dict, rules: dict | None = None) -> list
         first = re.split(r"(?<=[.?!])\s", lines[0].strip())[0]
         max_words = round(b["hook_max_seconds"] * b["pace_target_wpm"][0] / 60)
         bad = len(first.split()) > max_words or bool(GREETING.search(lines[0]))
+        if meta.get("kind") in ("legend", "mystery"):  # 30 Oct 2026: the Lost Army film opened "...simply vanished." as plain fact; the legend was named only in line 2
+            framed = bool(HEDGE.search(first)) or first.rstrip().endswith("?")
+            out.append(_c("hook_claims_as_fact", framed, "the first sentence frames its claim (a question, or 'said to', 'legend', 'according to')" if framed else
+                          "the first sentence states a legend or a disputed event as plain fact: frame it as a claim in the same sentence ('is said to have', 'the legend tells of', 'according to')", "warn"))
         out.append(_c("hook_opening", not bad, f"the first sentence is {len(first.split())} words (aim for {max_words} or fewer) and " + ("starts with a greeting or 'in this video'" if GREETING.search(lines[0]) else "opens straight into the story"), "warn"))
         total = sum(len(t.split()) for t in lines)
         if probe["duration"] >= 120 and total >= 150:

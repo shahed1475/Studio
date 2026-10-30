@@ -861,6 +861,20 @@ def main() -> None:
         f = depth.ensure_model()
         rt = depth._runtime()
         print(f"model: {f} ({f.stat().st_size:,} bytes, SHA-256 checked)\nnumpy and onnxruntime: {'installed' if rt else 'NOT installed: pictures get approximate depth'}")
+    elif a[0] == "listen" and len(a) > 1:  # the studio listens to a finished video's narration and compares it with the script (a warning only; about a cent a film)
+        import voicecheck
+
+        res = voicecheck.listen(config.OUT / a[1])
+        if "error" in res:
+            print("could not listen:", res["error"])
+        else:
+            records.merge(config.OUT / a[1], {"voice_check": voicecheck.summary(res)})
+            print(f"{'OK' if res['ok'] else 'CHECK'}: {res['match'] * 100:.1f}% of {res['words']} words match the script, {len(res['gaps'])} gap(s), cost ${res['cost']:.4f} ({res['model']})")
+            for g in res["gaps"]:
+                print(f"  {g['kind']} {g['words']} words: script '{g['script']}' / heard '{g['heard']}'")
+            if res["heard_as"]:
+                print("  heard differently (leads, not proof):", "; ".join(f"{x} -> {y}" for x, y in res["heard_as"]))
+            print(" ", res["coverage"])
     elif a[0] == "reschedule" and len(a) > 1:  # the owner's command: a new future time for an approved video that is private past its publish time with no schedule (Autopilot never does this by itself)
         import datetime as dt
 

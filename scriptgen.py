@@ -339,6 +339,7 @@ DOC_STRUCTURE = (
     "says plainly what is documented, what is legend and what historians dispute. The LAST chapter gives value: two or three questions the viewer can use to weigh any claim like this "
     "one (who is telling it and how do we know; does the physical evidence match; who gains from the story), each answered with facts already told in the film, never a new fact, "
     "ending on the most reasonable reading of the evidence and one question left open. "
+    "When the opening is a legend or a disputed claim, frame it as a claim in that same first sentence ('is said to have', 'the legend tells of', 'according to'), never as plain fact. "
 )
 THIN = re.compile(r"(my|our|the)\s+(sources?|records?)\s+(say|tell|give|offer|have|contain)s?\s+(very\s+)?(little|nothing|almost nothing|few details)|"
                   r"(i|we)\s+(won'?t|will not|cannot|can'?t)\s+invent|my sources", re.I)  # first-person admissions only: "little is known" is honest history

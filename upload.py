@@ -101,8 +101,15 @@ def verify_upload(yt, video_id: str, expect: dict) -> dict:
         problems.append(f"scheduled time is {st.get('publishAt')}, expected {expect['publish_at']}")
     if st.get("uploadStatus") not in ("uploaded", "processed"):
         problems.append(f"upload status is {st.get('uploadStatus')}")
+    if "containsSyntheticMedia" in st:
+        flag = bool(st["containsSyntheticMedia"])
+        if not flag:
+            problems.append("the AI disclosure (containsSyntheticMedia) is off on YouTube")
+        said = "confirmed by YouTube" if flag else "NOT set on YouTube"
+    else:  # YouTube's documentation lists the field as writable on insert and update and says nothing about reading it; no video of ours has ever returned it (30 Oct 2026)
+        said = "sent with the upload (containsSyntheticMedia true), but YouTube's API does not return this field, so it cannot be read back: check 'Altered content' in YouTube Studio"
     return {"ok": not problems, "privacyStatus": st.get("privacyStatus"), "publishAt": st.get("publishAt"), "uploadStatus": st.get("uploadStatus"),
-            "problems": problems, "checked_at": now}
+            "problems": problems, "ai_disclosure": said, "checked_at": now}
 
 
 def _set_thumbnail(yt, video_id: str, thumb: Path) -> None:

@@ -380,8 +380,30 @@ def visually_ok(slug: str) -> bool:
     return False
 
 
+def listened(slug: str) -> None:
+    """The studio listens to the narration of a video about to be approved (voicecheck): warn-only. The result goes into the record; a transcript that does not match the script
+    is one plain event for the owner. A model that cannot answer, no audio model or an empty budget skip it silently: this never stops a video."""
+    import agentlog
+    import voicecheck
+
+    if not voicecheck.ENABLED:
+        return
+    try:
+        res = voicecheck.listen(config.OUT / slug)
+        if res.get("error"):
+            return
+        records.merge(config.OUT / slug, {"voice_check": voicecheck.summary(res)})
+        if not res["ok"]:
+            title = (_meta(slug)[1] or {}).get("title", slug)
+            gaps = "; ".join(f"{g['kind']} {g['words']} words ({(g['script'] or g['heard'])[:50]})" for g in res["gaps"][:3]) or f"only {res['match'] * 100:.0f}% of the words match"
+            agentlog.event("found", f"Narration check found missing words: {title}", f"{gaps}. A warning only: listen to it before it goes out.", notify=True)
+    except Exception:  # a check that cannot run never stops a video
+        return
+
+
 def _approve(slug: str) -> None:
     if visually_ok(slug):
+        listened(slug)
         records.merge(config.OUT / slug, {"approved": True, "approved_by": "reviewer-agent"})
 
 
