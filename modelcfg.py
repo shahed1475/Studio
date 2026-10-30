@@ -15,6 +15,7 @@ DEFAULTS = {
     "scene_art_3d": "google/gemini-3.1-flash-image",          # the 3D-look scenes that become first frames of animated clips: the clearer model (27 Oct spike)
     "thumbnail_score": "anthropic/claude-sonnet-5.5",        # reads candidate thumbnails and scores them (vision)
     "video_analysis": "google/gemini-3.1-pro-preview",       # watches one of our own videos through video_url
+    "audio_listen": "google/gemini-3.1-flash-lite",          # writes down what it hears in our own finished audio, blind, so voicecheck can compare it with the script (a fraction of a cent a film)
     "video_generation": "google/veo-3.1-lite",               # the footage tool's clip model
     "video_generation_allowed": ["google/veo-3.1-lite", "google/veo-3.1-fast", "google/veo-3.1", "alibaba/wan-3.0", "alibaba/wan-3.0-prime", "alibaba/wan-2.7"],
 }

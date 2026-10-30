@@ -307,3 +307,30 @@ def test_a_shorts_cover_gets_the_same_retry(vid, monkeypatch):
     upload.upload(vid, "private", pub)
     saved = json.loads((vid / "meta.json").read_text())
     assert saved["cover_uploaded"] is True and "cover_error" not in saved and yt.calls == 3
+
+
+class Reads:
+    """A YouTube that answers a read with the status we give it."""
+
+    def __init__(self, status):
+        self.status = status
+
+    def videos(self):
+        outer = self
+        return type("V", (), {"list": lambda s, part, id: Exec({"items": [{"id": id, "snippet": {"title": "T"}, "status": outer.status}]})})()
+
+
+EXPECT = {"title": "T", "privacy": "private", "publish_at": "2026-10-30T19:00:00Z"}
+BASE = {"privacyStatus": "private", "publishAt": "2026-10-30T19:00:00Z", "uploadStatus": "processed"}
+
+
+def test_the_check_says_plainly_that_the_ai_disclosure_cannot_be_read_back_when_youtube_does_not_return_it():
+    got = upload.verify_upload(Reads(BASE), "X", EXPECT)
+    assert got["ok"] is True and "cannot be read back" in got["ai_disclosure"] and "Altered content" in got["ai_disclosure"]
+
+
+def test_when_youtube_does_return_the_flag_it_is_checked_and_an_off_flag_is_a_problem():
+    on = upload.verify_upload(Reads({**BASE, "containsSyntheticMedia": True}), "X", EXPECT)
+    assert on["ok"] is True and "confirmed" in on["ai_disclosure"]
+    off = upload.verify_upload(Reads({**BASE, "containsSyntheticMedia": False}), "X", EXPECT)
+    assert off["ok"] is False and any("disclosure" in p for p in off["problems"])

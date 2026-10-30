@@ -822,6 +822,58 @@ def case_a_problem_family_is_drafted_once_a_status_digest_is_no_problem_and_a_qu
     return ok, "a problem family is drafted once, a status digest is no problem and a task whose problem stopped closes" if ok else f"once={once} (asked {len(asked)}) digest={digest} closed={closed}"
 
 
+def case_the_narration_is_listened_to_blind_a_skipped_line_is_found_and_it_only_ever_warns():
+    import llm
+    import videoinspect
+    import voicecheck
+
+    lines = ["Somewhere in the Western Desert of Egypt, an army of fifty thousand Persian soldiers simply vanished.",
+             "The legend says Cambyses sent them to subjugate the Oracle of Amun at the Siwa Oasis.",
+             "Many Egyptologists regard the story as apocryphal, yet people have searched for the soldiers for years.",
+             "So the question hangs over the dunes: could anything of those men still lie out there?"]
+    heard = " ".join([lines[0], lines[2], lines[3]])  # the second line was never spoken
+    sent = []
+
+    def post(body, key):
+        sent.append(body)
+        return {"choices": [{"message": {"content": json.dumps({"text": heard})}, "finish_reason": "stop"}]}
+
+    with sandbox() as root:
+        f = _video(root, "film", lines=[{"text": t} for t in lines])
+        (f / "video.mp4").write_bytes(b"v")
+        (f / "words.json").write_text(json.dumps([{"s": 10.0 * i, "e": 10.0 * i + 0.3, "w": "x", "i": i} for i in range(4)]))
+        old = (config.OUT, llm.load_config, llm.spent_today, llm.key_for, llm._account, videoinspect.model_modalities, videoinspect._video_seconds, voicecheck._extract)
+        try:
+            config.OUT = root / "out"
+            llm.load_config, llm.spent_today, llm.key_for, llm._account = (lambda: {"daily_budget_usd": 5.0, "models": {}, "enabled": True}), (lambda now=None: 0.0), (lambda m: "k"), (lambda *a, **k: None)
+            videoinspect.model_modalities, videoinspect._video_seconds = (lambda *a, **k: {__import__("modelcfg").get("audio_listen"): ["text", "audio"]}), (lambda p: 40.0)
+            voicecheck._extract = lambda v, a, b: b"x"
+            got = voicecheck.rows(f, post=post)
+        finally:
+            config.OUT, llm.load_config, llm.spent_today, llm.key_for, llm._account, videoinspect.model_modalities, videoinspect._video_seconds, voicecheck._extract = old
+    blind = bool(sent) and not any(l[:30] in json.dumps(sent[0]) for l in lines)  # the model is never shown the script: shown it, it would only echo it
+    found = bool(got) and got[0]["name"] == "transcript_matches_script" and not got[0]["ok"] and "legend says" in got[0]["detail"]
+    warns = bool(got) and all(r["severity"] == "warn" for r in got)  # a model's listening is a lead: it never blocks a video
+    ok = blind and found and warns
+    return ok, "the narration is transcribed without the script, a skipped line is named, and every row is only a warning" if ok else f"blind={blind} found={found} warns={warns} rows={got}"
+
+
+def case_a_legend_film_that_opens_on_a_plain_fact_is_warned_and_a_framed_claim_is_not():
+    import reviewer
+
+    def row(first, kind="mystery"):
+        m = {"format": "doc", "kind": kind, "description": "A hook.", "lines": [{"text": first}, {"text": "The legend says they set out from Thebes."}]}
+        return next((r for r in reviewer.generator_checks(m, {"duration": 500.0}) if r["name"] == "hook_claims_as_fact"), None)
+
+    flat = row("In 525 BC an army of fifty thousand Persian soldiers simply vanished in the desert.")
+    framed = row("In 525 BC an army of fifty thousand Persian soldiers is said to have vanished in the desert.")
+    other = row("Napoleon crossed the Alps in May 1800.", kind="person")
+    warned = bool(flat) and not flat["ok"] and flat["severity"] == "warn"  # a warning: a style rule never fails a video that is otherwise fine
+    clear = bool(framed) and framed["ok"] and other is None
+    ok = warned and clear
+    return ok, "a legend film's opening must frame its claim; a framed opening and other kinds of film are left alone, and it only warns" if ok else f"warned={warned} clear={clear}"
+
+
 def case_the_narration_is_finished_to_the_target_loudness_and_the_channel_voice_is_the_owners_choice():
     import re
     import subprocess
@@ -1105,6 +1157,8 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_the_channel_mark_shows_after_the_cold_open_in_its_own_corner_and_only_on_the_owners_studio,
          case_a_record_without_a_format_is_one_kind_everywhere_and_a_stuck_short_is_not_given_a_documentarys_budget,
          case_a_problem_family_is_drafted_once_a_status_digest_is_no_problem_and_a_quiet_task_closes,
+         case_the_narration_is_listened_to_blind_a_skipped_line_is_found_and_it_only_ever_warns,
+         case_a_legend_film_that_opens_on_a_plain_fact_is_warned_and_a_framed_claim_is_not,
          case_the_narration_is_finished_to_the_target_loudness_and_the_channel_voice_is_the_owners_choice,
          case_a_cleared_schedule_is_put_back_in_the_future_once_only_when_the_owner_asks_and_a_public_video_is_never_touched]
 

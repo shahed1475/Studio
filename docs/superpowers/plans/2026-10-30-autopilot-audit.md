@@ -21,4 +21,10 @@ Done first: `llm.json` `daily_budget_usd` 3.5 to 5.0 (backup `llm.json.bak-befor
 Not a defect, recorded: La Llorona's schedule loss has no cause in our code (only `recheck.take_back` and `reschedule` send a status update, and `take_back` logs every success; none logged for it). The re-check "could not finish" event of 26 Oct is a network reset.
 
 ## Status
-(updated as each is done)
+- F1 done and deployed (a8a0834); verified live: the daily review ran on the server (48 passed, 0 failed) and the action log stayed at its 2 real rows; the 9 fake rows were removed (backup `data/agent/actions.json.bak-fake-rows-30oct`).
+- F2 done and deployed; 12 records backfilled; tests, mutation checks, eval case.
+- F3, F4 done and deployed; 5 junk skill-draft tasks closed, drafted families recorded, open tasks 24 to 12.
+- F5 built (voicecheck.py, run.py listen, gate --listen, approval hook, eval case): real run on the film: match 0.992 with gemini-3.1-flash-lite ($0.0056), 0.988 voxtral ($0.051), 0.974 gemini-2.5-flash-lite; leads Bahariya, Kaper, Cyrenaica, Chafetz.
+- F6, F7, F8 built with tests, mutation checks and eval cases.
+- F9 dry run: works (Herodotus at MIT Classics and Wikisource, contradiction element), nothing written to any video.
+- F10 and the pronunciation leads: see the end of this file when done.

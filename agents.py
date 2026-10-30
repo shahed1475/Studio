@@ -16,7 +16,7 @@ AGENTS = {
     "seo": {"job": None, "cmds": ["seo", "seo-fix"], "hands_to": ["reviewer"]},
     "qa": {"job": None, "cmds": ["inspect", "analyze-video", "score-thumbnails"], "hands_to": []},
     "compliance": {"job": None, "cmds": [], "hands_to": []},
-    "reviewer": {"job": None, "cmds": ["review"], "hands_to": ["compliance", "qa", "fixer", "publisher"]},
+    "reviewer": {"job": None, "cmds": ["review", "listen"], "hands_to": ["compliance", "qa", "fixer", "publisher"]},
     "fixer": {"job": "unstick", "cmds": ["repair", "unstick"], "hands_to": ["reviewer"]},
     "publisher": {"job": None, "cmds": ["upload", "schedule"], "hands_to": ["recheck", "health"]},
     "recheck": {"job": "recheck", "cmds": ["recheck"], "hands_to": ["guardian"]},

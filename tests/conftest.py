@@ -94,3 +94,11 @@ def _local_fallback_for_old_tests(monkeypatch):
 
     real = risk.credit_left
     monkeypatch.setattr(risk, "credit_left", lambda key, get=None, now=None: real(key, get, now) if get else None)  # only an injected fake reaches the code
+
+
+@pytest.fixture(autouse=True)
+def _no_listening_in_tests(monkeypatch):
+    """The studio listens to the narration of a video it approves (a model call). No test may do that by accident; the tests of the check itself switch it on and use a fake model."""
+    import voicecheck
+
+    monkeypatch.setattr(voicecheck, "ENABLED", False)

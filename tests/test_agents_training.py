@@ -933,3 +933,42 @@ def test_the_noise_case_passes_and_fails_when_drafts_repeat_digests_count_or_qui
     monkeypatch.setattr(tracetriage, "QUIET_HOURS", 10 ** 6)  # mutation: a family is never quiet
     ok, detail = case()
     assert not ok and "closed=False" in detail
+
+
+def test_the_listening_case_passes_and_fails_when_the_script_leaks_a_gap_is_missed_or_it_blocks(monkeypatch):
+    import voicecheck
+
+    case = getattr(agenteval, "case_the_narration_is_listened_to_blind_a_skipped_line_is_found_and_it_only_ever_warns")
+    assert case in agenteval.CASES
+    ok, detail = case()
+    assert ok, detail
+    monkeypatch.setattr(voicecheck, "PROMPT", voicecheck.PROMPT + " The script is: Somewhere in the Western Desert of Egypt, an army of fifty thousand Persian soldiers simply vanished.")  # mutation: the model is shown the script
+    ok, detail = case()
+    assert not ok and "blind=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(voicecheck, "FAIL_RUN", 10 ** 6)  # mutation: a missing line is no longer a failure
+    monkeypatch.setattr(voicecheck, "MIN_MATCH", 0.0)
+    ok, detail = case()
+    assert not ok and "found=False" in detail
+    monkeypatch.undo()
+    real = voicecheck.rows
+    monkeypatch.setattr(voicecheck, "rows", lambda f, post=None: [{**r, "severity": "block"} for r in real(f, post)])  # mutation: the listening blocks a video
+    ok, detail = case()
+    assert not ok and "warns=False" in detail
+
+
+def test_the_opening_framing_case_passes_and_fails_when_the_rule_is_blind_or_trigger_happy(monkeypatch):
+    import re
+    import reviewer
+
+    case = getattr(agenteval, "case_a_legend_film_that_opens_on_a_plain_fact_is_warned_and_a_framed_claim_is_not")
+    assert case in agenteval.CASES
+    ok, detail = case()
+    assert ok, detail
+    monkeypatch.setattr(reviewer, "HEDGE", re.compile(r"\b\w+\b"))  # mutation: everything counts as framed, so a flat claim is never warned
+    ok, detail = case()
+    assert not ok and "warned=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(reviewer, "HEDGE", re.compile(r"^never-matches$"))  # mutation: nothing counts as framed
+    ok, detail = case()
+    assert not ok and "clear=False" in detail
