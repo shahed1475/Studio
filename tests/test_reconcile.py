@@ -92,3 +92,44 @@ def test_a_video_uploaded_an_hour_ago_that_youtube_does_not_list_yet_is_left_alo
     for h in range(4):
         reconcile.run(NOW + dt.timedelta(minutes=h), YT(present={"OLD1"}))
     assert meta(fresh)["video_id"] == "NEW1" and not meta(fresh).get("missing_seen") and not meta(fresh).get("hold")
+
+
+# ---- review of 30 Oct 2026 ----
+def test_a_video_that_was_meant_to_be_public_and_is_gone_pauses_autopilot_like_the_health_check_always_did(tmp_path, monkeypatch):
+    import autopilot
+    import safety
+
+    d = make(tmp_path, monkeypatch, "film", "GONE1", publish_at=(NOW - dt.timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M:%SZ"))
+    make(tmp_path, monkeypatch, "other", "OK1")
+    saved = {}
+    monkeypatch.setattr(autopilot, "load_config", lambda: {"enabled": True})
+    monkeypatch.setattr(autopilot, "save_config", lambda c: saved.update(c))
+    yt = YT(present={"OK1"})
+    reconcile.run(NOW, yt)
+    assert meta(d)["video_id"] == "GONE1"  # one miss is not enough
+    safety.check(NOW + dt.timedelta(hours=1), yt)
+    assert meta(d)["video_id"] is None and saved.get("enabled") is False
+    assert any("not on YouTube any more" in str(e) for e in agentlog.recent(8))
+
+
+def test_a_private_or_future_video_that_is_gone_does_not_pause_autopilot(tmp_path, monkeypatch):
+    import autopilot
+    import safety
+
+    make(tmp_path, monkeypatch, "film", "GONE1", publish_at=(NOW + dt.timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ"))
+    make(tmp_path, monkeypatch, "other", "OK1")
+    saved = {}
+    monkeypatch.setattr(autopilot, "load_config", lambda: {"enabled": True})
+    monkeypatch.setattr(autopilot, "save_config", lambda c: saved.update(c))
+    for h in (0, 1):
+        safety.check(NOW + dt.timedelta(hours=h), YT(present={"OK1"}))
+    assert not saved
+
+
+def test_the_outage_guard_works_per_batch_and_upload_started_is_kept_so_a_later_upload_still_looks_for_an_earlier_copy(tmp_path, monkeypatch):
+    d = make(tmp_path, monkeypatch, "film", "GONE1", upload_started="2026-10-29T10:00:00Z")
+    make(tmp_path, monkeypatch, "other", "OK1")
+    yt = YT(present={"OK1"})
+    reconcile.run(NOW, yt)
+    reconcile.run(NOW, yt)
+    assert meta(d)["video_id"] is None and meta(d)["upload_started"] == "2026-10-29T10:00:00Z"
