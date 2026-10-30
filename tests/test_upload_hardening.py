@@ -221,3 +221,89 @@ def test_a_refused_cover_is_recorded_and_the_upload_stands(vid, monkeypatch, tmp
     saved = json.loads((vid / "meta.json").read_text())
     assert saved["cover_error"] and not saved.get("cover_uploaded")
     assert any(e["title"].startswith("Cover was not set") for e in agentlog.recent())
+
+
+class LaggingThumbs(FakeYT):
+    """30 Oct 2026, real YouTube: thumbnails.set answered 404 videoNotFound for a video inserted seconds earlier; a minute later it worked."""
+    misses = 2
+
+    def thumbnails(self):
+        outer = self
+
+        def set_(s, **k):
+            outer.calls = getattr(outer, "calls", 0) + 1
+            if outer.calls <= outer.misses:
+                raise RuntimeError('404 The video that you are trying to insert a thumbnail image for cannot be found. "reason": "videoNotFound"')
+            return Exec({})
+        return type("T", (), {"set": set_})()
+
+
+def with_thumbnail(vid):
+    meta = json.loads((vid / "meta.json").read_text())
+    meta["thumbnail"] = "thumbs/thumb-1.jpg"
+    (vid / "thumbs").mkdir()
+    (vid / "thumbs" / "thumb-1.jpg").write_bytes(b"x")
+    (vid / "meta.json").write_text(json.dumps(meta))
+
+
+def test_a_thumbnail_youtube_cannot_find_the_new_video_for_yet_is_retried_and_then_set(vid, monkeypatch):
+    with_thumbnail(vid)
+    monkeypatch.setattr(upload.time, "sleep", lambda s: None)
+    pub = when()
+    yt = LaggingThumbs(stored={"title": "The Title", "privacy": "private", "publish_at": pub})
+    monkeypatch.setattr(upload, "_service", lambda: yt)
+    assert upload.upload(vid, "private", pub) == "NEWID"
+    saved = json.loads((vid / "meta.json").read_text())
+    assert saved["thumbnail_uploaded"] is True and "thumbnail_error" not in saved and yt.calls == 3
+
+
+def test_only_the_not_found_answer_is_retried_a_real_refusal_is_asked_once_and_recorded(vid, monkeypatch, tmp_path):
+    import agentlog
+
+    monkeypatch.setattr(agentlog, "FILE", tmp_path / "events.jsonl")
+    monkeypatch.setattr(agentlog.subprocess, "run", lambda *a, **k: None)
+    with_thumbnail(vid)
+    monkeypatch.setattr(upload.time, "sleep", lambda s: None)
+    asked = []
+
+    class Refuses(FakeYT):
+        def thumbnails(self):
+            def refuse(s, **k):
+                asked.append(1)
+                raise RuntimeError("403 The authenticated user doesn't have permissions to upload and set custom video thumbnails")
+            return type("T", (), {"set": refuse})()
+
+    pub = when()
+    monkeypatch.setattr(upload, "_service", lambda: Refuses(stored={"title": "The Title", "privacy": "private", "publish_at": pub}))
+    upload.upload(vid, "private", pub)
+    assert len(asked) == 1 and "custom video thumbnails" in json.loads((vid / "meta.json").read_text())["thumbnail_error"]
+
+
+def test_a_new_video_that_never_appears_gives_up_after_four_asks_and_is_recorded(vid, monkeypatch, tmp_path):
+    import agentlog
+
+    monkeypatch.setattr(agentlog, "FILE", tmp_path / "events.jsonl")
+    monkeypatch.setattr(agentlog.subprocess, "run", lambda *a, **k: None)
+    with_thumbnail(vid)
+    monkeypatch.setattr(upload.time, "sleep", lambda s: None)
+    pub = when()
+    yt = LaggingThumbs(stored={"title": "The Title", "privacy": "private", "publish_at": pub})
+    yt.misses = 99
+    monkeypatch.setattr(upload, "_service", lambda: yt)
+    upload.upload(vid, "private", pub)
+    assert yt.calls == 4 and "videoNotFound" in json.loads((vid / "meta.json").read_text())["thumbnail_error"]
+
+
+def test_a_shorts_cover_gets_the_same_retry(vid, monkeypatch):
+    meta = json.loads((vid / "meta.json").read_text())
+    meta["cover"] = "thumbs/cover.jpg"
+    (vid / "thumbs").mkdir()
+    (vid / "thumbs" / "cover.jpg").write_bytes(b"x")
+    (vid / "meta.json").write_text(json.dumps(meta))
+    monkeypatch.setattr(upload.time, "sleep", lambda s: None)
+    pub = when()
+    yt = LaggingThumbs(stored={"title": "The Title", "privacy": "private", "publish_at": pub})
+    monkeypatch.setattr(upload, "_service", lambda: yt)
+    upload.upload(vid, "private", pub)
+    saved = json.loads((vid / "meta.json").read_text())
+    assert saved["cover_uploaded"] is True and "cover_error" not in saved and yt.calls == 3

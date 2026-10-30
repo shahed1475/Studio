@@ -1,6 +1,7 @@
 """YouTube upload via the official Data API. Needs client_secret.json (see README)."""
 import datetime as dt
 import json
+import time
 from pathlib import Path
 
 from google.auth.transport.requests import Request
@@ -104,6 +105,19 @@ def verify_upload(yt, video_id: str, expect: dict) -> dict:
             "problems": problems, "checked_at": now}
 
 
+def _set_thumbnail(yt, video_id: str, thumb: Path) -> None:
+    """thumbnails.set can answer 404 videoNotFound for a video inserted seconds earlier (YouTube lags behind its own insert; seen 30 Oct 2026, when it also raised a false
+    'not set' alarm): ask again after a pause, for that answer only. Any other refusal is raised at once."""
+    for attempt in range(4):
+        try:
+            yt.thumbnails().set(videoId=video_id, media_body=MediaFileUpload(str(thumb), mimetype="image/jpeg")).execute()
+            return
+        except Exception as e:
+            if "videoNotFound" not in str(e) or attempt == 3:
+                raise
+            time.sleep(5)
+
+
 def upload(folder: Path, privacy: str = "private", publish_at: str | None = None) -> str:
     """Send one approved video as private (scheduled). Only one process at a time may send a given video: a second caller is refused, and after the
     first finishes it finds the video id and refuses too."""
@@ -163,7 +177,7 @@ def _upload(folder: Path, privacy: str, publish_at: str | None) -> str:
     thumb = folder / meta["thumbnail"] if meta.get("thumbnail") else None
     if thumb and thumb.exists():
         try:
-            yt.thumbnails().set(videoId=resp["id"], media_body=MediaFileUpload(str(thumb), mimetype="image/jpeg")).execute()
+            _set_thumbnail(yt, resp["id"], thumb)
             done["thumbnail_uploaded"] = True
         except Exception as e:  # usually: channel not phone-verified yet. The video is already up.
             done["thumbnail_error"] = str(e)[:300]
@@ -175,7 +189,7 @@ def _upload(folder: Path, privacy: str, publish_at: str | None) -> str:
     cover = folder / meta["cover"] if meta.get("cover") else None  # a Short's vertical 9:16 cover (YouTube's Shorts rule); a long video uses "thumbnail"
     if cover and cover.exists():
         try:
-            yt.thumbnails().set(videoId=resp["id"], media_body=MediaFileUpload(str(cover), mimetype="image/jpeg")).execute()
+            _set_thumbnail(yt, resp["id"], cover)
             done["cover_uploaded"] = True
         except Exception as e:  # the video is already up; YouTube lets Shorts covers be added in Studio on a computer
             done["cover_error"] = str(e)[:300]
