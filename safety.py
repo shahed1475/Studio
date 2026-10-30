@@ -74,22 +74,43 @@ def _due(now: dt.datetime) -> list[tuple[Path, dict]]:
     return due
 
 
-def check(now: dt.datetime | None = None, yt=None) -> dict:
-    now = now or dt.datetime.now(dt.timezone.utc)
+def _pause_for_lost(now: dt.datetime) -> None:
+    """A video that was meant to be public and is gone from YouTube pauses Autopilot like any other problem with a published video. The signal is the record's `pause_pending` (written by
+    reconcile in the same save that clears the id), so a failure here is retried next hour; the marker is cleared only after the owner has been told."""
     lost = []
+    for m in sorted(config.OUT.glob("*/meta.json")):
+        try:
+            if json.loads(m.read_text()).get("pause_pending"):
+                lost.append(m.parent)
+        except (OSError, ValueError):
+            continue
+    if not lost:
+        return
     try:
-        import reconcile
-
-        lost = reconcile.run(now, yt).get("gone_public", [])  # the studio's records must say what YouTube says (a video YouTube no longer has is held and the owner told)
-    except Exception:  # never stops the health check
-        pass
-    if lost:  # a video that was meant to be public is gone: the same pause as any other problem with a published video
         cfg = autopilot.load_config()
         paused = bool(cfg.get("enabled"))
         if paused:
             autopilot.save_config({**cfg, "enabled": False})
         agentlog.event("error", "Autopilot paused: a published video has a problem" if paused else "A published video has a problem",
-                       "; ".join(f"{n}: the video is not on YouTube any more (deleted or removed)" for n in lost[:3]) + (" Check YouTube Studio, then turn Autopilot on again." if paused else ""), notify=True, now=now)
+                       "; ".join(f"{p.name}: the video is not on YouTube any more (deleted or removed)" for p in lost[:3]) + (" Check YouTube Studio, then turn Autopilot on again." if paused else ""), notify=True, now=now)
+    except Exception:
+        return  # the markers stay, so the next check tries again
+    for p in lost:
+        try:
+            records.merge(p, {"pause_pending": False})
+        except Exception:
+            pass
+
+
+def check(now: dt.datetime | None = None, yt=None) -> dict:
+    now = now or dt.datetime.now(dt.timezone.utc)
+    try:
+        import reconcile
+
+        reconcile.run(now, yt)  # the studio's records must say what YouTube says (a video YouTube no longer has is held and the owner told)
+    except Exception:  # never stops the health check
+        pass
+    _pause_for_lost(now)
     due = _due(now)
     if not due:
         return {"checked": 0, "problems": [], "paused": False}
