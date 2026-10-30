@@ -47,7 +47,7 @@ def run(now: dt.datetime | None = None, yt=None) -> dict:
             found |= got
             if got or len(batch) < OUTAGE_ASKED:  # a batch of several ids that returns none is an outage, judged per batch
                 trusted |= {m["video_id"] for _, m in batch}
-    except Exception as e:  # a network or login problem is the health check's to report, not a reason to forget a video
+    except (Exception, SystemExit) as e:  # a network or login problem is the health check's to report, not a reason to forget a video
         return {"checked": 0, "gone": [], "error": f"{type(e).__name__}: {e}"[:160]}
     if not found and len(rows) >= OUTAGE_ASKED:  # decided over the whole run too: split into small batches it is still an outage
         return {"checked": len(rows), "gone": [], "error": "YouTube returned none of the videos: treated as an outage"}
