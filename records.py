@@ -36,6 +36,18 @@ def _lock(folder: Path, shared: bool = False):
         os.close(fd)  # closing releases the lock
 
 
+def format_of(meta: dict, slug: str = "") -> str:
+    """'doc' or 'short' for one record, the same answer everywhere. 12 of 27 records (older and hand-made Shorts) have no `format` key: they were documentaries to the governor and
+    `unstick` and Shorts to the reviewer, fixer and Autopilot's state, so the weekly cap counted Shorts and a stuck Short got a documentary's repair budget. A record without the key
+    is a documentary only when it looks like one (the documentary producer names its folder doc-... and writes a chapter list); an unknown value is a Short."""
+    f = (meta or {}).get("format")
+    if f in ("doc", "short"):
+        return f
+    if f is None and (str(slug or (meta or {}).get("slug", "")).startswith("doc-") or (meta or {}).get("chapters")):
+        return "doc"
+    return "short"
+
+
 def read(folder) -> dict:
     folder = Path(folder)
     with _lock(folder, shared=True):

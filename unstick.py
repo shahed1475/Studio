@@ -33,7 +33,7 @@ def candidates(out: Path | None = None) -> list[tuple[Path, dict]]:
             continue
         if meta.get("fix_attempts", 0) >= fixer.attempt_limit(review.get("checks", [])) or meta.get("fix_gave_up"):
             found.append((m.parent, meta))
-    return sorted(found, key=lambda fm: ((fm[1].get("format") or "doc") != "doc", fm[0].name))
+    return sorted(found, key=lambda fm: (records.format_of(fm[1], fm[0].name) != "doc", fm[0].name))
 
 
 def affordable(slug: str, fmt: str) -> bool:
@@ -122,7 +122,7 @@ def run(now: dt.datetime | None = None, out: Path | None = None, chat=None, revi
 
 def _run(now, out, chat, review, ladder_chat) -> dict:
     for folder, meta in candidates(out):
-        slug, fmt = folder.name, meta.get("format") or "doc"
+        slug, fmt = folder.name, records.format_of(meta, folder.name)
         try:
             records.update(folder, lambda d: d.__setitem__("ladder", {**(d.get("ladder") or {}), "tries": (d.get("ladder") or {}).get("tries", 0) + 1,
                                                                      "at": now.strftime("%Y-%m-%dT%H:%M:%SZ")}))

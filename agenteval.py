@@ -53,18 +53,60 @@ class FakeYT:
         return [c for c in self.calls if c[0] != "list"]
 
 
+# Every shared data file an evaluation case could reach. A whole run is pointed at a temporary folder (isolated), a single case at its own (sandbox). tests/test_agenteval_isolation.py
+# checks that nothing outside is written, and that every entry is still a real attribute.
+SHARED_FILES = (("actionlog", "ACTIONS"), ("actionlog", "EDITS"), ("policyclass", "CLASS_FILE"), ("policyclass", "HOLD_FILE"), ("rulesfile", "STATE"),
+                ("growthdata", "FILE"), ("growthdata", "DAILY"), ("drift", "FILE"), ("diagnose", "FILE"), ("learner", "WEEKLY"), ("learner", "QUEUED"), ("learner", "REPORTS"),
+                ("trendinbox", "FILE"), ("scriptreview", "FILE"), ("scriptreview", "HELD"), ("agentlog", "FILE"), ("agentbus", "FILE"), ("lessons", "FILE"), ("autopilot", "LOG"))
+
+
+@contextlib.contextmanager
+def isolated():
+    """Every shared data file pointed at a temporary folder for a whole evaluation, and the shipped rules file at a private copy. The evaluation runs in production every day: on
+    30 Oct 2026 its guardian case was found to have written nine invented edits ("V2", "Mami Wata") into the real action log, because only four files were redirected
+    (tests/conftest.py redirects more, but only under pytest)."""
+    import importlib
+    import shutil
+
+    import rulesfile
+
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        saved = []
+        try:
+            for i, (mod, attr) in enumerate(SHARED_FILES):
+                m = importlib.import_module(mod)
+                if hasattr(m, attr):
+                    saved.append((m, attr, getattr(m, attr)))
+                    setattr(m, attr, root / f"{i}-{mod}-{attr}")
+            saved.append((rulesfile, "FILE", rulesfile.FILE))
+            private = root / "rules.json"
+            try:
+                shutil.copy(rulesfile.FILE, private)
+            except OSError:
+                pass  # no shipped file to copy: the module falls back to its defaults, as it does for a damaged one
+            rulesfile.FILE = private
+            yield root
+        finally:
+            for m, attr, old in reversed(saved):
+                setattr(m, attr, old)
+
+
 @contextlib.contextmanager
 def sandbox():
     """Temporary folders, and the shared files pointed at them, so an evaluation never touches real data."""
+    import actionlog
+
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        old = (agentlog.FILE, agentbus.FILE, lessons.FILE, scriptreview.FILE, scriptreview.HELD)
+        old = (agentlog.FILE, agentbus.FILE, lessons.FILE, scriptreview.FILE, scriptreview.HELD, actionlog.ACTIONS, actionlog.EDITS)
         agentlog.FILE, agentbus.FILE, lessons.FILE = root / "events.jsonl", root / "tasks.json", root / "lessons.jsonl"
         scriptreview.FILE, scriptreview.HELD = root / "scriptreview.json", root / "scriptreview_held"
+        actionlog.ACTIONS, actionlog.EDITS = root / "actions.json", root / "edits.json"
         try:
             yield root
         finally:
-            agentlog.FILE, agentbus.FILE, lessons.FILE, scriptreview.FILE, scriptreview.HELD = old
+            agentlog.FILE, agentbus.FILE, lessons.FILE, scriptreview.FILE, scriptreview.HELD, actionlog.ACTIONS, actionlog.EDITS = old
 
 
 def _video(root: Path, slug: str, **meta) -> Path:
@@ -739,6 +781,47 @@ def case_the_channel_mark_shows_after_the_cold_open_in_its_own_corner_and_only_o
     return ok, "the channel mark fades in after the cold open, sits in its own corner, obeys its switch, is never shown in a user studio and never damages a video" if ok else f"timing={timing} corners={corners} safe={safe} switch={switch} seen={seen}"
 
 
+def case_a_record_without_a_format_is_one_kind_everywhere_and_a_stuck_short_is_not_given_a_documentarys_budget():
+    import governor
+    import unstick
+
+    short = {"publish_at": "2026-10-29T23:00:00Z", "lines": [{"text": "a"}] * 11}  # an older Short: no format key, no chapters
+    doc = {"format": "doc", "publish_at": "2026-10-27T22:00:00Z"}
+    counted = [t.day for t in governor._times([short, doc], "doc")] == [27] and [t.day for t in governor._times([short, doc], "short")] == [29]  # the weekly cap counts it as a Short
+    kinds = records.format_of(short, "the-thunderbird") == "short" and records.format_of({}, "doc-the-oracle") == "doc" and records.format_of({"format": "doc"}, "x") == "doc"
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        for name, extra in (("a-short", {}), ("doc-b", {"format": "doc"})):
+            (root / name).mkdir()
+            records.save(root / name, {"review": {"verdict": "fail", "checks": [{"name": "x", "ok": False, "severity": "block"}]}, "fix_attempts": 5, **extra})
+        ordered = [f.name for f, _ in unstick.candidates(root)] == ["doc-b", "a-short"]  # documentaries first, the Short after
+    ok = counted and kinds and ordered
+    return ok, "a record without a format is judged by its look the same way in the weekly cap, the repair order and the repair budget" if ok else f"counted={counted} kinds={kinds} ordered={ordered}"
+
+
+def case_a_problem_family_is_drafted_once_a_status_digest_is_no_problem_and_a_quiet_task_closes():
+    import doctor
+    import tracetriage
+
+    with sandbox() as root:
+        fam = root / "triage.json"
+        fam.write_text(json.dumps({"families": [{"signature": "needs eyes", "state": "recurring", "count": 5, "example": "Needs your eyes: a video", "detail": "d"}]}))
+        asked = []
+        chat = lambda p, r: asked.append(1) or {"name": "studio-fix-it", "description": "Use when X.", "steps": ["Do Y"]}
+        for hours in (0, 6, 12):  # three doctor runs, as in half a day
+            doctor.run(NOW + dt.timedelta(hours=hours), chat=chat, get=lambda u: 200, state={}, lines=[], may_spend=True, busy=lambda: [], report=root / "d.json", triage_file=fam, proposals=root / "p")
+        once = len(asked) == 1
+        digest = (not tracetriage.is_problem({"kind": "error", "title": "Risks: 1 need action, 3 to watch", "detail": "x"})
+                  and tracetriage.is_problem({"kind": "error", "title": "Autopilot paused: a published video has a problem", "detail": "x"}))
+        old = {"at": "2026-10-21T10:00:00Z", "kind": "error", "title": "Render stopped for a video", "detail": "d"}  # five days ago: inside the 7-day window, quiet for more than 72 hours
+        slug = tracetriage.signature(old["title"])[:60]
+        agentbus.post("triage_family", "triage", "trainer", slug, reason=old["title"], now=NOW)
+        tracetriage.triage(7, NOW, [old] * 3, report=root / "t.json")
+        closed = [t["state"] for t in agentbus.tasks() if t["slug"] == slug] == ["done"]  # closed, and not posted again just because the event is still in the window
+    ok = once and digest and closed
+    return ok, "a problem family is drafted once, a status digest is no problem and a task whose problem stopped closes" if ok else f"once={once} (asked {len(asked)}) digest={digest} closed={closed}"
+
+
 def case_the_narration_is_finished_to_the_target_loudness_and_the_channel_voice_is_the_owners_choice():
     import re
     import subprocess
@@ -1020,18 +1103,21 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_a_clip_plays_once_and_a_picture_with_people_never_bends_or_pushes_in_hard,
          case_the_subscribe_pop_up_lands_on_the_spoken_word_or_at_high_points_and_never_breaks_a_video,
          case_the_channel_mark_shows_after_the_cold_open_in_its_own_corner_and_only_on_the_owners_studio,
+         case_a_record_without_a_format_is_one_kind_everywhere_and_a_stuck_short_is_not_given_a_documentarys_budget,
+         case_a_problem_family_is_drafted_once_a_status_digest_is_no_problem_and_a_quiet_task_closes,
          case_the_narration_is_finished_to_the_target_loudness_and_the_channel_voice_is_the_owners_choice,
          case_a_cleared_schedule_is_put_back_in_the_future_once_only_when_the_owner_asks_and_a_public_video_is_never_touched]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:
     out = []
-    for fn in CASES:
-        try:
-            ok, detail = fn()
-        except Exception as e:  # a case that crashes is a failed case
-            ok, detail = False, f"{type(e).__name__}: {e}"[:200]
-        out.append({"case": fn.__name__[5:], "ok": bool(ok), "detail": detail})
+    with isolated():
+        for fn in CASES:
+            try:
+                ok, detail = fn()
+            except Exception as e:  # a case that crashes is a failed case
+                ok, detail = False, f"{type(e).__name__}: {e}"[:200]
+            out.append({"case": fn.__name__[5:], "ok": bool(ok), "detail": detail})
     res = {"at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "passed": sum(c["ok"] for c in out), "failed": sum(not c["ok"] for c in out), "cases": out}
     if write:
         f = result or RESULT

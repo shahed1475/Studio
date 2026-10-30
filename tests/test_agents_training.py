@@ -901,3 +901,35 @@ def test_the_house_style_case_passes_and_fails_when_the_look_or_its_motion_or_th
     monkeypatch.setattr(run, "_apply_house_style", lambda data, kind, folder: {**data, **run._house_style(kind)})  # mutation: a re-render in place gets the new look too
     ok, detail = case()
     assert not ok
+
+
+def test_the_format_case_passes_and_fails_when_the_default_goes_back_to_doc(monkeypatch):
+    import records
+
+    case = getattr(agenteval, "case_a_record_without_a_format_is_one_kind_everywhere_and_a_stuck_short_is_not_given_a_documentarys_budget")
+    assert case in agenteval.CASES
+    ok, detail = case()
+    assert ok, detail
+    monkeypatch.setattr(records, "format_of", lambda meta, slug="": (meta or {}).get("format") or "doc")  # mutation: a record without a format is a documentary again
+    ok, detail = case()
+    assert not ok and "counted=False" in detail and "ordered=False" in detail
+
+
+def test_the_noise_case_passes_and_fails_when_drafts_repeat_digests_count_or_quiet_tasks_stay_open(monkeypatch):
+    import doctor
+
+    case = getattr(agenteval, "case_a_problem_family_is_drafted_once_a_status_digest_is_no_problem_and_a_quiet_task_closes")
+    assert case in agenteval.CASES
+    ok, detail = case()
+    assert ok, detail
+    monkeypatch.setattr(doctor, "should_draft", lambda *a, **k: True)  # mutation: the doctor forgets what it drafted
+    ok, detail = case()
+    assert not ok and "once=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(tracetriage, "DIGEST", __import__("re").compile(r"^never-matches$"))  # mutation: a status digest is a problem again
+    ok, detail = case()
+    assert not ok and "digest=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(tracetriage, "QUIET_HOURS", 10 ** 6)  # mutation: a family is never quiet
+    ok, detail = case()
+    assert not ok and "closed=False" in detail

@@ -23,8 +23,15 @@ PROBLEM = re.compile(r"problem|could not|couldn't|cannot|failed|\bfail\b|error|m
                      r"unhealthy|stale|blocked|expired|unsupported|invented|did not|taken back|still has", re.I)
 
 
+DIGEST = re.compile(r"^\s*(risks:|daily briefing|daily report|money:)", re.I)  # status digests, written whatever the state: the Risks card is where they belong
+QUIET_HOURS = 72
+
+
 def is_problem(e: dict) -> bool:
-    """An error is always a problem. A 'found' event is one only when its words say so: 'New competitor: X' or 'Added to your reference channels' are news."""
+    """An error is always a problem, except a status digest (the daily 'Risks: 1 need action, 3 to watch' is posted as an error whenever one risk is high, and for two days made the
+    doctor draft a skill for it every 6 hours). A 'found' event is one only when its words say so: 'New competitor: X' or 'Added to your reference channels' are news."""
+    if DIGEST.match(str(e.get("title", ""))):
+        return False
     return e.get("kind") == "error" or (e.get("kind") == "found" and bool(PROBLEM.search(f"{e.get('title', '')} {e.get('detail', '')}")))
 
 
@@ -62,7 +69,12 @@ def triage(days: int = 7, now: dt.datetime | None = None, events: list[dict] | N
         pass
     data = {"at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "days": days, "events": len(events), "families": out[:30], "stuck_drafts": stuck, "tasks": agentbus.summary(bus_file)}
     if post:
-        for f in [f for f in out if f["state"] != "known"][:TOP]:
+        recent = (now - dt.timedelta(hours=QUIET_HOURS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        active = {f["signature"][:60] for f in out if f["last"] >= recent}
+        for t in agentbus.tasks(bus_file):  # a family task whose problem has stopped closes by itself: 'agent evaluation failed' stayed open for days after every check passed
+            if t["kind"] == "triage_family" and t["state"] in agentbus.LIVE and t["slug"] not in active:
+                agentbus.finish(t["id"], f"no new event for {QUIET_HOURS} hours: the problem has stopped", True, now, bus_file)
+        for f in [f for f in out if f["state"] != "known" and f["signature"][:60] in active][:TOP]:  # only a problem that is still happening gets a task
             agentbus.post("triage_family", "triage", "trainer", f["signature"][:60], reason=f"{f['count']}x in {days} days: {f['example']}", evidence=f["detail"], now=now, file=bus_file)
     rf = report or REPORT
     try:

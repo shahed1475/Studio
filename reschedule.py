@@ -92,7 +92,7 @@ def apply(slug: str, cfg: dict, now: dt.datetime, yt=None) -> dict | None:
         return {"skipped": "still scheduled"}
     if live.get("uploadStatus") != "processed":
         return {"skipped": "not processed yet"}
-    at = autopilot.free_slot(slug, meta.get("format", "short"), cfg, now)
+    at = autopilot.free_slot(slug, records.format_of(meta, slug), cfg, now)
     if at is None:
         return {"skipped": "no slot within the weekly pace limit"}
     when = scheduler.to_rfc3339(at)
