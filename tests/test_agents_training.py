@@ -972,3 +972,20 @@ def test_the_opening_framing_case_passes_and_fails_when_the_rule_is_blind_or_tri
     monkeypatch.setattr(reviewer, "HEDGE", re.compile(r"^never-matches$"))  # mutation: nothing counts as framed
     ok, detail = case()
     assert not ok and "clear=False" in detail
+
+
+def test_the_pause_case_passes_and_fails_when_the_switch_is_ignored_or_stops_too_much(monkeypatch):
+    import autopilot
+
+    case = getattr(agenteval, "case_the_owners_pause_stops_scheduling_and_uploading_but_not_repairing")
+    assert case in agenteval.CASES
+    ok, detail = case()
+    assert ok, detail
+    real = autopilot.plan_actions
+    monkeypatch.setattr(autopilot, "plan_actions", lambda st, cfg, now, skip=(): real(st, {k: v for k, v in cfg.items() if k != "pause_scheduling"}, now, skip))  # mutation: the switch is ignored
+    ok, detail = case()
+    assert not ok and "stops=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(autopilot, "plan_actions", lambda st, cfg, now, skip=(): [a for a in real(st, cfg, now, skip) if not (cfg.get("pause_scheduling") and a["do"] == "fix")])  # mutation: the pause also stops repairs
+    ok, detail = case()
+    assert not ok and "repairs=False" in detail

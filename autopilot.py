@@ -27,6 +27,7 @@ JOB_FILE = config.ROOT / "job.pid"   # written by the dashboard while one of its
 
 DEFAULTS = {
     "enabled": False,            # master switch, off until the user turns it on
+    "pause_scheduling": False,   # the owner's switch (30 Oct 2026): True stops Autopilot from giving any video a slot or sending it to YouTube; everything before that goes on
     "governor": {"enabled": True, "base": {}},  # weekly caps per format from YouTube's template-content rule (governor.py); base {} = 3 documentaries and 7 Shorts a week, tightened by repetition
     "pace_guard": True,          # read the Risks card's 'inauthentic content' level: at watch, no new Shorts; at act, nothing new is made or scheduled until it falls
     "max_videos_per_week": 0,    # 0 = no limit. Otherwise no new video is made for a slot that would be the Nth video out or scheduled in the 7 days before it
@@ -221,6 +222,8 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict
             if auto_approves(cfg) and not v["approved"] and v["verdict"] == "pass":
                 acts.append({"do": "approve", "slug": v["slug"]})  # reviewed earlier (by hand or by the fixer): the reviewer's pass counts
             cap = cfg["shorts_per_day"] if fmt == "short" else cfg["uploads_per_day"]
+            if cfg.get("pause_scheduling"):
+                continue  # the owner paused scheduling (30 Oct 2026): nothing is given a slot or sent to YouTube; making, fixing and approving go on
             if pub is None or pub <= now + dt.timedelta(minutes=10):
                 acts.append({"do": "schedule", "slug": v["slug"]})
             elif v["approved"] and not v.get("prelaunch_ok") and pub - now <= dt.timedelta(hours=cfg["review_window_hours"] + prelaunch.WINDOW_EXTRA_HOURS):
@@ -535,9 +538,14 @@ def hold_duplicate(slug: str, twin: dict, now) -> None:
         pass
 
 
+PAUSED = {"skipped": "the owner paused scheduling (pause_scheduling in autopilot.json): nothing is given a slot or sent to YouTube"}
+
+
 def do_schedule(slug, cfg, now):
     import policyclass
 
+    if cfg.get("pause_scheduling"):
+        return PAUSED
     if policyclass.hold_active():
         return {"skipped": "policy hold: a YouTube rule page changed and the owner has not released it"}
     p, meta = _meta(slug)
@@ -581,6 +589,8 @@ def do_upload(slug, cfg, now):
     import policyclass
     import upload
 
+    if cfg.get("pause_scheduling"):
+        return PAUSED
     if policyclass.hold_active():
         return {"skipped": "policy hold: a YouTube rule page changed and the owner has not released it"}
 

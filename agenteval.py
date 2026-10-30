@@ -874,6 +874,29 @@ def case_a_legend_film_that_opens_on_a_plain_fact_is_warned_and_a_framed_claim_i
     return ok, "a legend film's opening must frame its claim; a framed opening and other kinds of film are left alone, and it only warns" if ok else f"warned={warned} clear={clear}"
 
 
+def case_the_owners_pause_stops_scheduling_and_uploading_but_not_repairing():
+    import autopilot
+
+    now = dt.datetime(2026, 10, 19, 12, 0, tzinfo=dt.timezone.utc)
+
+    def plan(cfg, *videos):
+        base = {"source": None, "approved": False, "approved_by": None, "verdict": None, "hold": False, "video_id": None, "publish_at": None, "fails": 0, "prelaunch_ok": True}
+        st = {"queue_len": 5, "connected": True, "busy": False, "uploads_today": 0, "news_pending": 0, "videos": [{**base, **v} for v in videos]}
+        return {(a["do"], a.get("slug")) for a in autopilot.plan_actions(st, cfg, now)}
+
+    ready = {"slug": "r", "format": "short", "verdict": "pass", "approved": True}
+    planned = {"slug": "p", "format": "doc", "verdict": "pass", "approved": True, "publish_at": "2026-10-19T14:00:00Z"}
+    broken = {"slug": "b", "format": "doc", "verdict": "fail", "blocking": 1}
+    on = {**autopilot.DEFAULTS, "enabled": True, "prepare_hours": 72}
+    normal = plan(on, ready, planned, broken)
+    paused = plan({**on, "pause_scheduling": True}, ready, planned, broken)
+    works = ("schedule", "r") in normal and ("upload", "p") in normal  # the switch is off by default: nothing changes
+    stops = ("schedule", "r") not in paused and ("upload", "p") not in paused
+    repairs = ("fix", "b") in paused  # making and mending go on while the owner tests
+    ok = works and stops and repairs and autopilot.DEFAULTS["pause_scheduling"] is False
+    return ok, "the owner's pause stops slots and uploads and nothing else; it is off by default" if ok else f"works={works} stops={stops} repairs={repairs}"
+
+
 def case_the_narration_is_finished_to_the_target_loudness_and_the_channel_voice_is_the_owners_choice():
     import re
     import subprocess
@@ -1159,6 +1182,7 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_a_problem_family_is_drafted_once_a_status_digest_is_no_problem_and_a_quiet_task_closes,
          case_the_narration_is_listened_to_blind_a_skipped_line_is_found_and_it_only_ever_warns,
          case_a_legend_film_that_opens_on_a_plain_fact_is_warned_and_a_framed_claim_is_not,
+         case_the_owners_pause_stops_scheduling_and_uploading_but_not_repairing,
          case_the_narration_is_finished_to_the_target_loudness_and_the_channel_voice_is_the_owners_choice,
          case_a_cleared_schedule_is_put_back_in_the_future_once_only_when_the_owner_asks_and_a_public_video_is_never_touched]
 
