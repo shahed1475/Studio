@@ -110,3 +110,17 @@ def test_both_producers_call_the_pop_up_step_with_their_own_kind():
     src = (Path(__file__).resolve().parent.parent / "run.py").read_text()
     kinds = re.findall(r'subscribe\.add_to\(folder / "video.mp4", data, "(\w+)"', src)
     assert sorted(kinds) == ["doc", "short"]
+
+
+def test_a_user_studio_never_gets_the_owners_brand_pop_up(tmp_path, monkeypatch):
+    """The pop-up carries the Gloamtale mark. Other people's studios on this server run the same code and must not show the owner's brand (a studio of their own would need its own assets)."""
+    import tenantmode
+
+    calls = []
+    monkeypatch.setattr(subscribe, "apply", lambda video, times, size, vertical, assets=None: calls.append(times) or True)
+    monkeypatch.setattr(tenantmode, "is_tenant", lambda: True)
+    data = {}
+    assert subscribe.add_to(tmp_path / "v.mp4", data, "doc", doc_durations(), [], (1920, 1080)) is False
+    assert not calls and "subscribe_shown" not in data
+    monkeypatch.setattr(tenantmode, "is_tenant", lambda: False)
+    assert subscribe.add_to(tmp_path / "v.mp4", data, "doc", doc_durations(), [], (1920, 1080)) is True and calls

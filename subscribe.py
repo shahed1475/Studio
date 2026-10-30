@@ -105,6 +105,10 @@ def apply(video: Path, times: list[float], size: tuple[int, int], vertical: bool
 
 def add_to(video: Path, data: dict, kind: str, durations: list[float], words: list[dict], size: tuple[int, int]) -> bool:
     """The record's switch `subscribe_pop`: absent or True picks the moments, False turns it off, a list gives exact seconds. Notes what was shown in data['subscribe_shown']."""
+    import tenantmode
+
+    if tenantmode.is_tenant():  # the pop-up carries the owner's Gloamtale mark: other people's studios on this server never show it
+        return False
     switch = data.get("subscribe_pop", True)
     if switch is False:
         return False
