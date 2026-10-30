@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 
 import config
+import records
 
 BASE = {"doc": 3, "short": 7}  # per 7 days: 10 in all
 WATCH_ABOVE, ACT_ABOVE = 10, 13  # the Risks card: more videos than this in the busiest 7 days is watch, act
@@ -26,7 +27,7 @@ def _when(v: dict) -> dt.datetime | None:
 
 
 def _times(videos, fmt: str | None = None) -> list[dt.datetime]:
-    return sorted(t for v in videos if not v.get("hold") and (fmt is None or (v.get("format") or "doc") == fmt) for t in [_when(v)] if t)
+    return sorted(t for v in videos if not v.get("hold") and (fmt is None or records.format_of(v, v.get("slug", "")) == fmt) for t in [_when(v)] if t)
 
 
 def window_load(videos, now: dt.datetime) -> int:

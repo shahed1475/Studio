@@ -273,7 +273,7 @@ def _workable(d: dict, cfg: dict, slug: str) -> bool:
     review = d.get("review") or {}
     if not review.get("verdict") or any(c["name"] == "llm_review" and not c["ok"] for c in checks):
         return True  # not reviewed yet
-    fmt = d.get("format", "short")
+    fmt = records.format_of(d, slug)
     if llm.video_cost(slug) >= (cfg.get("max_video_cost_usd") or MAX_VIDEO_COST).get(fmt, MAX_VIDEO_COST.get(fmt, 2.5)):
         return False
     if review.get("verdict") in ("fail", "needs_human"):
@@ -303,7 +303,7 @@ def build_state(now: dt.datetime, cfg: dict) -> dict:
     for m in sorted(config.OUT.glob("*/meta.json")):
         d = json.loads(m.read_text())
         videos.append({
-            "slug": m.parent.name, "format": d.get("format", "short"), "source": d.get("source"), "approved": bool(d.get("approved")),
+            "slug": m.parent.name, "format": records.format_of(d, m.parent.name), "source": d.get("source"), "approved": bool(d.get("approved")),
             "verdict": None if any(c["name"] == "llm_review" and not c["ok"] for c in (d.get("review") or {}).get("checks", [])) else (d.get("review") or {}).get("verdict"),
             "hold": bool(d.get("hold")),
             "approved_by": d.get("approved_by"), "fix_attempts": d.get("fix_attempts", 0), "gave_up": bool(d.get("fix_gave_up")), "cost": llm.video_cost(m.parent.name), "cost_alerted": bool(d.get("cost_alerted")), "fix_limit": fixer.attempt_limit((d.get("review") or {}).get("checks", [])),
@@ -320,7 +320,8 @@ def build_state(now: dt.datetime, cfg: dict) -> dict:
     for m in config.OUT.glob("*/meta.json"):
         d = json.loads(m.read_text())
         if str(d.get("uploaded_at", "")).startswith(day) and not d.get("hold"):  # a held upload will not go public: it does not use up the day's pace
-            by_fmt[d.get("format", "short")] = by_fmt.get(d.get("format", "short"), 0) + 1
+            kind = records.format_of(d, m.parent.name)
+            by_fmt[kind] = by_fmt.get(kind, 0) + 1
     queue = json.loads(config.TOPICS_FILE.read_text()) if config.TOPICS_FILE.exists() else []
     news = json.loads(NEWS_QUEUE.read_text()) if NEWS_QUEUE.exists() else []
     try:
@@ -525,7 +526,7 @@ def do_schedule(slug, cfg, now):
     if twin:
         hold_duplicate(slug, twin, now)
         return {"skipped": "duplicate"}
-    at = free_slot(slug, meta.get("format", "short"), cfg, now)
+    at = free_slot(slug, records.format_of(meta, slug), cfg, now)
     if at is None:
         return {"skipped": "no slot within the weekly pace limit"}
     records.merge(config.OUT / slug, {"publish_at": scheduler.to_rfc3339(at)})
@@ -538,7 +539,7 @@ def free_slot(slug: str, fmt: str, cfg: dict, now: dt.datetime) -> dt.datetime |
     for m in config.OUT.glob("*/meta.json"):  # only same-format videos block a slot; a Short may publish near a documentary
         d = json.loads(m.read_text())
         metas.append(d) if m.parent.name != slug else None
-        if m.parent.name != slug and d.get("format", "short") == fmt and d.get("publish_at") and not d.get("hold"):
+        if m.parent.name != slug and records.format_of(d, m.parent.name) == fmt and d.get("publish_at") and not d.get("hold"):
             taken.append(_parse(d["publish_at"]))
     slots = cfg["short_slots"] if fmt == "short" else cfg["slots"]
     import governor

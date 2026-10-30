@@ -213,6 +213,37 @@ def propose(agent: str, problem: str, evidence: str, now: dt.datetime, chat=None
 
 
 SKILL_NAME = re.compile(r"^studio-[a-z0-9-]{3,40}$")
+DRAFT_COOLDOWN, TRY_COOLDOWN = dt.timedelta(days=30), dt.timedelta(hours=24)  # a family gets one draft a month (the owner has not installed the first one: a second is not new); a failed try waits a day
+
+
+def _drafted_file(directory: Path | None = None) -> Path:
+    return (directory or PROPOSALS) / "drafted.json"
+
+
+def should_draft(signature: str, now: dt.datetime, directory: Path | None = None) -> bool:
+    """False while this problem family already has a draft (or a try that failed a moment ago). Between 28 and 30 Oct the doctor drafted five skills for the same status digest, one
+    per 6-hour run with a new model-chosen name each time, and posted a task for each."""
+    try:
+        rec = json.loads(_drafted_file(directory).read_text()).get(signature)
+        at = dt.datetime.strptime(rec["at"], TS).replace(tzinfo=dt.timezone.utc)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return True
+    return now - at >= (DRAFT_COOLDOWN if rec.get("draft") else TRY_COOLDOWN)
+
+
+def mark_draft(signature: str, name: str | None, now: dt.datetime, directory: Path | None = None) -> None:
+    f = _drafted_file(directory)
+    try:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        with filelock.locked(f):
+            try:
+                data = json.loads(f.read_text())
+            except (OSError, ValueError):
+                data = {}
+            data[signature] = {"at": now.strftime(TS), "draft": name}
+            filelock.write_atomic(f, json.dumps(data, indent=1))
+    except OSError:
+        pass  # not remembered: the family may be drafted once more, never a crash
 
 
 def draft_skill(family: dict, now: dt.datetime, chat=None, directory: Path | None = None) -> Path | None:
@@ -277,8 +308,10 @@ def run(now: dt.datetime | None = None, chat=None, get=None, state=None, lines=N
         fam = [f for f in json.loads((triage_file or config.ROOT / "data" / "agent" / "triage.json").read_text())["families"] if f["state"] != "known" and f["count"] >= 3]
     except (OSError, ValueError, KeyError):
         fam = []
+    fam = [f for f in fam if should_draft(f.get("signature", f.get("example", "")), now, proposals)]
     if fam and spend:
         f = draft_skill(fam[0], now, chat, proposals)
+        mark_draft(fam[0].get("signature", fam[0].get("example", "")), f.name if f else None, now, proposals)
         if f:
             result["drafts"].append(f.name)
             agentbus.post("skill_draft", "doctor", "owner", f.name, reason=f"A skill draft for a problem seen {fam[0]['count']} times: {fam[0]['example'][:100]}", now=now,
