@@ -27,6 +27,7 @@ JOB_FILE = config.ROOT / "job.pid"   # written by the dashboard while one of its
 
 DEFAULTS = {
     "enabled": False,            # master switch, off until the user turns it on
+    "weekly": {"enabled": False, "short_from_long": 5},   # the owner's weekly programme (weekplan.py): films rotate mystery, case, person, trending; the 6th Short copies the winner. Off until the owner switches it on
     "pause_scheduling": False,   # the owner's switch (30 Oct 2026): True stops Autopilot from giving any video a slot or sending it to YouTube; everything before that goes on
     "governor": {"enabled": True, "base": {}},  # weekly caps per format from YouTube's template-content rule (governor.py); base {} = 3 documentaries and 7 Shorts a week, tightened by repetition
     "pace_guard": True,          # read the Risks card's 'inauthentic content' level: at watch, no new Shorts; at act, nothing new is made or scheduled until it falls
@@ -248,7 +249,7 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict
             acts.append({"do": "ideas", "slug": None})
         cap_left = state.get("cap_left")
         if cfg["shorts"] and need["short"] > 0 and stuck["short"] < MAX_STUCK and can_afford("short", cap_left):
-            if state.get("clippable", 0) > 0:  # cut from our own documentaries first: no script to write, cheapest
+            if state.get("clippable", 0) > 0 and not state.get("winner_due"):  # cut from our own documentaries first: no script to write, cheapest (the week's sixth copies the winner instead)
                 acts.append({"do": "make_clip", "slug": None})
             elif state["queue_len"] > 0:
                 acts.append({"do": "make_short", "slug": None})
@@ -282,6 +283,21 @@ def _workable(d: dict, cfg: dict, slug: str) -> bool:
     if review.get("verdict") in ("fail", "needs_human"):
         return d.get("fix_attempts", 0) < fixer.attempt_limit(checks) and not (d.get("fix_gave_up") and fixer.attempt_limit(checks) <= 2)
     return fixer.polish_rounds(d) < fixer.POLISH_ROUNDS and bool(fixer.watch_problems(checks))
+
+
+def _winner_due(cfg: dict, now: dt.datetime) -> bool:
+    """The weekly programme (weekplan.py): True when this week already holds its five Shorts from our films and the sixth copies what our best Short did."""
+    import weekplan
+
+    if not weekplan.enabled(cfg):
+        return False
+    metas = []
+    for m in config.OUT.glob("*/meta.json"):
+        try:
+            metas.append({**json.loads(m.read_text()), "slug": m.parent.name})
+        except (OSError, ValueError):
+            continue
+    return weekplan.winner_due(metas, cfg, now)
 
 
 def build_state(now: dt.datetime, cfg: dict) -> dict:
@@ -339,7 +355,7 @@ def build_state(now: dt.datetime, cfg: dict) -> dict:
         "queue_len": len(queue), "connected": upload.SECRET.exists() and upload.TOKEN.exists(), "busy": dashboard_busy(),
         "uploads_today": upload.uploads_today(config.OUT, now), "uploads_by_format": by_fmt,
         "news_pending": sum(1 for n in news if n.get("status") == "queued"), "videos": videos,
-        "clippable": __import__("clipper").clippable(), "spend_ok": spend_ok, "cap_left": cap_left, "credit_left": credit_left, "storage_full": _storage_full(),
+        "clippable": __import__("clipper").clippable(), "winner_due": _winner_due(cfg, now), "spend_ok": spend_ok, "cap_left": cap_left, "credit_left": credit_left, "storage_full": _storage_full(),
     }
 
 

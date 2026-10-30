@@ -14,7 +14,7 @@ def meta(topic, title="", lines=(), anchors=(), chapters=()):
 
 def test_the_shipped_cards_are_complete_and_short():
     assert kinds.problems() == []
-    assert set(kinds.names()) == {"legend", "mystery", "event", "person", "place"}
+    assert set(kinds.names()) == {"legend", "case", "mystery", "event", "person", "place"}
 
 
 def test_real_topics_get_the_kind_a_viewer_would_name():

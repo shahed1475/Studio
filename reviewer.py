@@ -233,6 +233,27 @@ HEDGE = re.compile(r"\b(said to|is said|was said|were said|legend|legends|legend
                    r"story goes|tradition|myth|rumou?r|rumou?red|purported|purportedly|may have|might have|perhaps|some say|they say|is told|are told)\b", re.I)
 
 
+CASE_GRAPHIC = re.compile(r"\b(mutilat\w+|dismember\w*|decapitat\w*|gor(?:e|y)|corpse|bloodied|blood-soaked|eviscerat\w*|disembowel\w*|slit (?:his|her|their) throat)\b", re.I)
+CASE_ACCUSE = re.compile(r"\b(?:was|is|were) (?:the|a) (?:killer|murderer|culprit)\b|\bwas guilty\b|\bcommitted the (?:murder|crime)\b|\bmurdered (?:him|her|them)\b|\bthe (?:killer|murderer|culprit) was\b", re.I)
+CASE_ATTRIB = re.compile(r"\b(said|says|claimed|claims|alleged|allegedly|accused|suspected|convicted|charged|court|jury|police|investigators?|according to|reportedly|believed|acquitted|not guilty)\b", re.I)
+CASE_CONTEXT = re.compile(r"\b(documentary|documented|real case|court records?|police records?|official records?|the record shows|investigators?|case files?|public record)\b", re.I)
+
+
+def case_checks(meta: dict, lines: list[str]) -> list[dict]:
+    """A real case or unsolved crime (YouTube's own pages, read 30 Oct 2026): nothing graphic, nobody called guilty without attribution, and the documentary purpose said in the video's own audio.
+    Warnings only: a pattern match is a lead for the owner, not a verdict."""
+    import kinds
+
+    if (meta.get("kind") or kinds.classify(meta)) != "case":
+        return []
+    graphic = sorted({m.group(0).lower() for t in lines for m in CASE_GRAPHIC.finditer(t)})
+    accuse = [i + 1 for i, t in enumerate(lines) if CASE_ACCUSE.search(t) and not CASE_ATTRIB.search(t)]
+    context = any(CASE_CONTEXT.search(t) for t in lines)
+    return [_c("case_graphic", not graphic, "no graphic wording" if not graphic else "graphic wording in the narration: " + ", ".join(graphic[:6]) + " (YouTube forbids content meant to shock)", "warn"),
+            _c("case_accusation", not accuse, "nobody is called guilty without attribution" if not accuse else "a person is called the killer or guilty with no attribution on line " + ", line ".join(map(str, accuse[:4])) + ": say who found it (police, a court) or leave it out", "warn"),
+            _c("case_context", context, "the narration says it is a documentary account of the record" if context else "the narration never says it is a documentary account of a real case: YouTube wants that context in the video's own audio", "warn")]
+
+
 def generator_checks(meta: dict, probe: dict, rules: dict | None = None) -> list[dict]:
     """The content prompt's structure rules, as warnings only (a video that is otherwise fine is never failed for style): a cold open with no greeting, a new
     question or turn at least every `rehook_max_seconds`, no outro, a Short inside its length, a description that does not open with its sources.
@@ -245,6 +266,7 @@ def generator_checks(meta: dict, probe: dict, rules: dict | None = None) -> list
         first = re.split(r"(?<=[.?!])\s", lines[0].strip())[0]
         max_words = round(b["hook_max_seconds"] * b["pace_target_wpm"][0] / 60)
         bad = len(first.split()) > max_words or bool(GREETING.search(lines[0]))
+        out += case_checks(meta, lines)
         asked = any("?" in t for t in lines[:2])  # YouTube's own advice: start with a question (the first two lines are about five seconds)
         out.append(_c("hook_question", asked, "the first two lines (about five seconds) hold a question" if asked else "no question in the first two lines (about five seconds): open with the central question and say what the viewer will know by the end", "warn"))
         if meta.get("kind") in ("legend", "mystery"):  # 30 Oct 2026: the Lost Army film opened "...simply vanished." as plain fact; the legend was named only in line 2

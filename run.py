@@ -106,6 +106,38 @@ def _script_gate(data: dict, source: str, topic: str) -> dict:
     return data
 
 
+def _is_case(data: dict) -> bool:
+    """A real case or unsolved crime: its pictures show no identifiable person (aiart.CASE_PICTURES) and its script follows scriptgen.CASE_RULES."""
+    import kinds
+
+    return (data.get("kind") or kinds.classify(data)) == "case"
+
+
+def _weekly_kind(fmt: str) -> str | None:
+    """The kind of video the weekly programme (weekplan.py) wants next, or None for the plain ranking: a film follows the rotation, the week's sixth Short the winner's kind (shortpick)."""
+    import datetime as dt
+
+    import autopilot
+    import shortpick
+    import weekplan
+
+    cfg = autopilot.load_config()
+    if not weekplan.enabled(cfg):
+        return None
+    metas = []
+    for m in config.OUT.glob("*/meta.json"):
+        try:
+            metas.append({**json.loads(m.read_text()), "slug": m.parent.name})
+        except (OSError, ValueError):
+            continue
+    if fmt == "doc":
+        return weekplan.next_long_kind(weekplan.recent_doc_kinds(metas))
+    if fmt == "short" and weekplan.winner_due(metas, cfg, dt.datetime.now(dt.timezone.utc)):
+        w = shortpick.winner()
+        return w["kind"] if w else None
+    return None
+
+
 def _best_topic(fmt: str) -> str | None:
     """The queued topic the research and growth data like best that can be made well; the first in the queue if that ranking cannot run."""
     import topicrank
@@ -114,7 +146,7 @@ def _best_topic(fmt: str) -> str | None:
     if pinned:
         return pinned
     try:
-        return topicrank.pop_best(fmt)
+        return topicrank.pop_best(fmt, want_kind=_weekly_kind(fmt))
     except Exception as e:
         print(f"  topic ranking unavailable ({type(e).__name__}); taking the first topic that is not already made")
         import duplicates
@@ -243,7 +275,7 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
     else:  # archive pictures: only ones that name the subject
         import aiart
 
-        art = lambda l: aiart.generate(l["text"], l.get("visual", ""), topic, vertical=True, style=data.get("art_style"))
+        art = lambda l: aiart.generate(l["text"], l.get("visual", ""), topic, vertical=True, style=data.get("art_style"), case=_is_case(data))
         clips, credits, stats = footage.scene_images(data["lines"], topic, data.get("anchors") or [], pool_size=pool_size, judge=_image_judge(topic),
                                                      art=art, art_limit=12 if data.get("art_style") == "3d" else aiart.MAX_PER_VIDEO["short"],
                                                      art_first=bool(data.get("art_first")), force_art=_forced_art(data))
@@ -437,7 +469,7 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
     anchors = data.get("anchors") or []
     import aiart
 
-    art = lambda l: aiart.generate(l["text"], l.get("visual", ""), data["topic"], style=data.get("art_style"))  # style "3d": a 3D animated-film look
+    art = lambda l: aiart.generate(l["text"], l.get("visual", ""), data["topic"], style=data.get("art_style"), case=_is_case(data))  # style "3d": a 3D animated-film look
     pics = dict(judge=_image_judge(data["topic"]), art=art, art_first=bool(data.get("art_first")), force_art=_forced_art(data))
     clips, credits, stats = footage.scene_images(data["lines"], data["topic"], anchors, art_limit=aiart.MAX_PER_VIDEO["doc"], **pics)
     if stats["unique"] < MIN_VARIETY * stats["scenes"] and aiart.enabled():  # the same few pictures again and again: draw illustrations for the scenes that would repeat

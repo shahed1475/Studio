@@ -75,20 +75,24 @@ def credit_for(style: str | None) -> str:
     return CREDIT_PHOTO if style == "photo" else CREDIT
 
 
-def prompt_for(line: str, visual: str, topic: str, vertical: bool, style: str | None = None) -> str:
+CASE_PICTURES = (" This is a real case: show no identifiable person at all and no close face; show the place, objects, documents, hands, or people only as small distant figures or seen from "
+                 "behind. Nothing violent, bloody or graphic.")
+
+
+def prompt_for(line: str, visual: str, topic: str, vertical: bool, style: str | None = None, case: bool = False) -> str:
     shape = "vertical 9:16 composition" if vertical else "16:9 widescreen composition"
     look = STYLE_3D if style == "3d" else STYLE_PHOTO if style == "photo" else style_for(topic)
     text = f"{look}, {shape}. Story: {_clean(topic, 120)}. Scene: {_clean(line)}. Show: {_clean(visual, 80) or 'the setting of the scene'}."
     if style == "photo":  # a different camera shot per scene (chosen from the line, so a repeat is a cache hit): the first realistic video drew the same woman by a candle again and again
         text += f" Shot: {SHOTS[int(hashlib.md5(str(line).encode()).hexdigest(), 16) % len(SHOTS)]}."
-    return text + (NO_WRITING if TEXTY.search(f"{visual} {line}") else "")
+    return text + (NO_WRITING if TEXTY.search(f"{visual} {line}") else "") + (CASE_PICTURES if case else "")
 
 
-def generate(line: str, visual: str, topic: str, vertical: bool = False, now: dt.datetime | None = None, style: str | None = None):
+def generate(line: str, visual: str, topic: str, vertical: bool = False, now: dt.datetime | None = None, style: str | None = None, case: bool = False):
     """(file, credit) for a new illustration of this scene, or None when drawing is off, over the dollar cap, or failed. style "3d": a 3D animated-film look
     (its own, better model: these pictures become the first frames of animated clips)."""
     now = now or llm._now()
-    prompt = prompt_for(line, visual, topic, vertical, style)
+    prompt = prompt_for(line, visual, topic, vertical, style, case)
     dest = config.CACHE / "art" / (hashlib.md5(prompt.encode()).hexdigest()[:16] + ".jpg")
     if dest.exists():  # a picture already drawn costs nothing, so it is served even when drawing is off or the day's budget is spent (a re-render at the cap found no pictures)
         return dest, credit_for(style)
