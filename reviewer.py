@@ -262,11 +262,12 @@ def generator_checks(meta: dict, probe: dict, rules: dict | None = None) -> list
     b = r["benchmarks"]
     kind = "doc" if meta.get("format") == "doc" else "short"
     lines, out = [l.get("text", "") for l in meta.get("lines", [])], []
+    if lines:
+        out += case_checks(meta, lines)  # a real case, film or Short: the same warnings
     if kind == "doc" and lines:
         first = re.split(r"(?<=[.?!])\s", lines[0].strip())[0]
         max_words = round(b["hook_max_seconds"] * b["pace_target_wpm"][0] / 60)
         bad = len(first.split()) > max_words or bool(GREETING.search(lines[0]))
-        out += case_checks(meta, lines)
         asked = any("?" in t for t in lines[:2])  # YouTube's own advice: start with a question (the first two lines are about five seconds)
         out.append(_c("hook_question", asked, "the first two lines (about five seconds) hold a question" if asked else "no question in the first two lines (about five seconds): open with the central question and say what the viewer will know by the end", "warn"))
         if meta.get("kind") in ("legend", "mystery"):  # 30 Oct 2026: the Lost Army film opened "...simply vanished." as plain fact; the legend was named only in line 2

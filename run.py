@@ -106,6 +106,27 @@ def _script_gate(data: dict, source: str, topic: str) -> dict:
     return data
 
 
+def _real_footage(data: dict, clips: list, credits: list) -> tuple[list, list]:
+    """Real moving footage (footage_real.py) on up to data["real_footage"] scenes when the film asks for it; the stats replace the number, so a redo asks again. Any failure leaves the
+    scenes as they were: real footage is a bonus, never a reason to stop a film."""
+    n = data.get("real_footage")
+    n = n.get("asked") if isinstance(n, dict) else n
+    if not isinstance(n, int) or isinstance(n, bool) or n <= 0:
+        return clips, credits
+    import footage_real
+    import parallax
+
+    try:
+        flat = parallax.flat_scenes(data["lines"]) if len(data.get("lines", [])) == len(clips) else set()
+        out, creds, stats = footage_real.for_film(data, clips, credits, n, flat=flat)
+    except Exception as e:
+        print(f"  real footage skipped ({type(e).__name__})")
+        return clips, credits
+    data["real_footage"] = stats
+    print(f"  real footage: {stats['used']} clip(s) of {stats['asked']} asked, {stats['found']} fitting file(s) found in {stats['queries']} search(es)")
+    return out, creds
+
+
 def _is_case(data: dict) -> bool:
     """A real case or unsolved crime: its pictures show no identifiable person (aiart.CASE_PICTURES) and its script follows scriptgen.CASE_RULES."""
     import kinds
@@ -479,6 +500,7 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
         shutil.rmtree(work if in_place else folder, ignore_errors=True)
         raise SystemExit(f"only {stats['unique']} on-topic images found ({stats['missing']} scenes without one); "
                          "not rendering a video of unrelated pictures")
+    clips, credits = _real_footage(data, clips, credits)  # real moving footage on the scenes that may carry it (before the animation step: a real clip is not animated)
     clips, credits, anim = _animate(data, clips, credits)  # some drawn scenes become short moving clips when the video asks for it
     if anim:
         data["animation"] = anim
@@ -565,7 +587,7 @@ def _parallax(data: dict, clips: list, durations: list, size: tuple[int, int]) -
 
 LOOKS = {  # what a new video asks for besides its pictures and clips. "photo" is the Lost Army film's look (the owner's choice, 30 Oct 2026): realistic AI scenes, free camera motion (flat gentle zoom where
     # people may show), 2D chapter cards and date badges on a documentary, the shorter voice tail. "3d" is the storybook look Autopilot used before.
-    "photo": {"doc": {"parallax": True, "graphics": True, "voice_tail": 0.15}, "short": {"parallax": True}},
+    "photo": {"doc": {"parallax": True, "graphics": True, "voice_tail": 0.15, "real_footage": 4}, "short": {"parallax": True}},
     "3d": {"doc": {}, "short": {}},
 }
 DEFAULT_LOOK = "photo"
@@ -609,6 +631,8 @@ def _forced_art(data: dict) -> set[str]:
         forced |= {l["text"] for l in data["lines"]}
     if data.get("art_style") == "3d":
         forced |= {l["text"] for l in data["lines"][:4]}
+    if _is_case(data):  # a real case: no archive photograph of a real victim or suspect, every scene is drawn under the no-identifiable-person rule (aiart.CASE_PICTURES)
+        forced |= {l["text"] for l in data["lines"]}
     return forced
 
 

@@ -135,11 +135,15 @@ THUMB_PHOTO = ("YouTube thumbnail, 16:9 widescreen. Photorealistic cinematic sti
                "no modern objects. Do not invent details that are not in the scene description. No text, no letters, no numbers, no logos, no watermark.")
 
 
-def thumbnail_art(scene: str, now: dt.datetime | None = None, style: str | None = None):
+def thumbnail_prompt(scene: str, style: str | None = None, case: bool = False) -> str:
+    return f"{THUMB_3D if style == '3d' else THUMB_PHOTO if style == 'photo' else THUMB_STYLE} Subject: {_clean(scene, 220)}." + (CASE_PICTURES if case else "")
+
+
+def thumbnail_art(scene: str, now: dt.datetime | None = None, style: str | None = None, case: bool = False):
     """(file, credit) for a 1280x720 thumbnail picture of one scene, or None when drawing is off, over the dollar cap, or failed. Competitors' best thumbnails
     show one clear subject with a strong mood, which archive photos and old maps rarely do; the picture is always labelled as AI art (the credit)."""
     now = now or llm._now()
-    prompt = f"{THUMB_3D if style == '3d' else THUMB_PHOTO if style == 'photo' else THUMB_STYLE} Subject: {_clean(scene, 220)}."
+    prompt = thumbnail_prompt(scene, style, case)
     dest = config.CACHE / "art" / ("thumb-" + hashlib.md5(prompt.encode()).hexdigest()[:16] + ".jpg")
     if dest.exists():  # already drawn: served for free whatever the budget
         return dest, credit_for(style)

@@ -293,7 +293,10 @@ def make_art(folder: Path, meta: dict, hook: str, now=None, chat=None, hooks: li
     import config
     import thumbstyle
 
-    got = aiart.thumbnail_art(art_subject(meta, chat), now, **({"style": meta["art_style"]} if meta.get("art_style") in ("3d", "photo") else {}))  # a 3D or realistic video gets a thumbnail in its own look
+    import kinds
+
+    case = (meta.get("kind") or kinds.classify(meta)) == "case"  # a real case: the thumbnail shows no identifiable person either
+    got = aiart.thumbnail_art(art_subject(meta, chat), now, case=case, **({"style": meta["art_style"]} if meta.get("art_style") in ("3d", "photo") else {}))  # a 3D or realistic video gets a thumbnail in its own look
     if not got:
         return []
     recent = thumbstyle.recent_archetypes(config.OUT, exclude=folder)
