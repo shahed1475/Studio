@@ -54,8 +54,12 @@ def compare(script: str, heard: str) -> dict:
     return {"match": round(match, 4), "words": len(s), "gaps": gaps, "heard_as": leads[:20]}
 
 
+SHORT_WORDS, SHORT_MATCH = 250, 0.85  # a one-minute Short has a few names and little else: one name heard differently costs far more than in a film (the Hong Gildong Short scored 89.4 with no gap)
+
+
 def ok(result: dict) -> bool:
-    return result.get("match", 0) >= MIN_MATCH and not any(g["words"] >= FAIL_RUN for g in result.get("gaps", []))
+    bar = SHORT_MATCH if int(result.get("words") or 10 ** 6) < SHORT_WORDS else MIN_MATCH
+    return result.get("match", 0) >= bar and not any(g["words"] >= FAIL_RUN for g in result.get("gaps", []))
 
 
 def parts(starts: list[float], total: float, target: float = PART_SECONDS) -> list[tuple[int, int, float, float]]:
