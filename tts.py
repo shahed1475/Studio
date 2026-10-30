@@ -7,6 +7,8 @@ from pathlib import Path
 
 import edge_tts
 
+import audiofinish
+
 import config
 import keywords
 
@@ -22,8 +24,9 @@ def _duration(path: Path) -> float:
 # The default voice (Andrew, -6% speed, -3 Hz) is a calm bedtime reader. Measured 29 Oct 2026 on the same two lines: rate and pitch change the delivery (+8% rate made the
 # line 15% faster, +2 Hz raised its median pitch), while the `volume` setting only moves the raw level, which the renderer's loudness target replaces; so loudness is set
 # there (editprofile.lufs_for), not here. Judged by measurement, not by ear.
+FINISH_LUFS = -14.5  # the narration alone; the render's own target (editprofile, -14) then trims the last half decibel with the music in
 VOICE_STYLES = {
-    "energetic": {"voice": "en-US-GuyNeural", "rate": "+10%", "pitch": "+2Hz",  # Guy is tagged "Passion"; his register is brighter than Andrew's
+    "energetic": {"voice": "en-US-AndrewMultilingualNeural", "rate": "+10%", "pitch": "+2Hz",  # 30 Oct 2026: one voice for the channel (the owner chose Andrew Multilingual); the style lifts it with rate and pitch
                   "hook": {"rate": "+14%", "pitch": "+6Hz"}, "question": {"rate": "+8%", "pitch": "+7Hz"},
                   "payoff": {"rate": "+3%", "pitch": "+0Hz"}, "invite": {"rate": "+12%", "pitch": "+5Hz"},
                   # The service ends every line with silence after its last word: 0.83 s for this voice (29 Oct 2026: the last word ends at 4.66 s, the file runs to 5.52 s). With the
@@ -248,6 +251,7 @@ def narrate(lines: list[str], work: Path, pause: float = 0.12, motion: int = 0, 
          ";".join(filt) + f";{chain}concat=n={len(parts)}:v=0:a=1[out]", "-map", "[out]", str(narration)],
         check=True,
     )
+    audiofinish.finish(narration, lufs=FINISH_LUFS)  # a steadier, louder voice (two-pass, gentle compressor); False leaves the file as it was
     words_to_json(all_words, work / "words.json")
     ass = work / "captions.ass"
     ass.write_text(_ass(all_words, motion, pos))

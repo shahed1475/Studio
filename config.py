@@ -29,9 +29,9 @@ TOPICS_FILE = ROOT / "topics.json"
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 MODEL = os.getenv("YT_MODEL", "qwen3:8b")
-VOICE = os.getenv("YT_VOICE", "en-US-AndrewNeural")  # also: en-US-AriaNeural, en-US-GuyNeural
-VOICE_RATE = os.getenv("YT_VOICE_RATE", "-6%")  # slower = storyteller pace
-VOICE_PITCH = os.getenv("YT_VOICE_PITCH", "-3Hz")  # slightly deeper
+VOICE = os.getenv("YT_VOICE", "en-US-AndrewMultilingualNeural")  # the owner's choice (30 Oct 2026, from nine voices at one pace); also: en-US-AvaMultilingualNeural, en-US-AriaNeural
+VOICE_RATE = os.getenv("YT_VOICE_RATE", "+10%")  # this voice at +10% speaks about 170 words a minute (measured); a voice's own speed differs a lot, so a new voice needs its own rate
+VOICE_PITCH = os.getenv("YT_VOICE_PITCH", "+0Hz")
 _saved = ROOT / "settings.json"  # written by the dashboard
 PEXELS_KEY = os.getenv("PEXELS_API_KEY") or (json.loads(_saved.read_text()).get("pexels_key", "") if _saved.exists() else "")  # free key: https://www.pexels.com/api/
 WIDTH, HEIGHT, FPS = 1080, 1920, 30

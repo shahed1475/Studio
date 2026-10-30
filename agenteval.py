@@ -706,6 +706,30 @@ def case_the_subscribe_pop_up_lands_on_the_spoken_word_or_at_high_points_and_nev
     return ok, "the pop-up starts before the spoken word, sits at high points in a documentary and never damages a video" if ok else f"spoken={spoken} high={high} safe={safe}"
 
 
+def case_the_narration_is_finished_to_the_target_loudness_and_the_channel_voice_is_the_owners_choice():
+    import re
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    import audiofinish
+    import config
+
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / "n.mp3"
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "anoisesrc=d=8:c=pink:r=44100:a=0.03", "-af", "tremolo=f=3:d=0.5,lowpass=f=4000", "-c:a", "libmp3lame", "-b:a", "128k", str(p)], check=True)
+        done = audiofinish.finish(p, lufs=-14.5)
+        out = subprocess.run(["ffmpeg", "-nostats", "-i", str(p), "-af", "ebur128=peak=true", "-f", "null", "-"], capture_output=True, text=True).stderr
+        got = float(re.findall(r"I:\s+(-?[\d.]+) LUFS", out)[-1])
+        loud = bool(done) and abs(got - -14.5) <= 0.6  # it reaches the target, not about a decibel short as the one-pass filter did
+        bad = Path(tmp) / "bad.mp3"
+        bad.write_bytes(b"x")
+        safe = audiofinish.finish(bad) is False and bad.read_bytes() == b"x"  # a failed finish changes nothing
+    voice = config.VOICE == "en-US-AndrewMultilingualNeural" and config.VOICE_RATE == "+10%"  # the default when no environment override is set (the server has none)
+    ok = loud and safe and voice
+    return ok, "the narration reaches the target loudness, a failed finish changes nothing and the channel voice is Andrew Multilingual" if ok else f"loud={loud} ({got:.1f} LUFS) safe={safe} voice={voice}"
+
+
 def case_second_sources_are_off_by_default_and_only_verified_pages_count():
     import autopilot
     import secondsources as ss
@@ -903,7 +927,8 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_a_quotation_is_sourced_by_its_own_words_and_an_invented_one_stays_open_with_no_passage,
          case_an_animated_clip_is_asked_to_show_only_what_its_picture_already_shows,
          case_a_clip_plays_once_and_a_picture_with_people_never_bends_or_pushes_in_hard,
-         case_the_subscribe_pop_up_lands_on_the_spoken_word_or_at_high_points_and_never_breaks_a_video]
+         case_the_subscribe_pop_up_lands_on_the_spoken_word_or_at_high_points_and_never_breaks_a_video,
+         case_the_narration_is_finished_to_the_target_loudness_and_the_channel_voice_is_the_owners_choice]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:

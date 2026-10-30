@@ -804,3 +804,20 @@ def test_the_subscribe_case_passes_and_fails_when_the_timing_or_the_safety_is_br
     monkeypatch.setattr(subscribe, "_seconds", lambda p: 60.0)
     ok, detail = case()
     assert not ok and "safe=False" in detail
+
+
+def test_the_narration_case_passes_and_fails_when_the_finish_is_skipped_or_the_voice_changes(monkeypatch):
+    import audiofinish
+    import config
+
+    case = getattr(agenteval, "case_the_narration_is_finished_to_the_target_loudness_and_the_channel_voice_is_the_owners_choice")
+    assert case in agenteval.CASES
+    ok, detail = case()
+    assert ok, detail
+    monkeypatch.setattr(audiofinish, "finish", lambda *a, **k: False)  # mutation: the finish does nothing
+    ok, detail = case()
+    assert not ok and "loud=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(config, "VOICE", "en-US-GuyNeural")  # mutation: the voice is changed back
+    ok, detail = case()
+    assert not ok and "voice=False" in detail
