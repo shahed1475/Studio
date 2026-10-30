@@ -24,6 +24,9 @@ def _key_words(core: str) -> list[str]:
     return [w for w in _words(core) if len(w) > 3]
 
 
+QUESTION = re.compile(r"\b(who|what|where|when|why|how|did|do|does|was|were|is|are|can|could|will|would|which)\b", re.I)
+
+
 def title_score(title: str, core: str = "", others=(), kind: str = "") -> float:
     """Higher is better. Rewards: the search phrase inside the first 40 characters, a length of 40 to 62, words people type, a proper name.
     Penalises: a vague 'what do ... actually ...?' question, shouting, being near-identical to another title."""
@@ -46,6 +49,8 @@ def title_score(title: str, core: str = "", others=(), kind: str = "") -> float:
         score += 0.5  # a named subject, not a label
     if VAGUE_START.match(t):
         score -= 2.5
+    elif QUESTION.search(t) and t.endswith("?"):
+        score += 1.2  # a real question (the owner's choice, 30 Oct 2026): modest, the phrase up front still decides
     letters = [c for c in t if c.isalpha()]
     if len(letters) > 10 and sum(c.isupper() for c in letters) / len(letters) > 0.6:
         score -= 3.0
