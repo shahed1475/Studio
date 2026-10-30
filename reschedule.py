@@ -7,6 +7,7 @@ logged with before and after (`actionlog`, source "owner command"). It never mak
 video, a video on hold, a duplicate story, one with an open invented-facts warning the owner has not approved, one YouTube rejected or blocked in countries, one it already repaired once (a second
 loss is the owner's to look at in Studio), a user studio, or a machine whose YouTube login cannot change videos."""
 import datetime as dt
+import time
 
 import actionlog
 import config
@@ -15,6 +16,7 @@ import scheduler
 
 TS = "%Y-%m-%dT%H:%M:%SZ"
 KEEP = ("embeddable", "license", "publicStatsViewable")  # status fields YouTube returned: sent back so an update does not reset them
+READBACK_TRIES, READBACK_WAIT = 4, 3  # 30 Oct 2026, real YouTube: the update took, but the read right after it still showed the old status
 
 
 def lost(meta: dict) -> bool:
@@ -33,6 +35,18 @@ def _read(yt, video_id: str) -> dict:
 
 def _live(yt, video_id: str) -> dict:
     return _read(yt, video_id).get("status", {})
+
+
+def _confirmed(yt, video_id: str, when: str) -> tuple[bool, dict]:
+    """Read the video back until YouTube shows the new time (it can lag a few seconds behind its own write)."""
+    back: dict = {}
+    for i in range(READBACK_TRIES):
+        back = _live(yt, video_id)
+        if str(back.get("publishAt", ""))[:19] == when[:19] and back.get("privacyStatus") == "private":
+            return True, back
+        if i < READBACK_TRIES - 1:
+            time.sleep(READBACK_WAIT)
+    return False, back
 
 
 def apply(slug: str, cfg: dict, now: dt.datetime, yt=None) -> dict | None:
@@ -85,10 +99,11 @@ def apply(slug: str, cfg: dict, now: dt.datetime, yt=None) -> dict | None:
     status = {k: live[k] for k in KEEP if k in live}
     status.update({"privacyStatus": "private", "publishAt": when, "selfDeclaredMadeForKids": False, "containsSyntheticMedia": True})  # the same disclosure the upload made
     yt.videos().update(part="status", body={"id": video_id, "status": status}).execute()
-    back = _live(yt, video_id)
-    if str(back.get("publishAt", ""))[:19] != when[:19] or back.get("privacyStatus") != "private":
-        return {"skipped": f"read back from YouTube: scheduled time is {back.get('publishAt')}, expected {when}; not recorded as done"}
-    actionlog.record(video_id, {"privacyStatus": live.get("privacyStatus"), "publishAt": live.get("publishAt")}, {"privacyStatus": "private", "publishAt": when},
-                     "owner command", "the schedule of an approved video was gone after its publish time: the owner asked for a new future time on the next free slot", now, kind="status")
+    before, after = {"privacyStatus": live.get("privacyStatus"), "publishAt": live.get("publishAt")}, {"privacyStatus": "private", "publishAt": when}
+    ok, back = _confirmed(yt, video_id, when)
+    if not ok:  # a change may have happened: it is on record, as unverified, and the owner checks it in Studio
+        actionlog.record(video_id, before, after, "owner command", f"sent, but YouTube's read-back did not show it after {READBACK_TRIES} reads (it showed {back.get('publishAt')}): unverified, check it in Studio", now, kind="status")
+        return {"skipped": f"read back from YouTube: scheduled time is {back.get('publishAt')}, expected {when}; not recorded as done (the attempt is in the action log as unverified)"}
+    actionlog.record(video_id, before, after, "owner command", "the schedule of an approved video was gone after its publish time: the owner asked for a new future time on the next free slot", now, kind="status")
     records.merge(folder, {"publish_at": when, "rescheduled": {"at": now.strftime(TS), "from": meta.get("publish_at"), "to": when, "verified": True}})
     return None

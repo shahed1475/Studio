@@ -826,6 +826,10 @@ def test_the_narration_case_passes_and_fails_when_the_finish_is_skipped_or_the_v
 def test_the_reschedule_case_passes_and_fails_when_it_goes_public_ignores_the_future_repeats_or_autopilot_does_it(monkeypatch):
     import reschedule
 
+    def quick():  # the read-back retries wait a few seconds in real life
+        monkeypatch.setattr(reschedule.time, "sleep", lambda s: None)
+
+    quick()
     case = getattr(agenteval, "case_a_cleared_schedule_is_put_back_in_the_future_once_only_when_the_owner_asks_and_a_public_video_is_never_touched")
     assert case in agenteval.CASES
     ok, detail = case()
@@ -834,14 +838,17 @@ def test_the_reschedule_case_passes_and_fails_when_it_goes_public_ignores_the_fu
     ok, detail = case()
     assert not ok and "future=False" in detail
     monkeypatch.undo()
+    quick()
     monkeypatch.setattr(reschedule, "_read", lambda yt, vid: {"status": {"privacyStatus": "private", "uploadStatus": "processed"}})  # mutation: a public video is read as private
     ok, detail = case()
     assert not ok and "public_safe=False" in detail
     monkeypatch.undo()
+    quick()
     monkeypatch.setattr(reschedule, "lost", lambda meta: True)  # mutation: a repaired video is repaired again, every time
     ok, detail = case()
     assert not ok and "once=False" in detail
     monkeypatch.undo()
+    quick()
     monkeypatch.setitem(__import__("autopilot").EXECUTORS, "reschedule", lambda slug, cfg, now: None)  # mutation: Autopilot can repair it by itself again
     ok, detail = case()
     assert not ok and "owner_only=False" in detail

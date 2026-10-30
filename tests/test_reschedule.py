@@ -46,6 +46,7 @@ class FakeYT:
 
 
 def folder(tmp_path, monkeypatch, **meta):
+    monkeypatch.setattr(reschedule.time, "sleep", lambda s: None)  # the read-back retries wait a few seconds in real life
     monkeypatch.setattr(config, "OUT", tmp_path)
     monkeypatch.setattr(actionlog, "ACTIONS", tmp_path / "actions.json")
     d = tmp_path / "la-llorona"
@@ -127,6 +128,44 @@ def test_a_mismatch_on_read_back_is_not_recorded_as_done(tmp_path, monkeypatch):
     out = reschedule.apply("la-llorona", CFG, NOW, yt=yt)
     assert out and "read back" in out["skipped"]
     assert "rescheduled" not in json.loads((d / "meta.json").read_text())
+
+
+def test_a_read_back_that_lags_behind_the_write_is_retried_before_it_is_judged(tmp_path, monkeypatch):
+    """30 Oct 2026, real YouTube: the update took, but the read right after it still showed no schedule. Judging on the first read left the change unrecorded."""
+    d = folder(tmp_path, monkeypatch)
+
+    class Lags(FakeYT):
+        stale_reads = 2
+
+        def execute(self):
+            if self._op[0] == "list" and self.updates and self.stale_reads:
+                self.stale_reads -= 1
+                return {"items": [{"id": "vid1", "status": {"privacyStatus": "private", "uploadStatus": "processed"}}]}  # the old status
+            return super().execute()
+
+    yt = Lags({"privacyStatus": "private", "uploadStatus": "processed"})
+    assert reschedule.apply("la-llorona", CFG, NOW, yt=yt) is None
+    meta = json.loads((d / "meta.json").read_text())
+    assert meta["rescheduled"]["verified"] is True and meta["publish_at"] == yt.updates[0]["status"]["publishAt"]
+    assert len(actionlog.actions(5)) == 1
+
+
+def test_a_write_that_cannot_be_confirmed_is_still_logged_as_unverified_but_not_recorded_as_done(tmp_path, monkeypatch):
+    d = folder(tmp_path, monkeypatch)
+
+    class Ignores(FakeYT):
+        def execute(self):
+            if self._op[0] == "update":
+                self.updates.append(self._body)
+                return {}
+            return super().execute()
+
+    yt = Ignores({"privacyStatus": "private", "uploadStatus": "processed"})
+    out = reschedule.apply("la-llorona", CFG, NOW, yt=yt)
+    assert out and "read back" in out["skipped"]
+    assert "rescheduled" not in json.loads((d / "meta.json").read_text())
+    logged = actionlog.actions(5)
+    assert len(logged) == 1 and "unverified" in logged[0]["why"] and logged[0]["after"]["publishAt"] == yt.updates[0]["status"]["publishAt"]  # a change may have happened: it is on record
 
 
 def test_the_new_slot_is_one_the_planner_would_give_and_not_taken(tmp_path, monkeypatch):
