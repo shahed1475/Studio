@@ -18,6 +18,20 @@ def png(path):
     return path
 
 
+def test_the_shipped_mark_file_is_in_the_repository_square_and_transparent():
+    """A clean checkout once lacked it, so on the server the mark silently never showed (the code fails safe when the file is missing)."""
+    from PIL import Image
+
+    assert brandmark.MARK.exists(), f"{brandmark.MARK} is missing from the checkout"
+    im = Image.open(brandmark.MARK)
+    assert im.size[0] == im.size[1] and "A" in im.getbands() and im.getchannel("A").getextrema()[0] == 0
+
+
+def test_the_default_file_is_read_when_a_video_is_measured_not_when_the_module_loads(tmp_path, monkeypatch):
+    monkeypatch.setattr(brandmark, "MARK", png(tmp_path / "later.png"))
+    assert brandmark.spec((1920, 1080), False, 500.0)["file"].endswith("later.png")
+
+
 def test_a_documentary_carries_the_mark_bottom_left_at_six_percent_of_its_width(tmp_path):
     m = brandmark.spec((1920, 1080), False, 500.0, mark=png(tmp_path / "m.png"))
     assert (m["width"], m["x"], m["y"]) == (115, 48, 917) and m["start"] == 4.0 and m["seconds"] == 500.0
@@ -57,6 +71,7 @@ def test_the_mark_goes_in_first_so_the_pop_up_is_drawn_over_it(tmp_path):
 
 
 def test_a_video_with_no_pop_up_moment_still_gets_its_mark_and_one_with_neither_is_left_alone(tmp_path, monkeypatch):
+    monkeypatch.setattr(brandmark, "MARK", png(tmp_path / "m.png"))
     seen = []
     monkeypatch.setattr(subscribe, "apply", lambda video, times, size, vertical, assets=None, mark=False: seen.append((times, mark)) or True)
     data = {"subscribe_pop": False}
@@ -68,6 +83,7 @@ def test_a_video_with_no_pop_up_moment_still_gets_its_mark_and_one_with_neither_
 
 
 def test_the_two_switches_are_independent(tmp_path, monkeypatch):
+    monkeypatch.setattr(brandmark, "MARK", png(tmp_path / "m.png"))
     seen = []
     monkeypatch.setattr(subscribe, "apply", lambda video, times, size, vertical, assets=None, mark=False: seen.append((times, mark)) or True)
     data = {"brand_mark": False}
@@ -107,9 +123,10 @@ def test_both_producers_leave_the_mark_to_the_same_step_as_the_pop_up():
 
 
 @pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="needs ffmpeg")
-def test_a_real_video_shows_the_mark_only_after_the_cold_open_keeps_its_length_and_its_audio(tmp_path):
+def test_a_real_video_shows_the_mark_only_after_the_cold_open_keeps_its_length_and_its_audio(tmp_path, monkeypatch):
     from PIL import Image
 
+    monkeypatch.setattr(brandmark, "MARK", png(tmp_path / "m.png"))
     video = tmp_path / "video.mp4"
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=0x101040:s=640x360:r=30:d=12", "-f", "lavfi", "-i", "sine=f=440:d=12",
                     "-shortest", *__import__("render")._venc("23", "ultrafast"), "-c:a", "aac", str(video)], check=True)

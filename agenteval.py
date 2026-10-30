@@ -940,7 +940,7 @@ def case_an_agent_cannot_set_a_profile_the_reviewer_rejects_and_a_short_fits_its
                 else f"floor_ok={floor_ok} fits={fits} untouched={untouched}")
 
 
-def case_a_cleared_schedule_is_put_back_in_the_future_once_and_a_public_video_is_never_touched():
+def case_a_cleared_schedule_is_put_back_in_the_future_once_only_when_the_owner_asks_and_a_public_video_is_never_touched():
     import datetime as dt
     import json
     import tempfile
@@ -993,8 +993,9 @@ def case_a_cleared_schedule_is_put_back_in_the_future_once_and_a_public_video_is
             once = not reschedule.lost({**meta, "rescheduled": {"at": "x"}}) and reschedule.lost(meta)
     finally:
         config.OUT, actionlog.ACTIONS, autopilot._twin = old_out, old_log, old_twin
-    ok = future and public_safe and once
-    return ok, "a lost schedule gets a new future time on a private video, once, and a public video is never changed" if ok else f"future={future} public_safe={public_safe} once={once}"
+    owner_only = "reschedule" not in autopilot.EXECUTORS  # a person may have pulled the video on purpose: Autopilot reports, the owner's command repairs
+    ok = future and public_safe and once and owner_only
+    return ok, "a lost schedule gets a new future time on a private video, once, only on the owner's command, and a public video is never changed" if ok else f"future={future} public_safe={public_safe} once={once} owner_only={owner_only}"
 
 
 CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic,
@@ -1019,7 +1020,7 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_the_subscribe_pop_up_lands_on_the_spoken_word_or_at_high_points_and_never_breaks_a_video,
          case_the_channel_mark_shows_after_the_cold_open_in_its_own_corner_and_only_on_the_owners_studio,
          case_the_narration_is_finished_to_the_target_loudness_and_the_channel_voice_is_the_owners_choice,
-         case_a_cleared_schedule_is_put_back_in_the_future_once_and_a_public_video_is_never_touched]
+         case_a_cleared_schedule_is_put_back_in_the_future_once_only_when_the_owner_asks_and_a_public_video_is_never_touched]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:

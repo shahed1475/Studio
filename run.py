@@ -852,6 +852,15 @@ def main() -> None:
         f = depth.ensure_model()
         rt = depth._runtime()
         print(f"model: {f} ({f.stat().st_size:,} bytes, SHA-256 checked)\nnumpy and onnxruntime: {'installed' if rt else 'NOT installed: pictures get approximate depth'}")
+    elif a[0] == "reschedule" and len(a) > 1:  # the owner's command: a new future time for an approved video that is private past its publish time with no schedule (Autopilot never does this by itself)
+        import datetime as dt
+
+        import autopilot
+        import reschedule
+
+        now = dt.datetime.now(dt.timezone.utc)
+        with autopilot.exclusive():
+            print(json.dumps(reschedule.apply(a[1], autopilot.governed(autopilot.load_config(), now), now) or {"done": True}, indent=2, default=str))
     elif a[0] == "repair" and len(a) > 1:
         import fixer
 

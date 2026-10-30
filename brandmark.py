@@ -14,10 +14,11 @@ APPEAR, FADE_IN, FADE_OUT, OPACITY = 4.0, 1.0, 1.5, 0.75
 SHARE = {False: 0.06, True: 0.12}   # width of the mark as a share of the video's width: landscape, vertical
 
 
-def spec(size: tuple[int, int], vertical: bool, seconds: float, mark: Path = MARK) -> dict | None:
+def spec(size: tuple[int, int], vertical: bool, seconds: float, mark: Path | None = None) -> dict | None:
     """Where and when the mark shows on a video of this size and length, or None when it cannot (no file, or a video too short to show it)."""
     w, h = size
-    if not Path(mark).exists() or seconds < APPEAR + FADE_IN + FADE_OUT:
+    mark = Path(mark or MARK)  # read now, not when the module loads
+    if not mark.exists() or seconds < APPEAR + FADE_IN + FADE_OUT:
         return None
     tw = round(SHARE[bool(vertical)] * w)
     margin = round(0.025 * w) if not vertical else round(0.04 * w)

@@ -1,10 +1,11 @@
-"""Put the schedule back on an approved video that is on YouTube, private, and past its publish time with no schedule left.
+"""Put the schedule back on an approved video that is on YouTube, private, and past its publish time with no schedule left. Run by the OWNER: `python run.py reschedule <slug>`.
 
-`safety.check` finds it ("still private after its publish time") and pauses Autopilot. The known causes: an edit in YouTube Studio
-can clear the schedule, a block or an account limit are the others. The cause of a given case is not known from our side, so this module only repairs the
-state: a new future `publishAt` on the next free slot, the video kept private, read back from YouTube, logged with before and after (`actionlog`). It never
-makes anything public (a time in the past would publish at once, so the time is always ahead), never touches a public video, a video on hold, a duplicate
-story, or one it already repaired once (a second loss goes to the owner)."""
+`safety.check` finds it ("still private after its publish time") and pauses Autopilot. Its own message says the most common cause is a person's edit in YouTube Studio, and a person may
+have pulled the video on purpose, so Autopilot never does this by itself: it reports, and putting the video back on course to go public is the owner's decision (30 Oct 2026, after a security
+review of the first version, which let Autopilot do it). The command only repairs the state: a new future `publishAt` on the next free slot, the video kept private, read back from YouTube,
+logged with before and after (`actionlog`, source "owner command"). It never makes anything public (a time in the past would publish at once, so the time is always ahead), never touches a public
+video, a video on hold, a duplicate story, one with an open invented-facts warning the owner has not approved, one YouTube rejected or blocked in countries, one it already repaired once (a second
+loss is the owner's to look at in Studio), a user studio, or a machine whose YouTube login cannot change videos."""
 import datetime as dt
 
 import actionlog
@@ -23,18 +24,26 @@ def lost(meta: dict) -> bool:
     return any("still private" in str(p) for p in (meta.get("health") or {}).get("problems", []))
 
 
-def _live(yt, video_id: str) -> dict:
-    items = yt.videos().list(part="status", id=video_id).execute().get("items", [])
+def _read(yt, video_id: str) -> dict:
+    items = yt.videos().list(part="status,contentDetails", id=video_id).execute().get("items", [])
     if not items:
         raise LookupError(f"{video_id} is not on YouTube")
-    return items[0].get("status", {})
+    return items[0]
+
+
+def _live(yt, video_id: str) -> dict:
+    return _read(yt, video_id).get("status", {})
 
 
 def apply(slug: str, cfg: dict, now: dt.datetime, yt=None) -> dict | None:
     """Returns None when the schedule is back, or {"skipped": why}."""
     import autopilot
+    import fixer
     import policyclass
+    import tenantmode
 
+    if tenantmode.is_tenant():
+        return {"skipped": "not available in a user studio"}
     if policyclass.hold_active():
         return {"skipped": "policy hold: a YouTube rule page changed and the owner has not released it"}
     folder = config.OUT / slug
@@ -45,14 +54,25 @@ def apply(slug: str, cfg: dict, now: dt.datetime, yt=None) -> dict | None:
     if twin:
         autopilot.hold_duplicate(slug, twin, now)
         return {"skipped": "duplicate"}
+    if meta.get("approved_by") != "you" and fixer.watch_problems((meta.get("review") or {}).get("checks", [])):
+        return {"skipped": "an invented-facts warning is open on this video: approve it yourself first (the same rule as scheduling)"}
     if yt is None:
+        import titletest
         import upload
 
+        if not titletest.can_write():
+            return {"skipped": "this machine's YouTube login has no permission to change videos"}
         yt = upload._service()
     video_id = meta["video_id"]
-    live = _live(yt, video_id)
+    item = _read(yt, video_id)
+    live = item.get("status", {})
     if live.get("privacyStatus") != "private":
         return {"skipped": "already public"}  # nothing to repair, and nothing here may change a public video
+    if live.get("uploadStatus") in ("rejected", "failed", "deleted"):
+        return {"skipped": f"YouTube {live['uploadStatus']} the upload ({live.get('rejectionReason') or live.get('failureReason') or 'no reason given'}): not touched"}
+    blocked = ((item.get("contentDetails") or {}).get("regionRestriction") or {}).get("blocked")
+    if blocked:
+        return {"skipped": f"blocked in {len(blocked)} countr{'y' if len(blocked) == 1 else 'ies'} (often a claim): not touched"}
     if live.get("publishAt") and dt.datetime.strptime(live["publishAt"][:19], TS[:-1]).replace(tzinfo=dt.timezone.utc) > now:
         records.merge(folder, {"publish_at": live["publishAt"][:19] + "Z"})
         return {"skipped": "still scheduled"}
@@ -69,6 +89,6 @@ def apply(slug: str, cfg: dict, now: dt.datetime, yt=None) -> dict | None:
     if str(back.get("publishAt", ""))[:19] != when[:19] or back.get("privacyStatus") != "private":
         return {"skipped": f"read back from YouTube: scheduled time is {back.get('publishAt')}, expected {when}; not recorded as done"}
     actionlog.record(video_id, {"privacyStatus": live.get("privacyStatus"), "publishAt": live.get("publishAt")}, {"privacyStatus": "private", "publishAt": when},
-                     "autopilot", "the schedule of an approved video was gone after its publish time: set a new future time on the next free slot", now, kind="status")
+                     "owner command", "the schedule of an approved video was gone after its publish time: the owner asked for a new future time on the next free slot", now, kind="status")
     records.merge(folder, {"publish_at": when, "rescheduled": {"at": now.strftime(TS), "from": meta.get("publish_at"), "to": when, "verified": True}})
     return None
