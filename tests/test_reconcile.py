@@ -133,3 +133,40 @@ def test_the_outage_guard_works_per_batch_and_upload_started_is_kept_so_a_later_
     reconcile.run(NOW, yt)
     reconcile.run(NOW, yt)
     assert meta(d)["video_id"] is None and meta(d)["upload_started"] == "2026-10-29T10:00:00Z"
+
+
+def test_a_failed_pause_is_retried_next_hour_because_the_marker_is_in_the_record(tmp_path, monkeypatch):
+    import autopilot
+    import safety
+
+    d = make(tmp_path, monkeypatch, "film", "GONE1", publish_at=(NOW - dt.timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M:%SZ"))
+    make(tmp_path, monkeypatch, "other", "OK1")
+    saved = {}
+    yt = YT(present={"OK1"})
+    reconcile.run(NOW, yt)
+    reconcile.run(NOW + dt.timedelta(hours=1), yt)
+    assert meta(d)["pause_pending"] is True
+    monkeypatch.setattr(autopilot, "load_config", lambda: (_ for _ in ()).throw(OSError("disk")))
+    safety._pause_for_lost(NOW)
+    assert meta(d)["pause_pending"] is True
+    monkeypatch.setattr(autopilot, "load_config", lambda: {"enabled": True})
+    monkeypatch.setattr(autopilot, "save_config", lambda c: saved.update(c))
+    safety._pause_for_lost(NOW)
+    assert saved == {"enabled": False} and meta(d)["pause_pending"] is False
+
+
+def test_the_outage_guard_holds_over_the_whole_run_when_batches_are_small(tmp_path, monkeypatch):
+    for i in range(3):
+        make(tmp_path, monkeypatch, f"v{i}", f"ID{i}")
+    monkeypatch.setattr(reconcile, "run", reconcile.run)
+    out = reconcile.run(NOW, YT(present=set()))
+    assert "outage" in out["error"] and out["gone"] == []
+
+
+def test_a_gone_video_with_no_publish_time_uses_its_upload_time_like_the_health_check(tmp_path, monkeypatch):
+    d = make(tmp_path, monkeypatch, "film", "GONE1")
+    make(tmp_path, monkeypatch, "other", "OK1")
+    yt = YT(present={"OK1"})
+    reconcile.run(NOW, yt)
+    out = reconcile.run(NOW, yt)
+    assert out["gone_public"] == ["film"] and meta(d)["pause_pending"] is True
