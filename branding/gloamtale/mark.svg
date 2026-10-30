@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" role="img" aria-label="Gloamtale">
+<defs><clipPath id="c"><circle cx="500" cy="470" r="230"/></clipPath></defs>
+<g clip-path="url(#c)"><path d="M200 529.5 Q350.0 440.0 500 529.5 T800 529.5 V770 H200Z" fill="#d7743a"/>
+<path d="M200 578.5 Q400.0 506.0 560.0 578.5 T800 582.0 V770 H200Z" fill="#3b2350"/></g>
+<path d="M765.0 470 A265.0 265.0 0 1 1 687.4 282.6" fill="none" stroke="#f2c46d" stroke-width="70" stroke-linecap="round"/>
+<path d="M500 470 H765.0" stroke="#f2c46d" stroke-width="70" stroke-linecap="round"/></svg>

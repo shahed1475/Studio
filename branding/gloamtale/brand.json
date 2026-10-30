@@ -1,0 +1,18 @@
+{
+ "name": "Gloamtale",
+ "handle": "@Gloamtale",
+ "tagline": "History & legends told at dusk",
+ "about_line": "History and legends for the end of the day",
+ "palette": {
+  "night": "#0b0f2a",
+  "indigo": "#1b2150",
+  "plum": "#3b2350",
+  "dune_far": "#4a2a4a",
+  "dune_mid": "#2a1a3a",
+  "dune_near": "#140e2a",
+  "ember": "#d7743a",
+  "gold": "#f2c46d",
+  "cream": "#fff1d4"
+ },
+ "font": "Cinzel (SIL OFL), weights 500 and 700"
+}
