@@ -70,13 +70,19 @@ def _place(size: tuple[int, int], vertical: bool) -> tuple[int, int, int]:
     return tw, w - tw - round(0.025 * w), round(0.04 * h)
 
 
-def command(video: Path, out: Path, times: list[float], size: tuple[int, int], vertical: bool, assets: Path = ASSETS) -> list[str]:
+def command(video: Path, out: Path, times: list[float], size: tuple[int, int], vertical: bool, assets: Path = ASSETS, mark: dict | None = None) -> list[str]:
+    """`mark` (brandmark.spec) puts the channel's small corner mark in the same pass, under the pop-ups."""
     tw, x, y = _place(size, vertical)
     cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", str(video)]
-    graph, prev = [], "[0:v]"
+    graph, prev, n = [], "[0:v]", 1
+    if mark:
+        import brandmark
+
+        extra, parts, prev = brandmark.chain(mark, n, prev)
+        cmd, graph, n = cmd + extra, graph + parts, n + 1
     for i, t in enumerate(times):
         cmd += ["-framerate", str(POP_FPS), "-i", str(Path(assets) / "pop-%03d.png")]
-        graph.append(f"[{i + 1}:v]scale={tw}:-1,format=rgba,setpts=PTS+{t:.3f}/TB[p{i}]")
+        graph.append(f"[{i + n}:v]scale={tw}:-1,format=rgba,setpts=PTS+{t:.3f}/TB[p{i}]")
         graph.append(f"{prev}[p{i}]overlay=x={x}:y={y}:eof_action=pass[v{i}]")
         prev = f"[v{i}]"
     return [*cmd, "-filter_complex", ";".join(graph), "-map", prev, "-map", "0:a?", *render._venc("19", "veryfast"), "-c:a", "copy", "-movflags", "+faststart", str(out)]
@@ -86,13 +92,20 @@ def _seconds(path) -> float:
     return render._clip_seconds(path)
 
 
-def apply(video: Path, times: list[float], size: tuple[int, int], vertical: bool, assets: Path = ASSETS) -> bool:
-    """Lay the pop-up over `video` in place. False (video untouched) when ffmpeg fails or the new file's length is not the old one's."""
+def apply(video: Path, times: list[float], size: tuple[int, int], vertical: bool, assets: Path = ASSETS, mark: bool = False) -> bool:
+    """Lay the pop-up (and the channel's corner mark when `mark`) over `video` in place. False (video untouched) when ffmpeg fails or the new file's length is not the old one's."""
     video = Path(video)
     tmp = video.with_name(video.stem + ".sub.tmp.mp4")
     try:
         before = _seconds(video)
-        subprocess.run(command(video, tmp, times, size, vertical, assets), check=True, capture_output=True, timeout=3600)
+        spec = None
+        if mark:
+            import brandmark
+
+            spec = brandmark.spec(size, vertical, before)
+        if not times and not spec:
+            return False
+        subprocess.run(command(video, tmp, times, size, vertical, assets, spec), check=True, capture_output=True, timeout=3600)
         after = _seconds(tmp)
         if before <= 0 or abs(after - before) > 0.5:
             raise ValueError("the length changed")
@@ -104,21 +117,27 @@ def apply(video: Path, times: list[float], size: tuple[int, int], vertical: bool
 
 
 def add_to(video: Path, data: dict, kind: str, durations: list[float], words: list[dict], size: tuple[int, int]) -> bool:
-    """The record's switch `subscribe_pop`: absent or True picks the moments, False turns it off, a list gives exact seconds. Notes what was shown in data['subscribe_shown']."""
+    """The record's switch `subscribe_pop`: absent or True picks the moments, False turns it off, a list gives exact seconds. Notes what was shown in data['subscribe_shown'].
+    The channel's corner mark rides in the same pass (switch `brand_mark`, on unless False, independent of the pop-up) and is noted in data['brand_mark_shown']."""
+    import brandmark
     import tenantmode
 
-    if tenantmode.is_tenant():  # the pop-up carries the owner's Gloamtale mark: other people's studios on this server never show it
+    if tenantmode.is_tenant():  # the pop-up and the mark are the owner's Gloamtale brand: other people's studios on this server never show them
         return False
     switch = data.get("subscribe_pop", True)
-    if switch is False:
+    times = [] if switch is False else [float(t) for t in switch] if isinstance(switch, (list, tuple)) else moments(kind, durations, words)
+    mark = data.get("brand_mark", True) is not False
+    vertical = kind == "short"
+    if not times and not (mark and brandmark.spec(size, vertical, sum(durations))):
         return False
-    times = [float(t) for t in switch] if isinstance(switch, (list, tuple)) else moments(kind, durations, words)
-    if not times:
-        return False
-    ok = apply(video, times, size, kind == "short")
+    ok = apply(video, times, size, vertical, mark=mark)
     if ok:
-        data["subscribe_shown"] = {"at": times, "seconds": POP_SECONDS}
-        print(f"  subscribe pop-up at {', '.join(f'{t:.0f} s' for t in times)}")
+        if times:
+            data["subscribe_shown"] = {"at": times, "seconds": POP_SECONDS}
+            print(f"  subscribe pop-up at {', '.join(f'{t:.0f} s' for t in times)}")
+        if mark and brandmark.spec(size, vertical, sum(durations)):
+            data["brand_mark_shown"] = {"corner": brandmark.corner(vertical), "from": brandmark.APPEAR}
+            print(f"  channel mark in the {brandmark.corner(vertical)} corner")
     else:
-        print("  subscribe pop-up skipped (the overlay failed); the video is unchanged")
+        print("  subscribe pop-up and channel mark skipped (the overlay failed); the video is unchanged")
     return ok

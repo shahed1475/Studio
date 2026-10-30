@@ -706,6 +706,38 @@ def case_the_subscribe_pop_up_lands_on_the_spoken_word_or_at_high_points_and_nev
     return ok, "the pop-up starts before the spoken word, sits at high points in a documentary and never damages a video" if ok else f"spoken={spoken} high={high} safe={safe}"
 
 
+def case_the_channel_mark_shows_after_the_cold_open_in_its_own_corner_and_only_on_the_owners_studio():
+    import tempfile
+    from pathlib import Path
+
+    import brandmark
+    import subscribe
+    import tenantmode
+
+    with tempfile.TemporaryDirectory() as tmp:
+        png = Path(tmp) / "m.png"
+        png.write_bytes(b"x")
+        doc, short = brandmark.spec((1920, 1080), False, 500.0, mark=png), brandmark.spec((1080, 1920), True, 50.0, mark=png)
+        v = Path(tmp) / "video.mp4"
+        v.write_bytes(b"original")
+        safe = subscribe.apply(v, [], (1920, 1080), False, mark=True) is False and v.read_bytes() == b"original"  # nothing to lay, or a failed overlay, changes nothing
+    timing = bool(doc and short) and doc["start"] >= 4.0 and short["start"] >= 4.0  # the first seconds belong to the hook
+    corners = bool(doc and short) and doc["x"] < 960 and doc["y"] > 540 and short["x"] < 540 and short["y"] < 480  # left side: bottom on a film, top on a Short (the pop-up has the top right and the middle)
+    seen, old_apply, old_tenant = [], subscribe.apply, tenantmode.is_tenant
+    try:
+        subscribe.apply = lambda video, times, size, vertical, assets=None, mark=False: seen.append(mark) or True
+        tenantmode.is_tenant = lambda: False
+        subscribe.add_to(Path(tmp) / "a.mp4", {}, "doc", [9.0] * 58, [], (1920, 1080))
+        subscribe.add_to(Path(tmp) / "b.mp4", {"brand_mark": False}, "doc", [9.0] * 58, [], (1920, 1080))
+        tenantmode.is_tenant = lambda: True
+        subscribe.add_to(Path(tmp) / "c.mp4", {}, "doc", [9.0] * 58, [], (1920, 1080))
+    finally:
+        subscribe.apply, tenantmode.is_tenant = old_apply, old_tenant
+    switch = seen == [True, False]  # on by default, off when the record says so, and not asked at all in a user studio
+    ok = timing and corners and safe and switch
+    return ok, "the channel mark fades in after the cold open, sits in its own corner, obeys its switch, is never shown in a user studio and never damages a video" if ok else f"timing={timing} corners={corners} safe={safe} switch={switch} seen={seen}"
+
+
 def case_the_narration_is_finished_to_the_target_loudness_and_the_channel_voice_is_the_owners_choice():
     import re
     import subprocess
@@ -908,6 +940,63 @@ def case_an_agent_cannot_set_a_profile_the_reviewer_rejects_and_a_short_fits_its
                 else f"floor_ok={floor_ok} fits={fits} untouched={untouched}")
 
 
+def case_a_cleared_schedule_is_put_back_in_the_future_once_and_a_public_video_is_never_touched():
+    import datetime as dt
+    import json
+    import tempfile
+    from pathlib import Path
+
+    import actionlog
+    import autopilot
+    import config
+    import reschedule
+
+    now = dt.datetime(2026, 10, 30, 12, 0, tzinfo=dt.timezone.utc)
+
+    class YT:
+        def __init__(self, status):
+            self.status, self.sent = dict(status), []
+
+        def videos(self):
+            return self
+
+        def list(self, part, id):
+            self.op = "list"
+            return self
+
+        def update(self, part, body):
+            self.op, self.body = "update", body
+            return self
+
+        def execute(self):
+            if self.op == "update":
+                self.sent.append(self.body)
+                self.status = dict(self.body["status"])
+                return {}
+            return {"items": [{"status": dict(self.status)}]}
+
+    meta = {"video_id": "v1", "approved": True, "format": "short", "publish_at": "2026-10-29T16:30:00Z", "health": {"ok": False, "problems": ["it is still private after its publish time"]}}
+    old_out, old_log, old_twin = config.OUT, actionlog.ACTIONS, autopilot._twin
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            config.OUT, actionlog.ACTIONS, autopilot._twin = Path(tmp), Path(tmp) / "a.json", lambda slug: None
+            (Path(tmp) / "x").mkdir()
+            records.save(Path(tmp) / "x", meta)
+            yt = YT({"privacyStatus": "private", "uploadStatus": "processed"})
+            reschedule.apply("x", autopilot.DEFAULTS, now, yt=yt)
+            sent = yt.sent[0]["status"] if yt.sent else {}
+            future = bool(sent) and dt.datetime.strptime(sent["publishAt"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc) > now and sent["privacyStatus"] == "private"
+            pub = YT({"privacyStatus": "public", "uploadStatus": "processed"})
+            records.save(Path(tmp) / "x", meta)
+            reschedule.apply("x", autopilot.DEFAULTS, now, yt=pub)
+            public_safe = pub.sent == []
+            once = not reschedule.lost({**meta, "rescheduled": {"at": "x"}}) and reschedule.lost(meta)
+    finally:
+        config.OUT, actionlog.ACTIONS, autopilot._twin = old_out, old_log, old_twin
+    ok = future and public_safe and once
+    return ok, "a lost schedule gets a new future time on a private video, once, and a public video is never changed" if ok else f"future={future} public_safe={public_safe} once={once}"
+
+
 CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic,
          case_ladder_ends_with_owner_not_a_crash, case_ladder_respects_budget_and_whitelist_and_lessons, case_outside_text_is_cleaned,
          case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules, case_registry_is_consistent,
@@ -928,7 +1017,9 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_an_animated_clip_is_asked_to_show_only_what_its_picture_already_shows,
          case_a_clip_plays_once_and_a_picture_with_people_never_bends_or_pushes_in_hard,
          case_the_subscribe_pop_up_lands_on_the_spoken_word_or_at_high_points_and_never_breaks_a_video,
-         case_the_narration_is_finished_to_the_target_loudness_and_the_channel_voice_is_the_owners_choice]
+         case_the_channel_mark_shows_after_the_cold_open_in_its_own_corner_and_only_on_the_owners_studio,
+         case_the_narration_is_finished_to_the_target_loudness_and_the_channel_voice_is_the_owners_choice,
+         case_a_cleared_schedule_is_put_back_in_the_future_once_and_a_public_video_is_never_touched]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:
