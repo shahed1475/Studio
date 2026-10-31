@@ -1,0 +1,2 @@
+# Needed only on the computer that runs My Downloads (not on the server, so it is not in the root requirements.txt).
+yt-dlp

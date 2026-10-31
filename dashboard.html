@@ -343,7 +343,7 @@ button.wd{cursor:pointer}button.wd:hover{transform:translateY(-2px);border-color
 <div class="toast" id="toast" role="status"></div>
 
 <script>
-const NAV=[["home","Home","squares-four"],["live","Live","broadcast"],["videos","Videos","film-strip"],["autopilot","Autopilot","robot"],["create","Create","magic-wand"],["growth","Growth","sparkle"],["activity","Activity","pulse"],["youtube","YouTube","youtube-logo"]]; const TOOLS=[["footage","Footage","film-slate"],["channels","Channels","users-three"]]; const SET=["settings","Settings","gear-six"];
+const NAV=[["home","Home","squares-four"],["live","Live","broadcast"],["videos","Videos","film-strip"],["autopilot","Autopilot","robot"],["create","Create","magic-wand"],["growth","Growth","sparkle"],["activity","Activity","pulse"],["youtube","YouTube","youtube-logo"]]; const TOOLS=[["footage","Footage","film-slate"],["channels","Channels","users-three"],["downloads","Downloads","download-simple"]]; const SET=["settings","Settings","gear-six"];
 let weekDone=false;
 let apSub=(()=>{try{return sessionStorage.getItem('apSub')||'overview'}catch(e){return 'overview'}})();
 let S=null,tab=(location.hash.slice(1)||"home"),openSlug=null,openJob=null,ytInfo=null,editing=false,lastSig="",logTimer=null;
@@ -408,13 +408,14 @@ async function refresh(force){
 }
 function chrome(){
   if(S.tenant&&!NAV.some(n=>n[0]==="niche"))NAV.splice(4,0,["niche","Niche","list-checks"]);
+  if(S.tenant){const d=TOOLS.findIndex(n=>n[0]==="downloads");if(d>=0)TOOLS.splice(d,1)}  // the downloader is the owner's own tool on the owner's own computer: user studios never get it
   const c=S.counts["needs review"],r=running();
   document.getElementById("navlist").innerHTML=NAV.map(([k,l,i])=>`<button class="${tab===k?"on":""}" onclick="go('${k}',{slug:null})" ${tab===k?'aria-current="page"':""}>${ico(i)}<span class="t">${l}</span>${k==="videos"&&c?`<span class="count">${c}</span>`:""}${k==="autopilot"&&S.autopilot.needs_you?`<span class="count">${S.autopilot.needs_you}</span>`:""}${k==="growth"&&S.agent&&S.agent.unread?`<span class="count">${S.agent.unread}</span>`:""}</button>`).join("");
   document.getElementById("nav3").innerHTML=TOOLS.map(([k,l,i])=>`<button class="${tab===k?"on":""}" onclick="go('${k}',{slug:null})" ${tab===k?'aria-current="page"':""}>${ico(i)}<span class="t">${l}</span></button>`).join("");
   document.getElementById("nav2").innerHTML=(([k,l,i])=>`<button class="${tab===k?"on":""}" onclick="go('${k}',{slug:null})" ${tab===k?'aria-current="page"':""}>${ico(i)}<span class="t">${l}</span></button>`)(SET);
   const au=S.auth&&S.auth.on, bt=(k,l,i,x="")=>`<button class="${tab===k?"on":""}" onclick="go('${k}',{slug:null})">${ico(i)}<span class="t">${l}</span>${x}</button>`;
   document.getElementById("nav2").innerHTML+=au?`<button class="logout" onclick="logout()">${ico("sign-out")}<span class="t">Sign out</span></button>`:"";
-  const nv=S.autopilot.needs_you,gv=S.agent&&S.agent.unread,more=["create","growth","activity","youtube","settings","footage","channels","niche"].includes(tab);
+  const nv=S.autopilot.needs_you,gv=S.agent&&S.agent.unread,more=["create","growth","activity","youtube","settings","footage","channels","downloads","niche"].includes(tab);
   document.getElementById("tabbar").innerHTML=NAV.slice(0,4).map(([k,l,i])=>bt(k,l,i,k==="videos"&&c?`<span class="count">${c}</span>`:k==="autopilot"&&nv?`<span class="count">${nv}</span>`:"")).join("")+`<button class="${more?"on":""}" onclick="sheet()" aria-haspopup="true">${ico("dots-three")}<span class="t">More</span>${gv?`<span class="count">${gv}</span>`:""}</button>`;
   document.getElementById("sheetcard").innerHTML=`<div class="state"><b>${r||S.autopilot.busy?"Working":"Idle"}</b>${r?esc(r.cmd):S.autopilot.busy?"Autopilot or a repair is running":"Nothing is running"}</div>`+[...NAV.slice(4),...TOOLS,SET].map(([k,l,i])=>bt(k,l,i,k==="growth"&&gv?`<span class="count">${gv}</span>`:"")).join("")+[["/now","Right now","pulse"],["/footage","Footage clips","film-strip"],["/channels","Channels","squares-four"]].map(([h,l,i])=>`<button onclick="location.href='${h}'">${ico(i)}<span class="t">${l}</span></button>`).join("")+(au?`<button onclick="logout()">${ico("sign-out")}<span class="t">Sign out</span></button>`:"");
   document.documentElement.classList.toggle("busy",!!r);
@@ -428,7 +429,7 @@ function chrome(){
 function render(force){
   if(!S)return;chrome();
   const m=document.getElementById("main");
-  ({home,live,videos,create,niche,autopilot,growth,activity,youtube,settings,footage,channels})[tab]?.(m);
+  ({home,live,videos,create,niche,autopilot,growth,activity,youtube,settings,footage,channels,downloads})[tab]?.(m);
   if(tab==="home"){loadRisk();paintHomeLive()}
   if(tab==="videos"&&!weekDone){weekDone=true;requestAnimationFrame(()=>document.querySelector(".week .wd.today")?.scrollIntoView({inline:"center",block:"nearest"}))}  // the week strip opens on today, once per visit
   if(force===true){[...m.children].forEach((c,i)=>{c.classList.remove("rise");void c.offsetWidth;c.classList.add("rise");c.style.setProperty("--i",Math.min(i,9))});countUp(m)}
@@ -647,6 +648,16 @@ async function channels(m){
   let d;try{d=await api("/api/channels")}catch(e){return}
   const yn=(b,a,c)=>b?badge(a,"ok"):badge(c,"mute");
   document.getElementById("ch").innerHTML=`<div class="panel pad" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span class="grow">This studio asks a person to approve every video</span>${yn(d.studio_human_approval,"Yes","No, the owner's studio")}</div><div class="sec livegrid">${d.channels.map(c=>c.error?`<div class="panel pad"><b>${esc(c.id)}</b><div class="err" style="margin-top:8px">Invalid: ${esc(c.error)}</div></div>`:`<div class="panel pad stack" style="gap:10px"><h2>${esc(c.id)}</h2><p class="mute">${esc(c.audience)}</p><dl class="dl"><dt>Daily budget</dt><dd class="mono">${dollars(c.daily_budget_usd)}</dd><dt>Videos a week</dt><dd class="mono">${esc(c.videos_per_week)}</dd><dt>Made for kids</dt><dd>${c.made_for_kids?"Yes":"No"}</dd><dt>Approval</dt><dd>${c.human_approval?"A person approves each video":"Automatic"}</dd><dt>Sources</dt><dd>${esc(c.sources.join(", "))}</dd><dt>Pictures</dt><dd>${esc(c.visuals.join(", "))}</dd><dt>Voice</dt><dd>${esc(c.voice)}</dd></dl></div>`).join("")}</div>`;
+}
+
+/* ---------- Downloads (the owner's own videos; the tool itself is mydownloads/ and runs on the owner's computer) ---------- */
+const DOWNLOADER="http://127.0.0.1:8923/";
+function downloads(m){
+  m.innerHTML=`<div class="head"><h1>Downloads</h1><p class="sub">Save your own videos to a folder on your computer. Say or type what you need, for example “my last 5 videos”.</p></div>
+  <div class="sec"><div class="panel pad stack">${ico("download-simple","lg")}<h2>Download my videos</h2>
+  <p>The downloader runs on your own computer, not on this server, so the videos are saved in a folder on your Desktop. It only downloads videos from channels you list there as your own.</p>
+  <div><a class="btn" href="${DOWNLOADER}" target="_blank" rel="noopener" style="text-decoration:none">Open the downloader</a></div>
+  <p class="help">If the page does not open, the downloader is not running. Start it on your computer with <span class="mono">systemctl --user start studio-mydownloads</span>. This button cannot work from a phone, because the downloader lives on your computer.</p></div></div>`;
 }
 
 /* ---------- Home ---------- */

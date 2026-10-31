@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Download my videos</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<svg class="sprite" width="0" height="0" aria-hidden="true" focusable="false">
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3M8.5 21h7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v10m0 0-4-4m4 4 4-4M5 19h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m8.5 12.3 2.5 2.5 4.6-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8.7 8.7 6.6 6.6m0-6.6-6.6 6.6" stroke="var(--paper)" stroke-width="1.9" stroke-linecap="round"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 4 3 19.5h18z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 10v4.5M12 17v.1" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+  <symbol id="i-wait" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="2.5 3"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+</svg>
+
+<main>
+  <header>
+    <h1>Download my videos</h1>
+    <p class="lede">Your own YouTube videos, saved in a folder on this computer.</p>
+  </header>
+
+  <section class="ask" aria-labelledby="ask-label">
+    <label id="ask-label" for="ask">What do you need?</label>
+    <div class="askrow">
+      <textarea id="ask" rows="2" maxlength="1000" placeholder="Say or type it, for example: my last 5 videos" autocomplete="off" spellcheck="false"></textarea>
+      <button id="mic" type="button" class="mic" aria-pressed="false" aria-label="Speak what you need" title="Speak what you need"><svg class="icon" aria-hidden="true"><use href="#i-mic"/></svg></button>
+    </div>
+    <div class="actions">
+      <button id="find" type="button" class="primary"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><span>Find my videos</span></button>
+      <p id="heard" class="say" role="status" aria-live="polite"></p>
+    </div>
+    <p id="micnote" class="hint" hidden></p>
+    <div id="chips" class="chips" aria-label="Examples"></div>
+  </section>
+
+  <section id="channels" class="channels" aria-label="My channels"></section>
+
+  <section id="result" class="block" hidden aria-live="polite"></section>
+  <section id="job" class="block" hidden aria-live="polite"></section>
+
+  <footer id="foot"></footer>
+  <noscript><p class="say" data-kind="error">This page needs JavaScript to work.</p></noscript>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>
