@@ -294,3 +294,13 @@ def test_the_platform_row_separates_the_repetition_signals_from_the_count_of_vid
     same = [(Path(f"s{i}"), {"format": "doc", "uploaded_at": stamp, "made_at": stamp, "lines": [{"text": "On a quiet night an old story begins again in the same way"}] * 5, "chapters": [{}] * 3}) for i in range(8)]
     repeated = risk.pattern(same, now)
     assert repeated["content_act"] is True and repeated["pairs"] >= 3
+
+
+def test_a_held_video_with_an_old_unfinished_upload_is_not_an_upload_in_trouble(world):
+    """Nothing sends a held video, so its old upload_started mark (kept on purpose so a later retry looks for the first copy) is not a danger. The owner had
+    deleted the Hong Gildong Short on purpose; the Risks card still said an upload attempt had not finished."""
+    vid(world / "output", "deleted", approved=True, hold=True, upload_started="2026-10-30T18:42:54Z")
+    assert risk.publishing(risk.videos(), NOW)["level"] == "ok"
+    vid(world / "output", "deleted", approved=True, upload_started="2026-10-30T18:42:54Z")
+    r = risk.publishing(risk.videos(), NOW)
+    assert r["level"] == "act" and "deleted" in r["evidence"]
