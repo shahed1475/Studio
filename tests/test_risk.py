@@ -296,11 +296,12 @@ def test_the_platform_row_separates_the_repetition_signals_from_the_count_of_vid
     assert repeated["content_act"] is True and repeated["pairs"] >= 3
 
 
-def test_a_held_video_with_an_old_unfinished_upload_is_not_an_upload_in_trouble(world):
-    """Nothing sends a held video, so its old upload_started mark (kept on purpose so a later retry looks for the first copy) is not a danger. The owner had
-    deleted the Hong Gildong Short on purpose; the Risks card still said an upload attempt had not finished."""
+def test_a_held_video_with_an_old_unfinished_upload_is_a_watch_not_an_act(world):
+    """Nothing sends a held video, so it is not an upload in trouble (the Hong Gildong Short was deleted on purpose). But an earlier attempt may have left a
+    private copy on YouTube that we never recorded, so the card keeps it at watch and says where to look."""
     vid(world / "output", "deleted", approved=True, hold=True, upload_started="2026-10-30T18:42:54Z")
-    assert risk.publishing(risk.videos(), NOW)["level"] == "ok"
+    r = risk.publishing(risk.videos(), NOW)
+    assert r["level"] == "watch" and "deleted" in r["evidence"] and "check Studio" in r["evidence"]
     vid(world / "output", "deleted", approved=True, upload_started="2026-10-30T18:42:54Z")
     r = risk.publishing(risk.videos(), NOW)
     assert r["level"] == "act" and "deleted" in r["evidence"]

@@ -304,17 +304,18 @@ def publishing(vs, now: dt.datetime | None = None) -> dict:
     now = now or dt.datetime.now(dt.timezone.utc)
     soon = (now + dt.timedelta(hours=48)).strftime("%Y-%m-%dT%H:%M:%SZ")
     stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-    bad, stuck, unseen = [], [], []
+    bad, stuck, unseen, orphan = [], [], [], []
     for folder, m in vs:
         if (m.get("upload_check") or {}).get("ok") is False:
             bad.append(folder.name)
-        if m.get("upload_started") and not m.get("video_id") and not m.get("hold"):  # nothing sends a held video; its old mark only makes a later retry look for the first copy
-            stuck.append(folder.name)
+        if m.get("upload_started") and not m.get("video_id"):
+            (orphan if m.get("hold") else stuck).append(folder.name)  # nothing sends a held video, but an earlier attempt may still have left a private copy on YouTube
         if not m.get("video_id") and m.get("approved") and not m.get("hold") and m.get("publish_at") and stamp <= m["publish_at"] <= soon and not (m.get("visual_check") or {}).get("ok"):
             unseen.append(f"{folder.name} ({m['publish_at'][:16].replace('T', ' ')} UTC)")
-    level = "act" if bad or stuck else "watch" if unseen else "ok"
+    level = "act" if bad or stuck else "watch" if unseen or orphan else "ok"
     ev = (f"YouTube stored something different for: {', '.join(bad)}. " if bad else "") + (f"an upload attempt did not finish: {', '.join(stuck)}. " if stuck else "") + \
-         (f"going public within 48 hours with no picture check: {', '.join(unseen)}. " if unseen else "")
+         (f"going public within 48 hours with no picture check: {', '.join(unseen)}. " if unseen else "") + \
+         (f"held, but an earlier upload may be on YouTube (check Studio's Content page): {', '.join(orphan)}. " if orphan else "")
     return ind("publishing", "A bad or duplicate upload, or an unvetted video going public", level, ev or "no upload problems; everything due within 48 hours has had a picture check",
                "private upload with scheduled time, 24-hour veto, daily limit, interrupted-upload detection, read-back from YouTube, visual check before auto-approval",
                "Use Hold on the Autopilot page for any video you do not want to go out; look at the first public video yourself.")
