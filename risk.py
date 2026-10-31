@@ -308,7 +308,7 @@ def publishing(vs, now: dt.datetime | None = None) -> dict:
     for folder, m in vs:
         if (m.get("upload_check") or {}).get("ok") is False:
             bad.append(folder.name)
-        if m.get("upload_started") and not m.get("video_id"):
+        if m.get("upload_started") and not m.get("video_id") and not m.get("hold"):  # nothing sends a held video; its old mark only makes a later retry look for the first copy
             stuck.append(folder.name)
         if not m.get("video_id") and m.get("approved") and not m.get("hold") and m.get("publish_at") and stamp <= m["publish_at"] <= soon and not (m.get("visual_check") or {}).get("ok"):
             unseen.append(f"{folder.name} ({m['publish_at'][:16].replace('T', ' ')} UTC)")
