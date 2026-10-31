@@ -1,0 +1,22 @@
+{
+ "title": "What Did Parasite Do That No Film Had Done at the Oscars?",
+ "kind": "film-facts",
+ "theme": "stage",
+ "voice_style": "energetic",
+ "lines": [
+  {"text": "What did Parasite do that no film had done at the Oscars?", "card": {"type": "big", "number": "?", "unit": "First at the Oscars", "low": true}},
+  {"text": "Parasite is a 2019 South Korean film directed by Bong Joon Ho.", "card": {"type": "name", "first": "Bong", "last": "Joon Ho", "small": "South Korea · 2019"}},
+  {"text": "At the 2020 Academy Awards, it won four awards.", "card": {"type": "big", "number": "4", "unit": "Academy Awards"}},
+  {"text": "Best Picture, Best Director, Best Original Screenplay, and Best International Feature.", "card": {"type": "record", "head": "Best Picture", "sub": "Best Director", "by": "Best Original Screenplay", "note": "Best International Feature"}},
+  {"text": "It became the first non-English-language film to win Best Picture.", "card": {"type": "big", "number": "1st", "unit": "Non-English Best Picture"}},
+  {"text": "Subscribe for the next film fact.", "card": {"type": "end", "text": "Subscribe", "small": "for the next film fact"}}
+ ],
+ "description": "At the 92nd Academy Awards (9 February 2020), Parasite, directed by Bong Joon Ho, won Best Picture, Best Director, Best Original Screenplay and Best International Feature Film, and became the first non-English-language film to win Best Picture.",
+ "tags": ["parasite", "bong joon ho", "oscars 2020", "best picture", "film facts"],
+ "sources": [
+  {"title": "92nd Academy Awards (Oscars 2020) - Academy of Motion Picture Arts and Sciences", "url": "https://www.oscars.org/oscars/ceremonies/2020", "passage": "Sunday, February 9, 2020; Best Picture: Parasite; Directing: Bong Joon Ho, Parasite; Writing (Original Screenplay): Parasite, Screenplay by Bong Joon Ho, Han Jin Won; Story by Bong Joon Ho; International Feature Film: South Korea, Parasite", "read": "2026-10-31"},
+  {"title": "Parasite (2019 film) - Wikipedia", "url": "https://en.wikipedia.org/wiki/Parasite_(2019_film)", "passage": "is a 2019 South Korean black comedy thriller film directed by Bong Joon Ho; won the Academy Award for Best Picture at the 92nd Academy Awards, becoming the first non-English-language film to do so; It went on to win four awards: Best Picture, Best Director, Best Original Screenplay, and Best International Feature Film", "read": "2026-10-31"},
+  {"title": "92nd Academy Awards - Wikipedia", "url": "https://en.wikipedia.org/wiki/92nd_Academy_Awards", "passage": "took place on February 9, 2020, at the Dolby Theatre in Hollywood; Parasite became the first non-English language film to win Best Picture", "read": "2026-10-31"}
+ ],
+ "limits": ["the 'first non-English-language film to win Best Picture' claim comes from two Wikipedia articles; the Academy page read does not state it", "no film footage, trailer or poster is used: the film is in copyright", "the pictures are text cards only"]
+}

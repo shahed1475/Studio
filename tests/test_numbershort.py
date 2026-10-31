@@ -122,7 +122,7 @@ def test_a_build_is_a_held_draft_with_its_sources_and_credits(tmp_path, monkeypa
     import render
 
     monkeypatch.setattr(render, "render", lambda clips, durations, narration, ass, work, out, **k: (Path(out).write_bytes(b"x"), out)[1])
-    monkeypatch.setattr(numbershort, "counter_clip", lambda card, seconds, folder, work: folder / "anim" / "counter.mp4")
+    monkeypatch.setattr(numbershort, "counter_clip", lambda card, seconds, folder, work, theme="pitch": folder / "anim" / "counter.mp4")
     folder = numbershort.build(spec(), out_root=tmp_path)
     meta = json.loads((folder / "meta.json").read_text())
     assert meta["hold"] is True and meta["built_by"] == "numbershort" and meta["format"] == "short"
@@ -130,3 +130,20 @@ def test_a_build_is_a_held_draft_with_its_sources_and_credits(tmp_path, monkeypa
     assert "ŞÜKÜR" in (folder / "work" / "captions.ass").read_text()
     assert (folder / "captions.srt").exists() and (folder / "card0.png").exists()
     assert numbershort.build(spec(), out_root=tmp_path, replace=True) == folder  # its own folder is rebuilt
+
+
+def test_a_theme_changes_the_look_and_an_unknown_theme_is_refused():
+    card = {"type": "end", "text": "Subscribe", "small": "x"}
+    a, b = numbershort.draw_card(card, theme="pitch"), numbershort.draw_card(card, theme="stage")
+    assert a.size == b.size == (1080, 1920) and a.tobytes() != b.tobytes()
+    assert any("theme" in e for e in numbershort.validate(spec(theme="neon"))[0])
+    assert numbershort.validate(spec(theme="stage"))[0] == []
+    top_stage, top_pitch = b.getpixel((5, 5)), a.getpixel((5, 5))
+    assert top_stage[2] > top_stage[1] and top_pitch[1] > top_pitch[2]  # navy against green
+
+
+def test_a_low_big_card_keeps_clear_of_the_hook_caption():
+    top = {"type": "big", "number": "?", "unit": "x"}
+    a, b = numbershort.draw_card(top), numbershort.draw_card({**top, "low": True})
+    box_a, box_b = a.convert("L").point(lambda v: 255 if v > 150 else 0).getbbox(), b.convert("L").point(lambda v: 255 if v > 150 else 0).getbbox()
+    assert box_b[1] > 600 > box_a[1] - 1 or box_b[1] > box_a[1]  # the low card's glyphs start lower than the normal card's

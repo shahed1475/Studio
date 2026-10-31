@@ -25,6 +25,7 @@ MAX_WORDS = 80      # a Short of about 30 s; the studio's own check allows 20 to
 MAX_TITLE = 70      # YouTube cuts a title near 70 characters on a phone
 RUN_TO = 0.82       # the counter reaches its number at 82 percent of its line, then holds
 FORBIDDEN = ("video", "clip", "clips", "footage", "source_video", "youtube_url", "download", "image", "images", "face", "person")
+THEMES = ("pitch", "stage")  # the card look: a football pitch with a ball, or a dark stage with a spotlight and a star (film and other subjects)
 CARDS = {  # card type -> its required text fields
     "stopwatch": ("value", "label"),
     "versus": ("a", "b", "note", "detail"),
@@ -63,6 +64,8 @@ def validate(spec: dict) -> tuple[list[str], list[str]]:
     for k in spec:
         if k.lower() in FORBIDDEN:
             errors.append(f"'{k}': a number Short takes no third-party footage, picture or download")
+    if spec.get("theme", "pitch") not in THEMES:
+        errors.append(f"theme must be one of {', '.join(THEMES)}")
     title = spec.get("title") or ""
     if not title or len(title) > MAX_TITLE:
         errors.append(f"the title must be 1 to {MAX_TITLE} characters")
@@ -102,16 +105,22 @@ def validate(spec: dict) -> tuple[list[str], list[str]]:
 
 
 # ---- the pictures ----
-def base(size=(1080, 1920)) -> Image.Image:
+def base(size=(1080, 1920), theme: str = "pitch") -> Image.Image:
     w, h = size
     img = Image.new("RGB", size)
     d = ImageDraw.Draw(img)
-    top, bot = (4, 40, 22), (20, 83, 45)
+    top, bot = ((4, 40, 22), (20, 83, 45)) if theme == "pitch" else ((8, 8, 16), (34, 28, 58))
     for y in range(h):
         t = y / (h - 1)
         d.line([(0, y), (w, y)], fill=tuple(int(top[i] + (bot[i] - top[i]) * t) for i in range(3)))
     ov = Image.new("RGBA", size, (0, 0, 0, 0))
     o = ImageDraw.Draw(ov)
+    if theme == "stage":  # two soft beams from the top corners
+        beam = (255, 255, 255, 14)
+        o.polygon([(w * 0.1, 0), (w * 0.3, 0), (w * 0.75, h * 0.8), (w * 0.35, h * 0.8)], fill=beam)
+        o.polygon([(w * 0.7, 0), (w * 0.9, 0), (w * 0.65, h * 0.8), (w * 0.25, h * 0.8)], fill=beam)
+        img.paste(ov, (0, 0), ov)
+        return img
     line = (255, 255, 255, 38)
     o.rectangle((90, 200, w - 90, h - 200), outline=line, width=6)
     o.line((90, h // 2, w - 90, h // 2), fill=line, width=6)
@@ -134,15 +143,28 @@ def ball(d, cx: int, cy: int, r: int) -> None:
         d.line((px, py, cx + (px - cx) * 1.9, cy + (py - cy) * 1.9), fill=(20, 20, 20), width=8)
 
 
+def star(d, cx: int, cy: int, r: int) -> None:
+    pts = []
+    for k in range(10):
+        a = math.radians(-90 + k * 36)
+        rad = r if k % 2 == 0 else r * 0.42
+        pts.append((cx + rad * math.cos(a), cy + rad * math.sin(a)))
+    d.polygon(pts, fill=YEL, outline=(0, 0, 0))
+
+
+def icon(d, cx: int, cy: int, r: int, theme: str) -> None:
+    (ball if theme == "pitch" else star)(d, cx, cy, r)
+
+
 def ring(d, cx: int, cy: int, r: int, p: float, width: int = 30) -> None:
     d.arc((cx - r, cy - r, cx + r, cy + r), 0, 360, fill=RING, width=width)
     if p > 0:
         d.arc((cx - r, cy - r, cx + r, cy + r), -90, -90 + 360 * min(p, 1.0), fill=YEL, width=width)
 
 
-def draw_card(card: dict, size=(1080, 1920), progress: float = 0.0) -> Image.Image:
+def draw_card(card: dict, size=(1080, 1920), progress: float = 0.0, theme: str = "pitch") -> Image.Image:
     """One picture. The lower third stays empty: the captions live there. `progress` (0 to 1) only matters to a counter card."""
-    img = base(size)
+    img = base(size, theme)
     d = ImageDraw.Draw(img)
     cx = size[0] // 2
     kind = card["type"]
@@ -157,10 +179,10 @@ def draw_card(card: dict, size=(1080, 1920), progress: float = 0.0) -> Image.Ima
         put(d, cx, 1130, str(card["note"]).upper(), 64, YEL)
         put(d, cx, 1215, str(card["detail"]).upper(), 60, DIM)
     elif kind == "name":
-        ball(d, cx, 540, 170)
+        icon(d, cx, 540, 170, theme)
         put(d, cx, 850, str(card["first"]).upper(), 190)
         put(d, cx, 1040, str(card["last"]).upper(), 210, YEL)
-        put(d, cx, 1190, str(card["small"]).upper(), 70, DIM)
+        put(d, cx, 1235, str(card["small"]).upper(), 70, DIM)
     elif kind == "counter":
         p = min(max(progress, 0.0), 1.0)
         done = p >= 1.0
@@ -175,30 +197,31 @@ def draw_card(card: dict, size=(1080, 1920), progress: float = 0.0) -> Image.Ima
         put(d, cx, 920, str(card["by"]).upper(), 70, WHITE, 700)
         put(d, cx, 1030, str(card["note"]), 60, DIM, 700)
     elif kind == "big":
-        put(d, cx, 700, str(card["number"]), 620, YEL, 900)
-        put(d, cx, 1130, str(card["unit"]).upper(), 140)
+        low = bool(card.get("low"))  # a hook card sits low: the hook's caption fills the top third
+        put(d, cx, 1000 if low else 700, str(card["number"]), 420 if low else 620, YEL, 900)
+        put(d, cx, 1330 if low else 1130, str(card["unit"]).upper(), 90 if low else 140)
     elif kind == "end":
-        ball(d, cx, 500, 140)
+        icon(d, cx, 500, 140, theme)
         put(d, cx, 790, str(card["text"]).upper(), 160, YEL)
         put(d, cx, 960, str(card["small"]), 60, DIM)
     return img
 
 
-def counter_frames(card: dict, n: int):
+def counter_frames(card: dict, n: int, theme: str = "pitch"):
     """n frames of a counter card: the number runs from 0 to its target at RUN_TO of the line, then holds."""
     for k in range(n):
         t = k / max(n - 1, 1)
-        yield draw_card(card, progress=min(t / RUN_TO, 1.0))
+        yield draw_card(card, progress=min(t / RUN_TO, 1.0), theme=theme)
 
 
-def counter_clip(card: dict, seconds: float, folder: Path, work: Path) -> Path:
+def counter_clip(card: dict, seconds: float, folder: Path, work: Path, theme: str = "pitch") -> Path:
     import render
 
     frames = work / "counter_frames"
     shutil.rmtree(frames, ignore_errors=True)
     frames.mkdir(parents=True)
     n = int(seconds * config.FPS) + 1
-    for k, img in enumerate(counter_frames(card, n)):
+    for k, img in enumerate(counter_frames(card, n, theme)):
         img.save(frames / f"f{k:04d}.png")
     out = folder / "anim" / "counter.mp4"  # a clip inside a folder called anim plays once and is not looped or darkened (render.py)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -265,10 +288,10 @@ def build(spec: dict, out_root: Path | None = None, replace: bool = False) -> Pa
     clips = []
     for i, l in enumerate(spec["lines"]):
         if l["card"]["type"] == "counter":
-            clips.append(counter_clip(l["card"], durations[i], folder, work))
+            clips.append(counter_clip(l["card"], durations[i], folder, work, spec.get("theme", "pitch")))
         else:
             p = folder / f"card{i}.png"
-            draw_card(l["card"]).save(p)
+            draw_card(l["card"], theme=spec.get("theme", "pitch")).save(p)
             clips.append(p)
     render.render(clips, durations, narration, ass, work, folder / "video.mp4", loudness=editprofile.lufs_for({}, prof), shots=True, crossfade=0.0, grain=False)
     words = subtitles.load_words(work / "words.json")
