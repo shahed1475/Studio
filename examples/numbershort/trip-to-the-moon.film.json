@@ -1,0 +1,33 @@
+{
+ "title": "How Did a 1902 Film Send People to the Moon?",
+ "kind": "film",
+ "voice_style": "energetic",
+ "say": {"Méliès": "Melyes"},
+ "film": {
+  "title": "A Trip to the Moon (Le Voyage dans la Lune)",
+  "year": 1902,
+  "director": "Georges Méliès",
+  "director_death_year": 1938,
+  "file": "data/films/trip-to-the-moon-1902-720p.webm",
+  "source_page": "https://commons.wikimedia.org/wiki/File:Le_Voyage_dans_la_Lune_(1902).webm",
+  "pd_basis": "the Commons file page carries the licence tag PD-old-auto-expired (author Georges Méliès died in 1938); black and white picture only, no restoration music"
+ },
+ "lines": [
+  {"text": "How did a 1902 film send people to the Moon?", "start": 358},
+  {"text": "A Trip to the Moon, made in France by Georges Méliès.", "start": 1},
+  {"text": "Astronomers are fired from a giant cannon.", "start": 336},
+  {"text": "Their capsule lands in the Moon's eye.", "start": 370.2},
+  {"text": "They sleep on the surface, and a snowfall wakes them.", "start": 478},
+  {"text": "Moon creatures called Selenites capture them.", "start": 580},
+  {"text": "They escape, and the capsule falls back to Earth, into the ocean.", "start": 666.5},
+  {"text": "It is sometimes described as the first science fiction film.", "start": 744},
+  {"text": "Subscribe for the next film story.", "card": {"type": "end", "text": "Subscribe", "small": "for the next film story"}}
+ ],
+ "description": "A Trip to the Moon (1902), written, directed and produced by Georges Méliès, sends a group of astronomers to the Moon in a capsule fired from a giant cannon.",
+ "tags": ["a trip to the moon", "georges melies", "1902 film", "silent film", "early science fiction"],
+ "sources": [
+  {"title": "A Trip to the Moon - Wikipedia", "url": "https://en.wikipedia.org/wiki/A_Trip_to_the_Moon", "passage": "is a 1902 French science-fiction adventure trick film written, directed and produced by Georges Méliès; plot: a cannon fires the capsule, it hits the Man in the Moon in the eye, a snowfall wakes the sleeping astronomers, Selenites capture them, the capsule falls to Earth into an ocean; sometimes described as the first science fiction film", "published": "live page", "read": "2026-10-31"},
+  {"title": "File:Le Voyage dans la Lune (1902).webm - Wikimedia Commons", "url": "https://commons.wikimedia.org/wiki/File:Le_Voyage_dans_la_Lune_(1902).webm", "passage": "licence tag {{PD-old-auto-expired|1938}}; author Georges Méliès (1861-1938); Copyrighted: False; Public domain", "read": "2026-10-31"}
+ ],
+ "limits": ["the narration's reading of 'Méliès' is a respelling (Melyes) and has not been listened to", "public domain in the US and, by the director's death year, under life plus 70 years; no other country's law was checked", "the clip times were matched to the lines by looking at sampled frames, not by an automatic scene matcher"]
+}

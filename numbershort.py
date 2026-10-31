@@ -51,6 +51,12 @@ def fit(draw, text: str, size: int, max_w: int):
 
 
 # ---- the spec ----
+def sources_ok(sources: list) -> bool:
+    """At least two sources, each with a title, an https address, the passage that carries the claim and the date it was read (CLAUDE.md A and B)."""
+    good = [x for x in sources if str(x.get("url", "")).startswith("https://") and (x.get("passage") or "").strip() and (x.get("title") or "").strip() and x.get("read")]
+    return len(good) >= 2
+
+
 def validate(spec: dict) -> tuple[list[str], list[str]]:
     """(errors, warnings). An error stops the build; a warning is told to the owner."""
     errors, warns = [], []
@@ -86,9 +92,7 @@ def validate(spec: dict) -> tuple[list[str], list[str]]:
             errors.append(f"line {i}: the counter's 'to' must be a number")
     if counters > 1:
         errors.append("at most one counter card")
-    sources = spec.get("sources") or []
-    good = [s for s in sources if str(s.get("url", "")).startswith("https://") and (s.get("passage") or "").strip() and (s.get("title") or "").strip() and s.get("read")]
-    if len(good) < 2:
+    if not sources_ok(spec.get("sources") or []):
         errors.append("at least two sources, each with title, https address, the passage that carries the claim and the date it was read")
     if lines and not (lines[0].get("text") or "").strip().endswith("?"):
         warns.append("the hook is not a question (the studio's taste is an open who, what, where, why or how question)")
