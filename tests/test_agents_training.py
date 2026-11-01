@@ -1060,3 +1060,15 @@ def test_the_real_case_case_passes_and_fails_when_a_rule_a_warning_or_the_pictur
     monkeypatch.setattr(aiart, "CASE_PICTURES", "")  # mutation: a case's pictures may show anyone
     ok, detail = case()
     assert not ok and "pictures=False" in detail
+
+
+def test_eval_case_only_a_checked_passage_is_evidence_and_counting_an_unchecked_one_fails_it(monkeypatch):
+    import agenteval
+    import reviewer
+
+    name = "case_only_a_passage_found_in_its_saved_page_counts_as_evidence_for_the_reviewer"
+    ok, _ = getattr(agenteval, name)()
+    assert ok
+    monkeypatch.setattr(reviewer, "checked_sources", lambda meta: [s for s in meta.get("sources") or [] if isinstance(s, dict) and s.get("passage")])  # mutation: every listed passage counts
+    bad, _ = getattr(agenteval, name)()
+    assert not bad

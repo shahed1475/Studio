@@ -332,3 +332,9 @@ def test_loudness_is_judged_against_youtubes_reference_only_when_it_was_measured
     quiet = run(probe={**GOOD_PROBE, "lufs": -20.8, "true_peak": -2.7})
     assert "loudness" in failed(quiet, "warn") and "-14" in next(c["detail"] for c in quiet if c["name"] == "loudness")
     assert "loudness" in failed(run(probe={**GOOD_PROBE, "lufs": -14.0, "true_peak": 0.4}), "warn")  # a peak over 0 dB clips
+
+
+def test_source_text_adds_the_passages_that_were_checked_against_their_pages_and_no_others():
+    meta = {"sources": [{"passage": "checked words", "passage_checked": True}, {"passage": "unchecked words", "passage_checked": False}, "Checked against: https://x.org"]}
+    text = reviewer.source_text(meta)
+    assert "checked words" in text and "unchecked words" not in text

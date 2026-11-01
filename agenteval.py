@@ -1222,6 +1222,17 @@ def case_a_cleared_schedule_is_put_back_in_the_future_once_only_when_the_owner_a
     return ok, "a lost schedule gets a new future time on a private video, once, only on the owner's command, and a public video is never changed" if ok else f"future={future} public_safe={public_safe} once={once} owner_only={owner_only}"
 
 
+def case_only_a_passage_found_in_its_saved_page_counts_as_evidence_for_the_reviewer():
+    """2 Nov 2026: a film made in a Claude Code session came back 'needs your eyes' (21 claims, no source) from a reviewer that could not read its listed sources."""
+    import reviewer
+
+    meta = {"sources": [{"passage": "He scored in 2006 against Iran", "passage_checked": True}, {"passage": "He scored in 1999 against Peru", "passage_checked": False},
+                        {"passage": "no mark at all"}, "Checked against: https://x.org"]}
+    text = reviewer.source_text(meta)
+    ok = "2006" in text and "1999" not in text and "no mark" not in text and len(reviewer.checked_sources(meta)) == 1
+    return ok, ("only a listed passage found in its saved page is read as a source" if ok else f"the reviewer read {text!r}")
+
+
 CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic,
          case_ladder_ends_with_owner_not_a_crash, case_ladder_respects_budget_and_whitelist_and_lessons, case_outside_text_is_cleaned,
          case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules, case_registry_is_consistent,
@@ -1252,7 +1263,8 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_the_weekly_programme_rotates_the_kinds_and_the_sixth_short_copies_the_winner,
          case_a_real_case_is_written_and_drawn_with_care_and_a_careless_script_is_warned,
          case_the_narration_is_finished_to_the_target_loudness_and_the_channel_voice_is_the_owners_choice,
-         case_a_cleared_schedule_is_put_back_in_the_future_once_only_when_the_owner_asks_and_a_public_video_is_never_touched]
+         case_a_cleared_schedule_is_put_back_in_the_future_once_only_when_the_owner_asks_and_a_public_video_is_never_touched,
+         case_only_a_passage_found_in_its_saved_page_counts_as_evidence_for_the_reviewer]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:

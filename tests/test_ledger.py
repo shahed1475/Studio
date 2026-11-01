@@ -24,3 +24,13 @@ def test_a_claim_nothing_supports_stays_unverified_and_the_file_is_written(tmp_p
     counts = ledger.write(tmp_path, meta, SOURCE)
     saved = json.loads((tmp_path / "claims.json").read_text())
     assert counts["UNVERIFIED"] == 1 and saved[0]["verification_status"] == "UNVERIFIED" and set(saved[0]) >= {"claim_id", "claim_text", "source_url", "evidence_excerpt", "confidence", "notes"}
+
+
+def test_a_claim_in_a_listed_sources_passage_is_verified_with_that_source_not_wikipedia():
+    meta = {"sources": [{"title": "AP report", "url": "https://example.org/ap", "passage": "He scored in 2006 against Iran.", "passage_checked": True},
+                        {"title": "Unchecked page", "url": "https://example.org/x", "passage": "It happened in 1999.", "passage_checked": False}],
+            "lines": [{"text": "He first scored in 2006."}, {"text": "A rival did it in 1999."}, {"text": "Another in 1888."}]}
+    rows = {r["claim_text"]: r for r in ledger.build(meta, "")}
+    assert rows["2006"]["verification_status"] == "VERIFIED" and rows["2006"]["source_url"] == "https://example.org/ap" and "2006" in rows["2006"]["evidence_excerpt"]
+    assert rows["1999"]["verification_status"] == "UNVERIFIED"  # a passage nobody checked against its page proves nothing
+    assert rows["1888"]["verification_status"] == "UNVERIFIED"
