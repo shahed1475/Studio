@@ -1072,3 +1072,13 @@ def test_eval_case_only_a_checked_passage_is_evidence_and_counting_an_unchecked_
     monkeypatch.setattr(reviewer, "checked_sources", lambda meta: [s for s in meta.get("sources") or [] if isinstance(s, dict) and s.get("passage")])  # mutation: every listed passage counts
     bad, _ = getattr(agenteval, name)()
     assert not bad
+
+
+def test_eval_case_for_the_review_source_room_fails_when_the_room_shrinks_back(monkeypatch):
+    import agenteval
+    import reviewer
+
+    name = "case_only_a_passage_found_in_its_saved_page_counts_as_evidence_for_the_reviewer"
+    monkeypatch.setattr(reviewer, "REVIEW_SOURCE_CHARS", 12000)  # mutation: the old limit
+    bad, _ = getattr(agenteval, name)()
+    assert not bad

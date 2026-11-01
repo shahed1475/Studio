@@ -338,3 +338,15 @@ def test_source_text_adds_the_passages_that_were_checked_against_their_pages_and
     meta = {"sources": [{"passage": "checked words", "passage_checked": True}, {"passage": "unchecked words", "passage_checked": False}, "Checked against: https://x.org"]}
     text = reviewer.source_text(meta)
     assert "checked words" in text and "unchecked words" not in text
+
+
+def test_the_review_reads_all_of_a_source_that_fits_so_no_supporting_passage_looks_invented(monkeypatch):
+    """2 Nov 2026: a film's 38 checked passages came to 13,906 characters; the review was given 12,000 of them, so 'about 240 pages' and 'a quill pen and iron gall ink' looked
+    invented although their passages were saved. A source up to REVIEW_SOURCE_CHARS goes in whole."""
+    passages = [f"Passage {i} says the thing number {i} happened in {1400 + i}. " + "It adds a plain detail. " * 14 for i in range(40)]
+    source = "\n\n".join(passages)
+    assert 12000 < len(source) <= reviewer.REVIEW_SOURCE_CHARS
+    seen = []
+    monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p: seen.append(str(p)) or {"invented_facts_risk": 1, "policy_risk": 0, "misleading_title": False, "issues": []})
+    reviewer.llm_review({"title": "t", "description": "d", "lines": [{"text": "Thing number 3 and thing number 39 happened."}]}, source)
+    assert all(p in seen[0] for p in passages)  # the first and the last, not 12,000 characters of them
