@@ -96,4 +96,8 @@ def inject(prompt: str) -> str:
     if not agent or "Playbook of the" in prompt:
         return prompt
     b = brief(agent, ("Role", "Never"), INJECT_CHARS)
+    import ownerdesk
+
+    advice = ownerdesk.advice_for(agent)  # the owner's standing advice: writing roles only, never a reviewer
+    b = f"{b}\n\n{advice}" if b and advice else b
     return f"{b}\n\n{prompt}" if b else prompt

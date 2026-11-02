@@ -716,6 +716,10 @@ class H(BaseHTTPRequestHandler):
             self.send_page_file("notifications.html")
         elif u.path == "/api/notifications":
             self.send_json(notifications_view())
+        elif u.path == "/api/desk":
+            import ownerdesk
+
+            self.send_json(ownerdesk.view())
         elif u.path == "/api/growth":
             self.send_json(growth_view())
         elif u.path == "/now":
@@ -931,6 +935,10 @@ class H(BaseHTTPRequestHandler):
             self.send_json({"error": f"{e}"}, 400)
 
     def route(self, path, b):
+        if path.startswith("/api/desk/"):  # the owner's task bar and standing advice (ownerdesk.py): notes and advice only, never a switch
+            import ownerdesk
+
+            return ownerdesk.handle(path, b)
         if path == "/api/job/stop":
             return stop_job(str(b.get("id", "")))
         if path == "/api/job":

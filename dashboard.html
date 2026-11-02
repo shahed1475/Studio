@@ -343,7 +343,7 @@ button.wd{cursor:pointer}button.wd:hover{transform:translateY(-2px);border-color
 <div class="toast" id="toast" role="status"></div>
 
 <script>
-const NAV=[["home","Home","squares-four"],["live","Live","broadcast"],["videos","Videos","film-strip"],["autopilot","Autopilot","robot"],["create","Create","magic-wand"],["growth","Growth","sparkle"],["activity","Activity","pulse"],["youtube","YouTube","youtube-logo"]]; const TOOLS=[["footage","Footage","film-slate"],["channels","Channels","users-three"],["downloads","Downloads","download-simple"]]; const SET=["settings","Settings","gear-six"];
+const NAV=[["home","Home","squares-four"],["live","Live","broadcast"],["videos","Videos","film-strip"],["autopilot","Autopilot","robot"],["desk","Tasks","list-checks"],["create","Create","magic-wand"],["growth","Growth","sparkle"],["activity","Activity","pulse"],["youtube","YouTube","youtube-logo"]]; const TOOLS=[["footage","Footage","film-slate"],["channels","Channels","users-three"],["downloads","Downloads","download-simple"]]; const SET=["settings","Settings","gear-six"];
 let weekDone=false;
 let apSub=(()=>{try{return sessionStorage.getItem('apSub')||'overview'}catch(e){return 'overview'}})();
 let S=null,tab=(location.hash.slice(1)||"home"),openSlug=null,openJob=null,ytInfo=null,editing=false,lastSig="",logTimer=null;
@@ -415,7 +415,7 @@ function chrome(){
   document.getElementById("nav2").innerHTML=(([k,l,i])=>`<button class="${tab===k?"on":""}" onclick="go('${k}',{slug:null})" ${tab===k?'aria-current="page"':""}>${ico(i)}<span class="t">${l}</span></button>`)(SET);
   const au=S.auth&&S.auth.on, bt=(k,l,i,x="")=>`<button class="${tab===k?"on":""}" onclick="go('${k}',{slug:null})">${ico(i)}<span class="t">${l}</span>${x}</button>`;
   document.getElementById("nav2").innerHTML+=au?`<button class="logout" onclick="logout()">${ico("sign-out")}<span class="t">Sign out</span></button>`:"";
-  const nv=S.autopilot.needs_you,gv=S.agent&&S.agent.unread,more=["create","growth","activity","youtube","settings","footage","channels","downloads","niche"].includes(tab);
+  const nv=S.autopilot.needs_you,gv=S.agent&&S.agent.unread,more=["create","growth","activity","youtube","settings","footage","channels","downloads","niche","desk"].includes(tab);
   document.getElementById("tabbar").innerHTML=NAV.slice(0,4).map(([k,l,i])=>bt(k,l,i,k==="videos"&&c?`<span class="count">${c}</span>`:k==="autopilot"&&nv?`<span class="count">${nv}</span>`:"")).join("")+`<button class="${more?"on":""}" onclick="sheet()" aria-haspopup="true">${ico("dots-three")}<span class="t">More</span>${gv?`<span class="count">${gv}</span>`:""}</button>`;
   document.getElementById("sheetcard").innerHTML=`<div class="state"><b>${r||S.autopilot.busy?"Working":"Idle"}</b>${r?esc(r.cmd):S.autopilot.busy?"Autopilot or a repair is running":"Nothing is running"}</div>`+[...NAV.slice(4),...TOOLS,SET].map(([k,l,i])=>bt(k,l,i,k==="growth"&&gv?`<span class="count">${gv}</span>`:"")).join("")+[["/now","Right now","pulse"],["/footage","Footage clips","film-strip"],["/channels","Channels","squares-four"]].map(([h,l,i])=>`<button onclick="location.href='${h}'">${ico(i)}<span class="t">${l}</span></button>`).join("")+(au?`<button onclick="logout()">${ico("sign-out")}<span class="t">Sign out</span></button>`:"");
   document.documentElement.classList.toggle("busy",!!r);
@@ -429,7 +429,7 @@ function chrome(){
 function render(force){
   if(!S)return;chrome();
   const m=document.getElementById("main");
-  ({home,live,videos,create,niche,autopilot,growth,activity,youtube,settings,footage,channels,downloads})[tab]?.(m);
+  ({home,live,videos,create,niche,autopilot,growth,activity,youtube,settings,footage,channels,downloads,desk})[tab]?.(m);
   if(tab==="home"){loadRisk();paintHomeLive()}
   if(tab==="videos"&&!weekDone){weekDone=true;requestAnimationFrame(()=>document.querySelector(".week .wd.today")?.scrollIntoView({inline:"center",block:"nearest"}))}  // the week strip opens on today, once per visit
   if(force===true){[...m.children].forEach((c,i)=>{c.classList.remove("rise");void c.offsetWidth;c.classList.add("rise");c.style.setProperty("--i",Math.min(i,9))});countUp(m)}
@@ -643,6 +643,20 @@ async function footage(m){
 }
 
 /* ---------- Channels ---------- */
+async function desk(m){
+  m.innerHTML=`<div class="head"><h1>Tasks</h1><p class="sub">Write what you need done, or how you want it done. A Claude Code session or the doctor reads it. Nothing here runs by itself, and nothing typed here can change a rule, a money limit or a publishing decision.</p></div>
+  <div class="panel pad"><textarea id="dk_t" rows="3" maxlength="600" style="width:100%" placeholder="For example: make a film about the Flannan Isles lighthouse keepers"></textarea><div style="margin-top:10px"><button class="btn" type="button" onclick="deskAdd()">Send task</button></div></div>
+  <div id="dk_l" style="margin:18px 0"></div>
+  <div class="panel pad"><h2>Standing advice</h2><p class="sub" style="margin-bottom:10px">How you want the studio to work. The writing agents read it as advice (up to 1,500 characters). The reviewers never read it, and it never overrides the rules.</p><textarea id="dk_a" rows="6" maxlength="1500" style="width:100%"></textarea><div style="margin-top:10px"><button class="btn" type="button" onclick="deskAdvice()">Save advice</button></div></div>`;
+  await deskLoad();
+}
+async function deskLoad(){let d;try{d=await api("/api/desk")}catch(e){return}
+  const a=document.getElementById("dk_a");if(a&&document.activeElement!==a)a.value=d.advice.text||"";
+  const open=d.tasks.filter(t=>t.status==="open"),done=d.tasks.filter(t=>t.status!=="open").slice(0,10);
+  document.getElementById("dk_l").innerHTML=(open.length?`<h2>Open (${open.length})</h2><div class="panel">${open.map(t=>`<div><div class="grow">${esc(t.text)}<div class="mute">${esc(t.at)}</div></div><button class="btn quiet sm" type="button" onclick="deskDone('${esc(t.id)}')">Mark done</button></div>`).join("")}</div>`:`<p class="mute">No open tasks.</p>`)+(done.length?`<h2 style="margin-top:18px">Done</h2><div class="panel">${done.map(t=>`<div><div class="grow">${esc(t.text)}<div class="mute">${esc(t.note||"")}</div></div></div>`).join("")}</div>`:"")}
+async function deskAdd(){const t=document.getElementById("dk_t");try{await api("/api/desk/task",{text:t.value});t.value="";toast("Task saved")}catch(e){return}await deskLoad()}
+async function deskDone(id){try{await api("/api/desk/done",{id})}catch(e){return}await deskLoad()}
+async function deskAdvice(){try{await api("/api/desk/advice",{text:document.getElementById("dk_a").value});toast("Advice saved")}catch(e){return}await deskLoad()}
 async function channels(m){
   m.innerHTML=`<div class="head"><h1>Channels</h1><p class="sub">The channel profiles in config/channels, read only. Each sets who the videos are for, the daily budget and whether a person approves every video.</p></div><div id="ch"><div class="skel" style="height:90px"></div></div>`;
   let d;try{d=await api("/api/channels")}catch(e){return}
@@ -952,7 +966,9 @@ async function autopilot(m){
       <div><label for="ap_w">Finished videos waiting</label><input id="ap_w" type="number" min="1" max="5" value="${c.max_waiting}" oninput="editing=true"></div>
     </div>
     <label class="tick"><input type="checkbox" id="ap_aa" ${c.auto_approve?"checked":""} onchange="editing=true"> Approve videos that pass every check</label>
-    <label class="tick"><input type="checkbox" id="ap_mv" ${c.make_videos!==false?"checked":""} onchange="editing=true"> Make new videos (switch off to only repair, review and upload what already exists)</label>
+    <div style="margin:6px 0 4px"><b>Who makes new videos</b></div><input type="checkbox" id="ap_mv" hidden ${c.make_videos!==false?"checked":""}>
+    <div class="seg" role="group" aria-label="Who makes new videos" style="margin-bottom:6px"><button type="button" aria-selected="${c.make_videos!==false}" onclick="apSrc(true)">Autopilot makes videos</button><button type="button" aria-selected="${c.make_videos===false}" onclick="apSrc(false)">Claude Code makes videos</button></div>
+    <p class="sub" style="margin-bottom:14px">${c.make_videos!==false?"Autopilot writes, draws and renders new videos itself and spends OpenRouter credit (the key is saved in Settings).":"Free: you or a Claude Code session make the videos. Autopilot only repairs, reviews, schedules and uploads what already exists."}</p>
     <label class="tick"><input type="checkbox" id="ap_nv" ${c.news_videos?"checked":""} onchange="editing=true"> Make draft videos from the weekly YouTube news (these always wait for you)</label>
     <div><label>Documentary publish times (US Eastern)</label>${slotEditor("apSlots")}</div>
     <hr style="border:0;border-top:1px solid var(--line);margin:4px 0">
@@ -1026,6 +1042,7 @@ function apSubSet(k){
 function slotEditor(name){
   const arr=window[name]||(name==="apSlots"?apSlots:apShort);
   return `<div class="stack" style="gap:8px">${arr.map((sl,i)=>`<div class="slotrow"><select onchange="${name}[${i}].day=this.value;editing=true">${DAYS.map(([k,l])=>`<option value="${k}" ${sl.day===k?"selected":""}>${l}</option>`).join("")}</select><input type="time" value="${esc(sl.time)}" onchange="${name}[${i}].time=this.value;editing=true"><button class="btn danger sm" aria-label="Remove time" onclick="${name}.splice(${i},1);editing=true;autopilot(document.getElementById('main'))">${ico("trash")}</button></div>`).join("")}</div><div style="margin-top:8px"><button class="btn quiet sm" onclick="${name}.push({day:'sat',time:'10:00'});editing=true;autopilot(document.getElementById('main'))">${ico("plus")}Add a time</button></div>`}
+function apSrc(v){document.getElementById("ap_mv").checked=v;apSet({make_videos:v})}
 async function apSet(o){await api("/api/autopilot/config",o);editing=false;toast(o.enabled?"Autopilot is on":o.enabled===false?"Autopilot is off":"Saved");await apRefresh();refresh(true)}
 async function apSave(){const n=id=>parseInt(document.getElementById(id).value,10);await apSet({uploads_per_day:n("ap_up"),review_window_hours:n("ap_rw"),min_queue:n("ap_q"),prepare_hours:n("ap_pa"),max_waiting:n("ap_w"),auto_approve:document.getElementById("ap_aa").checked,news_videos:document.getElementById("ap_nv").checked,make_videos:document.getElementById("ap_mv").checked,slots:apSlots,shorts:document.getElementById("ap_sh").checked,shorts_per_day:n("ap_spd"),max_waiting_shorts:n("ap_sw"),short_slots:apShort})}
 async function apIdea(b){await api("/api/queue/add",{topic:b.dataset.t});b.disabled=true;b.textContent="Added";toast("Added to the topic queue")}

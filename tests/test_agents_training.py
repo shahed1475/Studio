@@ -1082,3 +1082,19 @@ def test_eval_case_for_the_review_source_room_fails_when_the_room_shrinks_back(m
     monkeypatch.setattr(reviewer, "REVIEW_SOURCE_CHARS", 12000)  # mutation: the old limit
     bad, _ = getattr(agenteval, name)()
     assert not bad
+
+
+def test_eval_case_for_the_owners_advice_passes_and_fails_when_a_reviewer_reads_it_or_the_frame_goes(monkeypatch):
+    import agenteval
+    import ownerdesk
+
+    name = "case_the_owners_advice_reaches_only_the_writing_roles_and_never_a_reviewer"
+    ok, _ = getattr(agenteval, name)()
+    assert ok
+    monkeypatch.setattr(ownerdesk, "CREATIVE", {*ownerdesk.CREATIVE, "reviewer"})  # mutation: the reviewer reads the advice
+    bad, _ = getattr(agenteval, name)()
+    assert not bad
+    monkeypatch.undo()
+    monkeypatch.setattr(ownerdesk, "FRAME", "")  # mutation: the advice is no longer framed as advice only
+    bad2, _ = getattr(agenteval, name)()
+    assert not bad2
