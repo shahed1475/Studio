@@ -100,7 +100,25 @@ PROMPT = ("Write down exactly the words you hear in this audio, in order, as pla
           'Spell names and places the way they sound. Reply JSON only: {"text": "..."}')
 
 
-def listen(folder: Path, post=None, extract=None, now: dt.datetime | None = None) -> dict:
+def whisper_text(audio: bytes) -> str:
+    """Local, free transcription with faster-whisper (MIT; model from Hugging Face, cached in ~/.cache/huggingface, CPU). The audio never leaves this PC. It runs as its own
+    process (tools/whisper_run.py) so the project's filelock.py cannot hide the real package."""
+    import sys
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(suffix=".mp3") as f:
+        f.write(audio)
+        f.flush()
+        r = subprocess.run([sys.executable, str(Path(config.ROOT) / "tools" / "whisper_run.py"), f.name, WHISPER_MODEL], capture_output=True, text=True, timeout=1800, cwd="/tmp")
+    if r.returncode:
+        raise RuntimeError("whisper failed: " + r.stderr.strip()[-200:])
+    return r.stdout.strip()
+
+
+WHISPER_MODEL = "small.en"
+
+
+def listen(folder: Path, post=None, extract=None, now: dt.datetime | None = None, local=None) -> dict:
     """Transcribe the finished video's audio part by part and compare it with the script. Returns {model, at, ok, match, words, gaps, heard_as, parts, coverage, cost} (also saved as
     voice_check.json in the folder) or {"error": reason}. Only our own videos in the output folder are sent, and nothing is bought over the daily cap."""
     import filelock
@@ -115,11 +133,12 @@ def listen(folder: Path, post=None, extract=None, now: dt.datetime | None = None
         if folder.parent != Path(config.OUT).resolve() or not (folder / "video.mp4").is_file():
             return {"error": "only our own videos in the output folder are listened to"}
         cfg = llm.load_config()
-        if llm.spent_today(now) >= cfg["daily_budget_usd"]:
-            return {"error": f"the daily spending cap (${cfg['daily_budget_usd']:.2f}) is used up"}
-        model = modelcfg.get("audio_listen")
-        if "audio" not in videoinspect.model_modalities().get(model, []):
-            return {"error": f"{model} cannot be confirmed to accept audio input"}
+        model = f"faster-whisper {WHISPER_MODEL} (local)" if local else modelcfg.get("audio_listen")
+        if not local:
+            if llm.spent_today(now) >= cfg["daily_budget_usd"]:
+                return {"error": f"the daily spending cap (${cfg['daily_budget_usd']:.2f}) is used up"}
+            if "audio" not in videoinspect.model_modalities().get(model, []):
+                return {"error": f"{model} cannot be confirmed to accept audio input"}
         meta = json.loads((folder / "meta.json").read_text())
         lines = [str(l.get("text", "")) for l in meta.get("lines", [])]
         word_rows = subtitles.load_words(folder / "words.json")
@@ -134,6 +153,15 @@ def listen(folder: Path, post=None, extract=None, now: dt.datetime | None = None
             audio = (extract or _extract)(folder / "video.mp4", t0, t1)
             if not audio or len(audio) > MAX_BYTES:
                 failed.append(k)
+                continue
+            if local:
+                heard = local(audio)
+                if not heard.strip():
+                    failed.append(k)
+                    continue
+                script_all.append(" ".join(lines[a:b + 1]))
+                heard_all.append(heard)
+                listened += t1 - t0
                 continue
             body = (post or llm._post)({"model": model, "messages": [{"role": "user", "content": [
                 {"type": "text", "text": PROMPT}, {"type": "input_audio", "input_audio": {"data": base64.b64encode(audio).decode(), "format": "mp3"}}]}],

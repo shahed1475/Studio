@@ -48,6 +48,14 @@ def spoken(text: str) -> str:
     return text
 
 
+def unspoken(text: str) -> str:
+    """The reverse of spoken() for one word the voice returned: a respelling goes back to the name's real spelling (1 Nov 2026: a line whose word count differs from the script,
+    for example one with a year the voice splits in two, is captioned from the voice's own words and showed 'Ahmet Arduch' for Ardıç)."""
+    for word, said in PRONUNCIATION.items():
+        text = re.sub(rf"(?<![\w]){re.escape(said)}(?![\w])", word, text)
+    return text
+
+
 def line_length(duration: float, words: list[tuple], pause: float, tail: float | None) -> float:
     """Seconds one narration line takes, breath included. With a `tail` the silence the service leaves after the last spoken word is cut to that length (the file
     is never padded, and a line with no word timings keeps the whole file); with None the whole file is kept."""
@@ -126,7 +134,7 @@ def timings(lines: list[str], work: Path) -> list[dict]:
     for i, text in enumerate(lines):
         mp3 = work / f"t{i:02d}.mp3"
         got = asyncio.run(_synth_line(spoken(text), mp3))
-        words += [(s + offset, e + offset, w, i) for s, e, w in got]
+        words += [(s + offset, e + offset, unspoken(w), i) for s, e, w in got]
         offset += _duration(mp3) + 0.12
     words_to_json(words, work / "words.json")
     return json.loads((work / "words.json").read_text())
@@ -243,7 +251,7 @@ def narrate(lines: list[str], work: Path, pause: float = 0.12, motion: int = 0, 
         said = spoken(text)
         words = asyncio.run(_synth_line(said, mp3) if pros is None else _synth_line(said, mp3, pros))
         d = line_length(_duration(mp3), words, pause, tail)  # small breath between lines
-        all_words += [(s + offset, e + offset, w, i) for s, e, w in words]
+        all_words += [(s + offset, e + offset, unspoken(w), i) for s, e, w in words]
         durations.append(d)
         offset += d
         parts.append(mp3)

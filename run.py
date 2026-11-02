@@ -931,7 +931,7 @@ def main() -> None:
     elif a[0] == "listen" and len(a) > 1:  # the studio listens to a finished video's narration and compares it with the script (a warning only; about a cent a film)
         import voicecheck
 
-        res = voicecheck.listen(config.OUT / a[1])
+        res = voicecheck.listen(config.OUT / a[1], local=voicecheck.whisper_text if "--local" in a else None)  # --local: free, on this PC (faster-whisper), nothing sent anywhere
         if "error" in res:
             print("could not listen:", res["error"])
         else:

@@ -114,3 +114,21 @@ def test_narrate_sends_the_spelled_form_to_the_voice_and_nothing_else_changes(tm
     monkeypatch.setattr(subprocess, "run", lambda *a, **k: None)
     tts.narrate(["Oracle of Amun here.", "No change here."], tmp_path, pause=0.1)
     assert sent == ["Oracle of Ahmoon here.", "No change here."]
+
+
+def test_the_word_times_keep_the_real_spelling_even_when_a_line_has_numbers_the_voice_splits(tmp_path, monkeypatch):
+    """1 Nov 2026: captions are matched to the script word by word only when the counts agree. A line with '2018' (spoken as two words) fell back to the voice's own words
+    and showed the respelling ('Ahmet Arduch'). The respelling is now undone on the word times themselves."""
+    import json
+    import subprocess
+
+    async def fake(text, mp3, prosody=None):
+        return [(0.0, 0.3, "In"), (0.3, 0.6, "twenty"), (0.6, 0.9, "eighteen"), (0.9, 1.2, "Ahmoon's"), (1.2, 1.5, "Ahmoon"), (1.5, 1.8, "Amunet")]
+
+    monkeypatch.setattr(tts, "_synth_line", fake)
+    monkeypatch.setattr(tts, "_duration", lambda p: 2.0)
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: None)
+    tts.narrate(["In 2018 Amun's priest of Amun and Amunet."], tmp_path, pause=0.1)
+    got = [w["w"] for w in json.loads((tmp_path / "words.json").read_text())]
+    assert got == ["In", "twenty", "eighteen", "Amun's", "Amun", "Amunet"]
+    assert tts.unspoken("Ahmoon's temple, Ahmoon.") == "Amun's temple, Amun." and tts.unspoken("Ahmoonish") == "Ahmoonish"  # whole words only, like spoken()

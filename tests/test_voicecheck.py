@@ -185,3 +185,16 @@ def test_a_short_script_full_of_names_is_judged_on_gaps_and_a_slightly_lower_mat
     assert not voicecheck.ok({"match": 0.80, "gaps": [], "words": 134})
     assert not voicecheck.ok({"match": 0.894, "gaps": [{"kind": "missing", "words": 7}], "words": 134})   # a real hole still fails
     assert not voicecheck.ok({"match": 0.894, "gaps": [], "words": 1300})                                 # a long film keeps the 90 percent bar
+
+
+def test_the_local_listener_costs_nothing_calls_no_model_and_still_finds_a_skipped_line(world, monkeypatch):
+    monkeypatch.setattr(llm, "spent_today", lambda now=None: 99.0)  # the cap is spent: a local listener does not care
+    monkeypatch.setattr(videoinspect, "model_modalities", lambda *a, **k: {})
+    ok = voicecheck.listen(world, extract=lambda v, a, b: b"x", local=lambda audio: " ".join(LINES))
+    assert ok["ok"] is True and ok["cost"] == 0 and "local" in ok["model"] and not ACCOUNTED
+    bad = voicecheck.listen(world, extract=lambda v, a, b: b"x", local=lambda audio: " ".join([LINES[0], LINES[2], LINES[3]]))
+    assert any(g["kind"] == "missing" and g["words"] >= 4 for g in bad["gaps"])
+
+
+def test_a_local_listener_that_hears_nothing_is_an_error_not_a_pass(world):
+    assert "error" in voicecheck.listen(world, extract=lambda v, a, b: b"x", local=lambda audio: "   ")
