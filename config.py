@@ -34,6 +34,7 @@ VOICE_RATE = os.getenv("YT_VOICE_RATE", "+10%")  # this voice at +10% speaks abo
 VOICE_PITCH = os.getenv("YT_VOICE_PITCH", "+0Hz")
 _saved = ROOT / "settings.json"  # written by the dashboard
 PEXELS_KEY = os.getenv("PEXELS_API_KEY") or (json.loads(_saved.read_text()).get("pexels_key", "") if _saved.exists() else "")  # free key: https://www.pexels.com/api/
+PIXABAY_KEY = os.getenv("PIXABAY_API_KEY") or (json.loads(_saved.read_text()).get("pixabay_key", "") if _saved.exists() else "")  # free key: https://pixabay.com/api/docs/
 WIDTH, HEIGHT, FPS = 1080, 1920, 30
 DOC_SUBTITLES = os.getenv("YT_DOC_SUBS", "1") == "1"  # burn subtitles into documentaries
 ARCHIVE_VIDEO = os.getenv("YT_ARCHIVE_VIDEO", "1") == "1"  # moving public-domain footage for scenes

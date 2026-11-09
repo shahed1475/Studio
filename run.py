@@ -928,6 +928,10 @@ def main() -> None:
         f = depth.ensure_model()
         rt = depth._runtime()
         print(f"model: {f} ({f.stat().st_size:,} bytes, SHA-256 checked)\nnumpy and onnxruntime: {'installed' if rt else 'NOT installed: pictures get approximate depth'}")
+    elif a[0] == "pixabay-test":  # one live look-up with the saved Pixabay key (reads only, nothing is downloaded or used in a video)
+        import pixabay
+
+        print(pixabay.selftest(" ".join(a[1:]) or "pyramids"))
     elif a[0] == "listen" and len(a) > 1:  # the studio listens to a finished video's narration and compares it with the script (a warning only; about a cent a film)
         import voicecheck
 

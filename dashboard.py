@@ -107,6 +107,10 @@ def pexels_key() -> str:
     return config.PEXELS_KEY or load_settings().get("pexels_key", "")
 
 
+def pixabay_key() -> str:
+    return config.PIXABAY_KEY or load_settings().get("pixabay_key", "")
+
+
 def yt_status() -> dict:
     s = {"secret": SECRET.exists(), "token": TOKEN.exists(), "connecting": YT_STATE["connecting"], "error": YT_STATE["error"],
          "channel": None}
@@ -218,7 +222,7 @@ def state() -> dict:
         "agent": {"unread": __import__("agentlog").unread()},
         "tenant": __import__("tenantmode").is_tenant(), "niche_confirmed": __import__("niche").current()["brief"] is not None and bool((__import__("niche").current()["brief"] or {}).get("confirmed")),
         "auth": {"on": webauth.enabled(), "email": webauth.owner_email()},
-        "settings": {"pexels_key": "saved" if load_settings().get("pexels_key") else ""},
+        "settings": {"pexels_key": "saved" if load_settings().get("pexels_key") else "", "pixabay_key": "saved" if pixabay_key() else ""},
     }
 
 
@@ -426,6 +430,8 @@ def start_job(cmd: str, args: list[str]) -> str:
     env = dict(os.environ, PYTHONUNBUFFERED="1")
     if pexels_key():
         env["PEXELS_API_KEY"] = pexels_key()
+    if pixabay_key():
+        env["PIXABAY_API_KEY"] = pixabay_key()
     before = sorted(x.name for x in config.OUT.iterdir()) if config.OUT.exists() else []  # what exists now: a stopped job sets aside only what it began
     # its own process group, so stopping it reaches what it started too (ffmpeg, downloads)
     proc = subprocess.Popen([PY, "run.py", cmd, *args], cwd=config.ROOT, stdout=log.open("w"), stderr=subprocess.STDOUT, env=env, start_new_session=True)
@@ -1082,7 +1088,7 @@ class H(BaseHTTPRequestHandler):
             return {"ok": True}
         if path == "/api/key/save":
             which, value = str(b.get("which", "")), str(b.get("value", "")).strip()
-            field = {"openrouter": "openrouter_key", "pexels": "pexels_key"}.get(which)
+            field = {"openrouter": "openrouter_key", "pexels": "pexels_key", "pixabay": "pixabay_key"}.get(which)
             if not field:
                 raise ValueError("unknown key")
             if not 10 <= len(value) <= 300 or re.search(r"\s", value):
