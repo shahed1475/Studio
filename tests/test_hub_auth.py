@@ -155,3 +155,9 @@ def test_google_address_that_google_does_not_vouch_for_makes_an_account_without_
     auth.request_code("victim@corp.example", "1.1.1.1", mailer=m, now=2)
     real = auth.verify_code("victim@corp.example", m.code(), "1.1.1.1", now=3)
     assert real["account"]["id"] != r["account"]["id"]  # the real owner of the address never lands in the pre-made account
+
+
+def test_google_token_for_another_app_is_refused_when_our_client_id_is_set(monkeypatch):
+    monkeypatch.setenv("HUB_GOOGLE_CLIENT_ID", "cid")
+    assert auth.google_login("t", "c", "c", verify=claims(aud="someone-elses-app", sub="g-30"), now=1) == auth.GOOGLE_REFUSED
+    assert auth.google_login("t", "c", "c", verify=claims(aud="cid", sub="g-31"), now=1)["ok"]
