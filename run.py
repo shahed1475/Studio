@@ -928,6 +928,10 @@ def main() -> None:
         f = depth.ensure_model()
         rt = depth._runtime()
         print(f"model: {f} ({f.stat().st_size:,} bytes, SHA-256 checked)\nnumpy and onnxruntime: {'installed' if rt else 'NOT installed: pictures get approximate depth'}")
+    elif a[0] == "sources-test":  # one live search in every picture and footage library (reads only; says which need a key)
+        import openmedia
+
+        print(openmedia.format_selftest(openmedia.selftest(" ".join(a[1:]) or "pyramids")))
     elif a[0] == "pixabay-test":  # one live look-up with the saved Pixabay key (reads only, nothing is downloaded or used in a video)
         import pixabay
 
