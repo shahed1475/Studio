@@ -10,6 +10,7 @@ import hashlib
 import os
 import re
 import subprocess
+import time
 
 import requests
 
@@ -57,7 +58,7 @@ def candidates(query: str, anchors: list[str], get=requests.get) -> list[dict]:
     return out
 
 
-def fetch_segment(cand: dict, dest, get=requests.get, run=subprocess.run):
+def fetch_segment(cand: dict, dest, get=requests.get, run=subprocess.run, sleep=time.sleep):
     """A silent six-second clip of the candidate in `dest` (an mp4 in the film's size), its credit beside it, or None. Cached: a file that exists is reused."""
     import render
     from pathlib import Path
@@ -70,7 +71,13 @@ def fetch_segment(cand: dict, dest, get=requests.get, run=subprocess.run):
     dest.parent.mkdir(parents=True, exist_ok=True)
     raw, out = dest.with_suffix(".dl"), dest.with_name(dest.stem + ".tmp.mp4")
     try:
-        r = get(cand["url"], headers=UA, stream=True, timeout=60)
+        for attempt in range(4):  # Wikimedia rate-limits downloads (HTTP 429: the Antikythera film got none of its clips that way): wait the pause it asks for, then try again
+            r = get(cand["url"], headers=UA, stream=True, timeout=60)
+            if getattr(r, "status_code", 200) != 429 or attempt == 3:
+                break
+            import footage
+
+            sleep(footage._told_wait(r))
         r.raise_for_status()
         total = 0
         with open(raw, "wb") as f:

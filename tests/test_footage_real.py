@@ -109,3 +109,26 @@ def test_the_documentary_producer_asks_for_real_footage_before_it_animates_and_a
     data = {"lines": [{"text": "a", "visual": "a dune"}]}
     clips = ["a.jpg"]
     assert run._real_footage(data, clips, [])[0] == clips and "real_footage" not in data
+
+
+class Limited(Resp):
+    def __init__(self, status, retry="3"):
+        super().__init__()
+        self.status_code, self.headers = status, ({"Retry-After": retry} if retry else {})
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+
+def test_a_rate_limited_download_waits_the_pause_it_was_told_and_tries_again(tmp_path):
+    cand = {"title": "x.ogv", "url": "https://upload.wikimedia.org/x.ogv", "license": "CC BY 4.0", "page": "https://commons.wikimedia.org/wiki/File:x.ogv", "duration": 30.0, "size": 1000}
+    seq, waits, cut = [Limited(429), Limited(429), Limited(200)], [], []
+    got = fr.fetch_segment(cand, tmp_path / "a.mp4", get=lambda *a, **k: seq.pop(0), sleep=waits.append, run=lambda cmd, **k: cut.append(cmd) or open(cmd[-1], "wb").write(b"mp4"))
+    assert got is not None and not seq and waits == [3.0, 3.0] and cut
+
+
+def test_a_download_that_stays_rate_limited_gives_up_without_leaving_files(tmp_path):
+    cand = {"title": "y.ogv", "url": "https://upload.wikimedia.org/y.ogv", "license": "CC BY 4.0", "page": "p", "duration": 30.0, "size": 1000}
+    got = fr.fetch_segment(cand, tmp_path / "b.mp4", get=lambda *a, **k: Limited(429, None), sleep=lambda s: None, run=lambda *a, **k: pytest.fail("must not cut"))
+    assert got is None and not list(tmp_path.glob("*.mp4")) and not list(tmp_path.glob("*.dl"))
