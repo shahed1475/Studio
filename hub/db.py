@@ -36,6 +36,12 @@ CREATE TABLE IF NOT EXISTS profiles(
   account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE, niche_id TEXT NOT NULL DEFAULT '', niche_text TEXT NOT NULL DEFAULT '',
   tier TEXT NOT NULL DEFAULT '', platforms TEXT NOT NULL DEFAULT '[]', updated_at REAL NOT NULL);
 CREATE INDEX IF NOT EXISTS ix_tasks_acc ON tasks(account_id, context_id, updated_at);
+CREATE TABLE IF NOT EXISTS sources(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, url TEXT NOT NULL, title TEXT NOT NULL,
+  passage TEXT NOT NULL, revised TEXT NOT NULL DEFAULT '', fetched_at REAL NOT NULL, UNIQUE(account_id, url));
+CREATE TABLE IF NOT EXISTS topics(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, title TEXT NOT NULL,
+  source_id INTEGER REFERENCES sources(id) ON DELETE SET NULL, label TEXT NOT NULL, created_at REAL NOT NULL, UNIQUE(account_id, title));
 """
 
 
