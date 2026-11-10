@@ -1100,7 +1100,7 @@ def test_eval_case_for_the_owners_advice_passes_and_fails_when_a_reviewer_reads_
     assert not bad2
 
 
-LICENCE_CASE = "case_only_approved_licences_are_used_and_a_credit_needing_picture_is_credited_in_the_description_and_keeps_its_credit_through_a_repackaging"
+LICENCE_CASE = "case_only_approved_licences_are_used_and_a_credit_needing_picture_is_credited_in_the_description_youtube_receives"
 
 
 def test_eval_case_for_licences_passes_and_is_in_the_list():
@@ -1133,7 +1133,7 @@ def test_eval_case_for_licences_fails_when_the_credit_is_not_put_in_the_descript
     import agenteval
     import footage
 
-    monkeypatch.setattr(footage, "with_credits", lambda description, credits: description)  # mutation: credits never reach the description
+    monkeypatch.setattr(footage, "credit_lines", lambda credits, assets=(): [])  # mutation: credits never reach the description
     bad, _ = getattr(agenteval, LICENCE_CASE)()
     assert not bad
 
@@ -1148,10 +1148,3 @@ def test_eval_case_for_licences_fails_when_the_gate_stops_asking_for_the_credit(
     assert not bad
 
 
-def test_eval_case_for_licences_fails_when_a_repackaging_drops_the_credits(monkeypatch):
-    import agenteval
-    import seo
-
-    monkeypatch.setattr(seo, "rebuild_description", lambda old, intro: intro)  # mutation: a new description forgets the credits
-    bad, _ = getattr(agenteval, LICENCE_CASE)()
-    assert not bad

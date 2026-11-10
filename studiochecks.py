@@ -97,7 +97,9 @@ def check_licenses(meta: dict) -> list[dict]:
             bad.append(c)
     out.append(row("credits_present", bool(credits), f"{len(credits)} credit lines" if credits else "no image credits", "warn" if not meta.get("footage") else "block"))
     out.append(row("licenses_allowed", not bad, f"{len(bad)} credits without a license we can use: " + " | ".join(b[:80] for b in bad[:3]) if bad else "every credit names a licence the studio accepts"))
-    desc = " ".join(str(meta.get("description") or "").split())
+    import compliance  # the description YouTube receives: ours plus the credit lines (compliance.final_description)
+
+    desc = " ".join(compliance.final_description(meta).split())
     missing = [c for c in credited if " ".join(c.split()) not in desc]
     out.append(row("credits_in_description", not missing, f"{len(missing)} of {len(credited)} credit-needing pictures or clips are missing from the description: " + " | ".join(m[:80] for m in missing[:3])
                    if missing else (f"all {len(credited)} credit-needing items are credited in the description" if credited else "no item needs a credit line")))

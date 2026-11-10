@@ -59,8 +59,11 @@ def test_gate_accepts_credited_licences_when_the_description_carries_each_credit
 
 
 def test_gate_blocks_a_video_whose_credit_needing_item_is_missing_from_the_description(tmp_path, monkeypatch):
+    import footage
+
     credits = ["Fragment (Wikimedia Commons, CC BY-SA 4.0), https://commons.wikimedia.org/wiki/File:A.jpg", "Map.jpg (Wikimedia Commons, Public domain)"]
     meta = {"credits": credits, "footage": {"drawn": 0}, "grounded": False, "description": "intro only"}
+    monkeypatch.setattr(footage, "credit_lines", lambda c, a=(): [])  # the credits stop reaching the description YouTube receives
     row = credits_row(meta, tmp_path, monkeypatch, "credits_in_description")
     assert not row["ok"] and row["severity"] == "block" and "Fragment" in row["detail"]
 

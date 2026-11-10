@@ -22,7 +22,7 @@ def test_real_media_is_off_when_the_video_is_drawn_on_purpose_or_is_a_real_case(
 def test_the_finder_caps_credit_needing_items_per_video_and_carries_the_judge(monkeypatch):
     monkeypatch.setattr(run, "_image_judge", lambda topic: (lambda labels: labels))
     doc, short = run._real_finder(data(), "doc"), run._real_finder(data(), "short")
-    assert isinstance(doc, realmedia.Finder) and doc.credit_cap == 14 and short.credit_cap == 5
+    assert isinstance(doc, realmedia.Finder) and doc.credit_cap == 10 and short.credit_cap == 4
     assert doc.topic == "The Antikythera Mechanism" and doc.anchors == ["Antikythera"] and doc.judge(["a | commons"]) == ["a | commons"]
 
 

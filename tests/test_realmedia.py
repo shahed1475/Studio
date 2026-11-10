@@ -248,3 +248,15 @@ def test_scene_images_without_a_finder_behaves_as_before(tmp_cache, monkeypatch)
     drawn = []
     footage.scene_images([{"text": "a", "visual": "gears"}], "T", ["T"], art=lambda l: drawn.append(l) or None, art_limit=5)
     assert len(drawn) == 1
+
+
+def test_a_credit_names_the_author_is_cut_at_a_word_and_never_holds_a_refused_word(tmp_cache):
+    long_title = "Fragment of the Antikythera mechanism, photographed in the National Archaeological Museum of Athens in the gallery of bronze instruments"
+    it = openmedia._item("openverse", "image", long_title, "https://openverse.example/1", "https://openverse.example/img/1.jpg", "CC BY 2.5", "raw",
+                         author="<a href='x'>Marsyas assumed (based on copyright claims)</a>")
+    f, _ = finder(tmp_cache, {"openverse": [it]})
+    credit = f("gears", ["Antikythera"], 1)[0][1]
+    assert "Marsyas assumed" in credit and "<" not in credit and "copyright" not in credit.lower()
+    assert " by Marsyas" in credit and "CC BY 2.5" in credit and "https://openverse.example/1" in credit
+    assert not credit.split(" by ")[0].endswith(("Athe", "gall")) and len(credit) < 260
+    assert licences.accepted(credit) and licences.needs_credit(credit)

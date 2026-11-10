@@ -1258,25 +1258,29 @@ def case_the_owners_advice_reaches_only_the_writing_roles_and_never_a_reviewer()
     return ok, ("the owner's advice reaches only the writing roles, capped and framed; no reviewer reads it" if ok else f"reached={reached} framed={'never overrides' in writer} capped={writer.count('z')}")
 
 
-def case_only_approved_licences_are_used_and_a_credit_needing_picture_is_credited_in_the_description_and_keeps_its_credit_through_a_repackaging():
+def case_only_approved_licences_are_used_and_a_credit_needing_picture_is_credited_in_the_description_youtube_receives():
     """10 Nov 2026, the owner's decision (it widens CLAUDE.md section D): public domain, CC0, CC BY, CC BY-SA, NASA media (no logos) and the Pixabay Content License may be used, with the item's address,
     licence and credit kept and every credit-needing item written into the description. Non-commercial, no-derivatives, all rights reserved, fair use and Pexels stay refused."""
+    import compliance
     import footage
     import licences
-    import seo
     import studiochecks
 
     yes = ("Public domain", "CC0", "CC BY 4.0", "CC BY-SA 4.0", "NASA media (credit NASA; no NASA logos)", "Pixabay Content License")
     no = ("CC BY-NC 4.0", "CC BY-ND 2.0", "All rights reserved", "Fair use", "Pexels License", "unknown", "")
     rule = all(licences.accepted(n) for n in yes) and not any(licences.accepted(n) for n in no)
-    credit = "Fragment A, Wikimedia Commons (CC BY-SA 4.0), https://commons.wikimedia.org/wiki/File:A.jpg"
-    meta = {"credits": [credit], "footage": {"drawn": 0}, "grounded": False}
-    with_block = footage.with_credits("Hook.\n\nSources:\nWikipedia: X (CC BY-SA 4.0)\n\nChapters:\n0:00 Start", [credit])
-    gate = {r["name"]: r["ok"] for r in studiochecks.check_licenses({**meta, "description": with_block})}.get("credits_in_description")
-    refuses = {r["name"]: r["ok"] for r in studiochecks.check_licenses({**meta, "description": "Hook only."})}.get("credits_in_description") is False
-    kept = credit in seo.rebuild_description(with_block, "A new hook.")
-    ok = rule and gate is True and refuses and kept
-    return ok, ("approved licences accepted and refused ones refused; the credit is in the description, the gate wants it there and a repackaging keeps it" if ok else f"rule={rule} gate={gate} refuses_missing={refuses} kept={kept}")
+    credit = "Fragment A by Marsyas, Wikimedia Commons (CC BY-SA 4.0), https://commons.wikimedia.org/wiki/File:A.jpg"
+    meta = {"credits": [credit], "footage": {"drawn": 0}, "grounded": False, "description": "Hook."}
+    sent = credit in compliance.final_description(meta)  # the text YouTube receives carries the credit in full
+    gate = {r["name"]: r["ok"] for r in studiochecks.check_licenses(meta)}.get("credits_in_description")
+    real = footage.credit_lines
+    footage.credit_lines = lambda credits, assets=(): []  # the gate must notice when the credits stop reaching the description
+    try:
+        refuses = {r["name"]: r["ok"] for r in studiochecks.check_licenses(meta)}.get("credits_in_description") is False
+    finally:
+        footage.credit_lines = real
+    ok = rule and sent and gate is True and refuses
+    return ok, ("approved licences accepted and refused ones refused; the credit is in the description YouTube receives and the gate wants it there" if ok else f"rule={rule} sent={sent} gate={gate} refuses_missing={refuses}")
 
 
 CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic,
@@ -1312,7 +1316,7 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_a_cleared_schedule_is_put_back_in_the_future_once_only_when_the_owner_asks_and_a_public_video_is_never_touched,
          case_only_a_passage_found_in_its_saved_page_counts_as_evidence_for_the_reviewer,
          case_the_owners_advice_reaches_only_the_writing_roles_and_never_a_reviewer,
-         case_only_approved_licences_are_used_and_a_credit_needing_picture_is_credited_in_the_description_and_keeps_its_credit_through_a_repackaging]
+         case_only_approved_licences_are_used_and_a_credit_needing_picture_is_credited_in_the_description_youtube_receives]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:

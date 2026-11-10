@@ -134,12 +134,12 @@ def _real_media_on(data: dict) -> bool:
 
 
 def _real_finder(data: dict, kind: str):
-    """The picture finder for this video (None when real media is off). The film may show up to 14 credit-needing items, a Short 5: each one is written into the description."""
+    """The picture finder for this video (None when real media is off). The film may show up to 10 credit-needing items, a Short 4: each one is written into the description."""
     if not _real_media_on(data):
         return None
     import realmedia
 
-    return realmedia.Finder(data["topic"], data.get("anchors") or [], judge=_image_judge(data["topic"]), credit_cap=14 if kind == "doc" else 5)
+    return realmedia.Finder(data["topic"], data.get("anchors") or [], judge=_image_judge(data["topic"]), credit_cap=10 if kind == "doc" else 4)
 
 
 def _is_case(data: dict) -> bool:
@@ -345,7 +345,6 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
     shutil.rmtree(work)
     data["subtitles"] = "burned"
     data["credits"] = credits
-    data["description"] = footage.with_credits(data.get("description", ""), credits, data.get("assets") or [])  # credit-needing pictures are credited in the description
     data["approved"] = False
     records.save(folder, data)  # the producer owns the record until it is finished: one atomic whole save
     print(f"\nDone: {folder / 'video.mp4'}\nTitle: {data['title']}\nWatch it, then: python run.py approve {folder.name}")
@@ -567,7 +566,6 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
     data["footage"] = stats
     data["credits"] = credits
     data["assets"] = finder.assets if finder else []  # every library picture: address, licence, credit, date, hash
-    data["description"] = footage.with_credits(data["description"], credits, data["assets"])  # CC BY, CC BY-SA, NASA and Pixabay items must be credited where viewers read it
     data["subtitles"] = "burned" if config.DOC_SUBTITLES else "srt"
     data["approved"] = False
     records.save(folder, data)

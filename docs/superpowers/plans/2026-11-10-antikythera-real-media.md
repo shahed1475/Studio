@@ -17,7 +17,7 @@ the change is the owner's, dated, and recorded there.
 ## Tasks (each test first; an agenteval case and a mutation check for every new rule)
 1. `licences.py`: one rule for "may this licence be used" and "does it need a credit" (public domain, CC0, CC BY, CC BY-SA, NASA media, Pixabay Content License; never NC, ND, all rights reserved, fair use, Pexels). `footage_real.licence_ok`, `studiochecks.check_licenses` and `assetledger` use it.
 2. `realmedia.py`: real pictures from every approved library, in order Commons, museums, Openverse, NASA, Pixabay; relevance by the film's anchors or the judge; public domain and CC0 preferred over credit-needing items, which are capped per video; each item keeps address, licence, credit, date. `footage.scene_images` gets an optional finder (default off: nothing else changes).
-3. Credits in the description: a "Picture credits" block that `seo.rebuild_description` keeps; the gate fails a video whose credit-needing items are not in its description.
+3. Credits in the description: the "Footage and image credits:" section that `compliance.final_description` builds from `footage.credit_lines` (credit-needing items in full, public domain and CC0 as a count); the gate checks that text.
 4. agenteval case and mutation checks; CLAUDE.md section D updated with the owner's dated decision.
 5. Clean-checkout run, push to main, `deploy/deploy.sh dry-run-first`, verify on the server.
 6. Build the film and the Short on the server; reviewer, licences, ffprobe, captions, `run.py listen`, frames looked at; fix; upload both PRIVATE with US Eastern times (film 18:00 on the next free weekday slot, Short 12:30 the next day); read back; report Studio links with times in US Eastern and Dhaka.

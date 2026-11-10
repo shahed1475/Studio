@@ -55,29 +55,20 @@ def credit_for(path: Path) -> str | None:
     return f.read_text() if f.exists() else None
 
 
-CREDIT_HEAD = "Picture credits:"
-
-
-def credit_block(credits: list[str], assets=()) -> str:
-    """The description's credit section: every item whose licence needs a credit (CC BY, CC BY-SA, NASA media, Pixabay) in full, one line each, and a count of the public-domain and CC0
-    items (their address and licence are in the video's record). AI art has its own label. Empty when no real picture or clip was used.
+def credit_lines(credits: list[str], assets=()) -> list[str]:
+    """The credit lines the description carries (compliance.final_description): every item whose licence needs a credit (CC BY, CC BY-SA, NASA media, Pixabay) in full, a count of the
+    public-domain and CC0 items (their address and licence stay in the video's record) and the AI-art label. Keeps the description inside YouTube's size limit.
     A credit needs its line when its text names a credit-needing licence OR its stored licence (`assets`, from the library's own field) does: words in a title never lower that."""
     stored = {a.get("credit"): a.get("licence") for a in assets if isinstance(a, dict)}
     unique = list(dict.fromkeys(c for c in credits if c))
     needed = [c for c in unique if licences.needs_credit(c) or licences.needs_credit(stored.get(c, ""))]
-    others = [c for c in unique if c not in needed and "ai-generated" not in c.lower()]
-    lines = [f"- {c}" for c in needed]
+    ai = [c for c in unique if c not in needed and "ai-generated" in c.lower()]
+    others = [c for c in unique if c not in needed and c not in ai]
+    lines = list(needed)
     if others:
-        lines.append(f"- {len(others)} more real picture{'s' if len(others) != 1 else ''} or clip{'s' if len(others) != 1 else ''} are public domain or CC0; each is recorded with its address and licence.")
-    return CREDIT_HEAD + "\n" + "\n".join(lines) if lines else ""
-
-
-def with_credits(description: str, credits: list[str], assets=()) -> str:
-    """The description with its credit section: placed before 'Chapters:' when the description has them, at the end otherwise; an older section is replaced, never doubled."""
-    block = credit_block(credits, assets)
-    head, sep, chapters = str(description or "").partition("\n\nChapters:")
-    head = head.partition("\n\n" + CREDIT_HEAD)[0].rstrip()
-    return head + (f"\n\n{block}" if block else "") + (sep + chapters if sep else "")
+        plural = "s" if len(others) != 1 else ""
+        lines.append(f"{len(others)} more real picture{plural} or clip{plural}: public domain or CC0 (address and licence kept in the video's record).")
+    return lines + ai
 
 
 def collect_credits(clips: list) -> list[str]:

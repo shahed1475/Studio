@@ -109,7 +109,13 @@ class Finder:
         return any(a.lower() in text for a in words)
 
     def _credit(self, c: dict) -> str:
-        base = " ".join(licences.REFUSED.sub("", str(c.get("credit") or c["title"])).split())[:110]  # a title that merely contains a refusal word ("Non-commercial vehicles") must not make the gate refuse a licence-clean item
+        """One credit line: title (cut at a word), the author when the library names one, the licence, the library and the picture's page. Refusal words and the word "copyright" are removed
+        from the title and author: a title like "Non-commercial vehicles" or an author line "based on copyright claims" must not make the gate refuse a licence-clean item."""
+        def clean(text, limit):
+            t = " ".join(licences.REFUSED.sub("", re.sub(r"(?i)copyright\w*", "", openmedia._plain(text, 400))).split())
+            return t if len(t) <= limit else t[:limit].rsplit(" ", 1)[0].rstrip(",;:- ") + "..."
+
+        base = f"{clean(c['title'], 70)} by {clean(c['author'], 50)}" if c.get("author") else clean(c.get("credit") or c["title"], 110)
         label = openmedia.SOURCES.get(c["source"], (c["source"],))[0]
         if label.lower() not in base.lower():
             base += f", {label}"

@@ -44,9 +44,15 @@ def fetch(url: str, params: dict | None = None, headers: dict | None = None, get
     return reply
 
 
-def _item(source: str, kind: str, title, page, url, licence, credit, preview=None) -> dict:
+def _plain(text, limit: int = 80) -> str:
+    """A name or title from a library as plain text: markup removed, spaces folded, cut at a word."""
+    t = " ".join(re.sub(r"<[^>]+>", " ", str(text or "")).replace("&amp;", "&").split())
+    return t if len(t) <= limit else t[:limit].rsplit(" ", 1)[0].rstrip(",;:- ") + "..."
+
+
+def _item(source: str, kind: str, title, page, url, licence, credit, preview=None, author=None) -> dict:
     return {"source": source, "kind": kind, "title": str(title or "")[:200], "page": page, "url": url, "preview": preview or url, "licence": licence, "credit": credit,
-            "accepted": footage_real.licence_ok(licence)}
+            "author": _plain(author, 60), "accepted": footage_real.licence_ok(licence)}
 
 
 # ---- museums (images only) ----
@@ -112,7 +118,7 @@ def openverse(q, kind, n, get):
     for h in d.get("results", [])[:n]:
         code, ver = str(h.get("license", "")), h.get("license_version") or ""
         lic = "CC0" if code == "cc0" else "Public Domain Mark" if code == "pdm" else f"CC {code.upper()} {ver}".strip()
-        out.append(_item("openverse", "image", h.get("title"), h.get("foreign_landing_url"), h.get("url"), lic, f"{h.get('title')} by {h.get('creator') or 'unknown'} ({lic}, {h.get('license_url', '')})", h.get("thumbnail")))
+        out.append(_item("openverse", "image", h.get("title"), h.get("foreign_landing_url"), h.get("url"), lic, f"{h.get('title')} by {h.get('creator') or 'unknown'} ({lic}, {h.get('license_url', '')})", h.get("thumbnail"), author=h.get("creator")))
     out.sort(key=lambda i: not i["accepted"])
     return out
 
@@ -127,7 +133,8 @@ def commons(q, kind, n, get):
         md = ii.get("extmetadata") or {}
         lic = (md.get("LicenseShortName") or {}).get("value", "unknown")
         title = str(p.get("title", "")).removeprefix("File:")
-        out.append(_item("commons", kind, title, ii.get("descriptionurl"), ii.get("url"), lic, f"{title}, Wikimedia Commons ({lic})"))
+        out.append(_item("commons", kind, title, ii.get("descriptionurl"), ii.get("url"), lic, f"{title}, Wikimedia Commons ({lic})",
+                         author=(md.get("Artist") or {}).get("value")))
     out.sort(key=lambda i: not i["accepted"])  # usable ones first
     return out[:n]
 
