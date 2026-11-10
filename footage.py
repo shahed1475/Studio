@@ -255,7 +255,7 @@ def scene_images(lines: list[dict], topic: str, anchors: list[str], pool_size: i
             hit = art(l)
             drawn += bool(hit)
         if not hit:
-            hit = next((h for h in pool if h[0] not in used), None)
+            hit = next((h for h in pool if h[0] not in used and not unrelated_portrait(h[1], l.get("visual") or "")), None)  # a reserve portrait is for its own scene only
         if not hit and art and drawn < art_limit:
             hit = art(l)
             drawn += bool(hit)

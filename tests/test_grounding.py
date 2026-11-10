@@ -362,3 +362,19 @@ def test_commons_search_skips_a_portrait_of_a_person_the_scene_is_not_about(monk
     assert [c.split(" (")[0] for _, c in got] == ["Antikythera fragment.jpg"]
     got2 = footage.images_for("Mike Edmunds", ["Antikythera"], 5)
     assert any("Edmunds" in c for _, c in got2)
+
+
+def test_a_portrait_in_the_reserve_pool_is_not_used_for_a_scene_about_something_else(monkeypatch):
+    from pathlib import Path
+    portrait = (Path("portrait.jpg"), "Professor Mike Edmunds portrait 01.jpg (Wikimedia Commons, Public domain)")
+    gears = (Path("gears.jpg"), "Antikythera gears.jpg (Wikimedia Commons, Public domain)")
+
+    def fake(q, anchors, n, skip=(), judge=None):
+        if q in ("The Antikythera Mechanism", "Mike Edmunds"):
+            return [h for h in (portrait, gears) if h[0] not in skip][:n]
+        return []
+
+    monkeypatch.setattr(footage, "images_for", fake)
+    lines = [{"text": "a", "visual": "Ancient Corinth"}, {"text": "b", "visual": "Ancient Corinth"}, {"text": "c", "visual": "Mike Edmunds"}]
+    clips, credits, _ = footage.scene_images(lines, "The Antikythera Mechanism", ["Mike Edmunds"])
+    assert clips[0] == Path("gears.jpg") and clips[1] == Path("gears.jpg")  # nothing else is left for scene two, so the picture repeats rather than showing his face
