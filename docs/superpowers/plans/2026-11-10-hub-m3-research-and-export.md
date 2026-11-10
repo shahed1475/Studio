@@ -67,4 +67,12 @@
 
 ### Final
 
-- [ ] Whole hub suite, whole project suite read for real; self-review; update the setup doc/status; memory.
+- [x] Whole hub suite, whole project suite read for real; self-review; update the setup doc/status; memory.
+
+## Status (10 Nov 2026)
+
+Tasks 1 to 4 done, each test first (commits `a35238c`, `0b8ba1b`, `1b5c978`, `f330a04`). Hub suite 142 passed, 1 skipped (was 117). Whole project suite 2,307 passed, 1 skipped, 1 failed: `tests/test_depth_model.py` needs `data/models/depth_anything_v2_small_uint8.onnx`, which exists only in the main checkout (confirmed missing in this worktree; not run in the main checkout from this isolated session). 12 mutation checks on the new safeguards: 12 killed by the named test. Real Chrome run of the Research card: run, labels, source link attributes, hostile text shown as text and nothing executed, plain-words limit message, Markdown download, no script or CSP errors; found and fixed two phone-width overflows that were not from M3 (top bar at 390 px, right column at 360 px).
+
+Rulings: the researcher keeps its model path and gains a rule action rather than a new agent (fewer moving parts; its chip says "Ready to research"); labels in the UI are plain words ("Partly checked", "Not checked") with the exact label as the chip's tooltip; `flex-wrap` on team rows only at 520 px and below (a general wrap moved the chips under the text on desktop). Final review: self-review only.
+
+Not built, and why: the YouTube connection per creator (OAuth for other people's channels needs Google's sensitive-scope verification and the owner's Cloud project), per-account AI key storage, research for a custom niche (needs a key), posting to any platform.
