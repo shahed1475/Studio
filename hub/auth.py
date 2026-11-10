@@ -20,6 +20,7 @@ from . import db, mailer as mailers
 SECRET_FILE = config.ROOT / "data" / "hub" / "secret"
 CODE_TTL, MAX_TRIES = 600, 5
 SEND_PER_EMAIL, SEND_PER_IP, VERIFY_PER_IP, WINDOW = 3, 10, 30, 3600
+SEND_PER_IP_DAY = 20  # one source may start at most 20 sign-in emails a day, whatever the hourly window allows
 PURGE_AFTER = 86400  # rate_hits rows live this long: the longest window any limiter uses (the model caller counts a day). A purge by a shorter window erased other limiters' counts.
 SESSION_IDLE, SESSION_ABSOLUTE = 7 * 86400, 30 * 86400
 SENT = {"ok": True, "message": "Check your email for an 8-digit code. It works for 10 minutes."}
@@ -95,7 +96,9 @@ def request_code(email, ip: str, mailer=None, now: float | None = None) -> dict:
     ek, ik = f"send:e:{_tag(e)}", f"send:ip:{ip}"
     code = f"{secrets.randbelow(10 ** 8):08d}"
     with db.tx() as con:
-        if _count(con, ek, now) >= SEND_PER_EMAIL or _count(con, ik, now) >= SEND_PER_IP:
+        ipd = f"sendday:ip:{ip}"
+        if (_count(con, ek, now) >= SEND_PER_EMAIL or _count(con, ik, now) >= SEND_PER_IP
+                or con.execute("select count(*) from rate_hits where key=? and at>?", (ipd, now - 86400)).fetchone()[0] >= SEND_PER_IP_DAY):
             _audit(con, "code_sent", "rate_limited", now, detail=_tag(e), ip=ip)
             return {"ok": False, "error": "too_many"}
         if con.execute("select count(*) from rate_hits where key='send:all' and at>?", (now - 86400,)).fetchone()[0] >= mail_daily_cap():
@@ -104,6 +107,7 @@ def request_code(email, ip: str, mailer=None, now: float | None = None) -> dict:
         _record(con, ek, now)
         _record(con, ik, now)
         _record(con, "send:all", now)
+        _record(con, ipd, now)
         con.execute("update login_codes set used=1 where email=? and used=0", (e,))
         con.execute("insert into login_codes(email,code_hash,expires_at,created_at) values(?,?,?,?)", (e, _code_hash(e, code), now + CODE_TTL, now))
         _audit(con, "code_sent", "ok", now, detail=_tag(e), ip=ip)

@@ -218,3 +218,16 @@ def test_the_sign_in_page_has_words_for_the_new_refusals():
 
     js = (Path(__file__).resolve().parent.parent / "hub" / "web" / "signin.js").read_text()
     assert "not_invited:" in js and "mail_busy:" in js
+
+
+def test_one_address_cannot_drain_the_hub_wide_email_budget_over_a_day(monkeypatch):
+    """The hourly per-IP limit alone lets one source send 10 an hour, 240 a day: a per-IP daily limit keeps one source from using the whole hub-wide cap (security review, 10 Nov)."""
+    monkeypatch.setenv("HUB_MAIL_DAILY_CAP", "1000")
+    m = Mail()
+    ok = 0
+    for hour in range(4):
+        for i in range(10):
+            if auth.request_code(f"p{hour}-{i}@example.com", "7.7.7.7", mailer=m, now=hour * 3700 + i).get("ok"):
+                ok += 1
+    assert ok == auth.SEND_PER_IP_DAY == 20 and len(m.sent) == 20  # the third hour is refused although the hourly window would allow it
+    assert auth.request_code("other@example.com", "8.8.8.8", mailer=m, now=5)["ok"]  # a different source is not affected
