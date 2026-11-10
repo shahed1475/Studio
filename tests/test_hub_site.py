@@ -11,7 +11,7 @@ TEXT = sorted([*WEB.glob("*.html"), *WEB.glob("*.js"), *WEB.glob("*.css")])
 
 
 def test_there_are_pages_and_files_to_check():
-    assert {p.name for p in PAGES} == {"index.html", "signin.html", "app.html"} and len(TEXT) >= 8
+    assert {p.name for p in PAGES} == {"index.html", "signin.html", "app.html", "privacy.html"} and len(TEXT) >= 8
 
 
 @pytest.mark.parametrize("f", TEXT, ids=lambda f: f.name)

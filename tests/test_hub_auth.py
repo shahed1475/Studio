@@ -161,3 +161,60 @@ def test_google_token_for_another_app_is_refused_when_our_client_id_is_set(monke
     monkeypatch.setenv("HUB_GOOGLE_CLIENT_ID", "cid")
     assert auth.google_login("t", "c", "c", verify=claims(aud="someone-elses-app", sub="g-30"), now=1) == auth.GOOGLE_REFUSED
     assert auth.google_login("t", "c", "c", verify=claims(aud="cid", sub="g-31"), now=1)["ok"]
+
+
+# ---- guards that must exist before the hub is public: a sign-up allow-list and a hub-wide cap on sign-in emails ----
+def test_no_allow_list_means_open_sign_up(monkeypatch):
+    monkeypatch.delenv("HUB_ALLOWED_EMAILS", raising=False)
+    assert auth.request_code("anyone@example.com", "1.1.1.1", mailer=Mail(), now=1) == auth.SENT
+
+
+def test_allow_list_lets_only_listed_addresses_get_a_code(monkeypatch):
+    monkeypatch.setenv("HUB_ALLOWED_EMAILS", " Ann@Example.com , @team.example ")
+    m = Mail()
+    assert auth.request_code("ANN@example.com", "1.1.1.1", mailer=m, now=1) == auth.SENT
+    assert auth.request_code("bob@team.example", "1.1.1.2", mailer=m, now=2) == auth.SENT
+    assert auth.request_code("eve@evil.example", "1.1.1.3", mailer=m, now=3) == {"ok": False, "error": "not_invited"}
+    assert len(m.sent) == 2
+    with db.read() as con:
+        assert con.execute("select count(*) from login_codes where email=?", ("eve@evil.example",)).fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("sneaky", ["x@evilteam.example", "x@team.example.evil.com", "x@sub.team.example", "team.example"])
+def test_a_domain_entry_matches_the_whole_domain_only(monkeypatch, sneaky):
+    monkeypatch.setenv("HUB_ALLOWED_EMAILS", "@team.example")
+    assert auth.request_code(sneaky, "1.1.1.1", mailer=Mail(), now=1)["ok"] is False
+
+
+def test_allow_list_also_gates_google_sign_in(monkeypatch):
+    monkeypatch.setenv("HUB_ALLOWED_EMAILS", "ann@gmail.com")
+    refused = auth.google_login("t", "c", "c", verify=claims(sub="g-40", email="eve@gmail.com"), now=1)
+    assert refused == {"ok": False, "error": "not_invited"}
+    with db.read() as con:
+        assert con.execute("select count(*) from accounts where google_sub=?", ("g-40",)).fetchone()[0] == 0
+    assert auth.google_login("t", "c", "c", verify=claims(sub="g-41", email="ann@gmail.com"), now=2)["ok"]
+
+
+def test_the_sign_in_email_cap_is_hub_wide_and_refused_requests_do_not_use_it_up(monkeypatch):
+    monkeypatch.setenv("HUB_MAIL_DAILY_CAP", "4")
+    m = Mail()
+    same = [auth.request_code("one@example.com", "2.2.2.2", mailer=m, now=1 + i) for i in range(5)]  # 3 sent, then the per-address limit refuses two
+    assert [r.get("error") for r in same] == [None, None, None, "too_many", "too_many"]
+    assert auth.request_code("two@example.com", "3.3.3.3", mailer=m, now=10) == auth.SENT  # the 4th mail of the day
+    assert auth.request_code("three@example.com", "4.4.4.4", mailer=m, now=11) == {"ok": False, "error": "mail_busy"}
+    assert len(m.sent) == 4
+    assert auth.request_code("three@example.com", "4.4.4.4", mailer=m, now=11 + 86500) == auth.SENT  # a day later
+
+
+def test_bad_cap_setting_falls_back_to_the_default(monkeypatch):
+    monkeypatch.setenv("HUB_MAIL_DAILY_CAP", "lots")
+    assert auth.mail_daily_cap() == 100
+    monkeypatch.setenv("HUB_MAIL_DAILY_CAP", "7")
+    assert auth.mail_daily_cap() == 7
+
+
+def test_the_sign_in_page_has_words_for_the_new_refusals():
+    from pathlib import Path
+
+    js = (Path(__file__).resolve().parent.parent / "hub" / "web" / "signin.js").read_text()
+    assert "not_invited:" in js and "mail_busy:" in js

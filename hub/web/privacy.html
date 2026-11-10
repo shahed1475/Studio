@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Privacy at Nightloom</title>
+<meta name="color-scheme" content="dark light">
+<script src="theme.js"></script>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<main class="prose" id="main">
+  <p><a href="./">&larr; Nightloom</a></p>
+  <h1>Privacy</h1>
+  <p class="mute">Plain words about what this site keeps. Last written 10 November 2026. A draft for the owner to check before the site is opened to the public.</p>
+
+  <h2>Who runs this</h2>
+  <p>Operator and contact: OWNER-TO-FILL (name and an email address where you can ask questions or ask for your data to be removed).</p>
+
+  <h2>What we keep about you</h2>
+  <ul>
+    <li><b>Your email address</b> (or the Google account id and name, if you sign in with Google), to know which account is yours.</li>
+    <li><b>Your choices</b>: the niche you describe or pick, and the platforms you want plans for.</li>
+    <li><b>Research</b> the researcher agent stored for you: topic ideas with the Wikipedia address, passage and date each came from.</li>
+    <li><b>Your AI key</b>, if you add one: stored encrypted, for your account only. It is never shown again, not even to you, and never written to logs.</li>
+    <li><b>Agent conversations</b>: what you and the agents write to each other, kept so a task can be shown again.</li>
+    <li><b>A security log</b> (audit): the time and kind of sign-in events, such as a code sent or refused, with a scrambled form of the address and the IP address of the attempt. It keeps no code and no password.</li>
+  </ul>
+  <p>We do not keep passwords (there are none), payment details (we take no payments) or videos.</p>
+
+  <h2>Cookies and storage in your browser</h2>
+  <ul>
+    <li><code>hub_session</code>: keeps you signed in. A cookie the page cannot read. It ends after 7 days without use, and at most 30 days after you signed in.</li>
+    <li><code>hub_csrf</code>: protects Google sign-in against forged requests.</li>
+    <li>Your light or dark choice is kept in this browser only. Text you typed on the front page is kept in the tab until you close it.</li>
+    <li>If you use Google sign-in, Google's own script also sets a cookie called <code>g_state</code> on this site.</li>
+  </ul>
+
+  <h2>Who else sees something</h2>
+  <ul>
+    <li><b>The mail service</b> that sends your sign-in code sees your address and the message.</li>
+    <li><b>Google</b>, if you choose Google sign-in, tells us your verified email and name.</li>
+    <li><b>OpenRouter</b> receives what the agents send to a model when you ask them to write (your niche text, research text, your messages), using your own key under your own OpenRouter terms. We do not see your OpenRouter account, balance or other use.</li>
+    <li><b>Wikipedia</b> is read by our server when you run research. It does not learn who you are.</li>
+  </ul>
+
+  <h2>How long</h2>
+  <ul>
+    <li>A sign-in code works once and for 10 minutes.</li>
+    <li>Counters that stop abuse (they hold an IP address) are kept for up to 24 hours.</li>
+    <li>Everything else stays until you delete your account.</li>
+    <li>If the site keeps backups, they can still hold your data for up to seven days after you delete it, until the oldest copy is replaced.</li>
+  </ul>
+
+  <h2>Leaving</h2>
+  <p>In your workspace, under <b>Your data</b>, press <b>Delete my account</b> and type <code>delete</code>. This removes your account, choices, research, stored key, conversations and waiting sign-in codes from the database, and overwrites the deleted text. The security log keeps the fact that an account was deleted, with no name, address or IP.</p>
+
+  <h2>What this page cannot promise</h2>
+  <p>Agents are models and can be wrong; facts need their sources. No site is perfectly secure. If something looks wrong, tell the operator.</p>
+</main>
+</body>
+</html>

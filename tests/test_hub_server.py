@@ -355,3 +355,22 @@ def test_key_changes_are_limited_to_ten_an_hour(hub, openrouter):
     h, _ = signed_in(port, mail)
     codes = [save_key(port, h)[0] for _ in range(12)]
     assert codes[:10] == [200] * 10 and codes[10:] == [429, 429]
+
+
+def test_account_delete_needs_a_session_the_typed_word_and_clears_the_cookie(hub):
+    port, mail = hub
+    assert call(port, "POST", "/api/account/delete", {"confirm": "delete"}, XH)[0] == 401
+    h, aid = signed_in(port, mail)
+    assert call(port, "POST", "/api/account/delete", {"confirm": "delete"}, {"Cookie": h["Cookie"]})[0] == 403  # no X-Hub
+    assert call(port, "POST", "/api/account/delete", {}, h)[0] == 400 and call(port, "POST", "/api/account/delete", {"confirm": "yes"}, h)[0] == 400
+    assert call(port, "GET", "/api/me", headers=h)[0] == 200  # still there after the refusals
+    other, _ = signed_in(port, mail, "other@example.com")
+    s, hdr, d, _ = call(port, "POST", "/api/account/delete", {"confirm": " Delete "}, h)
+    assert s == 200 and d == {"ok": True} and "Max-Age=0" in hdr["Set-Cookie"]
+    assert call(port, "GET", "/api/me", headers=h)[0] == 401 and call(port, "GET", "/api/me", headers=other)[0] == 200
+
+
+def test_the_privacy_page_is_served_with_the_page_security_headers(hub):
+    port, _ = hub
+    s, hdr, body, _ = call(port, "GET", "/privacy.html", raw=True)
+    assert s == 200 and hdr["Content-Type"].startswith("text/html") and "Content-Security-Policy" in hdr and b"Privacy" in body

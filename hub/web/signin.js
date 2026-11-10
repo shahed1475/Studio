@@ -14,6 +14,8 @@ const MESSAGES = {
   mail_unavailable: "We could not send the email right now. Try again in a few minutes.",
   invalid_or_expired: "That code did not work. It may have expired or been used already. Send a new one.",
   google_refused: "Google sign-in did not work. Use the emailed code instead.",
+  not_invited: "Sign-up is by invitation for now. Ask the owner to add your address.",
+  mail_busy: "Sign-in emails are paused for today. Please try again tomorrow.",
 };
 const say = (el, text) => el.replaceChildren(...(text ? [icon("warn"), text] : []));
 const go = () => { location.href = "app.html"; };

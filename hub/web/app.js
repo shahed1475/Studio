@@ -97,6 +97,16 @@ $("k-remove").addEventListener("click", async () => {
   say($("k-err"), ""); await api("/api/key/remove", {}); await loadKey();
 });
 
+// Your data: deleting the account needs the typed word; on success the session is gone and the page goes back to the front page.
+$("del-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault(); say($("d-err"), ""); $("d-go").disabled = true;
+  try {
+    const r = await api("/api/account/delete", { confirm: $("d-word").value });
+    if (r.ok) return location.replace("./");
+    say($("d-err"), r.data.message || "Could not delete the account. Try again.");
+  } catch (e) { say($("d-err"), e.message); } finally { $("d-go").disabled = false; }
+});
+
 // Research: topics the researcher stored for this account, each with its label and source. Everything from the web is inserted as text, never as markup.
 const LABEL = { PARTIALLY_VERIFIED: "Partly checked", UNVERIFIED: "Not checked" };
 function drawResearch(data) {

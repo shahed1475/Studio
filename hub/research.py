@@ -9,6 +9,7 @@ from . import auth, db
 
 LABELS_ALLOWED = ("PARTIALLY_VERIFIED", "UNVERIFIED")
 PASSAGE_MAX, TITLE_MAX = 600, 120
+RUNS_PER_HOUR_ALL = 30  # all accounts together: at most 30 runs of 6 articles an hour
 MAX_ARTICLES, RUNS_PER_HOUR = 6, 3  # Wikipedia answered HTTP 429 after bursts before (the studio's reader spaces calls); a run is small and rare
 
 
@@ -94,6 +95,8 @@ def run_for_account(account_id: str, niche_id: str, max_articles: int = MAX_ARTI
         return {"ok": False, "error": "no_ready_made_niche"}
     if not auth.hit(f"research:{account_id}", RUNS_PER_HOUR, 3600, now):
         return {"ok": False, "error": "too_many"}
+    if not auth.hit("research:all", RUNS_PER_HOUR_ALL, 3600, now):  # every account shares the server's one address on Wikipedia, which answered HTTP 429 to bursts before
+        return {"ok": False, "error": "busy"}
     stored, failed, topics = 0, 0, []
     for title in preset["starter_topics"][:max(1, min(int(max_articles), MAX_ARTICLES))]:
         try:

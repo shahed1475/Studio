@@ -182,3 +182,15 @@ def test_the_daily_cap_is_said_in_plain_words(keyed):
         call("x")
     t = ask(keyed, "strategist", text="one more", llm=call)
     assert state(t) == "failed" and "limit of 60" in str(t)
+
+
+def test_researcher_says_plainly_when_the_hub_is_busy(monkeypatch):
+    import niche
+
+    from hub import profile, research
+
+    aid = account()
+    profile.save(aid, "ancient_civilizations", "", "A", ["youtube"], niche.PRESET_IDS, agents.PLATFORMS)
+    monkeypatch.setattr(research, "run_for_account", lambda *a, **k: {"ok": False, "error": "busy"})
+    t = ask(aid, "researcher", data={"action": "research"})
+    assert state(t) == "rejected" and "busy" in str(t).lower()

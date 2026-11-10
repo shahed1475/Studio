@@ -228,6 +228,13 @@ class Hub(BaseHTTPRequestHandler):
             except ValueError as e:
                 return self._json(400, {"ok": False, "error": str(e)})
             return self._json(200, {"ok": True, "profile": p})
+        if path == "/api/account/delete":
+            if not acc:
+                return self._json(401, {"ok": False, "error": "signed_out"})
+            if str(data.get("confirm") or "").strip().lower() != "delete":
+                return self._json(400, {"ok": False, "error": "confirm", "message": "Type the word delete to confirm."})
+            auth.delete_account(acc["id"])
+            return self._json(200, {"ok": True}, {"Set-Cookie": self._session_cookie(None)})
         if path in ("/api/key", "/api/key/remove"):
             if not acc:
                 return self._json(401, {"ok": False, "error": "signed_out"})
@@ -290,6 +297,9 @@ def startup_report(environ=None, path=None) -> list[str]:
     else:
         lines.append("Mail: incomplete, missing " + ", ".join(missing) + " (sending codes will fail until it is complete)")
     lines.append("Google sign-in: on" if st["HUB_GOOGLE_CLIENT_ID"] else "Google sign-in: off (no client id set)")
+    listed = auth.allow_entries(environ)
+    lines.append(f"Sign-up: closed to {len(listed)} listed addresses or domains" if listed else "Sign-up: OPEN to anyone")
+    lines.append(f"Sign-in emails: at most {auth.mail_daily_cap(environ)} a day for the whole hub")
     return lines
 
 

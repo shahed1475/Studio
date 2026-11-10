@@ -69,3 +69,12 @@ def test_main_reads_the_file_before_it_binds_and_prints_no_value(tmp_path, monke
     out = capsys.readouterr().out
     assert seen["client_id_at_bind"] == SECRETS["HUB_GOOGLE_CLIENT_ID"]
     no_secret_in(out.splitlines())
+
+
+def test_report_says_whether_sign_up_is_open_or_closed_and_the_mail_cap(tmp_path):
+    none = tmp_path / "none.env"
+    text = "\n".join(server.startup_report({}, none))
+    assert "Sign-up: OPEN to anyone" in text and "at most 100" in text
+    closed = "\n".join(server.startup_report({"HUB_ALLOWED_EMAILS": "friend@example.com, @team.example", "HUB_MAIL_DAILY_CAP": "30"}, none))
+    assert "Sign-up: closed to 2 listed" in closed and "at most 30" in closed
+    assert "friend@example.com" not in closed and "team.example" not in closed  # the list itself is not printed

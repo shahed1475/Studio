@@ -81,6 +81,10 @@ label, .label { display: block; font-weight: 600; font-size: .92rem; margin-bott
 .field:focus-visible { outline-offset: 1px; border-color: var(--lantern); }
 textarea.field { min-height: 108px; resize: vertical; line-height: 1.5; }
 .help { font-size: .88rem; color: var(--mist); margin-top: 8px; }
+.prose { width: min(70ch, 100% - 2 * clamp(16px, 4vw, 40px)); margin: 0 auto; padding-block: 40px 72px; }
+.prose h1 { font-family: var(--display); margin: 18px 0 6px; }
+.prose h2 { font-family: var(--display); font-size: 1.15rem; margin: 30px 0 8px; }
+.prose ul { padding-left: 1.2em; } .prose li { margin: 6px 0; line-height: 1.55; } .prose p { line-height: 1.6; }
 .err { font-size: .92rem; color: var(--bad); margin-top: 10px; display: flex; gap: 8px; align-items: flex-start; }
 .err:empty { display: none; }
 .stack > * + * { margin-top: var(--gap, 16px); }

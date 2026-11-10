@@ -142,3 +142,24 @@ def test_hostile_page_text_is_stored_as_text_and_nothing_else_happens(monkeypatc
     research.run_for_account(a, NICHE, max_articles=1, now=1.0)
     o = research.overview(a)
     assert o["sources"][0]["passage"] == evil and o["topics"][0]["label"] == "PARTIALLY_VERIFIED" and len(o["topics"]) == 1
+
+
+def test_hub_wide_cap_protects_wikipedia_from_many_accounts(monkeypatch):
+    calls = []
+    monkeypatch.setattr(research, "fetch_article", reader(calls=calls))
+    monkeypatch.setattr(research, "RUNS_PER_HOUR_ALL", 3)
+    for i in range(3):
+        assert research.run_for_account(account(f"u{i}@example.com"), NICHE, max_articles=1, now=100.0 + i)["ok"]
+    late = account("late@example.com")
+    assert research.run_for_account(late, NICHE, max_articles=1, now=110.0) == {"ok": False, "error": "busy"} and len(calls) == 3
+    assert research.run_for_account(late, NICHE, max_articles=1, now=100.0 + 3700)["ok"]
+
+
+def test_a_refused_run_does_not_use_up_the_hub_wide_budget(monkeypatch):
+    monkeypatch.setattr(research, "fetch_article", reader())
+    monkeypatch.setattr(research, "RUNS_PER_HOUR_ALL", 4)
+    a = account("a@example.com")
+    results = [research.run_for_account(a, NICHE, max_articles=1, now=100.0 + i).get("error") for i in range(5)]
+    assert results == [None, None, None, "too_many", "too_many"]  # the account's own limit refused two: they cost the hub nothing
+    assert research.run_for_account(account("b@example.com"), NICHE, max_articles=1, now=120.0)["ok"]  # the 4th and last of the hour
+    assert research.run_for_account(account("c@example.com"), NICHE, max_articles=1, now=121.0)["error"] == "busy"

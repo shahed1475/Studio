@@ -63,20 +63,47 @@ def _record(con, key: str, now: float) -> None:
     con.execute("insert into rate_hits(key,at) values(?,?)", (key, now))
 
 
+DEFAULT_MAIL_CAP = 100
+
+
+def mail_daily_cap(environ=None) -> int:
+    """Sign-in emails the whole hub may send in 24 hours (HUB_MAIL_DAILY_CAP, default 100): a mail account has a daily sending limit and a flood must not use it up."""
+    raw = str((os.environ if environ is None else environ).get("HUB_MAIL_DAILY_CAP", "")).strip()
+    return int(raw) if raw.isdigit() and int(raw) > 0 else DEFAULT_MAIL_CAP
+
+
+def allow_entries(environ=None) -> list[str]:
+    """HUB_ALLOWED_EMAILS: comma-separated addresses, or @domain for a whole domain. Empty means sign-up is open."""
+    raw = str((os.environ if environ is None else environ).get("HUB_ALLOWED_EMAILS", ""))
+    return [x.strip().lower() for x in raw.split(",") if x.strip()]
+
+
+def allowed(email: str, environ=None) -> bool:
+    entries = allow_entries(environ)
+    e = str(email or "").strip().lower()
+    return not entries or any(e == x or (x.startswith("@") and e.endswith(x)) for x in entries)  # "@team.example" needs the @ right before the domain: evilteam.example does not match
+
+
 def request_code(email, ip: str, mailer=None, now: float | None = None) -> dict:
     """Mail a sign-in code. The answer is the same for an address that has an account and one that has not."""
     now = time.time() if now is None else now
     e = norm_email(email)
     if not e:
         return {"ok": False, "error": "bad_email"}
+    if not allowed(e):
+        return {"ok": False, "error": "not_invited"}  # nothing is stored or counted for an address that is not on the list
     ek, ik = f"send:e:{_tag(e)}", f"send:ip:{ip}"
     code = f"{secrets.randbelow(10 ** 8):08d}"
     with db.tx() as con:
         if _count(con, ek, now) >= SEND_PER_EMAIL or _count(con, ik, now) >= SEND_PER_IP:
             _audit(con, "code_sent", "rate_limited", now, detail=_tag(e), ip=ip)
             return {"ok": False, "error": "too_many"}
+        if con.execute("select count(*) from rate_hits where key='send:all' and at>?", (now - 86400,)).fetchone()[0] >= mail_daily_cap():
+            _audit(con, "code_sent", "mail_capped", now, detail=_tag(e), ip=ip)
+            return {"ok": False, "error": "mail_busy"}  # checked before the older code is retired, so a person already signing in keeps the code they have
         _record(con, ek, now)
         _record(con, ik, now)
+        _record(con, "send:all", now)
         con.execute("update login_codes set used=1 where email=? and used=0", (e,))
         con.execute("insert into login_codes(email,code_hash,expires_at,created_at) values(?,?,?,?)", (e, _code_hash(e, code), now + CODE_TTL, now))
         _audit(con, "code_sent", "ok", now, detail=_tag(e), ip=ip)
@@ -168,6 +195,27 @@ def hit(key: str, limit: int, window: float, now: float | None = None) -> bool:
         return True
 
 
+def delete_account(account_id: str, now: float | None = None) -> bool:
+    """Remove a person: the account and everything that hangs on it (sessions, profile, research, stored key, tasks), their waiting sign-in codes, and the link between them and the
+    security log (those rows stay, with no account and no address). The database file is checkpointed so the deleted text is not left in its write-ahead log."""
+    now = time.time() if now is None else now
+    with db.tx() as con:
+        row = con.execute("select email from accounts where id=?", (account_id,)).fetchone()
+        if not row:
+            return False
+        if row["email"]:
+            con.execute("delete from login_codes where email=?", (row["email"],))
+        con.execute("update audit set account_id=NULL, ip='' where account_id=?", (account_id,))
+        con.execute("delete from accounts where id=?", (account_id,))
+        _audit(con, "account_deleted", "ok", now)
+    con = db.connect()
+    try:
+        con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    finally:
+        con.close()
+    return True
+
+
 def logout(token) -> None:
     if token and isinstance(token, str):
         with db.tx() as con:
@@ -212,6 +260,10 @@ def google_login(id_token_str, csrf_cookie, csrf_body, ip: str = "", verify=None
     if (c.get("iss") not in GOOGLE_ISSUERS or not sub or c.get("email_verified") is not True or not email
             or float(c.get("exp") or 0) <= now or (cid and c.get("aud") != cid)):
         return refuse("claims")
+    if not allowed(email):
+        with db.tx() as con:
+            _audit(con, "login", "not_invited", now, detail=_tag(email), ip=ip)
+        return {"ok": False, "error": "not_invited"}
     hd = str(c.get("hd") or "").lower()
     authoritative = email.endswith("@gmail.com") or (bool(hd) and email.endswith("@" + hd))
     with db.tx() as con:

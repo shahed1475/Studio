@@ -52,6 +52,7 @@ def connect() -> sqlite3.Connection:
     con = sqlite3.connect(PATH, timeout=10, isolation_level=None)  # autocommit; transactions are explicit (tx)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys=ON")
+    con.execute("PRAGMA secure_delete=ON")  # deleted text is overwritten in the file, so deleting an account really removes the person
     con.execute("PRAGMA journal_mode=WAL")
     with _LOCK:
         if str(PATH) not in _READY:
