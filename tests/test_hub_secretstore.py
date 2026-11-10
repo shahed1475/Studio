@@ -129,3 +129,13 @@ def test_default_path_follows_the_env_var_then_home(monkeypatch, tmp_path):
     monkeypatch.delenv("HUB_SECRETS_FILE")
     monkeypatch.setenv("HOME", str(tmp_path))
     assert ss.default_path() == tmp_path / ".config" / "nightloom" / "hub.env"
+
+
+def test_deployment_settings_survive_a_later_save_of_the_mail_settings(tmp_path):
+    """On a server the same file also holds the master key for stored AI keys, the public address and the allow-list. Saving the Gmail settings must not drop them."""
+    deploy = {"HUB_KEYSTORE_KEY": "k" * 44, "HUB_PUBLIC_URL": "https://hub.example.org", "HUB_ALLOWED_EMAILS": "a@b.c, @x.example", "HUB_MAIL_DAILY_CAP": "50", "HUB_INSECURE_DEV": "1"}
+    p = ss.save(deploy, tmp_path / "hub.env")
+    ss.save({"HUB_SMTP_USER": "me@gmail.com", "HUB_SMTP_PASSWORD": "abcdefghijklmnop"}, p)
+    env = {}
+    ss.load(p, env)
+    assert {k: env[k] for k in deploy} == deploy and env["HUB_SMTP_USER"] == "me@gmail.com"

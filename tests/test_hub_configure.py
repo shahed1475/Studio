@@ -177,6 +177,13 @@ def test_unwritable_place_is_reported_plainly_without_a_trace(tmp_path, monkeypa
     nothing_typed_is_echoed(o, a, s)
 
 
+def test_the_prompt_keeps_the_servers_other_settings(tmp_path):
+    ss.save({"HUB_KEYSTORE_KEY": "k" * 44, "HUB_PUBLIC_URL": "https://hub.example.org", "HUB_ALLOWED_EMAILS": "friend@example.com"}, tmp_path / "hub.env")
+    code, a, s, o = run(tmp_path, "--no-test", ask=[ADDRESS, CLIENT], secret=[PASSWORD])
+    env = stored(tmp_path)
+    assert code == 0 and env["HUB_KEYSTORE_KEY"] == "k" * 44 and env["HUB_ALLOWED_EMAILS"] == "friend@example.com" and env["HUB_SMTP_PASSWORD"] == PASSWORD
+
+
 def test_secretstore_refusal_is_reported_without_a_trace(tmp_path, monkeypatch):
     monkeypatch.setattr(configure.secretstore, "save", lambda *a, **k: (_ for _ in ()).throw(ss.SecretError("the secrets file must live outside any git work tree")))
     code, a, s, o = run(tmp_path, "--no-test", ask=[ADDRESS, ""], secret=[PASSWORD])

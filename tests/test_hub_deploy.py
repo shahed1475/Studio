@@ -146,6 +146,16 @@ def test_dry_run_prints_the_commands_and_runs_nothing(home):
     assert not (Path(home["HUB_HOME"]) / "data").exists()  # a dry run creates nothing
 
 
+def test_restart_recreates_the_container_so_changed_settings_are_read(home):
+    r = sh("restart", env={**home, "DRY": "1"})
+    assert r.returncode == 0 and "--force-recreate" in r.stdout and SECRET not in r.stdout
+
+
+def test_configure_runs_the_prompt_in_a_locked_down_throwaway_container(home):
+    r = sh("configure", env={**home, "DRY": "1"})
+    assert r.returncode == 0 and "hub.configure" in r.stdout and "--read-only" in r.stdout and "--cap-drop ALL" in r.stdout and "/secrets/hub.env" in r.stdout and SECRET not in r.stdout
+
+
 def test_the_script_is_executable_python_free_bash_and_parses():
     assert os.access(SH, os.X_OK)
     assert subprocess.run(["bash", "-n", str(SH)], capture_output=True).returncode == 0

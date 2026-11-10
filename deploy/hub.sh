@@ -4,6 +4,8 @@
 #   check [--public] [--open]   look at the settings without starting anything; --public is the stricter set a public launch needs
 #   up [--public] [--open]      check, then start the container (needs the image)
 #   down                        stop it (the data stays: this is also the rollback)
+#   restart                     recreate the container so changed settings are read
+#   configure                   the Gmail and Google prompt (python -m hub.configure) in a throwaway container; then run restart
 #   status | logs               what is running; the last 100 log lines
 #   backup                      a consistent copy of the database into ~/hub/backups, seven kept
 #   caddy-block                 print the web-proxy site block for $HUB_HOST (deploy/tenant.sh caddy adds it when HUB_HOST is set)
@@ -74,6 +76,14 @@ up() {
   compose up -d
 }
 
+configure() {
+  # the terminal prompt for the Gmail app password and the Google client id, run in a throwaway locked-down container with only the secrets folder mounted:
+  # what is typed goes straight into ~/hub/secrets/hub.env (mode 600) and nowhere else. Run it as  ssh -t <server> '~/hub/deploy/hub.sh configure', then  hub.sh restart.
+  [[ -f "$ENV_FILE" ]] || die "no settings file at $ENV_FILE yet"
+  run docker run -it --rm --read-only --cap-drop ALL --security-opt no-new-privileges:true --tmpfs /tmp:size=8m,noexec,nosuid -u "$(id -u):$(id -g)" \
+    -v "$HUB_HOME/secrets:/secrets" "$IMAGE" python -m hub.configure --file /secrets/hub.env "$@"
+}
+
 backup() {
   local dest="$HUB_HOME/backups" stamp f
   stamp="$(date -u +%Y%m%d-%H%M%S)"
@@ -92,9 +102,11 @@ case "${1:-}" in
   check) shift; check "$@" ;;
   up) shift; up "$@" ;;
   down) compose down ;;
+  restart) check; compose up -d --force-recreate ;;  # a plain restart does not re-read the env file; recreating does
+  configure) shift; configure "$@" ;;
   status) run docker ps --filter name=nightloom-hub --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' ;;
   logs) run docker logs --tail 100 nightloom-hub ;;
   backup) backup ;;
   caddy-block) caddy_block ;;
-  *) sed -n '2,9p' "${BASH_SOURCE[0]}"; exit 1 ;;
+  *) sed -n "2,11p" "${BASH_SOURCE[0]}"; exit 1 ;;
 esac
