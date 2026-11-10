@@ -9,6 +9,7 @@ import requests
 
 import archive_video
 import config
+import licences
 import wikipedia
 
 
@@ -52,6 +53,29 @@ def credit_for(path: Path) -> str | None:
     """Credit line stored beside a cached clip or image, if any."""
     f = Path(path).with_suffix(".txt")
     return f.read_text() if f.exists() else None
+
+
+CREDIT_HEAD = "Picture credits:"
+
+
+def credit_block(credits: list[str]) -> str:
+    """The description's credit section: every item whose licence needs a credit (CC BY, CC BY-SA, NASA media, Pixabay) in full, one line each, and a count of the public-domain and CC0
+    items (their address and licence are in the video's record). AI art has its own label. Empty when no real picture or clip was used."""
+    unique = list(dict.fromkeys(c for c in credits if c))
+    needed = [c for c in unique if licences.needs_credit(c)]
+    others = [c for c in unique if c not in needed and "ai-generated" not in c.lower()]
+    lines = [f"- {c}" for c in needed]
+    if others:
+        lines.append(f"- {len(others)} more real picture{'s' if len(others) != 1 else ''} or clip{'s' if len(others) != 1 else ''} are public domain or CC0; each is recorded with its address and licence.")
+    return CREDIT_HEAD + "\n" + "\n".join(lines) if lines else ""
+
+
+def with_credits(description: str, credits: list[str]) -> str:
+    """The description with its credit section: placed before 'Chapters:' when the description has them, at the end otherwise; an older section is replaced, never doubled."""
+    block = credit_block(credits)
+    head, sep, chapters = str(description or "").partition("\n\nChapters:")
+    head = head.partition("\n\n" + CREDIT_HEAD)[0].rstrip()
+    return head + (f"\n\n{block}" if block else "") + (sep + chapters if sep else "")
 
 
 def collect_credits(clips: list) -> list[str]:
@@ -191,18 +215,27 @@ def image_for(query: str, anchors: list[str] | None = None) -> tuple[Path, str] 
     return hits[0] if hits else None
 
 
-def scene_images(lines: list[dict], topic: str, anchors: list[str], pool_size: int = 10, judge=None, art=None, art_limit: int = 0, art_first: bool = False, force_art: set[str] | None = None) -> tuple[list, list[str], dict]:
+def scene_images(lines: list[dict], topic: str, anchors: list[str], pool_size: int = 10, judge=None, art=None, art_limit: int = 0, art_first: bool = False, force_art: set[str] | None = None,
+                 finder=None) -> tuple[list, list[str], dict]:
     """One relevant image per scene: a specific search first, then unused images about the subject, then reuse.
     When no real picture is left, art(line) may draw one illustration (up to art_limit per video) instead of repeating a picture.
     art_first: skip the generic reserve of subject pictures (the usual source of a ruin or map that is not quite the place) and draw instead.
     force_art: narration lines whose picture was judged wrong: they are drawn whatever a search finds, outside the art cap (the cache makes a repeat free).
+    finder (realmedia.Finder, off by default): after the Commons public-domain search, the other approved libraries and licences are tried before any picture is drawn.
     A scene only goes blank when nothing about the subject can be found at all."""
     used: list[Path] = []
     drawn = forced = 0
     credit: dict[Path, str] = {}
     pool: list[tuple[Path, str]] = []
+
+    def look(q: str, limit: int, skip, wide: bool = False) -> list[tuple[Path, str]]:
+        hits = images_for(q, anchors, limit, skip=skip, judge=judge)
+        if finder is not None and len(hits) < limit:
+            hits = hits + finder(q, anchors, limit - len(hits), skip=[*skip, *[h[0] for h in hits]], wide=wide)
+        return hits
+
     for q in dict.fromkeys([topic, *anchors]):  # the subject itself: a reserve of on-topic images
-        pool += [h for h in images_for(q, anchors, pool_size, skip=[p for p, _ in pool], judge=judge) if h[0] not in [p for p, _ in pool]]
+        pool += [h for h in look(q, pool_size, [p for p, _ in pool], wide=True) if h[0] not in [p for p, _ in pool]]
     clips: list[Path | None] = []
     for l in lines:
         hit = None
@@ -210,7 +243,7 @@ def scene_images(lines: list[dict], topic: str, anchors: list[str], pool_size: i
             hit = art(l)
             forced += bool(hit)
         if not hit and l.get("visual"):
-            hits = images_for(l["visual"], anchors, 1, skip=used, judge=judge)
+            hits = look(l["visual"], 1, used)
             hit = hits[0] if hits else None
         if not hit and art_first and art and drawn < art_limit:
             hit = art(l)

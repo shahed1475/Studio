@@ -127,6 +127,21 @@ def _real_footage(data: dict, clips: list, credits: list) -> tuple[list, list]:
     return out, creds
 
 
+def _real_media_on(data: dict) -> bool:
+    """Real pictures from the approved free libraries (realmedia.py) before any drawn one, with their credits in the description. On for every video unless it says `real_media: false`, or
+    it is drawn on purpose in one look (3d, photo, draw_all) or is a real case (no archive picture of a real victim or suspect)."""
+    return data.get("real_media") is not False and data.get("art_style") not in ("photo", "3d") and not data.get("draw_all") and not _is_case(data)
+
+
+def _real_finder(data: dict, kind: str):
+    """The picture finder for this video (None when real media is off). The film may show up to 14 credit-needing items, a Short 5: each one is written into the description."""
+    if not _real_media_on(data):
+        return None
+    import realmedia
+
+    return realmedia.Finder(data["topic"], data.get("anchors") or [], judge=_image_judge(data["topic"]), credit_cap=14 if kind == "doc" else 5)
+
+
 def _is_case(data: dict) -> bool:
     """A real case or unsolved crime: its pictures show no identifiable person (aiart.CASE_PICTURES) and its script follows scriptgen.CASE_RULES."""
     import kinds
@@ -297,9 +312,11 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
         import aiart
 
         art = lambda l: aiart.generate(l["text"], l.get("visual", ""), topic, vertical=True, style=data.get("art_style"), case=_is_case(data))
+        finder = _real_finder(data, "short")
         clips, credits, stats = footage.scene_images(data["lines"], topic, data.get("anchors") or [], pool_size=pool_size, judge=_image_judge(topic),
                                                      art=art, art_limit=12 if data.get("art_style") == "3d" else aiart.MAX_PER_VIDEO["short"],
-                                                     art_first=bool(data.get("art_first")), force_art=_forced_art(data))
+                                                     art_first=bool(data.get("art_first")), force_art=_forced_art(data), finder=finder)
+        data["assets"] = finder.assets if finder else []
         data["footage"] = stats
         if stats["missing"] or stats["unique"] < min_unique:
             clips = [None] * len(clips)
@@ -328,6 +345,7 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
     shutil.rmtree(work)
     data["subtitles"] = "burned"
     data["credits"] = credits
+    data["description"] = footage.with_credits(data.get("description", ""), credits)  # credit-needing pictures are credited in the description
     data["approved"] = False
     records.save(folder, data)  # the producer owns the record until it is finished: one atomic whole save
     print(f"\nDone: {folder / 'video.mp4'}\nTitle: {data['title']}\nWatch it, then: python run.py approve {folder.name}")
@@ -467,6 +485,8 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
     import random
 
     data = _apply_house_style(data, "doc", folder)
+    if _real_media_on(data):
+        data.setdefault("real_footage", 4)  # up to four real Commons clips where they truly fit (footage_real.py); none when none is found
 
     slug = "doc-" + re.sub(r"[^a-z0-9]+", "-", data["title"].lower()).strip("-")[:45]
     in_place = folder is not None  # a re-render inside an existing video's folder: that folder is never removed (28 Oct 2026: a re-render at the picture budget removed a whole video)
@@ -491,7 +511,8 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
     import aiart
 
     art = lambda l: aiart.generate(l["text"], l.get("visual", ""), data["topic"], style=data.get("art_style"), case=_is_case(data))  # style "3d": a 3D animated-film look
-    pics = dict(judge=_image_judge(data["topic"]), art=art, art_first=bool(data.get("art_first")), force_art=_forced_art(data))
+    finder = _real_finder(data, "doc")
+    pics = dict(judge=_image_judge(data["topic"]), art=art, art_first=bool(data.get("art_first")), force_art=_forced_art(data), finder=finder)
     clips, credits, stats = footage.scene_images(data["lines"], data["topic"], anchors, art_limit=aiart.MAX_PER_VIDEO["doc"], **pics)
     if stats["unique"] < MIN_VARIETY * stats["scenes"] and aiart.enabled():  # the same few pictures again and again: draw illustrations for the scenes that would repeat
         print(f"  only {stats['unique']} different pictures for {stats['scenes']} scenes: drawing more")
@@ -545,6 +566,8 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
     data["description"] = intro + (f"\n\nSources:{src}" if src else "") + "\n\nChapters:\n" + "\n".join(starts)
     data["footage"] = stats
     data["credits"] = credits
+    data["assets"] = finder.assets if finder else []  # every library picture: address, licence, credit, date, hash
+    data["description"] = footage.with_credits(data["description"], credits)  # CC BY, CC BY-SA, NASA and Pixabay items must be credited where viewers read it
     data["subtitles"] = "burned" if config.DOC_SUBTITLES else "srt"
     data["approved"] = False
     records.save(folder, data)

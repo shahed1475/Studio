@@ -1098,3 +1098,60 @@ def test_eval_case_for_the_owners_advice_passes_and_fails_when_a_reviewer_reads_
     monkeypatch.setattr(ownerdesk, "FRAME", "")  # mutation: the advice is no longer framed as advice only
     bad2, _ = getattr(agenteval, name)()
     assert not bad2
+
+
+LICENCE_CASE = "case_only_approved_licences_are_used_and_a_credit_needing_picture_is_credited_in_the_description_and_keeps_its_credit_through_a_repackaging"
+
+
+def test_eval_case_for_licences_passes_and_is_in_the_list():
+    import agenteval
+
+    assert getattr(agenteval, LICENCE_CASE) in agenteval.CASES
+    ok, detail = getattr(agenteval, LICENCE_CASE)()
+    assert ok, detail
+
+
+def test_eval_case_for_licences_fails_when_every_licence_is_accepted(monkeypatch):
+    import agenteval
+    import licences
+
+    monkeypatch.setattr(licences, "accepted", lambda text: True)  # mutation: a non-commercial or all-rights-reserved picture passes
+    bad, _ = getattr(agenteval, LICENCE_CASE)()
+    assert not bad
+
+
+def test_eval_case_for_licences_fails_when_the_refusal_words_stop_working(monkeypatch):
+    import agenteval
+    import licences
+
+    monkeypatch.setattr(licences, "REFUSED", __import__("re").compile(r"(?!x)x"))  # mutation: nothing is ever refused
+    bad, _ = getattr(agenteval, LICENCE_CASE)()
+    assert not bad
+
+
+def test_eval_case_for_licences_fails_when_the_credit_is_not_put_in_the_description(monkeypatch):
+    import agenteval
+    import footage
+
+    monkeypatch.setattr(footage, "with_credits", lambda description, credits: description)  # mutation: credits never reach the description
+    bad, _ = getattr(agenteval, LICENCE_CASE)()
+    assert not bad
+
+
+def test_eval_case_for_licences_fails_when_the_gate_stops_asking_for_the_credit(monkeypatch):
+    import agenteval
+    import studiochecks
+
+    real = studiochecks.check_licenses
+    monkeypatch.setattr(studiochecks, "check_licenses", lambda meta: [{**r, "ok": True} if r["name"] == "credits_in_description" else r for r in real(meta)])  # mutation: the gate passes a missing credit
+    bad, _ = getattr(agenteval, LICENCE_CASE)()
+    assert not bad
+
+
+def test_eval_case_for_licences_fails_when_a_repackaging_drops_the_credits(monkeypatch):
+    import agenteval
+    import seo
+
+    monkeypatch.setattr(seo, "rebuild_description", lambda old, intro: intro)  # mutation: a new description forgets the credits
+    bad, _ = getattr(agenteval, LICENCE_CASE)()
+    assert not bad

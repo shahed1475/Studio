@@ -290,7 +290,7 @@ def enforce(meta: dict, chat=None, ask: bool = False) -> list[str]:
         return []
     changed = []
     desc = meta.get("description", "")
-    head = desc.partition("\n\nSources:")[0].partition("\n\nChapters:")[0]
+    head = desc.partition("\n\nSources:")[0].partition("\n\nPicture credits:")[0].partition("\n\nChapters:")[0]
     lead = ensure_lead(head, core, chat, ask)
     if lead != head:
         meta["description"] = lead + desc[len(head):]
@@ -324,8 +324,10 @@ def repair(folder: Path, chat=None) -> list[str]:
 def rebuild_description(old: str, intro: str) -> str:
     """New intro, but keep the Sources and Chapters sections the video already has."""
     head, _, chapters = old.partition("Chapters:")
+    head, _, credits = head.partition("Picture credits:")  # the credit section (CC BY, CC BY-SA, NASA, Pixabay items) is kept as it is: dropping it would break the licence terms
     sources = head.partition("Sources:")[2].strip()
-    return intro + (f"\n\nSources:\n{sources}" if sources else "") + (f"\n\nChapters:{chapters}" if chapters else "")
+    return (intro + (f"\n\nSources:\n{sources}" if sources else "") + (f"\n\nPicture credits:\n{credits.strip()}" if credits.strip() else "")
+            + (f"\n\nChapters:{chapters}" if chapters else ""))
 
 
 def make(folder: Path) -> dict:
