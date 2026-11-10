@@ -117,6 +117,19 @@ def cached_judge(topic: str, ask):
     return judge
 
 
+PERSON_PHOTO = re.compile(r"\b(portrait|headshot|selfie|bust of|photo of)\b|\b(professor|prof|dr|mr|mrs|ms)\b\.?", re.I)
+PERSON_WORDS = {"portrait", "headshot", "selfie", "professor", "photo", "image", "picture", "jpeg"}
+
+
+def unrelated_portrait(title: str, query: str) -> bool:
+    """A photo of a real, identifiable person is shown only for a scene about that person: it names the person in its title and the scene's own search words do. Anywhere else it would
+    suggest that person has to do with the line (found on the Antikythera Short: a researcher's face over a line about Corinth)."""
+    if not PERSON_PHOTO.search(str(title)):
+        return False
+    names = {w for w in re.findall(r"[a-z]{5,}", str(title).lower()) if w not in PERSON_WORDS}
+    return not (names & set(re.findall(r"[a-z]{5,}", str(query).lower())))
+
+
 def image_relevant(title: str, categories: str, anchors: list[str]) -> bool:
     """An image only counts when its title or Commons categories name the subject (no anchors known: no filter)."""
     if not anchors:
@@ -185,7 +198,7 @@ def images_for(query: str, anchors: list[str] | None = None, limit: int = 1, ski
                 continue
             title = page.get("title", "").removeprefix("File:")
             cats = meta.get("Categories", {}).get("value", "") + " " + re.sub(r"<[^>]+>", " ", meta.get("ImageDescription", {}).get("value", ""))
-            if image_relevant(title, cats, anchors):
+            if image_relevant(title, cats, anchors) and not unrelated_portrait(title, query):
                 cands.append((title, page, info, meta))
         if judge and cands:  # a name match is not enough: "Apollo" also names a moon mission
             labels = {c[0]: f"{c[0]} | {' '.join(re.sub(r'<[^>]+>', ' ', c[3].get('Categories', {}).get('value', '')).split())[:140]}" for c in cands}  # a bare file name can be a ride or a brand; the categories tell

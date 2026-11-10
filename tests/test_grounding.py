@@ -340,3 +340,25 @@ def test_judge_sees_commons_categories_so_a_bare_name_can_be_told_apart(monkeypa
     monkeypatch.setattr(footage.requests, "get", lambda *a, **k: R())
     got = footage.images_for("Thunderbird", ["Thunderbird"], 5, judge=lambda labels: seen.extend(labels) or [])
     assert got == [] and "roller coasters" in seen[0]
+
+
+def test_commons_search_skips_a_portrait_of_a_person_the_scene_is_not_about(monkeypatch, tmp_path):
+    import config
+    monkeypatch.setattr(config, "CACHE", tmp_path)
+    monkeypatch.setattr(footage.time, "sleep", lambda s: None)
+    pages = {str(i): {"title": f"File:{t}", "imageinfo": [{"thumburl": f"http://x/{i}.jpg", "extmetadata": {
+        "LicenseShortName": {"value": "Public domain"}, "Categories": {"value": "Antikythera"}}}]}
+        for i, t in enumerate(["Professor Mike Edmunds portrait 01.jpg", "Antikythera fragment.jpg"])}
+
+    class R:
+        status_code = 200
+        ok = True
+        content = b"img"
+        def raise_for_status(self): pass
+        def json(self): return {"query": {"pages": pages}}
+
+    monkeypatch.setattr(footage.requests, "get", lambda *a, **k: R())
+    got = footage.images_for("Ancient Corinth", ["Antikythera"], 5)
+    assert [c.split(" (")[0] for _, c in got] == ["Antikythera fragment.jpg"]
+    got2 = footage.images_for("Mike Edmunds", ["Antikythera"], 5)
+    assert any("Edmunds" in c for _, c in got2)
