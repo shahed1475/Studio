@@ -184,6 +184,21 @@ def test_the_prompt_keeps_the_servers_other_settings(tmp_path):
     assert code == 0 and env["HUB_KEYSTORE_KEY"] == "k" * 44 and env["HUB_ALLOWED_EMAILS"] == "friend@example.com" and env["HUB_SMTP_PASSWORD"] == PASSWORD
 
 
+def test_contact_flag_asks_only_for_the_privacy_contact_and_keeps_everything_else(tmp_path):
+    ss.save({"HUB_KEYSTORE_KEY": "k" * 44, "HUB_SMTP_USER": ADDRESS}, tmp_path / "hub.env")
+    code, a, s, o = run(tmp_path, "--contact", ask=["Ann Example, ann@example.org"])
+    env = stored(tmp_path)
+    assert code == 0 and env["HUB_CONTACT"] == "Ann Example, ann@example.org" and env["HUB_KEYSTORE_KEY"] == "k" * 44 and env["HUB_SMTP_USER"] == ADDRESS
+    assert len(a.prompts) == 1 and s.prompts == []
+
+
+def test_contact_flag_with_nothing_typed_or_too_much_saves_nothing(tmp_path):
+    code, *_ = run(tmp_path, "--contact", ask=[""])
+    assert code == 1 and not (tmp_path / "hub.env").exists()
+    code, a, s, o = run(tmp_path, "--contact", ask=["x" * 201])
+    assert code == 2 and not (tmp_path / "hub.env").exists()
+
+
 def test_secretstore_refusal_is_reported_without_a_trace(tmp_path, monkeypatch):
     monkeypatch.setattr(configure.secretstore, "save", lambda *a, **k: (_ for _ in ()).throw(ss.SecretError("the secrets file must live outside any git work tree")))
     code, a, s, o = run(tmp_path, "--no-test", ask=[ADDRESS, ""], secret=[PASSWORD])

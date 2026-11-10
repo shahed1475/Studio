@@ -125,6 +125,19 @@ def _run(args, path: Path, ask, ask_secret, out, send_test) -> int:
     return code
 
 
+def _contact(path: Path, ask, out) -> int:
+    """Only the contact line for the public privacy page (your name and an email or web address). Everything else in the file is kept."""
+    have = secretstore.status(path, {})["HUB_CONTACT"]
+    raw = " ".join(ask("Contact line for the privacy page, shown to the public (your name and an email or web address)" + _kept(have) + ": ").split())
+    if not raw:
+        out("Nothing to change. Nothing was saved.")
+        return 1
+    if len(raw) > 200:
+        raise Refused("That is longer than 200 characters. Nothing was saved.")
+    out(f"Saved to {secretstore.save({'HUB_CONTACT': raw}, path)} (readable only by you). Restart the hub to show it: hub.sh restart")
+    return 0
+
+
 def _status(path: Path, out) -> int:
     ignored = secretstore.load(path, {})["ignored"]
     if ignored:
@@ -148,12 +161,15 @@ def main(argv=None, ask=input, ask_secret=getpass.getpass, out=print, send_test=
     ap = argparse.ArgumentParser(prog="python -m hub.configure", description="Store the hub's Gmail app password and Google client id privately.")
     ap.add_argument("--status", action="store_true", help="show which settings are set (never their values) and exit")
     ap.add_argument("--no-test", action="store_true", help="do not offer to send a test email")
+    ap.add_argument("--contact", action="store_true", help="only set the contact line shown on the public privacy page")
     ap.add_argument("--file", help="use another secrets file (default: ~/.config/nightloom/hub.env or $HUB_SECRETS_FILE)")
     args = ap.parse_args(argv)
     path = Path(args.file).expanduser() if args.file else secretstore.default_path()
     if args.status:
         return _status(path, out)
     try:
+        if args.contact:
+            return _contact(path, ask, out)
         return _run(args, path, ask, ask_secret, out, send_test or _send_test_mail)
     except (EOFError, KeyboardInterrupt):
         out("\nStopped. Nothing was saved.")

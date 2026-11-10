@@ -8,7 +8,7 @@ from hub import a2a, agents, auth, db, keystore, profile, research
 
 WEB = Path(__file__).resolve().parent.parent / "hub" / "web"
 EMAIL = "gone.person@example.com"
-KEY = "sk-or-v1-" + "c3d4e5f6" * 8
+KEY = "sk-or-v1-" + "NOTAREALKEY" * 6
 
 
 class Mail:

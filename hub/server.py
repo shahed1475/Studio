@@ -5,6 +5,7 @@ that rides on the cookie must carry `X-Hub: 1` (a cross-site page cannot add it 
 be this host; a Bearer token (the same session token) needs neither because it is never sent by the browser on its own. No CORS headers at all. JSON bodies only, 64 KB at most.
 Every A2A call is tied to the signed-in account from the session, never to an id in the request. 60 A2A calls a minute per account. Errors say nothing about internals.
 The client's address is the socket's, or the last X-Forwarded-For hop only when HUB_TRUST_PROXY=1 (Caddy in front)."""
+import html
 import json
 import mimetypes
 import os
@@ -174,6 +175,10 @@ class Hub(BaseHTTPRequestHandler):
         if WEB.resolve() not in f.parents or not f.is_file():
             return self._json(404, {"ok": False, "error": "not_found"})
         body = f.read_bytes()
+        if f.name == "privacy.html":  # the operator's contact line comes from the settings (HUB_CONTACT), as escaped text; until it is set the page shows its draft marker
+            contact = " ".join(os.getenv("HUB_CONTACT", "").split())[:200]
+            if contact:
+                body = body.replace(b"OWNER-TO-FILL", html.escape(contact).encode())
         ctype = mimetypes.guess_type(f.name)[0] or "application/octet-stream"
         static = {} if ctype.startswith("text/html") or os.getenv("HUB_INSECURE_DEV") == "1" else {"Cache-Control": "public, max-age=300"}  # fonts, icons, styles and scripts may be kept five minutes; pages never
         self._headers(200, ctype + ("; charset=utf-8" if ctype.startswith("text/") or ctype.endswith("javascript") else ""), len(body), static)
@@ -300,6 +305,7 @@ def startup_report(environ=None, path=None) -> list[str]:
     listed = auth.allow_entries(environ)
     lines.append(f"Sign-up: closed to {len(listed)} listed addresses or domains" if listed else "Sign-up: OPEN to anyone")
     lines.append(f"Sign-in emails: at most {auth.mail_daily_cap(environ)} a day for the whole hub")
+    lines.append("Privacy contact: set" if st["HUB_CONTACT"] else "Privacy contact: NOT SET (the privacy page is still a draft)")
     return lines
 
 

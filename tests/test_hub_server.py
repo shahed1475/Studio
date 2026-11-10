@@ -263,7 +263,7 @@ def test_export_is_an_honest_markdown_download(hub):
 
 
 # ---- per-account AI key ----
-AIKEY, AIMODEL = "sk-or-v1-" + "a1b2c3d4" * 8, "vendor/some-model"
+AIKEY, AIMODEL = "sk-or-v1-" + "NOTAREALKEY" * 6, "vendor/some-model"
 
 
 class FakeOpenRouter:
@@ -374,3 +374,15 @@ def test_the_privacy_page_is_served_with_the_page_security_headers(hub):
     port, _ = hub
     s, hdr, body, _ = call(port, "GET", "/privacy.html", raw=True)
     assert s == 200 and hdr["Content-Type"].startswith("text/html") and "Content-Security-Policy" in hdr and b"Privacy" in body
+
+
+def test_privacy_page_shows_the_contact_the_operator_set_and_escapes_it(hub, monkeypatch):
+    port, _ = hub
+    monkeypatch.delenv("HUB_CONTACT", raising=False)
+    assert b"OWNER-TO-FILL" in call(port, "GET", "/privacy.html", raw=True)[2]  # not set: still the draft marker
+    monkeypatch.setenv("HUB_CONTACT", "Ann Example, ann@example.org <script>alert(1)</script>")
+    s, hdr, body, _ = call(port, "GET", "/privacy.html", raw=True)
+    text = body.decode()
+    assert s == 200 and "OWNER-TO-FILL" not in text and "Ann Example, ann@example.org" in text
+    assert "<script>alert(1)" not in text and "&lt;script&gt;" in text  # whatever the setting holds is text, never markup
+    assert int(hdr["Content-Length"]) == len(body)

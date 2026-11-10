@@ -25,11 +25,9 @@ def sh(*args, env=None):
 def home(tmp_path):
     (tmp_path / "secrets").mkdir()
     f = tmp_path / "secrets" / "hub.env"
-    f.write_text(f"HUB_KEYSTORE_KEY={SECRET}\nHUB_PUBLIC_URL=https://hub.example.org\nHUB_ALLOWED_EMAILS=friend@example.com\n")
+    f.write_text(f"HUB_KEYSTORE_KEY={SECRET}\nHUB_PUBLIC_URL=https://hub.example.org\nHUB_ALLOWED_EMAILS=friend@example.com\nHUB_CONTACT=Ann Example, ann@example.org\n")
     os.chmod(f, 0o600)
-    clean = tmp_path / "privacy.html"
-    clean.write_text("<html>Contact: owner@example.org</html>")
-    return {"HUB_HOME": str(tmp_path), "HUB_PRIVACY_FILE": str(clean)}
+    return {"HUB_HOME": str(tmp_path)}
 
 
 # ---- the image ----
@@ -119,16 +117,81 @@ def test_public_launch_refuses_the_insecure_dev_flag(home):
     assert sh("check", env=home).returncode == 0  # a private trial on this machine may use it
 
 
-def test_public_launch_needs_https_url_and_a_finished_privacy_page(home):
+def test_public_launch_needs_an_https_url(home):
     assert sh("check", "--public", env=home).returncode == 0
-    bad_url = Path(home["HUB_HOME"]) / "secrets" / "hub.env"
-    bad_url.write_text(bad_url.read_text().replace("https://", "http://"))
+    f = Path(home["HUB_HOME"]) / "secrets" / "hub.env"
+    f.write_text(f.read_text().replace("https://", "http://"))
     assert sh("check", "--public", env=home).returncode != 0
-    bad_url.write_text(bad_url.read_text().replace("http://", "https://"))
-    Path(home["HUB_PRIVACY_FILE"]).write_text("Contact: OWNER-TO-FILL")
+
+
+def test_public_launch_needs_a_contact_for_the_privacy_page_and_fails_closed(home):
+    f = Path(home["HUB_HOME"]) / "secrets" / "hub.env"
+    f.write_text("\n".join(l for l in f.read_text().splitlines() if not l.startswith("HUB_CONTACT")) + "\n")
+    os.chmod(f, 0o600)
     r = sh("check", "--public", env=home)
-    assert r.returncode != 0 and "OWNER-TO-FILL" in r.stderr
-    assert "OWNER-TO-FILL" in (ROOT / "hub" / "web" / "privacy.html").read_text()  # the shipped page is still a draft until the owner fills it
+    assert r.returncode != 0 and "HUB_CONTACT" in r.stderr and "configure --contact" in r.stderr
+    assert sh("check", env=home).returncode == 0  # a private trial does not need it
+    assert "OWNER-TO-FILL" in (ROOT / "hub" / "web" / "privacy.html").read_text()  # the shipped page is a draft; the server fills the contact in from HUB_CONTACT
+
+
+# ---- putting the hub into the studio's web proxy file ----
+STUDIO_CADDY = 'srv2029460.hstgr.cloud {\n  @t_test header_regexp tc Cookie (^|;\\s*)studio_tenant=test(;|$)\n  handle @t_test {\n    reverse_proxy 127.0.0.1:18922\n  }\n}\n'
+
+
+def merged(src, host="hub.example.org"):
+    r = sh("caddy-merge", str(src), env={"HUB_HOST": host})
+    assert r.returncode == 0, r.stderr
+    return r.stdout
+
+
+def test_merge_keeps_the_studios_routes_byte_for_byte_and_adds_one_marked_hub_block(tmp_path):
+    f = tmp_path / "Caddyfile"
+    f.write_text(STUDIO_CADDY)
+    out = merged(f)
+    assert out.startswith(STUDIO_CADDY.rstrip("\n")) and out.count("# >>> creator-hub") == 1 and out.count("# <<< creator-hub") == 1
+    assert "hub.example.org {" in out and "reverse_proxy 127.0.0.1:8931" in out
+    assert f.read_text() == STUDIO_CADDY  # merge only prints: it never writes
+
+
+def test_merge_twice_gives_the_same_file_and_a_new_host_replaces_the_old_one(tmp_path):
+    f = tmp_path / "Caddyfile"
+    f.write_text(STUDIO_CADDY)
+    once = merged(f)
+    f.write_text(once)
+    assert merged(f) == once  # idempotent: no growing blank lines, no second block
+    f.write_text(once)
+    moved = merged(f, "other.example.org")
+    assert "other.example.org {" in moved and "hub.example.org" not in moved and moved.count("# >>> creator-hub") == 1 and moved.startswith(STUDIO_CADDY.rstrip("\n"))
+
+
+def test_merge_refuses_a_bad_host_and_a_missing_file(tmp_path):
+    f = tmp_path / "Caddyfile"
+    f.write_text(STUDIO_CADDY)
+    r = sh("caddy-merge", str(f), env={"HUB_HOST": "evil.com {\n respond 200"})
+    assert r.returncode != 0 and r.stdout == ""
+    assert sh("caddy-merge", str(tmp_path / "nope"), env={"HUB_HOST": "hub.example.org"}).returncode != 0
+
+
+def test_apply_checks_first_validates_with_real_caddy_edits_in_place_and_reloads_gracefully(home, tmp_path):
+    (tmp_path / "tenants" / "caddy").mkdir(parents=True)
+    f = tmp_path / "tenants" / "caddy" / "Caddyfile"
+    f.write_text(STUDIO_CADDY)
+    r = sh("caddy-apply", "--public", env={**home, "HUB_HOST": "hub.example.org", "TENANTS_DIR": str(tmp_path / "tenants"), "DRY": "1"})
+    assert r.returncode == 0, r.stderr
+    out = r.stdout
+    assert "caddy validate" in out and "caddy reload" in out and "studio-proxy" in out
+    assert out.index("caddy validate") < out.index("caddy reload")  # validated before the proxy is asked to reload
+    assert f.read_text() == STUDIO_CADDY and not list(f.parent.glob(".hub-candidate*"))  # a dry run changes nothing and leaves nothing
+
+
+def test_apply_refuses_when_the_hub_is_not_ready_to_be_public(home, tmp_path):
+    (tmp_path / "tenants" / "caddy").mkdir(parents=True)
+    f = tmp_path / "tenants" / "caddy" / "Caddyfile"
+    f.write_text(STUDIO_CADDY)
+    envf = Path(home["HUB_HOME"]) / "secrets" / "hub.env"
+    envf.write_text(envf.read_text() + "HUB_INSECURE_DEV=1\n")
+    r = sh("caddy-apply", "--public", env={**home, "HUB_HOST": "hub.example.org", "TENANTS_DIR": str(tmp_path / "tenants"), "DRY": "1"})
+    assert r.returncode != 0 and "HUB_INSECURE_DEV" in r.stderr and f.read_text() == STUDIO_CADDY
 
 
 def test_open_sign_up_is_an_explicit_choice(home):
@@ -154,6 +217,58 @@ def test_restart_recreates_the_container_so_changed_settings_are_read(home):
 def test_configure_runs_the_prompt_in_a_locked_down_throwaway_container(home):
     r = sh("configure", env={**home, "DRY": "1"})
     assert r.returncode == 0 and "hub.configure" in r.stdout and "--read-only" in r.stdout and "--cap-drop ALL" in r.stdout and "/secrets/hub.env" in r.stdout and SECRET not in r.stdout
+
+
+@pytest.fixture()
+def fake_docker(tmp_path):
+    """A stand-in `docker` that records its calls and can be told to refuse: so the real apply flow runs end to end without touching any proxy."""
+    bindir = tmp_path / "fakebin"
+    bindir.mkdir()
+    log = tmp_path / "docker.log"
+    script = bindir / "docker"
+    script.write_text('#!/usr/bin/env bash\necho "$1 $*" >> "$FAKE_DOCKER_LOG"\n'
+                      'case "$1" in\n  run) [[ "${FAKE_VALIDATE:-ok}" == ok ]] && { echo "Valid configuration"; exit 0; } || { echo "bad config" >&2; exit 1; } ;;\n'
+                      '  exec) [[ "${FAKE_RELOAD:-ok}" == ok ]] && exit 0 || { echo "reload refused" >&2; exit 1; } ;;\nesac\nexit 0\n')
+    os.chmod(script, 0o755)
+    return {"PATH": f"{bindir}:{os.environ['PATH']}", "FAKE_DOCKER_LOG": str(log)}, log
+
+
+def proxy_setup(tmp_path):
+    (tmp_path / "tenants" / "caddy").mkdir(parents=True)
+    f = tmp_path / "tenants" / "caddy" / "Caddyfile"
+    f.write_text(STUDIO_CADDY)
+    return f
+
+
+def test_apply_end_to_end_edits_in_place_keeps_a_backup_and_cleans_up(home, tmp_path, fake_docker):
+    env, log = fake_docker
+    f = proxy_setup(tmp_path)
+    inode = f.stat().st_ino
+    r = sh("caddy-apply", "--public", env={**home, **env, "HUB_HOST": "hub.example.org", "TENANTS_DIR": str(tmp_path / "tenants")})
+    assert r.returncode == 0, r.stderr
+    assert f.read_text().startswith(STUDIO_CADDY.rstrip("\n")) and "hub.example.org {" in f.read_text()
+    assert f.stat().st_ino == inode  # written IN PLACE: the proxy container bind-mounts this one file, a rename would leave it reading the old content
+    assert (f.parent / "Caddyfile.bak-before-hub").read_text() == STUDIO_CADDY
+    calls = log.read_text().splitlines()
+    assert [c.split()[0] for c in calls] == ["run", "exec"] and "caddy validate" in calls[0] and "studio-proxy caddy reload" in calls[1]
+    assert not [p for p in f.parent.iterdir() if p.name.startswith(".hub-")]
+
+
+def test_a_refused_reload_puts_the_old_proxy_file_back(home, tmp_path, fake_docker):
+    env, log = fake_docker
+    f = proxy_setup(tmp_path)
+    inode = f.stat().st_ino
+    r = sh("caddy-apply", "--public", env={**home, **env, "FAKE_RELOAD": "refuse", "HUB_HOST": "hub.example.org", "TENANTS_DIR": str(tmp_path / "tenants")})
+    assert r.returncode != 0 and "old file is back" in r.stderr
+    assert f.read_text() == STUDIO_CADDY and f.stat().st_ino == inode and not [p for p in f.parent.iterdir() if p.name.startswith(".hub-")]
+
+
+def test_a_failed_validation_changes_nothing_and_never_reloads(home, tmp_path, fake_docker):
+    env, log = fake_docker
+    f = proxy_setup(tmp_path)
+    r = sh("caddy-apply", "--public", env={**home, **env, "FAKE_VALIDATE": "fail", "HUB_HOST": "hub.example.org", "TENANTS_DIR": str(tmp_path / "tenants")})
+    assert r.returncode != 0 and "did not validate" in r.stderr and f.read_text() == STUDIO_CADDY
+    assert [c.split()[0] for c in log.read_text().splitlines()] == ["run"] and not (f.parent / "Caddyfile.bak-before-hub").exists()
 
 
 def test_the_script_is_executable_python_free_bash_and_parses():

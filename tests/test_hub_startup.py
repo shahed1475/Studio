@@ -71,6 +71,13 @@ def test_main_reads_the_file_before_it_binds_and_prints_no_value(tmp_path, monke
     no_secret_in(out.splitlines())
 
 
+def test_report_says_whether_the_privacy_contact_is_set_without_printing_it(tmp_path):
+    none = tmp_path / "none.env"
+    assert "Privacy contact: NOT SET" in "\n".join(server.startup_report({}, none))
+    text = "\n".join(server.startup_report({"HUB_CONTACT": "Ann Example, ann@example.org"}, none))
+    assert "Privacy contact: set" in text and "ann@example.org" not in text
+
+
 def test_report_says_whether_sign_up_is_open_or_closed_and_the_mail_cap(tmp_path):
     none = tmp_path / "none.env"
     text = "\n".join(server.startup_report({}, none))

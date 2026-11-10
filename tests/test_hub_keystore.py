@@ -6,7 +6,7 @@ import pytest
 
 from hub import auth, db, keystore
 
-KEY = "sk-or-v1-" + "a1b2c3d4" * 8
+KEY = "sk-or-v1-" + "NOTAREALKEY" * 6
 MODEL = "vendor/some-model"
 
 
@@ -39,7 +39,7 @@ def test_database_file_holds_no_plaintext():
 def test_ciphertext_copied_to_another_account_does_not_decrypt():
     a, b = account("a@example.com"), account("b@example.com")
     keystore.set_key(a, KEY, MODEL)
-    keystore.set_key(b, "sk-or-v1-" + "f" * 64, MODEL)
+    keystore.set_key(b, "sk-or-v1-" + "X" * 64, MODEL)
     with db.tx() as con:
         token = con.execute("select token from account_keys where account_id=?", (a,)).fetchone()["token"]
         con.execute("update account_keys set token=? where account_id=?", (token, b))
@@ -104,8 +104,8 @@ def test_remove_and_account_delete_cascade():
 def test_setting_again_replaces_the_key():
     a = account()
     keystore.set_key(a, KEY, MODEL)
-    keystore.set_key(a, "sk-or-v1-" + "9" * 64, "other/model")
-    assert keystore.get(a) == {"key": "sk-or-v1-" + "9" * 64, "model": "other/model"}
+    keystore.set_key(a, "sk-or-v1-" + "Y" * 64, "other/model")
+    assert keystore.get(a) == {"key": "sk-or-v1-" + "Y" * 64, "model": "other/model"}
 
 
 def test_master_key_file_is_private_and_made_once():

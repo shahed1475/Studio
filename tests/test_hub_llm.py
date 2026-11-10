@@ -6,8 +6,8 @@ import requests
 
 from hub import auth, db, keystore, llm
 
-KEY = "sk-or-v1-" + "a1b2c3d4" * 8
-KEY_B = "sk-or-v1-" + "f9e8d7c6" * 8
+KEY = "sk-or-v1-" + "NOTAREALKEY" * 6
+KEY_B = "sk-or-v1-" + "OTHERFAKEKEY" * 6
 MODEL = "vendor/some-model"
 
 

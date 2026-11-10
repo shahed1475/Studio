@@ -9,6 +9,8 @@
 #   status | logs               what is running; the last 100 log lines
 #   backup                      a consistent copy of the database into ~/hub/backups, seven kept
 #   caddy-block                 print the web-proxy site block for $HUB_HOST (deploy/tenant.sh caddy adds it when HUB_HOST is set)
+#   caddy-merge FILE            print the proxy file with the hub block added or replaced (never writes)
+#   caddy-apply --public [--open]  put the hub on the studio's proxy: validate with real Caddy, write in place, reload gracefully, undo if refused
 # It never touches the studio's containers: its own compose project ("hub"), image (nightloom-hub:local), network and folder (~/hub). DRY=1 prints what would run.
 # Settings and secrets live in ~/hub/secrets/hub.env (mode 600, delivered by scp, never git). This script reads that file and never prints a value from it.
 set -euo pipefail
@@ -17,10 +19,18 @@ REPO="$(dirname "$HERE")"
 HUB_HOME="${HUB_HOME:-$HOME/hub}"
 ENV_FILE="$HUB_HOME/secrets/hub.env"
 DATA="$HUB_HOME/data"
-PRIVACY="${HUB_PRIVACY_FILE:-$REPO/hub/web/privacy.html}"
 IMAGE="nightloom-hub:local"
 MODULES="agentlog.py config.py filelock.py niche.py topicqueue.py topicrank.py wikipedia.py"
-STAGE=""
+STAGE=""; CAND=""; PREV=""
+BEGIN_MARK="# >>> creator-hub (managed by deploy/hub.sh caddy-apply; deploy/tenant.sh caddy rewrites this file, so run caddy-apply again after it)"
+END_MARK="# <<< creator-hub"
+cleanup() {  # scratch files and folders this script made, whichever way it ends
+  if [[ -n "$STAGE" && -d "$STAGE" ]]; then chmod -R u+w "$STAGE"; rm -r -- "$STAGE"; fi
+  if [[ -n "$CAND" ]]; then rm -f -- "$CAND"; fi
+  if [[ -n "$PREV" ]]; then rm -f -- "$PREV"; fi
+  return 0
+}
+trap cleanup EXIT
 
 die() { echo "hub.sh: $*" >&2; exit 2; }
 run() { if [[ "${DRY:-0}" == "1" ]]; then echo "DRY: $*"; else "$@"; fi; }
@@ -37,7 +47,7 @@ check() {
   if (( public )); then
     if grep -qE '^HUB_INSECURE_DEV=1' "$ENV_FILE"; then die "HUB_INSECURE_DEV=1 must not be set for a public launch"; fi
     grep -qE '^HUB_PUBLIC_URL=https://[^ ]+' "$ENV_FILE" || die "HUB_PUBLIC_URL must be an https:// address for a public launch"
-    if grep -q 'OWNER-TO-FILL' "$PRIVACY"; then die "the privacy page still says OWNER-TO-FILL: the owner must write the contact line first"; fi
+    has HUB_CONTACT || die "HUB_CONTACT is missing: the public privacy page needs a contact line. Set it with  hub.sh configure --contact"
     if ! has HUB_ALLOWED_EMAILS && (( ! open )); then die "sign-up would be open to anyone: set HUB_ALLOWED_EMAILS, or add --open to choose open sign-up on purpose"; fi
   fi
   echo "hub.sh: settings look right"
@@ -57,11 +67,47 @@ $h {
 EOF
 }
 
+caddy_merge() {
+  # the proxy file with the hub's block added, or replaced if it is already there: prints, never writes. Everything else in the file is kept exactly.
+  local f="${1:-}"
+  [[ -n "$f" && -f "$f" ]] || die "caddy-merge needs the proxy file (for example ~/tenants/caddy/Caddyfile)"
+  local block; block="$(caddy_block)"
+  awk -v endmark="$END_MARK" '
+    index($0, "# >>> creator-hub") == 1 { skip = 1 }
+    !skip { lines[n++] = $0 }
+    skip && index($0, endmark) == 1 { skip = 0 }
+    END { while (n > 0 && lines[n-1] ~ /^[ \t]*$/) n--; for (i = 0; i < n; i++) print lines[i] }
+  ' "$f"
+  printf '\n%s\n%s\n%s\n' "$BEGIN_MARK" "$block" "$END_MARK"
+}
+
+caddy_apply() {
+  # Put the hub on the studio's web proxy (HUB_HOST, on 443). Only for a hub that passes  check --public. The new file is validated by the real Caddy first, written IN PLACE
+  # (the proxy bind-mounts this one file: a rename would leave it reading the old one), and the proxy is reloaded gracefully; if the reload is refused the old file is put back.
+  check --public "$@"
+  local dir="${TENANTS_DIR:-$HOME/tenants}/caddy" f out
+  f="$dir/Caddyfile"
+  [[ -f "$f" ]] || die "no proxy file at $f"
+  CAND="$dir/.hub-candidate.$$"; PREV="$dir/.hub-previous.$$"
+  caddy_merge "$f" > "$CAND"
+  cp -p "$f" "$PREV"
+  if ! out="$(run docker run --rm -v "$CAND:/etc/caddy/Caddyfile:ro" caddy:2 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1)"; then
+    echo "$out" | tail -5 >&2; die "the new proxy file did not validate; nothing was changed"
+  fi
+  echo "$out" | tail -1
+  [[ -e "$f.bak-before-hub" ]] || run cp -p "$f" "$f.bak-before-hub"
+  run sh -c 'cat "$1" > "$2"' _ "$CAND" "$f"
+  if ! run docker exec studio-proxy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile; then
+    run sh -c 'cat "$1" > "$2"' _ "$PREV" "$f"
+    die "the proxy did not accept the new file; the old file is back"
+  fi
+  echo "hub.sh: the hub is on the proxy at https://${HUB_HOST}"
+}
+
 build() {
   command -v docker >/dev/null || die "docker is not installed"
   if [[ "${DRY:-0}" == "1" ]]; then echo "DRY: git archive HEAD hub $MODULES deploy/Dockerfile.hub deploy/hub-requirements.txt | docker build -t $IMAGE"; return; fi
   STAGE="$(mktemp -d /tmp/hub-build-XXXXXX)"
-  trap 'if [[ -n "$STAGE" && -d "$STAGE" ]]; then chmod -R u+w "$STAGE"; rm -r -- "$STAGE"; fi' EXIT
   # shellcheck disable=SC2086
   git -C "$REPO" archive --format=tar HEAD hub $MODULES deploy/Dockerfile.hub deploy/hub-requirements.txt | tar -x -C "$STAGE"
   docker build -f "$STAGE/deploy/Dockerfile.hub" -t "$IMAGE" "$STAGE"
@@ -108,5 +154,7 @@ case "${1:-}" in
   logs) run docker logs --tail 100 nightloom-hub ;;
   backup) backup ;;
   caddy-block) caddy_block ;;
-  *) sed -n "2,11p" "${BASH_SOURCE[0]}"; exit 1 ;;
+  caddy-merge) shift; caddy_merge "$@" ;;
+  caddy-apply) shift; caddy_apply "$@" ;;
+  *) sed -n "2,13p" "${BASH_SOURCE[0]}"; exit 1 ;;
 esac

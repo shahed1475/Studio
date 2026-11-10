@@ -131,7 +131,7 @@ def test_researcher_other_messages_still_ask_for_a_key():
 
 
 # ---- the writing agents use the account's own key, and say plainly when it does not work ----
-AIKEY, AIMODEL = "sk-or-v1-" + "a1b2c3d4" * 8, "vendor/some-model"
+AIKEY, AIMODEL = "sk-or-v1-" + "NOTAREALKEY" * 6, "vendor/some-model"
 
 
 class Net:
