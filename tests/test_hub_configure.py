@@ -167,6 +167,16 @@ def test_failed_test_mail_shows_the_class_and_a_hint_never_the_password(tmp_path
     nothing_typed_is_echoed(o, a, s)
 
 
+def test_unwritable_place_is_reported_plainly_without_a_trace(tmp_path, monkeypatch):
+    def deny(*a, **k):
+        raise PermissionError(13, "Permission denied", "/some/where")
+
+    monkeypatch.setattr(configure.secretstore, "save", deny)
+    code, a, s, o = run(tmp_path, "--no-test", ask=[ADDRESS, ""], secret=[PASSWORD])
+    assert code == 2 and "Not saved" in o.text() and "Permission denied" in o.text()
+    nothing_typed_is_echoed(o, a, s)
+
+
 def test_secretstore_refusal_is_reported_without_a_trace(tmp_path, monkeypatch):
     monkeypatch.setattr(configure.secretstore, "save", lambda *a, **k: (_ for _ in ()).throw(ss.SecretError("the secrets file must live outside any git work tree")))
     code, a, s, o = run(tmp_path, "--no-test", ask=[ADDRESS, ""], secret=[PASSWORD])

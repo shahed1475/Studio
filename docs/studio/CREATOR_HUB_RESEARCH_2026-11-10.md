@@ -69,7 +69,7 @@ Analysis: only YouTube can be automated end to end today. The other three each n
 
 ## 7. What needs the owner (nothing here is done by an assistant)
 - A name and a domain for the product (Google verification and email deliverability both need one).
-- An SMTP account or mail provider for sign-in codes; the Google **Web** client id for Google sign-in (same client as in docs/USER_STUDIOS.md).
+- An SMTP account or mail provider for sign-in codes; the Google **Web** client id for Google sign-in (same client as in docs/USER_STUDIOS.md). The terminal prompt that stores them privately, the exact steps and what was and was not verified: `docs/studio/HUB_MAIL_AND_GOOGLE_SETUP.md` (`python -m hub.configure`).
 - Developer apps and reviews at Meta (Instagram, Facebook) and TikTok; Google sensitive-scope verification for connecting other people's YouTube channels.
 - A decision on how many accounts may render videos, given the server's memory (today 5).
 - Cost: each creator brings their own OpenRouter key (as user studios do); the hub's own agents use a small shared budget for onboarding only, capped.

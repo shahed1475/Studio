@@ -39,7 +39,7 @@
 **Interfaces:**
 - Produces: `SMTPMailer.send(to, subject, body)` unchanged; port 465 uses `smtplib.SMTP_SSL`; any other port uses `SMTP` then `starttls(context=ssl.create_default_context())` before `login`. `from_env()` raises `ValueError("HUB_SMTP_PORT is not a number")` for a bad port instead of an unreadable traceback at send time.
 
-- [ ] **Step 1: Write failing tests** with a fake `smtplib.SMTP`/`SMTP_SSL` recorded through `monkeypatch`: `test_starttls_gets_a_verifying_context` (context `verify_mode == ssl.CERT_REQUIRED`, `check_hostname` true), `test_starttls_happens_before_login`, `test_port_465_uses_implicit_ssl_with_verifying_context`, `test_message_has_to_from_subject_and_never_the_password`, `test_from_env_without_host_is_the_outbox`, `test_from_env_with_host_is_smtp_with_defaults_port_587`, `test_bad_port_is_a_clear_error`.
+- [x] **Step 1: Write failing tests** with a fake `smtplib.SMTP`/`SMTP_SSL` recorded through `monkeypatch`: `test_starttls_gets_a_verifying_context` (context `verify_mode == ssl.CERT_REQUIRED`, `check_hostname` true), `test_starttls_happens_before_login`, `test_port_465_uses_implicit_ssl_with_verifying_context`, `test_message_has_to_from_subject_and_never_the_password`, `test_from_env_without_host_is_the_outbox`, `test_from_env_with_host_is_smtp_with_defaults_port_587`, `test_bad_port_is_a_clear_error`.
 - [ ] **Step 2:** run `tests/test_hub_mailer.py`; Expected: FAIL (context is None today).
 - [ ] **Step 3:** implement in `hub/mailer.py`; Expected after: all pass.
 - [ ] **Step 4:** full hub tests green; commit `hub mailer: verify the mail server's certificate (STARTTLS used an unverified context), support port 465`.
@@ -92,3 +92,15 @@
 - Store location `~/.config/nightloom/hub.env`, not the studio's `.env`: separate product, separate secret, and the hub can be deployed without the studio's keys.
 - Google sign-in needs only the client id (public); it is stored in the same file for one place to look.
 - Gmail with an app password is a stopgap for sign-in codes: Google itself says app passwords "aren't recommended"; a domain mail provider is the real answer before many creators join (research doc section 7).
+
+## Status (10 Nov 2026, same day)
+
+Tasks 1 to 5 done, each test-first (red seen, then green): mailer `40b318e`, secrets file `dd18186`, startup report `e79ffe0`, `hub.configure` `e7cc2ee`, then the docs and one more fix (this commit). Hub suite: 112 passed, 1 skipped (baseline 61 passed, 1 skipped). Real pseudo-terminal run and 16 mutation checks: see `docs/studio/HUB_MAIL_AND_GOOGLE_SETUP.md`.
+
+Rulings taken while executing (what each costs if wrong):
+- Task 3's tests went into a new file `tests/test_hub_startup.py`, not `tests/test_hub_server.py`: the old file's fixtures bind a socket the new tests do not need. Cost if wrong: none.
+- Added exit code 3 (saved, but the test email failed) and a plain "Not saved" for a file that cannot be written (found in self-review, test first). Cost: none.
+- The terminal prompt never shows the stored address or any value, even in prompts ("already set" only). Cost: slightly less convenient.
+- The app-password shape check accepts 16 letters or digits, because Google's page says "16-digit passcode" and I did not verify letters only; any other shape needs a typed `yes`. Cost if wrong: one extra question.
+- A mutation run first gave six false "killed" results (a mutation made a test write `hub.env` into the worktree, which then failed the same test every time); fixed the script, deleted the stray file (it held only the test value `a@b.c`), reran: 16 of 16 killed by the right test.
+- Final review: self-review only (no subagent was asked for). A fresh reviewer would be stronger; the owner decides whether that is enough before any merge.

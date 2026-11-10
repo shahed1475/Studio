@@ -164,6 +164,9 @@ def main(argv=None, ask=input, ask_secret=getpass.getpass, out=print, send_test=
     except secretstore.SecretError as ex:
         out(f"Not saved: {ex}")
         return 2
+    except OSError as ex:  # a folder that cannot be written, a full disk: say so plainly instead of a traceback
+        out(f"Not saved: the file could not be written ({type(ex).__name__}: {ex.strerror or 'see the error class'}).")
+        return 2
 
 
 if __name__ == "__main__":
