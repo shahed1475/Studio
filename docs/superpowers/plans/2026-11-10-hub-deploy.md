@@ -63,3 +63,21 @@
 3. Phase 1 work (local only): I can do it now.
 4. Merging `feature/hub` into `main` and pushing (the server pulls `main`).
 5. Each phase A, B, C, and the mail provider and Google settings.
+
+## Status after Phase 1 (10 Nov 2026): all local, nothing run on the server
+
+Done, test first, committed: Task 1 `deploy/Dockerfile.hub`, `hub-requirements.txt`, `hub-compose.yml`; Task 2 `deploy/hub.sh` (check, build, up, down, status, logs, backup, caddy-block) and a non-fatal hub hook in `deploy/tenant.sh`; Task 3 the guards (sign-up allow-list for email and Google, hub-wide Wikipedia cap, hub-wide sign-in email cap, per-IP daily email limit); Task 4 `privacy.html`, `POST /api/account/delete` and a "Your data" panel; Task 5 backup (in `hub.sh`, seven kept). The studio's `requirements.txt` is unchanged (the `cryptography` line moved to the hub list).
+
+Evidence (this PC): hub suite 247 passed, 1 skipped; project suite 2,412 passed, 1 skipped, 1 failed (`tests/test_depth_model.py`, needs `data/models` of the main checkout; same as before). 20 mutation checks, 20 killed (one survivor found a missing test, now added). The real Caddy binary validated the generated block ("Valid configuration"). A real image was built (215 MB) and run through `hub.sh up`: health 200, read-only root, no capabilities, 256 MB, non-root, own network, loopback port only, only the data folder mounted, no secret-looking file in the image. In real Chrome against that container: live Wikipedia research (5 topics in 6 s, 1 unreadable counted), privacy page, wrong word then right word to delete an account, old cookie refused, and the real database file no longer held the email or the research text. `hub.sh backup` kept seven copies, mode 600, integrity ok. `hub.sh up --public` refused with the test setup (dev flag). Test containers, image and folder were removed afterwards; the base images `python:3.14-slim` and `caddy:2` are now cached on this PC.
+
+Not done, on purpose: the Risks-card row "Creator Hub" (needs a studio-side change and the server's real folder layout: do it in Phase A); scheduling the nightly backup (a server cron line: Phase A); the owner's contact line in `privacy.html` (the marker `OWNER-TO-FILL` blocks `up --public` until it is written); reserving part of the email budget for existing accounts (it would reveal whether an address has an account, so it is a Phase C design decision); the privacy page is a draft for the owner and a lawyer-free plain-language text, not legal advice.
+
+Security review notes (automated, 10 Nov): the hub-wide email cap can be drained by many sources; mitigated by the allow-list (Phases A and B), the per-address hourly limit, and the new per-IP daily limit; the residual risk (many IPs in open sign-up) stays for Phase C.
+
+## Operator runbook for Phase A (needs the owner's yes first)
+
+1. On the server: `mkdir -p ~/hub/secrets` ; `scp` the env file to `~/hub/secrets/hub.env` ; `chmod 600` it. It holds `HUB_KEYSTORE_KEY` (a Fernet key), `HUB_PUBLIC_URL`, the mail settings (or `python -m hub.configure` output), `HUB_ALLOWED_EMAILS`, optionally `HUB_INSECURE_DEV=1` for a private http trial only.
+2. In a clone of the repo at the merged commit: `deploy/hub.sh check`, then `deploy/hub.sh build`, then `deploy/hub.sh up` (add `--public` only in Phase B).
+3. Look: `deploy/hub.sh status`, `deploy/hub.sh logs`, `curl http://127.0.0.1:8931/healthz`.
+4. Rollback: `deploy/hub.sh down` (data stays in `~/hub/data`).
+5. Nightly backup: a cron line running `deploy/hub.sh backup` (never while the owner's deploy is running a rebuild).
