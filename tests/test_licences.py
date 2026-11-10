@@ -13,7 +13,7 @@ ACCEPTED = ["Public domain", "Public Domain Mark", "PD-old-70", "PD-US", "Public
             "CC BY 4.0", "CC BY 2.0", "CC BY-SA 3.0", "CC BY-SA 4.0", "cc by-sa 4.0", "Wikimedia Commons, CC BY-SA 4.0",
             "NASA media (credit NASA; no NASA logos)", "NASA media", "Pixabay Content License", "Pixabay License"]
 REFUSED = ["CC BY-NC 4.0", "CC BY-NC-SA 2.0", "CC BY-ND 4.0", "CC BY-NC-ND 3.0", "cc by-nc 2.0", "All rights reserved", "Fair use", "Used with permission", "Non-commercial use only",
-           "Pexels License", "GFDL", "", "unknown", "some blog", "Standard YouTube licence"]
+           "Pexels License", "Photo via Pexels (CC0)", "Video via Pexels, CC BY 4.0", "GFDL", "GFDL and CC BY-SA 3.0", "", "unknown", "some blog", "Standard YouTube licence"]
 
 
 @pytest.mark.parametrize("name", ACCEPTED)
