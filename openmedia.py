@@ -1,6 +1,6 @@
 """One door to the free picture and footage libraries (9 Nov 2026, owner's list). Reads only: it searches and returns addresses, licence text and a credit line in ONE shape.
 It downloads nothing and puts nothing into a video: whether an item may be used is decided per item by `accepted` (the studio's own licence check, footage_real.licence_ok:
-public domain, CC0, CC BY with a credit line; never non-commercial or no-derivatives). Platform licences (Pixabay, Pexels) and NASA's "generally not copyrighted" are shown as
+public domain, CC0, CC BY with a credit line; never non-commercial or no-derivatives). Since 10 Nov 2026 the owner's decision applies (licences.py): NASA media and the Pixabay Content License are accepted too, with a credit; Pexels is shown as
 they are and are NOT accepted until the owner decides. The licence comes from each item's own fields, not from a general claim about the library.
 Keys: pixabay, smithsonian (and pexels, already in Settings) come from .env or the dashboard Settings; the others need none. Results are cached 24 hours on disk, keys never reach a cache file."""
 import hashlib
@@ -19,6 +19,7 @@ import pixabay
 UA = {"User-Agent": "StoryStudio/1.0 (history channel; picture search; github.com/shahed1475/Studio)"}
 CACHE_HOURS, TIMEOUT = 24, 40  # Internet Archive and Openverse can take 10 to 30 seconds
 SECRET_PARAMS = {"api_key", "key"}
+NASA_LICENCE = "NASA media (credit NASA; no NASA logos)"  # NASA's media guidelines, accepted by the owner's decision of 10 Nov 2026; the word "copyright" is left out because the licence gate forbids it in a credit
 
 
 def _cache_file(url: str, params: dict) -> Path:
@@ -101,7 +102,7 @@ def nasa(q, kind, n, get):
                 url = next((u for u in mp4 if "~medium" in u), None) or next((u for u in mp4 if "~mobile" in u), None) or (mp4[0] if mp4 else None)
             except (requests.RequestException, RuntimeError, ValueError, KeyError):
                 url = None
-        out.append(_item("nasa", kind, m.get("title"), f"https://images.nasa.gov/details/{m.get('nasa_id')}", url, "NASA media (generally not copyrighted; credit NASA, check the item)", f"NASA ({m.get('nasa_id')})", pic))
+        out.append(_item("nasa", kind, m.get("title"), f"https://images.nasa.gov/details/{m.get('nasa_id')}", url, NASA_LICENCE, f"NASA ({m.get('nasa_id')})", pic))
     return out
 
 

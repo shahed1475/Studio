@@ -4,8 +4,8 @@ import re
 from pathlib import Path
 
 HEX64 = re.compile(r"[0-9a-f]{64}")
-ALLOWED = {"public domain", "cc0", "cc by", "cc by-sa", "own work", "ai-generated", "stock licence"}
-NEEDS_ATTRIBUTION = {"cc by", "cc by-sa", "ai-generated"}
+ALLOWED = {"public domain", "cc0", "cc by", "cc by-sa", "own work", "ai-generated", "stock licence", "nasa media", "pixabay content license"}
+NEEDS_ATTRIBUTION = {"cc by", "cc by-sa", "ai-generated", "nasa media", "pixabay content license"}
 
 
 def row(path, source: str, licence: str, fetched: str, author: str = "") -> dict:

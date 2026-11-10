@@ -15,10 +15,10 @@ from pathlib import Path
 
 import config
 import ledger
+import licences
 import reviewer
 
 ALLOWED_LICENSES = ("public domain", "cc0", "pdm", "ai-generated")
-CAUTION_LICENSES = ("cc by-sa", "cc by 4.0", "cc by 3.0", "cc by 2.0", "cc by")  # allowed with attribution, which the credits provide
 FORBIDDEN_WORDS = ("all rights reserved", "copyright", "fair use", "used with permission", "non-commercial", "cc by-nc", "cc by-nd")
 
 
@@ -80,21 +80,25 @@ def check_licenses(meta: dict) -> list[dict]:
     """Every picture credit names a license we may use; the Wikipedia text and any AI art are credited; no music without a license file."""
     out = []
     credits = meta.get("credits") or []
-    bad, caution = [], []
+    bad, credited = [], []
     for c in credits:
         low = c.lower()
         if any(w in low for w in FORBIDDEN_WORDS):
             bad.append(c)
         elif any(a in low for a in ALLOWED_LICENSES):
             continue
-        elif any(a in low for a in CAUTION_LICENSES):
-            caution.append(c)
+        elif licences.needs_credit(c):  # CC BY, CC BY-SA, NASA media, Pixabay: allowed, but only with the credit shown in the description (owner's decision, 10 Nov 2026)
+            credited.append(c)
+        elif licences.accepted(c):
+            continue
         else:
             bad.append(c)
     out.append(row("credits_present", bool(credits), f"{len(credits)} credit lines" if credits else "no image credits", "warn" if not meta.get("footage") else "block"))
-    out.append(row("licenses_allowed", not bad, f"{len(bad)} credits without a license we can use: " + " | ".join(b[:80] for b in bad[:3]) if bad else "every credit is public domain, CC0 or AI-generated"))
-    if caution:
-        out.append(row("attribution_licenses", False, f"{len(caution)} credits need attribution (CC BY): the credit line in the description provides it", "warn"))
+    out.append(row("licenses_allowed", not bad, f"{len(bad)} credits without a license we can use: " + " | ".join(b[:80] for b in bad[:3]) if bad else "every credit names a licence the studio accepts"))
+    desc = " ".join(str(meta.get("description") or "").split())
+    missing = [c for c in credited if " ".join(c.split()) not in desc]
+    out.append(row("credits_in_description", not missing, f"{len(missing)} of {len(credited)} credit-needing pictures or clips are missing from the description: " + " | ".join(m[:80] for m in missing[:3])
+                   if missing else (f"all {len(credited)} credit-needing items are credited in the description" if credited else "no item needs a credit line")))
     drawn = (meta.get("footage") or {}).get("drawn", 0)
     ai_credited = any("ai-generated" in c.lower() for c in credits)
     out.append(row("ai_art_labelled", not drawn or ai_credited, f"{drawn} AI illustrations, credited as AI-generated" if drawn and ai_credited else ("no AI illustrations" if not drawn else "AI illustrations are not credited")))

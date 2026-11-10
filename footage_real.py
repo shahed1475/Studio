@@ -14,11 +14,10 @@ import subprocess
 import requests
 
 import config
+import licences
 
 API = "https://commons.wikimedia.org/w/api.php"
 UA = {"User-Agent": "StoryStudio/1.0 (history documentary channel; footage lookup)"}
-GOOD = re.compile(r"public domain|cc0|^pd\b|^pd-|cc[- ]by", re.I)
-BAD = re.compile(r"\bnc\b|\bnd\b|-nc|-nd|non-?commercial|no derivatives|all rights|fair use", re.I)
 MAX_BYTES = 80_000_000
 MIN_DURATION, SECONDS = 4.0, 6.0
 MAX_QUERIES, TIMEOUT = 8, 15
@@ -26,8 +25,8 @@ STOP = {"the", "and", "ii", "iii", "of", "in", "a", "an"}
 
 
 def licence_ok(name: str) -> bool:
-    name = str(name or "").strip()
-    return bool(GOOD.search(name)) and not BAD.search(name)
+    """The studio's one licence rule (licences.py): public domain, CC0, CC BY, CC BY-SA, NASA media, Pixabay Content License; never non-commercial, no-derivatives or all rights reserved."""
+    return licences.accepted(name)
 
 
 def _tokens(anchors: list[str]) -> set[str]:

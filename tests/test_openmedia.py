@@ -47,14 +47,19 @@ def test_museum_items_use_their_own_licence_flags():
     assert [x["url"] for x in openmedia.search("cleveland", "x", "image", 5, cle)] == ["w"]
 
 
-def test_platform_and_nasa_licences_are_shown_but_not_accepted(monkeypatch):
+def test_platform_and_nasa_licences_are_accepted_since_the_owners_decision_of_10_nov_2026(monkeypatch):
+    """Until 10 Nov 2026 these were shown but refused. The owner then approved NASA media (no NASA logos) and the Pixabay Content License, with a credit in the description; Pexels was not listed."""
     monkeypatch.setattr(config, "PIXABAY_KEY", "k" * 20)
     pix = router({"pixabay.com/api/videos": {"hits": [{"id": 1, "pageURL": "p", "user": "u", "duration": 5, "videos": {"medium": {"url": "m", "width": 1, "height": 1}}}]}})
     r = openmedia.search("pixabay", "sea", "video", 3, pix)
-    assert r[0]["licence"] == "Pixabay Content License" and r[0]["accepted"] is False
+    assert r[0]["licence"] == "Pixabay Content License" and r[0]["accepted"] is True
     nasa = router({"images-api.nasa.gov/search": {"collection": {"items": [{"data": [{"nasa_id": "N1", "title": "Moon"}], "links": [{"rel": "canonical", "href": "img"}], "href": "assets"}]}}})
     r = openmedia.search("nasa", "moon", "image", 3, nasa)
-    assert r[0]["url"] == "img" and r[0]["accepted"] is False and "NASA" in r[0]["credit"]
+    assert r[0]["url"] == "img" and r[0]["accepted"] is True and "NASA" in r[0]["credit"] and "no NASA logos" in r[0]["licence"]
+
+
+def test_pexels_is_still_not_accepted():
+    assert openmedia._item("pexels", "image", "t", "https://p", "https://u", "Pexels License", "c")["accepted"] is False
 
 
 def test_openverse_no_derivatives_are_not_accepted():
