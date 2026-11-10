@@ -44,3 +44,6 @@ backups/
 .agents/
 skills-lock.json
 .cto-toolkit/
+
+# the hub secrets file (the default place is outside the repo; this is a guard)
+hub.env
