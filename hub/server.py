@@ -147,7 +147,7 @@ class Hub(BaseHTTPRequestHandler):
         return self._static(path)
 
     def _static(self, path: str) -> None:
-        rel = "index.html" if path == "/" else path.lstrip("/")
+        rel = "index.html" if path == "/" else ("favicon.svg" if path == "/favicon.ico" else path.lstrip("/"))
         f = (WEB / rel).resolve()
         if WEB.resolve() not in f.parents or not f.is_file():
             return self._json(404, {"ok": False, "error": "not_found"})

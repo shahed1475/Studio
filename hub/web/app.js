@@ -25,12 +25,13 @@ function drawPicks() {
 }
 function pick(id, name, text, best) {
   const input = h("input", { type: "radio", name: "niche", value: id });
-  input.checked = id === state.niche_id && (id !== "" || state.niche_text !== "" || state.tier === "B");
+  input.checked = id ? id === state.niche_id : (state.tier === "B" && !state.niche_id);
   input.addEventListener("change", () => { state.niche_id = id; state.tier = id ? "A" : "B"; });
   return h("li", {}, h("label", { class: "pick" }, input, h("span", {}, h("b", {}, name, best ? "  (closest match)" : ""), text)));
 }
 drawPicks();
 
+const carried = !state.niche_id && !state.tier && state.niche_text; // text typed on the landing page, no saved choice yet: run the match for the visitor
 $("match").addEventListener("click", async () => {
   say($("match-err"), ""); const text = $("desc").value.trim();
   if (text.split(/\s+/).length < 3) return say($("match-err"), "Write a few words about the videos you want to make.");
@@ -84,3 +85,5 @@ $("pkg-form").addEventListener("submit", async (ev) => {
     $("p-out").replaceChildren(h("p", { class: "mute", style: "margin-top:14px" }, reply), dl, h("a", { class: "btn", style: "margin-top:12px", href: blob, download: `package-${pkg.platform}.json` }, icon("down"), "Download as JSON"));
   } catch (e) { say($("p-err"), e.message); } finally { $("p-go").disabled = false; }
 });
+
+if (carried) $("match").click();
