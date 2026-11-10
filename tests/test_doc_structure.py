@@ -48,3 +48,12 @@ def test_a_documentary_outside_8_to_10_minutes_gets_a_warning_and_one_inside_doe
 def test_a_short_gets_no_documentary_length_check():
     meta = {"format": "short", "description": "d", "lines": [{"text": "Why?"}] * 3}
     assert "doc_length" not in {c["name"] for c in reviewer.generator_checks(meta, {"duration": 45})}
+
+
+def test_every_shape_has_enough_lines_and_a_word_budget_that_lands_near_nine_minutes():
+    for t in ("A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "Antikythera mechanism", "The Pied Piper"):
+        c, per = scriptgen.shape_for(t)
+        lo, hi = scriptgen.line_words(c, per)
+        mid_total = c * per * (lo + hi) / 2
+        assert c * per >= scriptgen.MIN_DOC_LINES and 16 <= lo < hi <= 30
+        assert 1050 <= mid_total <= 1250, (t, mid_total)  # 1,050 to 1,250 words is 8.1 to 9.6 minutes before pauses
