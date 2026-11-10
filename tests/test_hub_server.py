@@ -184,3 +184,30 @@ def test_profile_is_private_validated_and_saved(hub):
     assert call(port, "POST", "/api/profile", {"platforms": ["myspace"]}, h)[0] == 400
     other, _ = sign_in(port, mail, "other@example.com")
     assert call(port, "GET", "/api/profile", headers={**XH, "Cookie": f"hub_session={other}"})[2]["profile"]["niche_id"] == ""  # not shared between accounts
+
+
+# Google's sign-in script puts a cookie named g_state on the site. Its value is JSON with quote marks, which Python's SimpleCookie cannot parse: it stopped there and the
+# session cookie behind it was lost, so a person who had just signed in was sent back to the sign-in page (found in a real Chrome run, 10 Nov 2026).
+G_STATE = 'g_state={"i_l":0,"i_ll":1794286161399,"i_b":"RTyNgLywmk2l884wbiX/7MwmgU/Pmum4o711vf7c2Cw","i_e":{"enable_itp_optimization":24},"i_et":1794286161399}'
+
+
+@pytest.mark.parametrize("session_first", [False, True])
+def test_session_survives_googles_json_cookie_in_either_order(hub, session_first):
+    port, mail = hub
+    token, _ = sign_in(port, mail)
+    parts = [f"hub_session={token}", "hub_csrf=abc", G_STATE] if session_first else ["hub_csrf=abc", G_STATE, f"hub_session={token}"]
+    assert call(port, "GET", "/api/me", headers={"Cookie": "; ".join(parts), **XH})[0] == 200
+
+
+def test_parse_cookies_keeps_the_good_cookies_around_a_json_one():
+    got = server.parse_cookies("hub_csrf=abc; " + G_STATE + "; hub_session=tok")
+    assert got["hub_csrf"] == "abc" and got["hub_session"] == "tok" and got["g_state"].startswith('{"i_l":0')
+
+
+def test_parse_cookies_survives_garbage_and_empty():
+    assert server.parse_cookies("=; ;;noequals; x=y; =z") == {"x": "y"}
+    assert server.parse_cookies("") == {}
+
+
+def test_parse_cookies_first_value_wins():
+    assert server.parse_cookies("hub_session=first; hub_session=second") == {"hub_session": "first"}

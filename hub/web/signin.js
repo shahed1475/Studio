@@ -63,7 +63,9 @@ $("back").addEventListener("click", () => { clearInterval(timer); $("code").valu
       const r = await api("/api/auth/google", { credential: resp.credential, csrf: c.data.csrf });
       if (r.ok) go(); else say($("email-err"), MESSAGES[r.data.error] || "Google sign-in did not work.");
     } });
-    google.accounts.id.renderButton($("g-slot"), { theme: "filled_black", size: "large", shape: "pill", text: "continue_with", width: 320 });
+    // Google draws the button 200 to 400 px wide; take the slot's real width so it lines up with the field and the button above it (it was a fixed 320 px, narrower than both)
+    const width = Math.max(200, Math.min(400, Math.round($("g-slot").clientWidth) || 320));
+    google.accounts.id.renderButton($("g-slot"), { theme: "filled_black", size: "large", shape: "pill", text: "continue_with", width });
   };
   s.onerror = () => { $("g-off").hidden = false; };
   document.head.append(s);

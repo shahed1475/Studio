@@ -10,7 +10,6 @@ import mimetypes
 import os
 import re
 import secrets
-from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -24,6 +23,18 @@ CALLS_PER_MINUTE = 60
 CSP = ("default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; frame-src https://accounts.google.com/gsi/; "
        "connect-src 'self' https://accounts.google.com/gsi/; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; img-src 'self' data:; "
        "font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+
+
+def parse_cookies(header: str) -> dict:
+    """The Cookie header as {name: value}, one cookie at a time (RFC 6265 style). Python's SimpleCookie gives up at the first cookie it cannot read, and Google's
+    sign-in script sets one (g_state, JSON with quote marks), which hid our session cookie behind it. A bad cookie is skipped; the first value of a name wins."""
+    out = {}
+    for part in (header or "").split(";"):
+        name, sep, value = part.partition("=")
+        name = name.strip()
+        if sep and name and name not in out:
+            out[name] = value.strip()
+    return out
 
 
 class Hub(BaseHTTPRequestHandler):
@@ -85,12 +96,7 @@ class Hub(BaseHTTPRequestHandler):
         return data
 
     def _cookies(self) -> dict:
-        c = SimpleCookie()
-        try:
-            c.load(self.headers.get("Cookie", ""))
-        except Exception:
-            return {}
-        return {k: m.value for k, m in c.items()}
+        return parse_cookies(self.headers.get("Cookie", ""))
 
     def _auth(self):
         """(account or None, how) where how is 'cookie' or 'bearer'."""
