@@ -169,7 +169,11 @@ footer { padding-block: 40px 56px; color: var(--mist); font-size: .92rem; displa
 
 /* ---- workspace ---- */
 .app-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 14px; border-bottom: 1px solid var(--edge); }
-.app-bar .who { display: flex; align-items: center; gap: 12px; font-size: .92rem; color: var(--mist); }
+.app-bar .who { display: flex; align-items: center; gap: 12px; font-size: .92rem; color: var(--mist); min-width: 0; max-width: 100%; }
+.app-bar { flex-wrap: wrap; }
+.app-bar #who { min-width: 0; max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-bar #theme-slot, .app-bar #out { flex-shrink: 0; }
+@media (max-width: 520px) { .app-bar #who { max-width: 13ch; } } /* a long email pushed the bar 150px past a phone screen (found in a real Chrome run) */
 .app-main { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 20px; padding-block: 32px 72px; align-items: start; }
 .app-main h1 { font-size: clamp(2rem, 3.8vw, 3rem); margin-bottom: 8px; }
 .app-main .col { display: grid; gap: 20px; }
@@ -182,6 +186,8 @@ footer { padding-block: 40px 56px; color: var(--mist); font-size: .92rem; displa
 .pick span { color: var(--mist); font-size: .9rem; }
 .team { list-style: none; margin: 14px 0 0; padding: 0; }
 .team li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid var(--edge); }
+@media (max-width: 520px) { .team li { flex-wrap: wrap; } } /* on a phone the chip drops under the text; on desktop it stays at the right */
+.app-main > .col { min-width: 0; } /* a grid item never shrinks below its content unless told to: the team rows made the right column 355px wide on a 360px phone */
 .team li:first-child { border-top: 0; }
 .team b { font-family: var(--display); font-weight: 600; }
 .team small { display: block; color: var(--mist); max-width: 34ch; }

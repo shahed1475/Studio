@@ -108,7 +108,7 @@ def researcher(model_handler):
                 return {"state": "rejected", "text": "Research runs are limited to three an hour. Try again later."}
             return {"state": "input_required", "text": "Choose one of the ready-made niches in your workspace first, then ask again. Research for a custom idea needs an AI key."}
         return {"state": "completed", "artifacts": [{"name": "research_run", "data": {"stored": r["stored"], "failed": r["failed"], "topics": r["topics"]}}],
-                "text": f"Stored {r['stored']} topic ideas read from Wikipedia ({r['failed']} could not be read). Each keeps its source address and is labelled PARTIALLY_VERIFIED at best: one secondary source, not cross-checked."}
+                "text": f"Stored {r['stored']} topic ideas read from Wikipedia ({r['failed']} could not be read). Each keeps its source address and is marked Partly checked (PARTIALLY_VERIFIED) at best: one secondary source, not cross-checked."}
     return handler
 
 

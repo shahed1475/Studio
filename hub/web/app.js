@@ -51,7 +51,7 @@ $("match").addEventListener("click", async () => {
 function drawPlatforms() {
   $("plats").replaceChildren(...Object.entries(PLATFORMS).map(([id, [name, cls]]) => {
     const box = h("input", { type: "checkbox", value: id }); box.checked = state.platforms.includes(id);
-    box.addEventListener("change", () => { state.platforms = [...document.querySelectorAll("#plats input:checked")].map((i) => i.value); });
+    box.addEventListener("change", () => { state.platforms = [...document.querySelectorAll("#plats input:checked")].map((i) => i.value); drawDownloads($("res-list").children.length); });
     return h("label", { class: "platform-row" }, box, h("span", { class: `i ${cls}`, "aria-hidden": "true" }), h("span", { class: "grow" }, h("b", {}, name), h("br"), h("span", { class: "mute" }, MODE[prof.data.platforms[id]] || ""))); }));
   $("p-platform").replaceChildren(...Object.entries(PLATFORMS).map(([id, [name]]) => h("option", { value: id }, name)));
 }
@@ -65,9 +65,40 @@ $("plat-form").addEventListener("submit", async (ev) => {
 const cards = await Promise.all(list.agents.map((a) => fetch(a.card).then((r) => r.json())));
 $("team").replaceChildren(...cards.map((c) => {
   const needs = c.skills.some((s) => s.tags.includes("needs-ai-key"));
+  const research = c.skills.some((s) => s.tags.includes("rule-run")); // the researcher: its research run is free, its model chat still needs a key
   return h("li", {}, h("span", {}, h("b", {}, c.name), h("small", {}, c.description)),
-    needs ? h("span", { class: "chip next" }, icon("lock"), "Needs an AI key") : h("span", { class: "chip good" }, icon("check"), "Ready"));
+    needs ? h("span", { class: "chip next" }, icon("lock"), "Needs an AI key") : h("span", { class: "chip good" }, icon("check"), research ? "Ready to research" : "Ready"));
 }));
+
+// Research: topics the researcher stored for this account, each with its label and source. Everything from the web is inserted as text, never as markup.
+const LABEL = { PARTIALLY_VERIFIED: "Partly checked", UNVERIFIED: "Not checked" };
+function drawResearch(data) {
+  const src = new Map(data.sources.map((s) => [s.id, s]));
+  $("res-list").replaceChildren(...data.topics.map((t) => {
+    const s = src.get(t.source_id), safe = s && /^https:\/\//.test(s.url);
+    const clip = s ? (s.passage.length > 170 ? s.passage.slice(0, 170) + "…" : s.passage) : "No source stored yet.";
+    return h("li", {}, h("span", {}, h("b", {}, t.title), h("small", {}, clip, " ", safe ? h("a", { href: s.url, target: "_blank", rel: "noopener noreferrer" }, "Source") : "")),
+      h("span", { class: t.label === "PARTIALLY_VERIFIED" ? "chip good" : "chip next", title: t.label }, icon(t.label === "PARTIALLY_VERIFIED" ? "check" : "warn"), LABEL[t.label] || t.label));
+  }));
+  drawDownloads(data.topics.length);
+}
+function drawDownloads(n) {
+  const wanted = state.platforms.filter((p) => PLATFORMS[p]);
+  $("res-dl").replaceChildren(...(wanted.length ? wanted.map((p) => h("a", { class: "btn", href: `/api/export?platform=${p}`, download: `plan-${p}.md` }, icon("down"), `Plan for ${PLATFORMS[p][0]}`))
+    : [h("span", { class: "help" }, n ? "Save the platforms you post to, and a plan package for each one appears here." : "")]));
+}
+const first = await api("/api/research");
+if (first.ok) drawResearch(first.data);
+$("res-go").addEventListener("click", async () => {
+  say($("res-err"), ""); $("res-status").textContent = ""; $("res-go").disabled = true; $("res-go").textContent = "Reading…";
+  try {
+    const t = (await a2a("researcher", "SendMessage", { message: { messageId: crypto.randomUUID(), role: "ROLE_USER", parts: [{ data: { action: "research" } }] } })).task;
+    const reply = t.status.message?.parts?.[0]?.text || "";
+    if (t.status.state !== "TASK_STATE_COMPLETED") return say($("res-err"), reply || "The research did not run.");
+    $("res-status").textContent = reply;
+    const r = await api("/api/research"); if (r.ok) drawResearch(r.data);
+  } catch (e) { say($("res-err"), e.message); } finally { $("res-go").disabled = false; $("res-go").textContent = "Run research"; }
+});
 
 $("pkg-form").addEventListener("submit", async (ev) => {
   ev.preventDefault(); say($("p-err"), ""); $("p-out").replaceChildren();
