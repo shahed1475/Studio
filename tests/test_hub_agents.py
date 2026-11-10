@@ -90,3 +90,41 @@ def test_room_is_bounded_by_rounds_and_calls_and_by_a_member_who_cannot_answer()
     assert rooms.run_room(agents.AGENTS, aid, "x", ["strategist", "ghost"], llm=endless)["ok"] is False
     flatterers = rooms.run_room(agents.AGENTS, aid, "x", ["strategist", "reviewer"], rounds=3, llm=lambda p: "AGREE")
     assert flatterers["calls"] == 4 and flatterers["stopped"] == "agreed"  # not before the second round
+
+
+def fake_article(title):
+    return {"title": title, "url": "https://en.wikipedia.org/wiki/" + title.replace(" ", "_"), "text": f"{title} was an ancient place.", "revised": "2026-10-02T00:00:00Z"}
+
+
+def test_researcher_research_action_needs_no_model_key_and_uses_the_saved_niche(monkeypatch):
+    import niche
+
+    from hub import profile, research
+
+    aid = account()
+    monkeypatch.setattr(research, "fetch_article", fake_article)
+    assert state(ask(aid, "researcher", data={"action": "research"})) == "input_required"  # no niche chosen yet: it says so, nothing is stored
+    profile.save(aid, "ancient_civilizations", "", "A", ["youtube"], niche.PRESET_IDS, agents.PLATFORMS)
+    t = ask(aid, "researcher", data={"action": "research"})  # llm=None: no key, and it still works
+    assert state(t) == "completed"
+    run = t["artifacts"][0]["parts"][-1]["data"]
+    assert run["stored"] == 6 and len(research.overview(aid)["topics"]) == 6
+
+
+def test_researcher_run_that_is_refused_says_why_in_plain_words(monkeypatch):
+    from hub import research
+
+    aid = account()
+    monkeypatch.setattr(research, "fetch_article", fake_article)
+    from hub import profile
+    import niche
+
+    profile.save(aid, "ancient_civilizations", "", "A", ["youtube"], niche.PRESET_IDS, agents.PLATFORMS)
+    for _ in range(3):
+        assert state(ask(aid, "researcher", data={"action": "research"})) == "completed"
+    t = ask(aid, "researcher", data={"action": "research"})
+    assert state(t) == "rejected" and "hour" in t["status"]["message"]["parts"][0]["text"].lower()
+
+
+def test_researcher_other_messages_still_ask_for_a_key():
+    assert state(ask(account(), "researcher", text="what should I research?")) == "input_required"

@@ -91,6 +91,24 @@ def model_agent(role: str):
     return handler
 
 
+def researcher(model_handler):
+    """The researcher has one job that needs no model: `data={"action": "research"}` reads the starter topics of the account's saved ready-made niche from Wikipedia into the
+    research store (free, bounded, labelled PARTIALLY_VERIFIED at best). Any other message goes to the model path, which needs the account's key."""
+    def handler(ctx: a2a.Ctx) -> dict:
+        if (ctx.data or {}).get("action") != "research":
+            return model_handler(ctx)
+        from . import profile as profiles, research
+
+        r = research.run_for_account(ctx.account_id, profiles.get(ctx.account_id)["niche_id"])
+        if not r["ok"]:
+            if r["error"] == "too_many":
+                return {"state": "rejected", "text": "Research runs are limited to three an hour. Try again later."}
+            return {"state": "input_required", "text": "Choose one of the ready-made niches in your workspace first, then ask again. Research for a custom idea needs an AI key."}
+        return {"state": "completed", "artifacts": [{"name": "research_run", "data": {"stored": r["stored"], "failed": r["failed"], "topics": r["topics"]}}],
+                "text": f"Stored {r['stored']} topic ideas read from Wikipedia ({r['failed']} could not be read). Each keeps its source address and is labelled PARTIALLY_VERIFIED at best: one secondary source, not cross-checked."}
+    return handler
+
+
 def build() -> dict:
     agents = {
         "concierge": a2a.Agent("concierge", "Concierge", "Welcomes a new creator, understands the niche they describe and matches it to what the studio can produce.",
@@ -100,7 +118,9 @@ def build() -> dict:
                                [{"id": "export-package", "name": "Export package", "description": "Caption, hashtags, checklist and platform notes for an approved video.", "tags": ["publishing", "export"]}], publisher),
     }
     for role, (name, desc, _p) in ROLES.items():
-        agents[role] = a2a.Agent(role, name, desc, [{"id": role, "name": name, "description": desc, "tags": [role, "needs-ai-key"]}], model_agent(role))
+        handler = researcher(model_agent(role)) if role == "researcher" else model_agent(role)
+        tags = [role, "rule-run"] if role == "researcher" else [role, "needs-ai-key"]
+        agents[role] = a2a.Agent(role, name, desc, [{"id": role, "name": name, "description": desc, "tags": tags}], handler)
     return agents
 
 
