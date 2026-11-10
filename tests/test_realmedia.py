@@ -260,3 +260,13 @@ def test_a_credit_names_the_author_is_cut_at_a_word_and_never_holds_a_refused_wo
     assert " by Marsyas" in credit and "CC BY 2.5" in credit and "https://openverse.example/1" in credit
     assert not credit.split(" by ")[0].endswith(("Athe", "gall")) and len(credit) < 260
     assert licences.accepted(credit) and licences.needs_credit(credit)
+
+
+def test_a_portrait_of_a_real_person_is_used_only_when_the_scene_is_about_that_person(tmp_cache):
+    portrait = item("commons", "Professor Mike Edmunds portrait 01.jpg", "Public domain", 1)
+    gears = item("commons", "Antikythera gear fragment.jpg", "Public domain", 2)
+    f, _ = finder(tmp_cache, {"commons": [portrait, gears]}, anchors=("Antikythera", "Edmunds"))
+    got = f("Ancient Corinth", ["Antikythera", "Edmunds"], 2)
+    assert len(got) == 1 and "Edmunds" not in got[0][1]  # the portrait names an anchor, but the scene is not about him
+    f2, _ = finder(tmp_cache, {"commons": [portrait]}, anchors=("Antikythera", "Edmunds"))
+    assert f2("Mike Edmunds", ["Antikythera", "Edmunds"], 1)  # a scene that names him may show him

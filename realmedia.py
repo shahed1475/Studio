@@ -25,6 +25,8 @@ NARROW = ("commons", "openverse")  # the per-scene searches: quick and specific
 WIDE = ("commons", "smithsonian", "met", "aic", "cleveland", "openverse", "nasa", "pixabay")  # the subject itself: a reserve of pictures from every approved library
 MIN_WIDTH, PER_SOURCE, TIMEOUT = 600, 6, 60
 NASA_NOT = re.compile(r"\b(logo|insignia|emblem|patch|seal|meatball|worm)\b", re.I)
+PERSON_PHOTO = re.compile(r"\b(portrait|headshot|selfie|bust of|photo of)\b|\b(professor|prof|dr|mr|mrs|ms)\b\.?", re.I)
+PERSON_WORDS = {"portrait", "headshot", "selfie", "professor", "photo", "image", "picture", "jpeg"}
 UA = {"User-Agent": "StoryStudio/1.0 (history documentary channel; picture lookup; github.com/shahed1475/Studio)"}
 MAX_BYTES, MAX_PIXELS, MAX_HOPS, TOTAL_SECONDS = 25_000_000, 60_000_000, 3, 60  # one picture: 25 MB, 60 million pixels, three redirects, a minute
 
@@ -69,6 +71,7 @@ class Finder:
             for it in items:
                 if it.get("accepted") and it.get("url") and not (src == "nasa" and NASA_NOT.search(str(it.get("title")))):
                     cands.append({**it, "_rank": rank})
+        cands = [c for c in cands if not self._unrelated_portrait(c, query)]
         cands = list({c["url"]: c for c in cands}.values())
         direct = [c for c in cands if self._names_subject(c, anchors)]
         rest = [c for c in cands if c not in direct]
@@ -102,6 +105,16 @@ class Finder:
     # ---- inside ----
     def _known_urls(self) -> set[str]:
         return {a["url"] for a in self.assets}
+
+    @staticmethod
+    def _unrelated_portrait(c: dict, query: str) -> bool:
+        """A photo of a real, identifiable person is shown only for a scene about that person: it names the person in its title and the scene's own search words do. Anywhere else it would
+        suggest that person has to do with the line (found on the Antikythera Short: a researcher's face over a line about Corinth)."""
+        title = str(c.get("title") or "")
+        if not PERSON_PHOTO.search(title):
+            return False
+        names = {w for w in re.findall(r"[a-z]{5,}", title.lower()) if w not in PERSON_WORDS}
+        return not (names & set(re.findall(r"[a-z]{5,}", query.lower())))
 
     def _names_subject(self, c: dict, anchors: list[str]) -> bool:
         text = f"{c['title']}".lower()
