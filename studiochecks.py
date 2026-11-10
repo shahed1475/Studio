@@ -81,14 +81,16 @@ def check_licenses(meta: dict) -> list[dict]:
     out = []
     credits = meta.get("credits") or []
     bad, credited = [], []
+    stored = {a.get("credit"): str(a.get("licence") or "") for a in (meta.get("assets") or []) if isinstance(a, dict)}  # the library's own licence field for each real picture (realmedia.py)
     for c in credits:
         low = c.lower()
-        if any(w in low for w in FORBIDDEN_WORDS):
+        lic = stored.get(c)
+        if any(w in low for w in FORBIDDEN_WORDS) or (lic is not None and not licences.accepted(lic)):  # a refused stored licence blocks, whatever the credit text says
             bad.append(c)
+        elif licences.needs_credit(c) or licences.needs_credit(lic or ""):  # CC BY, CC BY-SA, NASA media, Pixabay: allowed only with the credit in the description (owner's decision, 10 Nov 2026).
+            credited.append(c)  # Checked BEFORE the public-domain words: a title that says "public domain" must not lift the duty to credit (security review, 10 Nov 2026)
         elif any(a in low for a in ALLOWED_LICENSES):
             continue
-        elif licences.needs_credit(c):  # CC BY, CC BY-SA, NASA media, Pixabay: allowed, but only with the credit shown in the description (owner's decision, 10 Nov 2026)
-            credited.append(c)
         elif licences.accepted(c):
             continue
         else:

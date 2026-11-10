@@ -58,11 +58,13 @@ def credit_for(path: Path) -> str | None:
 CREDIT_HEAD = "Picture credits:"
 
 
-def credit_block(credits: list[str]) -> str:
+def credit_block(credits: list[str], assets=()) -> str:
     """The description's credit section: every item whose licence needs a credit (CC BY, CC BY-SA, NASA media, Pixabay) in full, one line each, and a count of the public-domain and CC0
-    items (their address and licence are in the video's record). AI art has its own label. Empty when no real picture or clip was used."""
+    items (their address and licence are in the video's record). AI art has its own label. Empty when no real picture or clip was used.
+    A credit needs its line when its text names a credit-needing licence OR its stored licence (`assets`, from the library's own field) does: words in a title never lower that."""
+    stored = {a.get("credit"): a.get("licence") for a in assets if isinstance(a, dict)}
     unique = list(dict.fromkeys(c for c in credits if c))
-    needed = [c for c in unique if licences.needs_credit(c)]
+    needed = [c for c in unique if licences.needs_credit(c) or licences.needs_credit(stored.get(c, ""))]
     others = [c for c in unique if c not in needed and "ai-generated" not in c.lower()]
     lines = [f"- {c}" for c in needed]
     if others:
@@ -70,9 +72,9 @@ def credit_block(credits: list[str]) -> str:
     return CREDIT_HEAD + "\n" + "\n".join(lines) if lines else ""
 
 
-def with_credits(description: str, credits: list[str]) -> str:
+def with_credits(description: str, credits: list[str], assets=()) -> str:
     """The description with its credit section: placed before 'Chapters:' when the description has them, at the end otherwise; an older section is replaced, never doubled."""
-    block = credit_block(credits)
+    block = credit_block(credits, assets)
     head, sep, chapters = str(description or "").partition("\n\nChapters:")
     head = head.partition("\n\n" + CREDIT_HEAD)[0].rstrip()
     return head + (f"\n\n{block}" if block else "") + (sep + chapters if sep else "")

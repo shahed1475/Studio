@@ -7,8 +7,12 @@ Never used: NASA logos, anything below a usable size, Pexels (not on the owner's
 import datetime as dt
 import hashlib
 import io
+import ipaddress
 import re
+import socket
+import time
 from pathlib import Path
+from urllib.parse import urljoin, urlsplit
 
 import requests
 from PIL import Image
@@ -22,12 +26,29 @@ WIDE = ("commons", "smithsonian", "met", "aic", "cleveland", "openverse", "nasa"
 MIN_WIDTH, PER_SOURCE, TIMEOUT = 600, 6, 60
 NASA_NOT = re.compile(r"\b(logo|insignia|emblem|patch|seal|meatball|worm)\b", re.I)
 UA = {"User-Agent": "StoryStudio/1.0 (history documentary channel; picture lookup; github.com/shahed1475/Studio)"}
+MAX_BYTES, MAX_PIXELS, MAX_HOPS, TOTAL_SECONDS = 25_000_000, 60_000_000, 3, 60  # one picture: 25 MB, 60 million pixels, three redirects, a minute
+
+
+def default_resolve(host: str) -> list[str]:
+    return [a[4][0] for a in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)]
+
+
+def _public_https(url: str, resolve) -> bool:
+    """True only for an https address whose name resolves ONLY to public addresses (no loopback, private, link-local, reserved or carrier-grade ones)."""
+    try:
+        p = urlsplit(url)
+        if p.scheme != "https" or not p.hostname:
+            return False
+        ips = resolve(p.hostname)
+        return bool(ips) and all(ipaddress.ip_address(ip).is_global for ip in ips)
+    except (OSError, ValueError):
+        return False
 
 
 class Finder:
-    def __init__(self, topic: str, anchors: list[str], judge=None, credit_cap: int = 12, search=openmedia.search, get=requests.get, folder: Path | None = None):
+    def __init__(self, topic: str, anchors: list[str], judge=None, credit_cap: int = 12, search=openmedia.search, get=requests.get, folder: Path | None = None, resolve=None):
         self.topic, self.anchors, self.judge, self.credit_cap = topic, list(anchors or []), judge, credit_cap
-        self.search, self.get = search, get
+        self.search, self.get, self.resolve = search, get, resolve or default_resolve
         self.folder = Path(folder) if folder else config.CACHE / "real"
         self.assets: list[dict] = []
         self.problems: list[str] = []
@@ -88,13 +109,35 @@ class Finder:
         return any(a.lower() in text for a in words)
 
     def _credit(self, c: dict) -> str:
-        base = " ".join(str(c.get("credit") or c["title"]).split())[:110]
+        base = " ".join(licences.REFUSED.sub("", str(c.get("credit") or c["title"])).split())[:110]  # a title that merely contains a refusal word ("Non-commercial vehicles") must not make the gate refuse a licence-clean item
         label = openmedia.SOURCES.get(c["source"], (c["source"],))[0]
         if label.lower() not in base.lower():
             base += f", {label}"
         if c["licence"].lower() not in base.lower():
             base += f" ({c['licence']})"
         return f"{base}, {c['page']}"
+
+    def _bytes(self, url: str) -> bytes:
+        """The file at a library's address, fetched only from public https addresses (every redirect hop is checked first, none is followed by requests itself), streamed, and cut off at a
+        size and time limit. A library entry is third-party data and the worker shares the host's network: no internal address may be reached through it (security review, 10 Nov 2026).
+        Limit: a name could resolve differently at connect time than at this check (DNS rebinding); the size and time limits and the image check below bound what that could cost."""
+        deadline = time.monotonic() + TOTAL_SECONDS
+        for _ in range(MAX_HOPS + 1):
+            if not _public_https(url, self.resolve):
+                raise ValueError("not a public https address")
+            r = self.get(url, headers=UA, timeout=TIMEOUT, stream=True, allow_redirects=False)
+            if r.status_code in (301, 302, 303, 307, 308):
+                url = urljoin(url, r.headers.get("Location") or "")
+                continue
+            if r.status_code != 200:
+                raise ValueError(f"HTTP {r.status_code}")
+            buf = bytearray()
+            for chunk in r.iter_content(65536):
+                buf += chunk
+                if len(buf) > MAX_BYTES or time.monotonic() > deadline:
+                    raise ValueError("download too large or too slow")
+            return bytes(buf)
+        raise ValueError("too many redirects")
 
     def _download(self, c: dict) -> Path | None:
         url = c["url"]
@@ -104,10 +147,10 @@ class Finder:
         if dest.exists():
             return dest
         try:
-            r = self.get(url, headers=UA, timeout=TIMEOUT)
-            if getattr(r, "status_code", 200) != 200:
-                raise ValueError(f"HTTP {r.status_code}")
-            with Image.open(io.BytesIO(r.content)) as im:
+            data = self._bytes(url)
+            with Image.open(io.BytesIO(data)) as im:
+                if im.width * im.height > MAX_PIXELS:  # judged from the header, before any pixel is decoded
+                    raise ValueError(f"too many pixels ({im.width} x {im.height})")
                 im.load()
                 if im.width < MIN_WIDTH:
                     raise ValueError(f"too small ({im.width} px wide)")

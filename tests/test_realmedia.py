@@ -18,17 +18,37 @@ def png(w=1000, h=700, colour=(120, 90, 60)) -> bytes:
     return b.getvalue()
 
 
+class Resp:
+    def __init__(self, status=200, content=b"", headers=None):
+        self.status_code, self.content, self.headers = status, content, headers or {}
+
+    def iter_content(self, n):
+        for i in range(0, len(self.content), n):
+            yield self.content[i:i + n]
+
+    def raise_for_status(self):
+        pass
+
+    def close(self):
+        pass
+
+
 class Net:
-    """A fake download function that records what it was asked for."""
+    """A fake download function that records what it was asked for, can redirect, and takes the arguments the real requests.get takes."""
 
-    def __init__(self, sizes=None):
-        self.calls, self.sizes = [], sizes or {}
+    def __init__(self, sizes=None, redirects=None):
+        self.calls, self.sizes, self.redirects, self.kwargs = [], sizes or {}, redirects or {}, []
 
-    def __call__(self, url, headers=None, timeout=None):
+    def __call__(self, url, headers=None, timeout=None, stream=False, allow_redirects=True, **kw):
         self.calls.append(url)
+        self.kwargs.append({"stream": stream, "allow_redirects": allow_redirects})
+        if url in self.redirects:
+            return Resp(302, b"", {"Location": self.redirects[url]})
         w, h = self.sizes.get(url, (1000, 700))
-        content = png(w, h, (len(url) % 200, 80, 90))
-        return type("R", (), {"status_code": 200, "content": content, "raise_for_status": lambda s: None})()
+        return Resp(200, png(w, h, (len(url) % 200, 80, 90)))
+
+
+PUBLIC = lambda host: ["93.184.216.34"]  # a public address, whatever the name
 
 
 def item(source, title, licence, n, page=None):
@@ -41,7 +61,7 @@ def tmp_cache(tmp_path, monkeypatch):
     return tmp_path
 
 
-def finder(tmp_cache, table, net=None, judge=None, cap=12, topic="The Antikythera Mechanism", anchors=("Antikythera",)):
+def finder(tmp_cache, table, net=None, judge=None, cap=12, topic="The Antikythera Mechanism", anchors=("Antikythera",), resolve=PUBLIC):
     def search(source, query, kind, n, get):
         got = table.get(source)
         if isinstance(got, Exception):
@@ -49,7 +69,7 @@ def finder(tmp_cache, table, net=None, judge=None, cap=12, topic="The Antikyther
         return list(got or [])
 
     net = net or Net()
-    return realmedia.Finder(topic, list(anchors), judge=judge, credit_cap=cap, search=search, get=net, folder=tmp_cache / "real"), net
+    return realmedia.Finder(topic, list(anchors), judge=judge, credit_cap=cap, search=search, get=net, folder=tmp_cache / "real", resolve=resolve), net
 
 
 def test_only_accepted_licences_are_downloaded_and_each_keeps_its_credit_address_and_licence(tmp_cache):
@@ -118,7 +138,7 @@ def test_narrow_searches_use_only_commons_and_openverse_wide_ones_use_every_libr
         seen.append(source)
         return []
 
-    f = realmedia.Finder("T", ["T"], search=search, get=Net(), folder=tmp_cache / "real")
+    f = realmedia.Finder("T", ["T"], search=search, get=Net(), folder=tmp_cache / "real", resolve=PUBLIC)
     f("a scene", ["T"], 1)
     narrow = list(seen)
     seen.clear()
@@ -145,6 +165,71 @@ def test_the_assets_record_is_plain_json(tmp_cache):
     f, _ = finder(tmp_cache, {"commons": [item("commons", "Antikythera fragment A", "CC BY-SA 4.0", 1)]})
     f("Antikythera", ["Antikythera"], 1)
     assert json.loads(json.dumps(f.assets))[0]["licence"] == "CC BY-SA 4.0"
+
+
+# ---- downloads are only made from public https addresses, with limits (security review, 10 Nov 2026: a library entry is third-party data, and the worker shares the host's network) ----
+ONE = {"commons": [item("commons", "Antikythera fragment A", "CC0", 1)]}
+
+
+@pytest.mark.parametrize("ip", ["127.0.0.1", "10.0.0.5", "172.16.3.4", "192.168.1.9", "169.254.169.254", "0.0.0.0", "100.64.0.1", "::1", "fd00::1", "fe80::1", "not-an-address"])
+def test_a_library_url_that_resolves_to_a_private_or_odd_address_is_never_fetched(tmp_cache, ip):
+    f, net = finder(tmp_cache, ONE, resolve=lambda host: [ip])
+    assert f("Antikythera", ["Antikythera"], 1) == [] and net.calls == [] and f.problems
+
+
+def test_one_private_answer_among_public_ones_refuses_the_host(tmp_cache):
+    f, net = finder(tmp_cache, ONE, resolve=lambda host: ["93.184.216.34", "10.0.0.1"])
+    assert f("Antikythera", ["Antikythera"], 1) == [] and net.calls == []
+
+
+def test_a_name_that_does_not_resolve_is_refused_quietly(tmp_cache):
+    def boom(host):
+        raise OSError("no such host")
+
+    f, net = finder(tmp_cache, ONE, resolve=boom)
+    assert f("Antikythera", ["Antikythera"], 1) == [] and net.calls == [] and f.problems
+
+
+def test_plain_http_and_odd_schemes_are_refused(tmp_cache):
+    for url in ("http://commons.example/img/1.jpg", "file:///etc/passwd", "ftp://x.example/a.jpg", "https:///nohost.jpg", "//commons.example/a.jpg"):
+        it = item("commons", "Antikythera fragment A", "CC0", 1)
+        it["url"] = url
+        f, net = finder(tmp_cache, {"commons": [it]})
+        assert f("Antikythera", ["Antikythera"], 1) == [] and net.calls == [], url
+
+
+def test_redirects_are_followed_one_hop_at_a_time_and_each_hop_is_checked(tmp_cache):
+    start, hop, end = "https://commons.example/img/1.jpg", "https://cdn.example/a.jpg", "https://cdn.example/b.jpg"
+    net = Net(redirects={start: hop, hop: end})
+    f, _ = finder(tmp_cache, ONE, net=net)
+    assert len(f("Antikythera", ["Antikythera"], 1)) == 1 and net.calls == [start, hop, end]
+    assert all(k == {"stream": True, "allow_redirects": False} for k in net.kwargs)  # redirects are never followed by requests itself
+
+
+def test_a_redirect_into_a_private_address_stops_the_download(tmp_cache):
+    start, inner = "https://commons.example/img/1.jpg", "https://internal.example/secret"
+    net = Net(redirects={start: inner})
+    f, _ = finder(tmp_cache, ONE, net=net, resolve=lambda host: ["10.0.0.9"] if host == "internal.example" else ["93.184.216.34"])
+    assert f("Antikythera", ["Antikythera"], 1) == [] and net.calls == [start]  # the internal address was never requested
+
+
+def test_too_many_redirects_stop_the_download(tmp_cache):
+    urls = [f"https://cdn.example/{i}.jpg" for i in range(8)]
+    net = Net(redirects={"https://commons.example/img/1.jpg": urls[0], **{urls[i]: urls[i + 1] for i in range(7)}})
+    f, _ = finder(tmp_cache, ONE, net=net)
+    assert f("Antikythera", ["Antikythera"], 1) == [] and len(net.calls) <= realmedia.MAX_HOPS + 1
+
+
+def test_an_oversize_download_is_cut_off_and_refused(tmp_cache, monkeypatch):
+    monkeypatch.setattr(realmedia, "MAX_BYTES", 500)  # the fake solid-colour picture is a few kilobytes
+    f, _ = finder(tmp_cache, ONE)
+    assert f("Antikythera", ["Antikythera"], 1) == [] and any("large" in p or "slow" in p for p in f.problems)
+
+
+def test_a_picture_with_too_many_pixels_is_refused_before_it_is_decoded(tmp_cache, monkeypatch):
+    monkeypatch.setattr(realmedia, "MAX_PIXELS", 500_000)  # the fake picture is 1000 x 700 = 700,000 pixels
+    f, _ = finder(tmp_cache, ONE)
+    assert f("Antikythera", ["Antikythera"], 1) == [] and any("pixels" in p for p in f.problems)
 
 
 # ---- wiring into scene_images: real pictures from the libraries before any drawn picture ----
