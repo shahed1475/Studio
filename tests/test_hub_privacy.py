@@ -70,6 +70,19 @@ def test_deleting_an_account_removes_everything_and_the_email_leaves_the_databas
     assert EMAIL.encode() not in file_bytes() and b"Petra is a site" not in file_bytes()
 
 
+def test_the_email_is_gone_from_the_write_ahead_log_even_while_another_connection_is_open():
+    """On a busy server another request holds a connection open, so SQLite does not reset the log by itself: the deletion must checkpoint and truncate it."""
+    aid, _ = full_account()
+    keep = db.connect()
+    keep.execute("select count(*) from accounts").fetchall()  # an idle open connection keeps the log file alive when the others close
+    try:
+        assert EMAIL.encode() in file_bytes()
+        auth.delete_account(aid, now=200.0)
+        assert EMAIL.encode() not in file_bytes()
+    finally:
+        keep.close()
+
+
 def test_the_security_log_keeps_the_fact_of_the_deletion_but_no_person():
     aid, _ = full_account()
     auth.delete_account(aid, now=200.0)
