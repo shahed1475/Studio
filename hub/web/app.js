@@ -62,7 +62,8 @@ $("plat-form").addEventListener("submit", async (ev) => {
   if (r.ok) { $("saved").textContent = "Saved."; $("status").textContent = "Your saved choices are loaded."; } else say($("save-err"), "Could not save: " + (r.data.error || "try again"));
 });
 
-const cards = await Promise.all(list.agents.map((a) => fetch(a.card).then((r) => r.json())));
+// The card addresses come from the server's configured public address; the page asks only the path, at the origin it was opened from, so a tunnel, an alias or a wrong setting cannot blank the team.
+const cards = await Promise.all(list.agents.map((a) => fetch(new URL(a.card, location.href).pathname).then((r) => r.json())));
 let keySet = false;
 function drawTeam() { $("team").replaceChildren(...cards.map((c) => {
   const needs = !keySet && c.skills.some((s) => s.tags.includes("needs-ai-key"));
