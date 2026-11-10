@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from . import a2a, agents as agent_team, auth
+from . import a2a, agents as agent_team, auth, profile
 
 WEB = Path(__file__).parent / "web"
 COOKIE, CSRF_COOKIE = "hub_session", "hub_csrf"
@@ -51,7 +51,8 @@ class Hub(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(length))
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
-        self.send_header("Cache-Control", "no-store")
+        if "Cache-Control" not in (extra or {}):
+            self.send_header("Cache-Control", "no-store")
         if ctype.startswith("text/html"):
             self.send_header("Content-Security-Policy", CSP)
             self.send_header("X-Frame-Options", "DENY")
@@ -129,6 +130,13 @@ class Hub(BaseHTTPRequestHandler):
         if path == "/api/me":
             acc, _ = self._auth()
             return self._json(200, {"ok": True, "account": acc}) if acc else self._json(401, {"ok": False, "error": "signed_out"})
+        if path == "/api/niches":
+            import niche
+
+            return self._json(200, {"niches": [{"id": p["id"], "name": p["name"], "audience": p["audience"]} for p in niche.PRESETS]})
+        if path == "/api/profile":
+            acc, _ = self._auth()
+            return self._json(200, {"ok": True, "profile": profile.get(acc["id"]), "platforms": {k: v["mode"] for k, v in agent_team.PLATFORMS.items()}}) if acc else self._json(401, {"ok": False, "error": "signed_out"})
         if path in ("/a2a", "/a2a/"):
             base = self._base_url()
             return self._json(200, {"agents": [{"id": a.id, "name": a.name, "card": f"{base}/a2a/{a.id}/.well-known/agent-card.json"} for a in self.agents.values()]})
@@ -145,7 +153,8 @@ class Hub(BaseHTTPRequestHandler):
             return self._json(404, {"ok": False, "error": "not_found"})
         body = f.read_bytes()
         ctype = mimetypes.guess_type(f.name)[0] or "application/octet-stream"
-        self._headers(200, ctype + ("; charset=utf-8" if ctype.startswith("text/") or ctype.endswith("javascript") else ""), len(body))
+        static = {} if ctype.startswith("text/html") or os.getenv("HUB_INSECURE_DEV") == "1" else {"Cache-Control": "public, max-age=300"}  # fonts, icons, styles and scripts may be kept five minutes; pages never
+        self._headers(200, ctype + ("; charset=utf-8" if ctype.startswith("text/") or ctype.endswith("javascript") else ""), len(body), static)
         self.wfile.write(body)
 
     def do_OPTIONS(self):  # no CORS: a cross-site page's preflight gets no permission headers
@@ -180,6 +189,23 @@ class Hub(BaseHTTPRequestHandler):
             tok = self._cookies().get(COOKIE)
             auth.logout(tok)
             return self._json(200, {"ok": True}, {"Set-Cookie": self._session_cookie(None)})
+        if path == "/api/demo/niche":  # public, free, no model: the same rule agent a signed-in creator talks to; nothing is stored
+            if not auth.hit(f"demo:{ip}", 20, 60):
+                return self._json(429, {"ok": False, "error": "too_many"})
+            text = str(data.get("text") or "")[:600]
+            res = agent_team.concierge(a2a.Ctx("demo", "concierge", "", "", text, None))
+            art = (res.get("artifacts") or [{}])[0].get("data") or {}
+            return self._json(200, {"ok": True, "state": res["state"], "text": res["text"], "tier": art.get("tier", ""), "matches": art.get("matches", [])})
+        if path == "/api/profile":
+            if not acc:
+                return self._json(401, {"ok": False, "error": "signed_out"})
+            import niche
+
+            try:
+                p = profile.save(acc["id"], data.get("niche_id"), data.get("niche_text"), data.get("tier"), data.get("platforms", []), niche.PRESET_IDS, set(agent_team.PLATFORMS))
+            except ValueError as e:
+                return self._json(400, {"ok": False, "error": str(e)})
+            return self._json(200, {"ok": True, "profile": p})
         m = re.fullmatch(r"/a2a/([a-z]+)", path)
         if m:
             return self._a2a(m.group(1), acc, data)

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sign in to Nightloom</title>
+<meta name="color-scheme" content="dark light">
+<script src="theme.js"></script>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to the form</a>
+<div class="auth">
+  <aside class="auth-art" aria-hidden="true">
+    <a class="brand" href="./" tabindex="-1"><span class="i i-moon"></span>Nightloom</a>
+    <div class="sky" id="sky"><canvas></canvas></div>
+  </aside>
+  <main class="auth-form" id="main">
+    <div class="top-right" id="theme-slot"></div>
+    <div class="auth-card stack" style="--gap:22px">
+      <a class="brand" href="./" style="display:none" id="mobile-brand"><span class="i i-moon" aria-hidden="true"></span>Nightloom</a>
+      <div>
+        <h1 id="title">Sign in</h1>
+        <p class="mute" id="lede" style="margin-top:12px">We email you a code. No password to remember.</p>
+      </div>
+
+      <form id="email-form" class="stack" novalidate>
+        <div>
+          <label for="email">Email address</label>
+          <input class="field" id="email" name="email" type="email" inputmode="email" autocomplete="email" autocapitalize="none" spellcheck="false" required>
+        </div>
+        <button class="btn primary" type="submit" id="send-btn" style="width:100%">Send my code</button>
+        <div class="err" id="email-err" role="alert"></div>
+      </form>
+
+      <form id="code-form" class="stack" novalidate hidden>
+        <div>
+          <label for="code">8-digit code</label>
+          <input class="field code" id="code" name="code" inputmode="numeric" pattern="[0-9]{8}" maxlength="8" autocomplete="one-time-code" required>
+          <p class="help" id="code-help"></p>
+        </div>
+        <button class="btn primary" type="submit" id="verify-btn" style="width:100%">Sign in</button>
+        <div class="err" id="code-err" role="alert"></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn" type="button" id="resend">Send a new code</button>
+          <button class="btn" type="button" id="back">Use another email</button>
+        </div>
+      </form>
+
+      <div id="google-block">
+        <div class="or"><span>or</span></div>
+        <div id="g-slot"></div>
+        <p class="help" id="g-off" hidden><span class="i i-lock" aria-hidden="true"></span> Google sign-in is not switched on for this site yet. The emailed code works now.</p>
+      </div>
+      <p class="help">By signing in you start an account that keeps your niche and choices. Nothing is posted anywhere without your approval.</p>
+    </div>
+  </main>
+</div>
+<script type="module" src="signin.js"></script>
+</body>
+</html>

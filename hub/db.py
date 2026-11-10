@@ -32,6 +32,9 @@ CREATE TABLE IF NOT EXISTS tasks(
   id TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, agent TEXT NOT NULL, context_id TEXT NOT NULL,
   state TEXT NOT NULL, status_text TEXT NOT NULL DEFAULT '', created_at REAL NOT NULL, updated_at REAL NOT NULL,
   history TEXT NOT NULL DEFAULT '[]', artifacts TEXT NOT NULL DEFAULT '[]');
+CREATE TABLE IF NOT EXISTS profiles(
+  account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE, niche_id TEXT NOT NULL DEFAULT '', niche_text TEXT NOT NULL DEFAULT '',
+  tier TEXT NOT NULL DEFAULT '', platforms TEXT NOT NULL DEFAULT '[]', updated_at REAL NOT NULL);
 CREATE INDEX IF NOT EXISTS ix_tasks_acc ON tasks(account_id, context_id, updated_at);
 """
 

@@ -158,3 +158,29 @@ def test_a2a_calls_are_rate_limited_per_account(hub, monkeypatch):
     h = {"Authorization": f"Bearer {tok}"}
     codes = [call(port, "POST", "/a2a/concierge", msg("hi"), h)[0] for _ in range(5)]
     assert codes[:3] == [200, 200, 200] and codes[3:] == [429, 429]
+
+
+def test_demo_niche_is_public_free_rate_limited_and_stores_nothing(hub):
+    port, _ = hub
+    s, _, d, _ = call(port, "POST", "/api/demo/niche", {"text": "Calm stories about ancient civilizations and archaeology discoveries"}, XH)
+    assert s == 200 and d["tier"] == "A" and d["matches"][0]["id"] == "ancient_civilizations"
+    assert call(port, "POST", "/api/demo/niche", {"text": "daily crypto trading tips and bitcoin predictions"}, XH)[2]["state"] == "rejected"
+    assert call(port, "POST", "/api/demo/niche", {"text": "x"})[0] == 403  # still needs the header
+    assert db.connect().execute("select count(*) from tasks").fetchone()[0] == 0
+    codes = [call(port, "POST", "/api/demo/niche", {"text": "history of medieval trade"}, XH)[0] for _ in range(22)]
+    assert 429 in codes
+
+
+def test_profile_is_private_validated_and_saved(hub):
+    port, mail = hub
+    assert call(port, "GET", "/api/profile")[0] == 401
+    tok, _ = sign_in(port, mail)
+    h = {**XH, "Cookie": f"hub_session={tok}"}
+    s, _, d, _ = call(port, "GET", "/api/profile", headers=h)
+    assert s == 200 and d["profile"]["niche_id"] == "" and d["platforms"]["youtube"] == "studio_upload"
+    s, _, d, _ = call(port, "POST", "/api/profile", {"niche_id": "ancient_civilizations", "niche_text": "  Calm   stories ", "tier": "A", "platforms": ["youtube", "tiktok", "youtube"]}, h)
+    assert s == 200 and d["profile"] == {"niche_id": "ancient_civilizations", "niche_text": "Calm stories", "tier": "A", "platforms": ["tiktok", "youtube"]}
+    assert call(port, "POST", "/api/profile", {"niche_id": "made_up"}, h)[0] == 400
+    assert call(port, "POST", "/api/profile", {"platforms": ["myspace"]}, h)[0] == 400
+    other, _ = sign_in(port, mail, "other@example.com")
+    assert call(port, "GET", "/api/profile", headers={**XH, "Cookie": f"hub_session={other}"})[2]["profile"]["niche_id"] == ""  # not shared between accounts

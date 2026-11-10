@@ -56,8 +56,8 @@ def concierge(ctx: a2a.Ctx) -> dict:
     scored.sort(key=lambda x: -x[0])
     top = [{"id": p["id"], "name": p["name"], "score": s} for s, p in scored[:3] if s > 0]
     tier = "A" if top and top[0]["score"] >= 2 else "B"
-    msg = (f"Closest ready-made niche: {top[0]['name']}. The studio can produce this kind of channel in full (tier A)." if tier == "A"
-           else "No ready-made niche fits closely. I can research and plan it and draft scripts and export packages (tier B); full fact-checked video needs a fit check first.")
+    msg = (f"Closest ready-made niche: {top[0]['name']}. The studio can produce this kind of channel in full." if tier == "A"
+           else "No ready-made niche fits closely. I can research and plan it, draft scripts and prepare export packages. Full fact-checked video needs a fit check first.")
     return {"state": "completed", "text": msg, "artifacts": [{"name": "niche_matches", "data": {"tier": tier, "matches": top}}]}
 
 
@@ -100,7 +100,7 @@ def build() -> dict:
                                [{"id": "export-package", "name": "Export package", "description": "Caption, hashtags, checklist and platform notes for an approved video.", "tags": ["publishing", "export"]}], publisher),
     }
     for role, (name, desc, _p) in ROLES.items():
-        agents[role] = a2a.Agent(role, name, desc, [{"id": role, "name": name, "description": desc, "tags": [role]}], model_agent(role))
+        agents[role] = a2a.Agent(role, name, desc, [{"id": role, "name": name, "description": desc, "tags": [role, "needs-ai-key"]}], model_agent(role))
     return agents
 
 

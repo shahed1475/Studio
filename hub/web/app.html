@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Your workspace · Nightloom</title>
+<meta name="color-scheme" content="dark light">
+<script src="theme.js"></script>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="wrap">
+  <header class="app-bar">
+    <a class="brand" href="./"><span class="i i-moon" aria-hidden="true"></span>Nightloom</a>
+    <div class="who"><span id="who"></span><span id="theme-slot"></span><button class="btn" id="out" type="button"><span class="i i-out" aria-hidden="true"></span>Sign out</button></div>
+  </header>
+  <main id="main" class="app-main">
+    <div class="col">
+      <div>
+        <h1>Your workspace</h1>
+        <p class="mute" id="status">Loading your saved choices...</p>
+      </div>
+      <form class="panel" id="niche-form" novalidate aria-labelledby="niche-h">
+        <h2 id="niche-h">Your niche</h2>
+        <p class="mute">Describe your channel, or pick a ready-made niche. The concierge tells you how far the studio can take it.</p>
+        <div style="margin-top:18px">
+          <label for="desc">Describe your channel</label>
+          <textarea class="field" id="desc" maxlength="500" placeholder="Calm stories about ancient legends"></textarea>
+          <div style="margin-top:12px"><button class="btn" type="button" id="match">Match my niche</button></div>
+          <div class="err" id="match-err" role="alert"></div>
+        </div>
+        <fieldset style="border:0;padding:0;margin:22px 0 0">
+          <legend class="label">Choose one</legend>
+          <ul class="picks" id="picks" aria-live="polite"><li><div class="skeleton" style="width:70%"></div></li></ul>
+        </fieldset>
+      </form>
+
+      <form class="panel" id="plat-form" novalidate aria-labelledby="plat-h">
+        <h2 id="plat-h">Where you post</h2>
+        <p class="mute">Pick the platforms to prepare packages for. Nothing is posted for you.</p>
+        <div class="stack" style="margin-top:16px;--gap:10px" id="plats"></div>
+        <div style="margin-top:20px;display:flex;gap:12px;align-items:center;flex-wrap:wrap"><button class="btn primary" type="submit" id="save">Save my choices</button><span class="help" id="saved" role="status"></span></div>
+        <div class="err" id="save-err" role="alert"></div>
+      </form>
+    </div>
+
+    <div class="col">
+      <section class="panel" aria-labelledby="team-h">
+        <h2 id="team-h">Your team</h2>
+        <p class="mute">Seven agents you can reach over A2A. Those that write need an AI key, which is added in a later step.</p>
+        <ul class="team" id="team"><li><div class="skeleton" style="width:60%"></div></li></ul>
+      </section>
+
+      <form class="panel" id="pkg-form" novalidate aria-labelledby="pkg-h">
+        <h2 id="pkg-h">Prepare a package</h2>
+        <p class="mute">The publisher agent turns an approved video into a caption, hashtags and a checklist for one platform. It never posts.</p>
+        <div class="stack" style="margin-top:16px;--gap:14px">
+          <div><label for="p-platform">Platform</label><select class="field" id="p-platform"></select></div>
+          <div><label for="p-title">Title</label><input class="field" id="p-title" maxlength="100"></div>
+          <div><label for="p-caption">Caption</label><textarea class="field" id="p-caption" maxlength="2200"></textarea></div>
+          <div><label for="p-tags">Hashtags, separated by commas</label><input class="field" id="p-tags" maxlength="300"></div>
+          <label class="platform-row" style="margin:0"><input type="checkbox" id="p-ok"><span class="grow">I have watched this video and approve it</span></label>
+          <button class="btn primary" type="submit" id="p-go">Prepare package</button>
+          <div class="err" id="p-err" role="alert"></div>
+        </div>
+        <div id="p-out"></div>
+      </form>
+    </div>
+  </main>
+</div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

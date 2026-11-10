@@ -1,1 +1,130 @@
-<!doctype html><title>Hub</title>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Nightloom: a team of agents for your channel</title>
+<meta name="description" content="Name your niche and a team of agents researches it, scripts it and prepares each video for YouTube, TikTok, Instagram and Facebook. You approve every one.">
+<meta name="color-scheme" content="dark light">
+<script src="theme.js"></script>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="wrap nav">
+  <a class="brand" href="./"><span class="i i-moon" aria-hidden="true"></span>Nightloom</a>
+  <nav class="nav-links" aria-label="Main">
+    <a href="#how">How it works</a>
+    <a href="#platforms">Platforms</a>
+    <a class="btn" href="signin.html">Sign in</a>
+    <span id="theme-slot"></span>
+  </nav>
+</header>
+
+<main id="main">
+  <section class="wrap hero" aria-labelledby="h1">
+    <div>
+      <h1 id="h1">Name a niche. Meet your team.</h1>
+      <p class="lede">Seven agents research it, script it and package each video for four platforms. You approve every one.</p>
+      <form class="match" id="match" novalidate>
+        <label for="niche-text">What do you make videos about?</label>
+        <div class="row">
+          <input class="field" id="niche-text" name="niche" maxlength="300" autocomplete="off" placeholder="Calm stories about ancient legends" aria-describedby="match-out">
+          <button class="btn primary" type="submit" id="match-btn">Match my niche</button>
+        </div>
+        <div class="match-out" id="match-out" role="status" aria-live="polite"></div>
+      </form>
+    </div>
+    <div class="sky" id="sky" role="img" aria-label="Seven agents joined by lines, with small lights passing between them">
+      <canvas aria-hidden="true"></canvas>
+      <p class="sky-note">Illustration of agents handing work to each other.</p>
+    </div>
+  </section>
+
+  <section class="wrap band" id="how" aria-labelledby="how-h">
+    <div class="how">
+      <div class="sticky">
+        <h2 id="how-h">From one sentence to a package you can post</h2>
+        <p>Each step says plainly whether it works today or is coming next.</p>
+      </div>
+      <ol class="steps">
+        <li data-rise>
+          <h3>Pick a niche</h3>
+          <p>Choose one of ten ready-made niches or describe your own. The concierge tells you whether the studio can produce it in full, or only research and draft it.</p>
+          <span class="chip good"><span class="i i-check" aria-hidden="true"></span>Works today</span>
+        </li>
+        <li data-rise style="--d:90ms">
+          <h3>The team gets to work</h3>
+          <p>A researcher stores sourced facts, a strategist plans formats, a scriptwriter drafts and a reviewer checks the draft. They pass work to each other over the open A2A protocol.</p>
+          <span class="chip next"><span class="i i-spark" aria-hidden="true"></span>Agents work today, research storage comes next</span>
+        </li>
+        <li data-rise style="--d:90ms">
+          <h3>You approve, then it moves on</h3>
+          <p>Each video waits for you. You get a ready-to-post package for every platform you chose, with a checklist and the platform's own rules.</p>
+          <span class="chip next"><span class="i i-spark" aria-hidden="true"></span>Packages work today, YouTube connection comes next</span>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="wrap band" aria-labelledby="room-h">
+    <h2 id="room-h">Agents that talk it through in the open</h2>
+    <div class="bento">
+      <article class="cell room">
+        <h3>A room you can read</h3>
+        <p>Every message between agents is stored as a task you can open. Rooms have a round limit and a cost limit, so a debate cannot run away with your budget.</p>
+        <ul class="room-log" id="room-log" aria-label="Example room">
+          <li style="--n:0"><span class="who">Strategist</span><span class="say">Three films and two Shorts a week suit calm, long stories.</span></li>
+          <li style="--n:1"><span class="who">Reviewer</span><span class="say">Wednesday's script has one claim with no source. Hold it.</span></li>
+          <li style="--n:2"><span class="who">Scriptwriter</span><span class="say">I cut that claim and kept the two that are sourced.</span></li>
+          <li style="--n:3"><span class="who">Reviewer</span><span class="say">Agreed. Send it to production.</span></li>
+        </ul>
+        <div class="room-foot">
+          <span class="chip good"><span class="i i-check" aria-hidden="true"></span>Agreed in round 2 of 3</span>
+          <span class="chip"><span class="i i-shield" aria-hidden="true"></span>4 of 12 turns used</span>
+        </div>
+        <p class="help" style="margin-top:14px">Example room, written for this page.</p>
+      </article>
+      <article class="cell gate">
+        <h3>Nothing leaves without you</h3>
+        <p>No agent can post, upload or schedule. The publisher only prepares a package for a video you approved.</p>
+        <div class="gate-switch"><span class="knob"><span class="i i-check" aria-hidden="true"></span></span>Approved by you</div>
+      </article>
+      <article class="cell facts">
+        <h3>Facts keep their labels</h3>
+        <p>Each stored fact carries its source and a label. A model agreeing with itself never makes a fact verified.</p>
+        <div class="labels">
+          <span class="chip good"><span class="i i-check" aria-hidden="true"></span>Verified</span>
+          <span class="chip warn"><span class="i i-warn" aria-hidden="true"></span>Partly verified</span>
+          <span class="chip warn"><span class="i i-warn" aria-hidden="true"></span>Conflicting</span>
+          <span class="chip next"><span class="i i-spark" aria-hidden="true"></span>Unverified</span>
+        </div>
+        <span class="chip next" style="margin-top:16px"><span class="i i-spark" aria-hidden="true"></span>Comes next</span>
+      </article>
+    </div>
+  </section>
+
+  <section class="wrap band" id="platforms" aria-labelledby="plat-h">
+    <h2 id="plat-h">Four platforms, said honestly</h2>
+    <p class="mute" style="margin-top:16px">Only YouTube can be automated end to end today. For the others you get an export package until each platform approves our app.</p>
+    <ul class="plats">
+      <li data-rise><span class="name"><span class="i i-youtube" aria-hidden="true"></span>YouTube</span><p>Uploads as private with a scheduled time, once you connect your channel. Google reviews apps that ask for this access.</p><span class="chip next"><span class="i i-spark" aria-hidden="true"></span>Built in the studio, your connection comes next</span></li>
+      <li data-rise><span class="name"><span class="i i-tiktok" aria-hidden="true"></span>TikTok</span><p>Export package now. Direct posting waits for TikTok to audit our app.</p><span class="chip warn"><span class="i i-down" aria-hidden="true"></span>Export package</span></li>
+      <li data-rise><span class="name"><span class="i i-instagram" aria-hidden="true"></span>Instagram</span><p>Export package now. Direct posting needs a Professional account and Meta's review of our app.</p><span class="chip warn"><span class="i i-down" aria-hidden="true"></span>Export package</span></li>
+      <li data-rise><span class="name"><span class="i i-facebook" aria-hidden="true"></span>Facebook</span><p>Export package now. Reels can only be posted to Pages, and need Meta's review of our app.</p><span class="chip warn"><span class="i i-down" aria-hidden="true"></span>Export package</span></li>
+    </ul>
+  </section>
+
+  <section class="wrap band" aria-labelledby="cta-h">
+    <div class="panel cta">
+      <div><h2 id="cta-h">Start with one sentence.</h2><p class="mute" style="margin-top:14px">Sign in with an emailed code or with Google. Your niche and choices are saved to your account.</p></div>
+      <a class="btn primary" href="signin.html">Create your account</a>
+    </div>
+  </section>
+</main>
+
+<footer class="wrap"><span>Nightloom</span><span>Every video waits for your approval.</span></footer>
+<script type="module" src="home.js"></script>
+</body>
+</html>
