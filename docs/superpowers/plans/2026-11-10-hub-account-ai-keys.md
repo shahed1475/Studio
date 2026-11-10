@@ -51,3 +51,11 @@
 
 ### Final
 - [ ] Mutation checks on the safeguards; whole hub and project suites; self-review; status, memory.
+
+## Status (10 Nov 2026)
+
+Tasks 1 to 4 done, test first (commits 9f874ed, c1686d4, fba9a63, b03cd6f). Hub suite 204 passed, 1 skipped (was 142). Whole project suite 2,369 passed, 1 skipped, 1 failed (tests/test_depth_model.py, needs data/models in the main checkout; same as before). 16 mutation checks on the safeguards: 16 killed by the named test. Real Chrome run with a FAKE OpenRouter: wrong shape and refused key give plain messages and store nothing; a good key flips the five writing agents to Ready and a real agent call through it works; the key is in no page, storage, API answer or database file; removal makes agents ask again; no overflow at 1440, 390, 360.
+
+Found and fixed on the way: (1) the automated security review found that auth.hit/_record purged rate_hits rows by the caller short window, which erased the daily model-call counts (cap became about 60 an hour): two failing tests first, purge now 24 h for every limiter; (2) the Remove key button showed with no key because .btn display overrode the hidden attribute (global [hidden] rule); my script had checked the property, not what was displayed.
+
+Rulings: the creator types the model id (the studio has no default model, none invented); key check on save is a free GET to OpenRouter, and only a refusal rejects (unreachable stores as unverified); Fernet from the cryptography library (installed, now listed in requirements.txt) with the account id inside the ciphertext. Final review: self-review only (plus the automated review above). Not tested: a real OpenRouter key or call.
