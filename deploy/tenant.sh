@@ -155,6 +155,10 @@ cmd_caddy() {
     echo "  handle {"; echo "    respond \"Story Studio. Open the link you were sent.\" 200"; echo "  }"
     echo "}"
   } > "$BASE/caddy/Caddyfile"
+  # the Creator Hub's own host (deploy/hub.sh): its site block is added only when HUB_HOST is set; a bad host name skips it and leaves the studios' routes as they were
+  if [[ -n "${HUB_HOST:-}" ]]; then
+    { echo; bash "$(dirname "${BASH_SOURCE[0]}")/hub.sh" caddy-block; } >> "$BASE/caddy/Caddyfile" || echo "the hub block was skipped (invalid HUB_HOST)" >&2
+  fi
   cat > "$BASE/caddy/docker-compose.yml" <<'YML'
 name: studio-proxy
 services:

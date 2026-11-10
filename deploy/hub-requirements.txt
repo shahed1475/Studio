@@ -1,0 +1,3 @@
+requests>=2.31
+cryptography>=42  # the per-account AI key store (hub/keystore.py, Fernet)
+google-auth>=2.20  # checking Google sign-in tokens (hub/auth.py)

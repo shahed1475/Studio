@@ -1,0 +1,12 @@
+# The Creator Hub image: the hub package and the seven studio modules it imports (niche presets and the Wikipedia reader), nothing else.
+# Built by deploy/hub.sh from `git archive HEAD` of exactly those files, so no secret, video or studio setting can enter it. Python 3.14 is the version the hub's tests run on.
+FROM python:3.14-slim
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 TZ=UTC HOME=/tmp HUB_HOST=0.0.0.0 HUB_PORT=8931
+WORKDIR /app
+COPY deploy/hub-requirements.txt /tmp/hub-requirements.txt
+RUN pip install --no-cache-dir -r /tmp/hub-requirements.txt && rm /tmp/hub-requirements.txt
+COPY agentlog.py config.py filelock.py niche.py topicqueue.py topicrank.py wikipedia.py ./
+COPY hub/ ./hub/
+EXPOSE 8931
+USER 1000:1000
+CMD ["python", "-m", "hub.server"]

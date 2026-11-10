@@ -1,0 +1,31 @@
+# The Creator Hub: one container, its own compose project, image, network and folder. It never shares anything with the studio's containers.
+# Started by deploy/hub.sh (never by hand): HUB_ENV_FILE (owner-only settings and secrets), HUB_DATA_DIR (the database) and the user ids come from its environment.
+# Read-only root, no capabilities, loopback only: the web proxy (Caddy on the host) is the only thing the internet reaches. The only writable place is the data folder.
+name: hub
+services:
+  hub:
+    image: nightloom-hub:local
+    container_name: nightloom-hub
+    init: true
+    restart: unless-stopped
+    user: "${HUB_UID:-1000}:${HUB_GID:-1000}"
+    read_only: true
+    tmpfs: ["/tmp:size=16m,noexec,nosuid"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    ports: ["127.0.0.1:${HUB_PORT:-8931}:8931"]
+    env_file: ["${HUB_ENV_FILE:?HUB_ENV_FILE must name the owner-only env file}"]
+    environment:
+      HUB_TRUST_PROXY: "1"   # the proxy in front sets the client address; rate limits use it
+    volumes: ["${HUB_DATA_DIR:?HUB_DATA_DIR must name the data folder}:/app/data/hub"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8931/healthz', timeout=5).status == 200 else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
