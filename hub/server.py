@@ -12,9 +12,9 @@ import re
 import secrets
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
-from . import a2a, agents as agent_team, auth, profile, secretstore
+from . import a2a, agents as agent_team, auth, profile, research, secretstore
 
 WEB = Path(__file__).parent / "web"
 COOKIE, CSRF_COOKIE = "hub_session", "hub_csrf"
@@ -143,6 +143,19 @@ class Hub(BaseHTTPRequestHandler):
         if path == "/api/profile":
             acc, _ = self._auth()
             return self._json(200, {"ok": True, "profile": profile.get(acc["id"]), "platforms": {k: v["mode"] for k, v in agent_team.PLATFORMS.items()}}) if acc else self._json(401, {"ok": False, "error": "signed_out"})
+        if path in ("/api/research", "/api/export"):
+            acc, _ = self._auth()
+            if not acc:
+                return self._json(401, {"ok": False, "error": "signed_out"})
+            if path == "/api/research":
+                return self._json(200, {"ok": True, **research.overview(acc["id"])})
+            platform = (parse_qs(urlsplit(self.path).query).get("platform") or [""])[0]
+            text = research.export_markdown(acc["id"], platform)
+            if text is None:
+                return self._json(400, {"ok": False, "error": "unknown_platform"})
+            body = text.encode()
+            self._headers(200, "text/markdown; charset=utf-8", len(body), {"Content-Disposition": f'attachment; filename="plan-{platform.lower()}.md"'})
+            return self.wfile.write(body)
         if path in ("/a2a", "/a2a/"):
             base = self._base_url()
             return self._json(200, {"agents": [{"id": a.id, "name": a.name, "card": f"{base}/a2a/{a.id}/.well-known/agent-card.json"} for a in self.agents.values()]})

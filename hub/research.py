@@ -48,6 +48,35 @@ def overview(account_id: str) -> dict:
     return {"sources": sources, "topics": topics}
 
 
+def export_markdown(account_id: str, platform: str) -> str | None:
+    """A plan package for one platform as Markdown text: the niche, how that platform is posted to (with the label of how well that is known), the checklist, and the
+    account's topic ideas with their sources and labels. Nothing is posted by this; None for a platform the hub does not know."""
+    from . import agents, profile
+
+    info = agents.PLATFORMS.get(str(platform or "").lower())
+    if not info:
+        return None
+    niche_name = ""
+    prof = profile.get(account_id)
+    if prof["niche_id"]:
+        import niche
+
+        niche_name = (niche.preset(prof["niche_id"]) or {}).get("name", "")
+    o = overview(account_id)
+    sources = {s["id"]: s for s in o["sources"]}
+    lines = [f"# Plan package for {platform.lower()}", "", f"Niche: {niche_name or prof['niche_text'] or 'not chosen yet'}", f"How this platform is posted to: {info['mode']}",
+             f"Platform note ({info['label']}): {info['note']}", "", "## Checklist before anything is posted", *[f"- {c}" for c in agents.CHECKLIST], "", "## Topic ideas"]
+    if not o["topics"]:
+        lines.append("- None yet. Run research in the workspace first.")
+    for t in o["topics"]:
+        s = sources.get(t["source_id"])
+        lines.append(f"- **{t['title']}** [{t['label']}]" + (f" source: {s['url']} (revised {s['revised'] or 'date not given'}): {s['passage']}" if s else " no source stored"))
+    lines += ["", "## What the labels mean",
+              "- PARTIALLY_VERIFIED: one secondary source (Wikipedia) was read and its address is kept; it was not cross-checked.",
+              "- UNVERIFIED: no source is stored. Check it before you rely on it.", "", "Nothing here was posted. This is text for you to read and use."]
+    return "\n".join(lines) + "\n"
+
+
 def fetch_article(title: str) -> dict | None:
     """One Wikipedia article as {title, url, text, revised}, or None. The studio's reader (spaced calls, patient with HTTP 429); a test replaces this one name."""
     import wikipedia

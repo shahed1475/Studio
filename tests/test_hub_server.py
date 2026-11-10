@@ -211,3 +211,52 @@ def test_parse_cookies_survives_garbage_and_empty():
 
 def test_parse_cookies_first_value_wins():
     assert server.parse_cookies("hub_session=first; hub_session=second") == {"hub_session": "first"}
+
+
+# ---- M3: the research store and the plan package ----
+SRC = {"url": "https://en.wikipedia.org/wiki/Petra", "title": "Petra", "passage": "Petra is an archaeological site in southern Jordan.", "revised": "2026-10-01T00:00:00Z"}
+
+
+def signed_in(port, mail, email="ann@example.com"):
+    tok, _ = sign_in(port, mail, email)
+    h = {**XH, "Cookie": f"hub_session={tok}"}
+    return h, call(port, "GET", "/api/me", headers=h)[2]["account"]["id"]
+
+
+def test_research_endpoint_needs_a_session_and_is_private(hub):
+    from hub import research
+
+    port, mail = hub
+    assert call(port, "GET", "/api/research")[0] == 401
+    h, aid = signed_in(port, mail)
+    assert call(port, "GET", "/api/research", headers=h)[2] == {"ok": True, "sources": [], "topics": []}
+    research.add_topic(aid, "Petra", SRC)
+    d = call(port, "GET", "/api/research", headers=h)[2]
+    assert len(d["topics"]) == 1 and d["topics"][0]["label"] == "PARTIALLY_VERIFIED" and d["sources"][0]["url"] == SRC["url"]
+    other, _ = signed_in(port, mail, "other@example.com")
+    assert call(port, "GET", "/api/research", headers=other)[2]["topics"] == []
+
+
+def test_export_needs_a_session_and_a_known_platform(hub):
+    port, mail = hub
+    assert call(port, "GET", "/api/export?platform=tiktok")[0] == 401
+    h, _ = signed_in(port, mail)
+    assert call(port, "GET", "/api/export?platform=myspace", headers=h)[0] == 400
+    assert call(port, "GET", "/api/export", headers=h)[0] == 400
+
+
+def test_export_is_an_honest_markdown_download(hub):
+    from hub import research
+
+    port, mail = hub
+    h, aid = signed_in(port, mail)
+    assert call(port, "POST", "/api/profile", {"niche_id": "ancient_civilizations", "niche_text": "", "tier": "A", "platforms": ["tiktok"]}, h)[0] == 200
+    research.add_topic(aid, "Petra", SRC)
+    research.add_topic(aid, "Atlantis", None)
+    s, hdr, body, _ = call(port, "GET", "/api/export?platform=tiktok", headers=h, raw=True)
+    text = body.decode()
+    assert s == 200 and hdr["Content-Type"].startswith("text/markdown") and "attachment" in hdr["Content-Disposition"] and hdr["X-Content-Type-Options"] == "nosniff"
+    assert "Petra" in text and SRC["url"] in text and "PARTIALLY_VERIFIED" in text and "Atlantis" in text and "UNVERIFIED" in text
+    assert "Nothing here was posted" in text and "manual_export" in text and "SECONDARY" in text and "Watch the whole video once" in text
+    assert re.search(r"(?<!PARTIALLY_)(?<!UN)VERIFIED", text) is None  # the word VERIFIED never stands alone
+    assert "Atlantis" not in call(port, "GET", "/api/export?platform=tiktok", headers=signed_in(port, mail, "other@example.com")[0], raw=True)[2].decode()

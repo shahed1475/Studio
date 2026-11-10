@@ -36,6 +36,9 @@ PLATFORMS = {
 }
 
 
+CHECKLIST = ("Watch the whole video once", "Check the title and caption match the video", "Mark AI-generated content where the platform asks for it", "Post as private or draft first")
+
+
 def _words(text: str) -> set[str]:
     return {w for w in re.findall(r"[a-z]{4,}", text.lower())}
 
@@ -71,7 +74,7 @@ def publisher(ctx: a2a.Ctx) -> dict:
     info = PLATFORMS[platform]
     package = {"platform": platform, "mode": info["mode"], "title": str(d.get("title") or "")[:100], "caption": str(d.get("caption") or "")[:2200],
                "hashtags": [str(h)[:40] for h in (d.get("hashtags") or [])[:15]], "video": str(d.get("video") or "")[:200],
-               "checklist": ["Watch the whole video once", "Check the title and caption match the video", "Mark AI-generated content where the platform asks for it", "Post as private or draft first"],
+               "checklist": list(CHECKLIST),
                "platform_note": info["note"], "platform_note_label": info["label"], "posted": False}
     return {"state": "completed", "text": f"Export package ready for {platform}. Nothing was posted: this agent only prepares and never publishes.", "artifacts": [{"name": "export_package", "data": package}]}
 
