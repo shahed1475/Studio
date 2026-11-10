@@ -260,3 +260,98 @@ def test_export_is_an_honest_markdown_download(hub):
     assert "Nothing here was posted" in text and "manual_export" in text and "SECONDARY" in text and "Watch the whole video once" in text
     assert re.search(r"(?<!PARTIALLY_)(?<!UN)VERIFIED", text) is None  # the word VERIFIED never stands alone
     assert "Atlantis" not in call(port, "GET", "/api/export?platform=tiktok", headers=signed_in(port, mail, "other@example.com")[0], raw=True)[2].decode()
+
+
+# ---- per-account AI key ----
+AIKEY, AIMODEL = "sk-or-v1-" + "a1b2c3d4" * 8, "vendor/some-model"
+
+
+class FakeOpenRouter:
+    def __init__(self):
+        self.status, self.error = 200, None
+
+    def get(self, url, headers=None, timeout=None):
+        if self.error:
+            raise self.error
+        return type("R", (), {"status_code": self.status, "json": lambda s: {}})()
+
+
+@pytest.fixture()
+def openrouter(monkeypatch):
+    from hub import keystore, llm
+
+    fake = FakeOpenRouter()
+    monkeypatch.setattr(llm.requests, "get", fake.get)
+    return fake
+
+
+@pytest.fixture(autouse=True)
+def key_master(tmp_path, monkeypatch):
+    from hub import keystore
+
+    monkeypatch.setattr(keystore, "MASTER_FILE", tmp_path / "hub" / "keystore.key")
+    monkeypatch.delenv("HUB_KEYSTORE_KEY", raising=False)
+
+
+def save_key(port, h, key=AIKEY, model=AIMODEL):
+    return call(port, "POST", "/api/key", {"key": key, "model": model}, h, raw=True)
+
+
+def test_key_endpoints_need_a_session_and_never_echo_the_key(hub, openrouter):
+    port, mail = hub
+    assert call(port, "GET", "/api/key")[0] == 401
+    assert call(port, "POST", "/api/key", {"key": AIKEY, "model": AIMODEL}, XH)[0] == 401
+    assert call(port, "POST", "/api/key/remove", {}, XH)[0] == 401
+    h, _ = signed_in(port, mail)
+    assert call(port, "GET", "/api/key", headers=h)[2] == {"ok": True, "set": False, "model": "", "added_at": None}
+    s, hdr, body, _ = save_key(port, h)
+    assert s == 200 and AIKEY.encode() not in body and json.loads(body)["verified"] is True
+    s, hdr, body, _ = call(port, "GET", "/api/key", headers=h, raw=True)
+    d = json.loads(body)
+    assert d["set"] is True and d["model"] == AIMODEL and AIKEY.encode() not in body and all(AIKEY not in str(v) for v in hdr.values())
+    assert call(port, "POST", "/api/key", {"key": AIKEY, "model": AIMODEL}, {"Cookie": h["Cookie"]})[0] == 403  # no X-Hub header: refused
+
+
+def test_other_account_cannot_see_or_remove_a_key(hub, openrouter):
+    port, mail = hub
+    h, _ = signed_in(port, mail)
+    save_key(port, h)
+    other, _ = signed_in(port, mail, "other@example.com")
+    assert call(port, "GET", "/api/key", headers=other)[2]["set"] is False
+    assert call(port, "POST", "/api/key/remove", {}, other)[2]["removed"] is False
+    assert call(port, "GET", "/api/key", headers=h)[2]["set"] is True
+    assert call(port, "POST", "/api/key/remove", {}, h)[2]["removed"] is True and call(port, "GET", "/api/key", headers=h)[2]["set"] is False
+
+
+def test_a_key_openrouter_refuses_is_not_stored(hub, openrouter):
+    port, mail = hub
+    h, _ = signed_in(port, mail)
+    openrouter.status = 401
+    s, _, body, _ = save_key(port, h)
+    assert s == 400 and json.loads(body)["error"] == "key_rejected" and AIKEY.encode() not in body
+    assert call(port, "GET", "/api/key", headers=h)[2]["set"] is False
+
+
+def test_an_unreachable_check_stores_the_key_as_unverified(hub, openrouter):
+    import requests
+
+    port, mail = hub
+    h, _ = signed_in(port, mail)
+    openrouter.error = requests.ConnectionError("down")
+    s, _, body, _ = save_key(port, h)
+    assert s == 200 and json.loads(body)["verified"] is False and call(port, "GET", "/api/key", headers=h)[2]["set"] is True
+
+
+@pytest.mark.parametrize("key,model,error", [("hello", AIMODEL, "bad_key"), (AIKEY, "nomodel", "bad_model"), ("sk-or-v1-" + "z" * 300, AIMODEL, "bad_key")])
+def test_bad_shapes_are_refused_and_not_echoed(hub, openrouter, key, model, error):
+    port, mail = hub
+    h, _ = signed_in(port, mail)
+    s, _, body, _ = save_key(port, h, key, model)
+    assert s == 400 and json.loads(body)["error"] == error and key.encode() not in body and call(port, "GET", "/api/key", headers=h)[2]["set"] is False
+
+
+def test_key_changes_are_limited_to_ten_an_hour(hub, openrouter):
+    port, mail = hub
+    h, _ = signed_in(port, mail)
+    codes = [save_key(port, h)[0] for _ in range(12)]
+    assert codes[:10] == [200] * 10 and codes[10:] == [429, 429]

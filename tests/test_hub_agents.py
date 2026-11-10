@@ -128,3 +128,57 @@ def test_researcher_run_that_is_refused_says_why_in_plain_words(monkeypatch):
 
 def test_researcher_other_messages_still_ask_for_a_key():
     assert state(ask(account(), "researcher", text="what should I research?")) == "input_required"
+
+
+# ---- the writing agents use the account's own key, and say plainly when it does not work ----
+AIKEY, AIMODEL = "sk-or-v1-" + "a1b2c3d4" * 8, "vendor/some-model"
+
+
+class Net:
+    status, text = 200, "a plan"
+
+    @classmethod
+    def post(cls, url, headers=None, json=None, timeout=None):
+        return type("R", (), {"status_code": cls.status, "json": lambda s: {"choices": [{"message": {"content": cls.text}}]}})()
+
+
+@pytest.fixture()
+def keyed(tmp_path, monkeypatch):
+    from hub import keystore, llm
+
+    monkeypatch.setattr(keystore, "MASTER_FILE", tmp_path / "hub" / "keystore.key")
+    monkeypatch.delenv("HUB_KEYSTORE_KEY", raising=False)
+    monkeypatch.setattr(llm.requests, "post", Net.post)
+    Net.status, Net.text = 200, "a plan"
+    aid = account()
+    keystore.set_key(aid, AIKEY, AIMODEL)
+    return aid
+
+
+def test_agent_uses_the_key_then_asks_again_after_removal(keyed):
+    from hub import keystore, llm
+
+    t = ask(keyed, "strategist", text="plan my week", llm=llm.make_llm(keyed))
+    assert state(t) == "completed" and "a plan" in str(t)
+    keystore.remove(keyed)
+    t = ask(keyed, "strategist", text="plan my week", llm=llm.make_llm(keyed))
+    assert state(t) == "input_required" and "Your AI key" in str(t)
+
+
+@pytest.mark.parametrize("status,want_state,words", [(401, "input_required", "refused your key"), (402, "input_required", "credit"), (429, "failed", "too fast"), (500, "failed", "did not answer")])
+def test_model_errors_become_plain_messages_without_the_key(keyed, status, want_state, words):
+    from hub import llm
+
+    Net.status = status
+    t = ask(keyed, "strategist", text="plan my week", llm=llm.make_llm(keyed))
+    assert state(t) == want_state and words in str(t) and AIKEY not in str(t)
+
+
+def test_the_daily_cap_is_said_in_plain_words(keyed):
+    from hub import llm
+
+    call = llm.make_llm(keyed)
+    for _ in range(60):
+        call("x")
+    t = ask(keyed, "strategist", text="one more", llm=call)
+    assert state(t) == "failed" and "limit of 60" in str(t)

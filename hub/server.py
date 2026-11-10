@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from . import a2a, agents as agent_team, auth, profile, research, secretstore
+from . import a2a, agents as agent_team, auth, keystore, llm, profile, research, secretstore
 
 WEB = Path(__file__).parent / "web"
 COOKIE, CSRF_COOKIE = "hub_session", "hub_csrf"
@@ -41,7 +41,7 @@ class Hub(BaseHTTPRequestHandler):
     server_version = "CreatorHub"
     sys_version = ""
     agents = agent_team.AGENTS
-    llm_for = staticmethod(lambda account_id: None)  # per-account model keys arrive with the research store; until then model agents ask for a key
+    llm_for = staticmethod(llm.make_llm)  # the account's own stored key and model, or None (the agents then ask for a key)
     mailer = None
 
     def log_message(self, fmt, *args):  # no request lines in the log: URLs and cookies can carry secrets
@@ -143,6 +143,9 @@ class Hub(BaseHTTPRequestHandler):
         if path == "/api/profile":
             acc, _ = self._auth()
             return self._json(200, {"ok": True, "profile": profile.get(acc["id"]), "platforms": {k: v["mode"] for k, v in agent_team.PLATFORMS.items()}}) if acc else self._json(401, {"ok": False, "error": "signed_out"})
+        if path == "/api/key":
+            acc, _ = self._auth()
+            return self._json(200, {"ok": True, **keystore.status(acc["id"])}) if acc else self._json(401, {"ok": False, "error": "signed_out"})
         if path in ("/api/research", "/api/export"):
             acc, _ = self._auth()
             if not acc:
@@ -225,6 +228,26 @@ class Hub(BaseHTTPRequestHandler):
             except ValueError as e:
                 return self._json(400, {"ok": False, "error": str(e)})
             return self._json(200, {"ok": True, "profile": p})
+        if path in ("/api/key", "/api/key/remove"):
+            if not acc:
+                return self._json(401, {"ok": False, "error": "signed_out"})
+            if path == "/api/key/remove":
+                return self._json(200, {"ok": True, "removed": keystore.remove(acc["id"])})
+            if not auth.hit(f"keychange:{acc['id']}", 10, 3600):
+                return self._json(429, {"ok": False, "error": "too_many"})
+            try:
+                key = keystore.clean_key(data.get("key"))
+            except ValueError as e:
+                return self._json(400, {"ok": False, "error": "bad_key", "message": str(e)})
+            try:
+                model = keystore.clean_model(data.get("model"))
+            except ValueError as e:
+                return self._json(400, {"ok": False, "error": "bad_model", "message": str(e)})
+            check = llm.check_key(key)  # a free call to OpenRouter; only a refusal rejects the key, trouble reaching OpenRouter stores it as unverified
+            if not check["ok"] and check["reason"] == "key_rejected":
+                return self._json(400, {"ok": False, "error": "key_rejected", "message": "OpenRouter did not accept this key. Copy it again from your OpenRouter account."})
+            keystore.set_key(acc["id"], key, model)
+            return self._json(200, {"ok": True, "verified": check["ok"], **keystore.status(acc["id"])})
         m = re.fullmatch(r"/a2a/([a-z]+)", path)
         if m:
             return self._a2a(m.group(1), acc, data)

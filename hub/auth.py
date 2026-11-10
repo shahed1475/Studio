@@ -20,6 +20,7 @@ from . import db, mailer as mailers
 SECRET_FILE = config.ROOT / "data" / "hub" / "secret"
 CODE_TTL, MAX_TRIES = 600, 5
 SEND_PER_EMAIL, SEND_PER_IP, VERIFY_PER_IP, WINDOW = 3, 10, 30, 3600
+PURGE_AFTER = 86400  # rate_hits rows live this long: the longest window any limiter uses (the model caller counts a day). A purge by a shorter window erased other limiters' counts.
 SESSION_IDLE, SESSION_ABSOLUTE = 7 * 86400, 30 * 86400
 SENT = {"ok": True, "message": "Check your email for an 8-digit code. It works for 10 minutes."}
 INVALID = {"ok": False, "error": "invalid_or_expired"}
@@ -58,7 +59,7 @@ def _count(con, key: str, now: float) -> int:
 
 
 def _record(con, key: str, now: float) -> None:
-    con.execute("delete from rate_hits where at<?", (now - WINDOW,))
+    con.execute("delete from rate_hits where at<?", (now - PURGE_AFTER,))
     con.execute("insert into rate_hits(key,at) values(?,?)", (key, now))
 
 
@@ -163,7 +164,7 @@ def hit(key: str, limit: int, window: float, now: float | None = None) -> bool:
         if con.execute("select count(*) from rate_hits where key=? and at>?", (key, now - window)).fetchone()[0] >= limit:
             return False
         con.execute("insert into rate_hits(key,at) values(?,?)", (key, now))
-        con.execute("delete from rate_hits where at<?", (now - max(window, WINDOW),))
+        con.execute("delete from rate_hits where at<?", (now - max(window, PURGE_AFTER),))
         return True
 
 

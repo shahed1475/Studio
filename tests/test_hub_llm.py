@@ -126,6 +126,35 @@ def test_daily_cap_is_sixty_calls_and_the_sixty_first_never_reaches_the_network(
     assert ex.value.reason == "daily_cap" and len(net.calls) == 60
 
 
+class Mailbox:
+    def send(self, to, subject, body):
+        pass
+
+
+def test_a_shorter_rate_limit_used_later_does_not_erase_the_daily_count(net):
+    import time
+
+    call = llm.make_llm(with_key())
+    for _ in range(60):
+        call("hi")
+    auth.hit("demo:x", 20, 60, now=time.time() + 3700)  # any limiter with a short window, an hour later, used to purge every older row of every key
+    with pytest.raises(llm.LLMError) as ex:
+        call("hi")
+    assert ex.value.reason == "daily_cap"
+
+
+def test_sending_a_sign_in_code_later_does_not_erase_the_daily_count(net):
+    import time
+
+    call = llm.make_llm(with_key())
+    for _ in range(60):
+        call("hi")
+    auth.request_code("someone@example.com", "9.9.9.9", mailer=Mailbox(), now=time.time() + 3700)
+    with pytest.raises(llm.LLMError) as ex:
+        call("hi")
+    assert ex.value.reason == "daily_cap"
+
+
 def test_no_key_means_none_and_removal_takes_effect_for_new_callers(net):
     a = account()
     assert llm.make_llm(a) is None
