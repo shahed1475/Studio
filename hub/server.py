@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from . import a2a, agents as agent_team, auth, profile
+from . import a2a, agents as agent_team, auth, profile, secretstore
 
 WEB = Path(__file__).parent / "web"
 COOKIE, CSRF_COOKIE = "hub_session", "hub_csrf"
@@ -233,7 +233,27 @@ def make_server(host: str = "127.0.0.1", port: int = 8931) -> ThreadingHTTPServe
     return ThreadingHTTPServer((host, port), Hub)
 
 
+def startup_report(environ=None, path=None) -> list[str]:
+    """Read the private secrets file into the environment, then say in plain words what is switched on. Names and on/off only, never a value."""
+    environ = os.environ if environ is None else environ
+    loaded = secretstore.load(path, environ)
+    st = secretstore.status(path, environ)
+    lines = [f"Secrets file ignored: {loaded['ignored']}"] if loaded["ignored"] else []
+    mail_parts = ("HUB_SMTP_HOST", "HUB_SMTP_USER", "HUB_SMTP_PASSWORD")
+    missing = [n for n in mail_parts if not st[n]]
+    if not missing:
+        lines.append("Mail: SMTP is set, sign-in codes are sent by email")
+    elif len(missing) == len(mail_parts):
+        lines.append("Mail: local outbox only (nothing is sent; codes are written to data/hub/outbox/)")
+    else:
+        lines.append("Mail: incomplete, missing " + ", ".join(missing) + " (sending codes will fail until it is complete)")
+    lines.append("Google sign-in: on" if st["HUB_GOOGLE_CLIENT_ID"] else "Google sign-in: off (no client id set)")
+    return lines
+
+
 def main() -> None:
+    for line in startup_report():
+        print(line)
     srv = make_server(os.getenv("HUB_HOST", "127.0.0.1"), int(os.getenv("HUB_PORT", "8931")))
     print(f"Creator Hub on http://{srv.server_address[0]}:{srv.server_address[1]}")
     srv.serve_forever()
