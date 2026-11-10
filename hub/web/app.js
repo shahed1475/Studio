@@ -63,12 +63,39 @@ $("plat-form").addEventListener("submit", async (ev) => {
 });
 
 const cards = await Promise.all(list.agents.map((a) => fetch(a.card).then((r) => r.json())));
-$("team").replaceChildren(...cards.map((c) => {
-  const needs = c.skills.some((s) => s.tags.includes("needs-ai-key"));
+let keySet = false;
+function drawTeam() { $("team").replaceChildren(...cards.map((c) => {
+  const needs = !keySet && c.skills.some((s) => s.tags.includes("needs-ai-key"));
   const research = c.skills.some((s) => s.tags.includes("rule-run")); // the researcher: its research run is free, its model chat still needs a key
   return h("li", {}, h("span", {}, h("b", {}, c.name), h("small", {}, c.description)),
     needs ? h("span", { class: "chip next" }, icon("lock"), "Needs an AI key") : h("span", { class: "chip good" }, icon("check"), research ? "Ready to research" : "Ready"));
-}));
+})); }
+drawTeam();
+
+// Your AI key: the key is typed into a password field, sent once and cleared; the server never sends it back, only whether one is set and which model.
+async function loadKey() {
+  const r = await api("/api/key");
+  if (!r.ok) return;
+  keySet = r.data.set;
+  $("key-state").textContent = keySet ? `A key is saved for ${r.data.model}. It cannot be shown again; save a new one to replace it.` : "No key saved yet.";
+  $("k-remove").hidden = !keySet;
+  if (keySet && !$("k-model").value) $("k-model").value = r.data.model;
+  drawTeam();
+}
+await loadKey();
+$("key-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault(); say($("k-err"), ""); $("k-save").disabled = true;
+  try {
+    const r = await api("/api/key", { key: $("k-key").value, model: $("k-model").value });
+    $("k-key").value = ""; // gone from the page whether it worked or not
+    if (!r.ok) return say($("k-err"), r.data.message || (r.status === 429 ? "Too many changes. Try again in an hour." : "Could not save the key. Try again."));
+    await loadKey();
+    $("key-state").textContent += r.data.verified ? " OpenRouter accepted it." : " Saved, but OpenRouter could not be reached to check it.";
+  } catch (e) { say($("k-err"), e.message); } finally { $("k-save").disabled = false; }
+});
+$("k-remove").addEventListener("click", async () => {
+  say($("k-err"), ""); await api("/api/key/remove", {}); await loadKey();
+});
 
 // Research: topics the researcher stored for this account, each with its label and source. Everything from the web is inserted as text, never as markup.
 const LABEL = { PARTIALLY_VERIFIED: "Partly checked", UNVERIFIED: "Not checked" };

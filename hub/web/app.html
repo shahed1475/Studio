@@ -49,9 +49,21 @@
     <div class="col">
       <section class="panel" aria-labelledby="team-h">
         <h2 id="team-h">Your team</h2>
-        <p class="mute">Seven agents you can reach over A2A. Those that write need an AI key, which is added in a later step.</p>
+        <p class="mute">Seven agents you can reach over A2A. Those that write need your own AI key, added below.</p>
         <ul class="team" id="team"><li><div class="skeleton" style="width:60%"></div></li></ul>
       </section>
+
+      <form class="panel" id="key-form" novalidate autocomplete="off" aria-labelledby="key-h">
+        <h2 id="key-h">Your AI key</h2>
+        <p class="mute">The writing agents use your own OpenRouter key, so you pay OpenRouter directly. Create the key in your OpenRouter account and give it a spending limit there. It is stored encrypted for your account only and is never shown again.</p>
+        <p class="help" id="key-state" role="status" style="margin-top:12px"></p>
+        <div class="stack" style="margin-top:14px;--gap:14px">
+          <div><label for="k-key">OpenRouter key</label><input class="field" id="k-key" type="password" autocomplete="new-password" spellcheck="false" maxlength="250" placeholder="sk-or-..."></div>
+          <div><label for="k-model">Model</label><input class="field" id="k-model" autocomplete="off" spellcheck="false" maxlength="140" placeholder="vendor/name, copied from openrouter.ai/models"></div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap"><button class="btn primary" type="submit" id="k-save">Save key</button><button class="btn" type="button" id="k-remove" hidden>Remove key</button></div>
+          <div class="err" id="k-err" role="alert"></div>
+        </div>
+      </form>
 
       <section class="panel" id="research" aria-labelledby="res-h">
         <h2 id="res-h">Research</h2>
