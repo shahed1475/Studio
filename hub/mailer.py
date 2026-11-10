@@ -5,6 +5,7 @@ import json
 import os
 import secrets
 import smtplib
+import ssl
 import time
 from email.message import EmailMessage
 
@@ -30,11 +31,26 @@ class SMTPMailer:
         msg = EmailMessage()
         msg["From"], msg["To"], msg["Subject"] = self.sender, to, subject
         msg.set_content(body)
-        with smtplib.SMTP(self.host, self.port, timeout=20) as s:
-            s.starttls()
+        # The default context of smtplib's starttls() does not check the server's certificate (verify_mode CERT_NONE),
+        # which would hand the mail password to anyone who can sit on the connection. Always pass a verifying one.
+        ctx = ssl.create_default_context()
+        implicit = self.port == 465
+        conn = smtplib.SMTP_SSL(self.host, self.port, timeout=20, context=ctx) if implicit else smtplib.SMTP(self.host, self.port, timeout=20)
+        with conn as s:
+            if not implicit:
+                s.starttls(context=ctx)
             if self.user:
                 s.login(self.user, self.password)
             s.send_message(msg)
+
+
+def _port(raw: str) -> int:
+    raw = (raw or "").strip()
+    if not raw:
+        return 587
+    if not raw.isdigit() or not 1 <= int(raw) <= 65535:
+        raise ValueError("HUB_SMTP_PORT is not a port number (1 to 65535)")
+    return int(raw)
 
 
 def from_env():
@@ -42,4 +58,5 @@ def from_env():
     if not host:
         return OutboxMailer()
     user = os.getenv("HUB_SMTP_USER", "")
-    return SMTPMailer(host, int(os.getenv("HUB_SMTP_PORT", "587")), user, os.getenv("HUB_SMTP_PASSWORD", ""), os.getenv("HUB_MAIL_FROM", user))
+    sender = os.getenv("HUB_MAIL_FROM", "").strip() or user
+    return SMTPMailer(host, _port(os.getenv("HUB_SMTP_PORT", "")), user, os.getenv("HUB_SMTP_PASSWORD", ""), sender)
