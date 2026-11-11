@@ -136,6 +136,18 @@ def test_a_download_that_stays_rate_limited_gives_up_without_leaving_files(tmp_p
     assert got is None and not list(tmp_path.glob("*.mp4")) and not list(tmp_path.glob("*.dl"))
 
 
+def test_the_download_asks_for_the_file_as_a_range_because_wikimedia_refuses_a_plain_request_with_429_and_answers_a_range_with_206(tmp_path):
+    """11 Nov 2026, live probe from the server and from the PC: a plain GET of a Commons video got HTTP 429 (an error page), the same request with Range: bytes=0- got 206 and the whole file."""
+    cand = {"title": "z.ogv", "url": "https://upload.wikimedia.org/z.ogv", "license": "CC BY 4.0", "page": "p", "duration": 30.0, "size": 1000}
+    seen = []
+
+    def get(url, **k):
+        seen.append(k.get("headers") or {})
+        return Limited(206 if (k.get("headers") or {}).get("Range") == "bytes=0-" else 429, None)
+    got = fr.fetch_segment(cand, tmp_path / "c.mp4", get=get, sleep=lambda s: None, run=lambda cmd, **k: open(cmd[-1], "wb").write(b"mp4"))
+    assert got is not None and seen and all(h.get("Range") == "bytes=0-" for h in seen) and "User-Agent" in seen[0]
+
+
 # ---- NASA and Pixabay footage (owner's licence decision, 10 Nov 2026) ----
 class Hop:
     def __init__(self, status=200, location=None, content=b"v"):

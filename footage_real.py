@@ -125,7 +125,7 @@ def _open(url: str, get, resolve):
     for _ in range(MAX_HOPS + 1):
         if not realmedia._public_https(url, resolve):
             raise ValueError("not a public https address")
-        r = get(url, headers=UA, stream=True, timeout=60, allow_redirects=False)
+        r = get(url, headers={**UA, "Range": "bytes=0-"}, stream=True, timeout=60, allow_redirects=False)  # 11 Nov 2026: Wikimedia answers a plain GET of a video with 429 (from the server and from the PC) but a Range request with 206 and the whole file
         if getattr(r, "status_code", 200) in (301, 302, 303, 307, 308):
             url = urljoin(url, (getattr(r, "headers", {}) or {}).get("Location") or "")
             continue
