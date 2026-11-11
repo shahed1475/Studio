@@ -1148,3 +1148,41 @@ def test_eval_case_for_licences_fails_when_the_gate_stops_asking_for_the_credit(
     assert not bad
 
 
+
+
+FOOTAGE_CASE = "case_real_footage_from_nasa_and_pixabay_is_relevant_logo_free_downloaded_safely_and_credited"
+
+
+def test_eval_case_for_nasa_and_pixabay_footage_passes_and_is_in_the_list():
+    import agenteval
+
+    assert getattr(agenteval, FOOTAGE_CASE) in agenteval.CASES
+    ok, detail = getattr(agenteval, FOOTAGE_CASE)()
+    assert ok, detail
+
+
+def test_eval_case_for_footage_fails_when_nasa_logo_clips_are_allowed(monkeypatch):
+    import agenteval
+    import footage_real
+
+    monkeypatch.setattr(footage_real, "NASA_SKIP", __import__("re").compile(r"(?!x)x"))  # mutation: a NASA insignia clip passes
+    bad, _ = getattr(agenteval, FOOTAGE_CASE)()
+    assert not bad
+
+
+def test_eval_case_for_footage_fails_when_any_address_counts_as_public(monkeypatch):
+    import agenteval
+    import realmedia
+
+    monkeypatch.setattr(realmedia, "_public_https", lambda url, resolve: True)  # mutation: a redirect to an internal address is followed
+    bad, _ = getattr(agenteval, FOOTAGE_CASE)()
+    assert not bad
+
+
+def test_eval_case_for_footage_fails_when_relevance_is_not_checked(monkeypatch):
+    import agenteval
+    import footage_real
+
+    monkeypatch.setattr(footage_real, "_relevant", lambda text, anchors: True)  # mutation: an unrelated clip (a cat, a rocket launch) is used
+    bad, _ = getattr(agenteval, FOOTAGE_CASE)()
+    assert not bad

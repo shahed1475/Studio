@@ -1283,6 +1283,41 @@ def case_only_approved_licences_are_used_and_a_credit_needing_picture_is_credite
     return ok, ("approved licences accepted and refused ones refused; the credit is in the description YouTube receives and the gate wants it there" if ok else f"rule={rule} sent={sent} gate={gate} refuses_missing={refuses}")
 
 
+def case_real_footage_from_nasa_and_pixabay_is_relevant_logo_free_downloaded_safely_and_credited():
+    """11 Nov 2026: real moving footage also comes from NASA and Pixabay (owner's licence decision of 10 Nov). A clip must name the film's subject, a NASA clip about a logo or insignia
+    is never used, every download goes only to public https addresses (each redirect hop checked), and the credit beside the clip names the source, the licence and the address."""
+    import openmedia
+    import footage_real as fr
+    import pixabay
+
+    rows = [{"title": "Antikythera wreck dive", "url": "https://images-assets.nasa.gov/a.mp4", "licence": openmedia.NASA_LICENCE, "page": "https://images.nasa.gov/details/a", "credit": "NASA (a)"},
+            {"title": "NASA insignia Antikythera", "url": "https://images-assets.nasa.gov/b.mp4", "licence": openmedia.NASA_LICENCE, "page": "p", "credit": "NASA (b)"},
+            {"title": "Apollo launch", "url": "https://images-assets.nasa.gov/c.mp4", "licence": openmedia.NASA_LICENCE, "page": "p", "credit": "NASA (c)"}]
+    real_nasa, real_key, real_search = openmedia.nasa, pixabay.key, pixabay.search_videos
+    openmedia.nasa = lambda q, kind, n, get: rows
+    pixabay.key = lambda: "k"
+    pixabay.search_videos = lambda q, n, get: [{"id": 1, "url": "https://cdn.pixabay.com/1.mp4", "page": "https://pixabay.com/videos/id-1/", "seconds": 10, "size": 1000, "tags": "cat", "credit": "c"}]
+    try:
+        nasa = [c["title"] for c in fr.nasa_candidates("Antikythera", ["Antikythera"])]
+        pix = fr.pixabay_candidates("Antikythera", ["Antikythera"])
+    finally:
+        openmedia.nasa, pixabay.key, pixabay.search_videos = real_nasa, real_key, real_search
+    relevant = nasa == ["Antikythera wreck dive"] and pix == []
+
+    class R:
+        status_code, headers = 302, {"Location": "https://internal.example/x"}
+    fetched = []
+    with tempfile.TemporaryDirectory() as d:
+        safe = fr.fetch_segment({"title": "t", "url": "https://cdn.pixabay.com/1.mp4", "license": "Pixabay Content License", "page": "p", "duration": 10.0, "size": 1, "source": "Pixabay"},
+                                Path(d) / "x.mp4", get=lambda url, **k: fetched.append(url) or R(), run=lambda *a, **k: None,
+                                resolve=lambda h: ["10.0.0.9"] if h == "internal.example" else ["151.101.1.1"]) is None and fetched == ["https://cdn.pixabay.com/1.mp4"]
+    credit = fr.credit_text({"title": "t", "credit": "NASA (a)", "source": "NASA Image and Video Library", "license": openmedia.NASA_LICENCE, "page": "https://images.nasa.gov/details/a"})
+    credited = all(s in credit for s in ("NASA (a)", "NASA Image and Video Library", "images.nasa.gov/details/a")) and fr.licence_ok(credit)
+    ok = relevant and safe and credited
+    return ok, ("NASA and Pixabay clips must name the subject, a logo clip is skipped, a private redirect is never fetched, and the credit names source, licence and address" if ok
+                else f"relevant={relevant} safe={safe} credited={credited}")
+
+
 CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic,
          case_ladder_ends_with_owner_not_a_crash, case_ladder_respects_budget_and_whitelist_and_lessons, case_outside_text_is_cleaned,
          case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules, case_registry_is_consistent,
@@ -1316,7 +1351,8 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_a_cleared_schedule_is_put_back_in_the_future_once_only_when_the_owner_asks_and_a_public_video_is_never_touched,
          case_only_a_passage_found_in_its_saved_page_counts_as_evidence_for_the_reviewer,
          case_the_owners_advice_reaches_only_the_writing_roles_and_never_a_reviewer,
-         case_only_approved_licences_are_used_and_a_credit_needing_picture_is_credited_in_the_description_youtube_receives]
+         case_only_approved_licences_are_used_and_a_credit_needing_picture_is_credited_in_the_description_youtube_receives,
+         case_real_footage_from_nasa_and_pixabay_is_relevant_logo_free_downloaded_safely_and_credited]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:

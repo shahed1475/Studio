@@ -64,7 +64,8 @@ def search_videos(query: str, per_page: int = 5, get=requests.get) -> list[dict]
         v = (h.get("videos") or {})
         best = v.get("medium") or v.get("small") or v.get("large") or {}
         out.append({"id": h.get("id"), "page": h.get("pageURL"), "url": best.get("url"), "width": best.get("width"), "height": best.get("height"),
-                    "seconds": h.get("duration"), "user": h.get("user"), "credit": f"Video by {h.get('user')} via Pixabay ({h.get('pageURL')})"})
+                    "seconds": h.get("duration"), "user": h.get("user"), "tags": h.get("tags", ""), "size": best.get("size"),
+                    "credit": f"Video by {h.get('user')} via Pixabay ({h.get('pageURL')})"})
     return out
 
 
