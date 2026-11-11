@@ -8,6 +8,7 @@ import subprocess
 
 import pytest
 
+import render
 import sfx
 
 NEEDS = pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="needs ffmpeg")
@@ -81,7 +82,7 @@ def test_a_real_film_keeps_its_length_picture_and_loudness_and_the_cues_are_hear
     video = tmp_path / "video.mp4"
     # 30 s of picture and a steady 'voice' (modulated tone) with a quiet gap at the start so a cue is audible
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=0x202040:s=320x180:r=25:d=30", "-f", "lavfi", "-i",
-                    "aevalsrc='0.12*sin(2*PI*180*t)*(0.6+0.4*sin(2*PI*3*t))*gt(t,2.5)':d=30:s=44100", "-shortest", "-c:v", "libopenh264", "-b:a", "192k", "-c:a", "aac", str(video)], check=True)
+                    "aevalsrc='0.12*sin(2*PI*180*t)*(0.6+0.4*sin(2*PI*3*t))*gt(t,2.5)':d=30:s=44100", "-shortest", *render._venc("23", "veryfast"), "-b:a", "192k", "-c:a", "aac", str(video)], check=True)  # the studio's own encoder choice: libx264 where present, openh264 on Fedora
     before_len = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(video)], capture_output=True, text=True).stdout)
     quiet_before, loud_before = rms_db(video, 0.2, 1.6), lufs(video)
     data = {}
