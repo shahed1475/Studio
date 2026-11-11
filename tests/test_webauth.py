@@ -38,7 +38,7 @@ def test_token_valid_expired_forged_and_after_password_change():
     t = webauth.make_token("me@gmail.com", now=1000)
     assert webauth.check_token(t, now=1001) == "me@gmail.com"
     assert webauth.check_token(t, now=1000 + 15 * 86400) is None
-    assert webauth.check_token(t[:-2] + "00", now=1001) is None
+    assert webauth.check_token(t[:-2] + ("11" if t.endswith("00") else "00"), now=1001) is None  # always a different signature (a token ending in 00 made the forgery the real token)
     assert webauth.check_token("junk", now=1001) is None
     webauth.set_password("me@gmail.com", "another long password")
     assert webauth.check_token(t, now=1001) is None  # new password signs everyone out
