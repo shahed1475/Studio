@@ -144,7 +144,7 @@ def test_the_download_asks_for_the_file_as_a_range_because_wikimedia_refuses_a_p
     def get(url, **k):
         seen.append(k.get("headers") or {})
         return Limited(206 if (k.get("headers") or {}).get("Range") == "bytes=0-" else 429, None)
-    got = fr.fetch_segment(cand, tmp_path / "c.mp4", get=get, sleep=lambda s: None, run=lambda cmd, **k: open(cmd[-1], "wb").write(b"mp4"))
+    got = fr.fetch_segment(cand, tmp_path / "c.mp4", get=get, sleep=lambda s: None, resolve=PUBLIC, run=lambda cmd, **k: open(cmd[-1], "wb").write(b"mp4"))
     assert got is not None and seen and all(h.get("Range") == "bytes=0-" for h in seen) and "User-Agent" in seen[0]
 
 
