@@ -81,6 +81,9 @@ def test_a_map_made_by_the_model_is_stored_and_found_next_time_without_running_i
             return [ramp[None]]
 
     monkeypatch.setattr(depth, "_session", lambda: FakeSession())
+    monkeypatch.setattr(depth, "_runtime", lambda: (np, object()))  # self-contained: the test no longer depends on onnxruntime or the model file being on this machine
+    depth.model_path().parent.mkdir(parents=True, exist_ok=True)
+    depth.model_path().write_bytes(b"stand-in model file")
     m = depth.make_and_store(p)
     assert m.mode == "L" and m.size[0] == depth.MAP_WIDTH and runs and runs[0][2] % 14 == 0 and runs[0][3] % 14 == 0  # the model reads multiples of 14 pixels
     w, h = m.size
