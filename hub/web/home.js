@@ -1,13 +1,11 @@
 import { api, h, icon, rise, themeToggle } from "./site.js";
-import { mountSky } from "./constellation.js";
 
 document.getElementById("theme-slot").replaceWith(themeToggle());
-const sky = mountSky(document.getElementById("sky"));
 rise();
 
-// the example room plays its four lines once, as it comes into view
+// the example room plays its four lines once when the page opens: the one moving moment. Without motion, or without this script, all four lines are simply there.
 const log = document.getElementById("room-log");
-new IntersectionObserver(([e], io) => { if (e.isIntersecting) { log.classList.add("play"); io.disconnect(); } }, { threshold: 0.3 }).observe(log);
+if (!matchMedia("(prefers-reduced-motion: reduce)").matches) { log.classList.add("prep"); requestAnimationFrame(() => requestAnimationFrame(() => log.classList.add("play"))); }
 
 const form = document.getElementById("match"), out = document.getElementById("match-out"), btn = document.getElementById("match-btn"), input = document.getElementById("niche-text");
 form.addEventListener("submit", async (ev) => {
@@ -15,7 +13,6 @@ form.addEventListener("submit", async (ev) => {
   const text = input.value.trim();
   if (text.split(/\s+/).length < 3) { out.replaceChildren(h("span", { class: "err" }, icon("warn"), "Write a few words about the videos you want to make.")); return; }
   btn.disabled = true; out.textContent = "Asking the concierge...";
-  sky.ping("concierge");
   try {
     const r = await api("/api/demo/niche", { text });
     if (r.status === 429) throw new Error("That was a lot of questions. Wait a minute and try again.");

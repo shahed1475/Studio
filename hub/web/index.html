@@ -36,10 +36,20 @@
         <div class="match-out" id="match-out" role="status" aria-live="polite"></div>
       </form>
     </div>
-    <div class="sky" id="sky" role="img" aria-label="Seven agents joined by lines, with small lights passing between them">
-      <canvas aria-hidden="true"></canvas>
-      <p class="sky-note">Illustration of agents handing work to each other.</p>
-    </div>
+    <figure class="roomcard" aria-labelledby="room-cap">
+      <figcaption id="room-cap">Wednesday's script, in the team's room</figcaption>
+      <ul class="room-log" id="room-log" aria-label="Example room">
+        <li style="--n:0"><span class="who">Strategist</span><span class="say">Three films and two Shorts a week suit calm, long stories.</span></li>
+        <li style="--n:1"><span class="who">Reviewer</span><span class="say">Wednesday's script has one claim with no source. Hold it.</span></li>
+        <li style="--n:2"><span class="who">Scriptwriter</span><span class="say">I cut that claim and kept the two that are sourced.</span></li>
+        <li style="--n:3"><span class="who">Reviewer</span><span class="say">Agreed. Send it to production.</span></li>
+      </ul>
+      <div class="room-foot">
+        <span class="chip good"><span class="i i-check" aria-hidden="true"></span>Agreed in round 2 of 3</span>
+        <span class="chip"><span class="i i-shield" aria-hidden="true"></span>Waits for your approval</span>
+      </div>
+      <p class="help">Example room, written for this page. Every real message is stored as a task you can open.</p>
+    </figure>
   </section>
 
   <section class="wrap band" id="how" aria-labelledby="how-h">
@@ -69,23 +79,8 @@
   </section>
 
   <section class="wrap band" aria-labelledby="room-h">
-    <h2 id="room-h">Agents that talk it through in the open</h2>
+    <h2 id="room-h">What the team will not do</h2>
     <div class="bento">
-      <article class="cell room">
-        <h3>A room you can read</h3>
-        <p>Every message between agents is stored as a task you can open. Rooms have a round limit and a cost limit, so a debate cannot run away with your budget.</p>
-        <ul class="room-log" id="room-log" aria-label="Example room">
-          <li style="--n:0"><span class="who">Strategist</span><span class="say">Three films and two Shorts a week suit calm, long stories.</span></li>
-          <li style="--n:1"><span class="who">Reviewer</span><span class="say">Wednesday's script has one claim with no source. Hold it.</span></li>
-          <li style="--n:2"><span class="who">Scriptwriter</span><span class="say">I cut that claim and kept the two that are sourced.</span></li>
-          <li style="--n:3"><span class="who">Reviewer</span><span class="say">Agreed. Send it to production.</span></li>
-        </ul>
-        <div class="room-foot">
-          <span class="chip good"><span class="i i-check" aria-hidden="true"></span>Agreed in round 2 of 3</span>
-          <span class="chip"><span class="i i-shield" aria-hidden="true"></span>4 of 12 turns used</span>
-        </div>
-        <p class="help" style="margin-top:14px">Example room, written for this page.</p>
-      </article>
       <article class="cell gate">
         <h3>Nothing leaves without you</h3>
         <p>No agent can post, upload or schedule. The publisher only prepares a package for a video you approved.</p>
