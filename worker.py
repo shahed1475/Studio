@@ -20,6 +20,7 @@ LOG = config.ROOT / "logs" / "worker.log"
 TS = "%Y-%m-%dT%H:%M:%SZ"
 JOBS = [
     {"name": "autopilot", "every": 1800, "cmds": [["autopilot", "tick"]], "timeout": 7200},
+    {"name": "specbuild", "every": 1200, "cmds": [["specrun", "tick"]], "timeout": 7200},  # videos from specs Claude wrote (specrun.py): free, one held draft a pass
     {"name": "report", "at": "07:00", "cmds": [["report"]], "timeout": 300},
     {"name": "backup", "at": "03:30", "cmds": [["backup"]], "timeout": 600},
     {"name": "recheck", "every": 3600, "cmds": [["recheck"]], "timeout": 900},

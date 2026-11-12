@@ -92,6 +92,9 @@ class Browser:
     def open(self, url, wait_for=READY, timeout=15):
         self.send("Page.navigate", url=url)
         self.until(wait_for, timeout)
+        # Pages load their font with font-display: swap, so text first draws in a fallback face and reflows when the font arrives. A click measured before the
+        # swap landed beside its target (My Downloads failed in CI on a different test each run). Clicks start only once the fonts are in.
+        self.until("document.fonts.status === 'loaded'", timeout)
         self.js("window.__errors=[];addEventListener('error',e=>__errors.push(e.message));addEventListener('unhandledrejection',e=>__errors.push(String(e.reason)))")
 
     def js(self, expr):

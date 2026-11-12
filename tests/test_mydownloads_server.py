@@ -21,9 +21,8 @@ class FakeEngine:
     def __init__(self):
         self.last, self.explode, self.gate = None, False, None
 
-    def plan(self, it, only_channel=None, scope="mine"):
+    def plan(self, it, only_channel=None):
         self.last = (it, only_channel)
-        self.scope = scope
         if self.explode:
             raise Exception("ERROR: Unable to download webpage: getaddrinfo failed")
         return {"items": [{"id": VID, "title": "T", "kind": "long", "url": "u", "duration": 300, "channel": "C", "channel_id": CID, "saved": False, "owned": True,
@@ -171,19 +170,6 @@ def test_plan_reads_the_words_and_returns_the_list(srv):
     assert st == 200 and j["summary"] == "The 5 newest of your videos about “cambyses”" and j["items"][0]["id"] == VID
     assert j["intent"] == {"count": 5, "order": "newest", "kind": "any", "keywords": ["cambyses"], "urls": []}
     assert srv.eng.last[1] == CID
-
-
-def test_plan_in_study_mode_passes_the_scope_and_says_so(srv):
-    st, _, d = call(srv, "POST", "/api/plan", {"text": "download 3 videos about heat transfer", "scope": "cc"})
-    j = js(d)
-    assert st == 200 and srv.eng.scope == "cc" and j["summary"] == "Up to 3 Creative Commons videos about “heat transfer”"
-    call(srv, "POST", "/api/plan", {"text": "my last 3 videos"})
-    assert srv.eng.scope == "mine"
-
-
-def test_plan_refuses_an_unknown_scope(srv):
-    st, _, d = call(srv, "POST", "/api/plan", {"text": "my last 3 videos", "scope": "everything"})
-    assert st == 400 and "error" in js(d)
 
 
 def test_plan_needs_some_words(srv):

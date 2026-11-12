@@ -276,9 +276,9 @@ def test_download_refuses_a_video_that_is_not_on_my_channels_even_if_the_id_was_
 
 def test_download_refuses_when_no_channel_is_registered(world, tmp_path):
     store.remove_channel(MINE)
-    with pytest.raises(engine.NotMine, match="not one of your channels"):
+    with pytest.raises(engine.NotMine, match="No channel of yours"):
         eng(world).download(vid(1), tmp_path / "Downloads", lambda s: None, threading.Event())
-    assert world.downloaded == []
+    assert world.asked == []  # YouTube was not even asked
 
 
 def test_download_rejects_an_id_that_is_not_a_video_id(world, tmp_path):
@@ -324,64 +324,3 @@ def test_friendly_errors(raw, needle):
 def test_unknown_errors_are_shortened_and_cleaned():
     msg = engine.friendly(Exception("ERROR: \x1b[0;31mSomething odd\x1b[0m " + "x" * 500))
     assert "\x1b" not in msg and not msg.startswith("ERROR") and len(msg) <= 220
-
-
-# ---- Creative Commons study videos (other creators who allow reuse)
-CC = "Creative Commons Attribution license (reuse allowed)"
-SEARCH = "https://www.youtube.com/results?search_query=heat+transfer&sp=EgIwAQ%3D%3D"
-
-
-@pytest.fixture
-def cc(world):
-    world.pages[SEARCH] = {"entries": [entry(20, "Lecture 20"), entry(21, "Lecture 21 standard licence"), entry(22, "Lecture 22"), entry(23, "Lecture 23")]}
-    for n, lic in ((20, CC), (21, "Standard YouTube License"), (22, CC), (23, CC)):
-        world.infos[vid(n)] = dict(info_for(n, f"Lecture {n}", channel_id=OTHER, channel="Prof Rao"), license=lic)
-    return world
-
-
-def test_study_search_lists_only_videos_whose_licence_is_creative_commons(cc):
-    plan = eng(cc).plan(intent.parse("download 2 videos about heat transfer"), scope="cc")
-    assert ids(plan) == [vid(20), vid(22)] and all(i["cc"] and i["owned"] and i["channel"] == "Prof Rao" for i in plan["items"])
-    assert SEARCH in [u for u, _ in cc.asked]
-
-
-def test_study_search_needs_topic_words(cc):
-    plan = eng(cc).plan(intent.parse("download 3 videos"), scope="cc")
-    assert plan["items"] == [] and any("about" in n for n in plan["notes"]) and cc.asked == []
-
-
-def test_study_search_stops_looking_once_it_has_enough(cc):
-    eng(cc).plan(intent.parse("download 1 video about heat transfer"), scope="cc")
-    assert len([u for u, _ in cc.asked if "watch?v=" in u]) == 1
-
-
-def test_study_search_works_without_any_channel_of_mine(cc):
-    store.remove_channel(MINE)
-    assert ids(eng(cc).plan(intent.parse("download 1 video about heat transfer"), scope="cc")) == [vid(20)]
-
-
-def test_a_creative_commons_video_downloads_into_a_study_folder_with_its_attribution(cc, tmp_path):
-    store.remove_channel(MINE)
-    path = eng(cc).download(vid(20), tmp_path / "Downloads", lambda s: None, threading.Event())
-    assert path.parent == tmp_path / "Downloads" / "Study (Creative Commons)" / "Prof Rao"
-    note = path.with_name(path.name + ".attribution.txt").read_text()
-    assert "Prof Rao" in note and "Lecture 20" in note and CC in note and "watch?v=" + vid(20) in note
-
-
-def test_my_own_video_still_goes_to_the_normal_folder(cc, tmp_path):
-    path = eng(cc).download(vid(1), tmp_path / "Downloads", lambda s: None, threading.Event())
-    assert "Study" not in str(path)
-
-
-@pytest.mark.parametrize("lic", ["Standard YouTube License", None, "", "Creative"])
-def test_another_creators_video_without_the_creative_commons_licence_is_refused_even_if_listed(cc, tmp_path, lic):
-    cc.infos[vid(20)]["license"] = lic
-    with pytest.raises(engine.NotMine):
-        eng(cc).download(vid(20), tmp_path / "Downloads", lambda s: None, threading.Event())
-    assert cc.downloaded == []
-
-
-def test_a_pasted_link_to_a_creative_commons_video_is_accepted_in_study_mode_only(cc):
-    link = intent.parse(f"download https://youtu.be/{vid(20)}")
-    assert not eng(cc).plan(link)["items"][0]["owned"]
-    assert eng(cc).plan(link, scope="cc")["items"][0]["owned"]

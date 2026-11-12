@@ -6,6 +6,8 @@ import pytest
 
 import footage_real as fr
 
+PUBLIC = lambda host: ["208.80.153.240"]  # a public address, so no real DNS look-up happens in a test
+
 
 def page(title, lic="Public domain", cats="", size=5_000_000, duration=40.0, media="VIDEO", url=None):
     return {"title": f"File:{title}", "imageinfo": [{"url": url or f"https://upload.wikimedia.org/{title}", "size": size, "mediatype": media, "duration": duration, "descriptionurl": f"https://commons.wikimedia.org/wiki/File:{title}",
@@ -54,7 +56,7 @@ def test_a_fetched_segment_is_a_short_silent_clip_with_a_credit_line_that_names_
     cand = {"title": "Siwa_Oasis_palm_grove.webm", "url": "https://upload.wikimedia.org/x.webm", "license": "CC BY-SA 4.0", "page": "https://commons.wikimedia.org/wiki/File:Siwa_Oasis_palm_grove.webm", "duration": 40.0, "size": 5_000_000}
     cut = []
     dest = tmp_path / "real-1.mp4"
-    got = fr.fetch_segment(cand, dest, get=lambda *a, **k: Resp(content=b"video"), run=lambda cmd, **k: cut.append(cmd) or open(cmd[-1], "wb").write(b"clip"))
+    got = fr.fetch_segment(cand, dest, get=lambda *a, **k: Resp(content=b"video"), run=lambda cmd, **k: cut.append(cmd) or open(cmd[-1], "wb").write(b"clip"), resolve=PUBLIC)
     assert got == dest and dest.read_bytes() == b"clip"
     cmd = " ".join(map(str, cut[0]))
     assert "-an" in cut[0] and "-t" in cut[0] and "scale=" in cmd and "-ss" in cut[0]
@@ -109,3 +111,134 @@ def test_the_documentary_producer_asks_for_real_footage_before_it_animates_and_a
     data = {"lines": [{"text": "a", "visual": "a dune"}]}
     clips = ["a.jpg"]
     assert run._real_footage(data, clips, [])[0] == clips and "real_footage" not in data
+
+
+class Limited(Resp):
+    def __init__(self, status, retry="3"):
+        super().__init__()
+        self.status_code, self.headers = status, ({"Retry-After": retry} if retry else {})
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+
+def test_a_rate_limited_download_waits_the_pause_it_was_told_and_tries_again(tmp_path):
+    cand = {"title": "x.ogv", "url": "https://upload.wikimedia.org/x.ogv", "license": "CC BY 4.0", "page": "https://commons.wikimedia.org/wiki/File:x.ogv", "duration": 30.0, "size": 1000}
+    seq, waits, cut = [Limited(429), Limited(429), Limited(200)], [], []
+    got = fr.fetch_segment(cand, tmp_path / "a.mp4", get=lambda *a, **k: seq.pop(0), sleep=waits.append, run=lambda cmd, **k: cut.append(cmd) or open(cmd[-1], "wb").write(b"mp4"), resolve=PUBLIC)
+    assert got is not None and not seq and waits == [3.0, 3.0] and cut
+
+
+def test_a_download_that_stays_rate_limited_gives_up_without_leaving_files(tmp_path):
+    cand = {"title": "y.ogv", "url": "https://upload.wikimedia.org/y.ogv", "license": "CC BY 4.0", "page": "p", "duration": 30.0, "size": 1000}
+    got = fr.fetch_segment(cand, tmp_path / "b.mp4", get=lambda *a, **k: Limited(429, None), sleep=lambda s: None, run=lambda *a, **k: pytest.fail("must not cut"))
+    assert got is None and not list(tmp_path.glob("*.mp4")) and not list(tmp_path.glob("*.dl"))
+
+
+def test_the_download_asks_for_the_file_as_a_range_because_wikimedia_refuses_a_plain_request_with_429_and_answers_a_range_with_206(tmp_path):
+    """11 Nov 2026, live probe from the server and from the PC: a plain GET of a Commons video got HTTP 429 (an error page), the same request with Range: bytes=0- got 206 and the whole file."""
+    cand = {"title": "z.ogv", "url": "https://upload.wikimedia.org/z.ogv", "license": "CC BY 4.0", "page": "p", "duration": 30.0, "size": 1000}
+    seen = []
+
+    def get(url, **k):
+        seen.append(k.get("headers") or {})
+        return Limited(206 if (k.get("headers") or {}).get("Range") == "bytes=0-" else 429, None)
+    got = fr.fetch_segment(cand, tmp_path / "c.mp4", get=get, sleep=lambda s: None, resolve=PUBLIC, run=lambda cmd, **k: open(cmd[-1], "wb").write(b"mp4"))
+    assert got is not None and seen and all(h.get("Range") == "bytes=0-" for h in seen) and "User-Agent" in seen[0]
+
+
+# ---- NASA and Pixabay footage (owner's licence decision, 10 Nov 2026) ----
+class Hop:
+    def __init__(self, status=200, location=None, content=b"v"):
+        self.status_code, self.headers, self.content = status, {"Location": location} if location else {}, content
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise fr.requests.HTTPError(str(self.status_code))
+
+    def iter_content(self, n):
+        yield self.content
+
+
+def test_nasa_videos_must_name_the_subject_and_never_show_a_logo_or_insignia(monkeypatch):
+    import openmedia
+    rows = [{"title": "Antikythera wreck dive survey", "url": "https://images-assets.nasa.gov/a~medium.mp4", "licence": openmedia.NASA_LICENCE, "page": "https://images.nasa.gov/details/a", "credit": "NASA (a)"},
+            {"title": "NASA insignia over the Antikythera wreck", "url": "https://images-assets.nasa.gov/b.mp4", "licence": openmedia.NASA_LICENCE, "page": "p", "credit": "NASA (b)"},
+            {"title": "Apollo 11 launch", "url": "https://images-assets.nasa.gov/c.mp4", "licence": openmedia.NASA_LICENCE, "page": "p", "credit": "NASA (c)"},
+            {"title": "Antikythera without a file", "url": None, "licence": openmedia.NASA_LICENCE, "page": "p", "credit": "NASA (d)"}]
+    monkeypatch.setattr(openmedia, "nasa", lambda q, kind, n, get: rows)
+    got = fr.nasa_candidates("Antikythera", ["Antikythera Mechanism"])
+    assert [c["title"] for c in got] == ["Antikythera wreck dive survey"]
+    assert got[0]["source"] == "NASA Image and Video Library" and fr.licence_ok(got[0]["license"]) and got[0]["duration"] == 0.0
+
+
+def test_pixabay_videos_need_a_key_matching_tags_and_a_sensible_length(monkeypatch):
+    import pixabay
+    rows = [{"id": 1, "url": "https://cdn.pixabay.com/v/1.mp4", "page": "https://pixabay.com/videos/id-1/", "seconds": 12, "size": 4_000_000, "tags": "greece, shipwreck, antikythera", "credit": "Video by Ann via Pixabay (https://pixabay.com/videos/id-1/)"},
+            {"id": 2, "url": "https://cdn.pixabay.com/v/2.mp4", "page": "p2", "seconds": 12, "size": 4_000_000, "tags": "cat, sofa", "credit": "c2"},
+            {"id": 3, "url": "https://cdn.pixabay.com/v/3.mp4", "page": "p3", "seconds": 2, "size": 4_000_000, "tags": "antikythera", "credit": "c3"},
+            {"id": 4, "url": "https://cdn.pixabay.com/v/4.mp4", "page": "p4", "seconds": 12, "size": fr.MAX_BYTES + 1, "tags": "antikythera", "credit": "c4"}]
+    monkeypatch.setattr(pixabay, "search_videos", lambda q, n, get: rows)
+    monkeypatch.setattr(pixabay, "key", lambda: "")
+    assert fr.pixabay_candidates("Antikythera", ["Antikythera"]) == []          # no key: nothing, not an error
+    monkeypatch.setattr(pixabay, "key", lambda: "k")
+    got = fr.pixabay_candidates("Antikythera", ["Antikythera"])
+    assert [c["page"] for c in got] == ["https://pixabay.com/videos/id-1/"] and got[0]["license"] == "Pixabay Content License" and fr.licence_ok(got[0]["license"])
+
+
+def test_all_candidates_keep_the_licence_preference_order_commons_then_nasa_then_pixabay(monkeypatch):
+    monkeypatch.setattr(fr, "candidates", lambda q, a, get=None: [{"title": "c", "url": "u1"}])
+    monkeypatch.setattr(fr, "nasa_candidates", lambda q, a, get=None: [{"title": "n", "url": "u2"}, {"title": "dup", "url": "u1"}])
+    monkeypatch.setattr(fr, "pixabay_candidates", lambda q, a, get=None: [{"title": "p", "url": "u3"}])
+    assert [c["title"] for c in fr.all_candidates("x", ["x"])] == ["c", "n", "p"]
+
+
+def test_a_film_uses_all_sources_by_default():
+    assert fr.for_film.__defaults__[1] is fr.all_candidates
+
+
+def test_a_nasa_clip_with_no_length_up_front_is_measured_and_credited_with_its_source_and_licence(tmp_path):
+    import openmedia
+    cand = {"title": "Antikythera wreck dive survey", "url": "https://images-assets.nasa.gov/a.mp4", "license": openmedia.NASA_LICENCE, "page": "https://images.nasa.gov/details/a",
+            "duration": 0.0, "size": 0, "source": "NASA Image and Video Library", "credit": "NASA (a)"}
+    cut = []
+    got = fr.fetch_segment(cand, tmp_path / "n.mp4", get=lambda *a, **k: Hop(), run=lambda cmd, **k: cut.append(cmd) or open(cmd[-1], "wb").write(b"mp4"),
+                           resolve=PUBLIC, probe=lambda p, run=None: 40.0)
+    assert got and cut
+    credit = (tmp_path / "n.txt").read_text()
+    assert "NASA (a)" in credit and "NASA Image and Video Library" in credit and "images.nasa.gov/details/a" in credit and fr.licence_ok(credit) and "copyright" not in credit.lower()
+
+
+def test_a_clip_too_short_to_cut_is_refused(tmp_path):
+    cand = {"title": "t", "url": "https://images-assets.nasa.gov/a.mp4", "license": "NASA media (credit NASA; no NASA logos)", "page": "p", "duration": 0.0, "size": 0, "source": "NASA Image and Video Library"}
+    assert fr.fetch_segment(cand, tmp_path / "s.mp4", get=lambda *a, **k: Hop(), run=lambda cmd, **k: pytest.fail("must not cut"), resolve=PUBLIC, probe=lambda p, run=None: 1.0) is None
+
+
+def test_downloads_never_reach_a_private_address_even_through_a_redirect(tmp_path):
+    cand = {"title": "t", "url": "https://cdn.pixabay.com/v/1.mp4", "license": "Pixabay Content License", "page": "p", "duration": 12.0, "size": 1000, "source": "Pixabay"}
+    resolve = lambda host: ["10.0.0.5"] if host == "internal.example" else ["151.101.1.1"]
+    hops = [Hop(302, "https://internal.example/secret")]
+    got = fr.fetch_segment(cand, tmp_path / "r.mp4", get=lambda *a, **k: hops.pop(0) if hops else pytest.fail("the private hop must not be fetched"),
+                           run=lambda *a, **k: pytest.fail("must not cut"), resolve=resolve)
+    assert got is None and not list(tmp_path.glob("*.mp4"))
+    assert fr.fetch_segment({**cand, "url": "http://cdn.pixabay.com/v/1.mp4"}, tmp_path / "h.mp4", get=lambda *a, **k: pytest.fail("plain http must not be fetched"), resolve=resolve) is None
+
+
+def test_nasa_and_pixabay_searches_that_fail_find_nothing_and_raise_nothing(monkeypatch):
+    def boom(*a, **k):
+        raise fr.requests.RequestException("down")
+    import pixabay
+    monkeypatch.setattr(pixabay, "key", lambda: "k")
+    assert fr.nasa_candidates("Antikythera", ["Antikythera"], get=boom) == []
+    assert fr.pixabay_candidates("Antikythera", ["Antikythera"], get=boom) == []
+    assert fr.all_candidates("Antikythera", ["Antikythera"], get=boom) == []
+
+
+def test_a_length_probe_that_fails_or_prints_nonsense_reads_as_zero(tmp_path):
+    def missing(*a, **k):
+        raise FileNotFoundError("no ffprobe")
+    class Out:
+        stdout = "N/A"
+    assert fr._probe_seconds(tmp_path / "x.dl", run=missing) == 0.0
+    assert fr._probe_seconds(tmp_path / "x.dl", run=lambda *a, **k: Out()) == 0.0

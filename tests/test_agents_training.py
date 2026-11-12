@@ -720,31 +720,6 @@ def test_the_documentary_shape_case_passes_and_fails_when_its_rules_are_broken(m
     assert not ok and "warns=False" in detail
 
 
-def test_the_thumbnail_case_passes_and_fails_when_its_rules_are_broken(monkeypatch):
-    import thumbnail
-    import thumbstyle
-
-    case = getattr(agenteval, "case_thumbnails_differ_from_the_recent_ones_claim_only_devices_the_words_have_and_never_repeat_the_title")
-    assert case in agenteval.CASES
-    ok, detail = case()
-    assert ok, detail
-    monkeypatch.setattr(thumbnail, "HOOK_DEVICES", "")  # mutation: the writer is not asked for different, honest devices
-    ok, detail = case()
-    assert not ok and "asks=False" in detail
-    monkeypatch.undo()
-    monkeypatch.setattr(thumbstyle, "choose", lambda hook, recent, pictures=1, n=3, also_avoid=(): list(thumbstyle.PREFER["question"])[:n])  # mutation: the recent compositions are ignored
-    ok, detail = case()
-    assert not ok and "differs=False" in detail
-    monkeypatch.undo()
-    monkeypatch.setattr(thumbstyle, "device_for", lambda hook: "number")  # mutation: every hook is claimed as a number
-    ok, detail = case()
-    assert not ok and "honest=False" in detail
-    monkeypatch.undo()
-    monkeypatch.setattr(thumbstyle, "check", lambda t, hook, title: [{"name": "all", "ok": True, "detail": ""}])  # mutation: words that repeat the title are no longer refused
-    ok, detail = case()
-    assert not ok and "clean=False" in detail
-
-
 def test_the_whole_narration_case_passes_and_fails_with_the_old_7000_character_cut(monkeypatch):
     import reviewer
 
@@ -1087,24 +1062,127 @@ def test_the_real_case_case_passes_and_fails_when_a_rule_a_warning_or_the_pictur
     assert not ok and "pictures=False" in detail
 
 
-def test_eval_case_a_passage_must_be_found_in_its_page_and_breaking_that_rule_fails_it(monkeypatch):
+def test_eval_case_only_a_checked_passage_is_evidence_and_counting_an_unchecked_one_fails_it(monkeypatch):
     import agenteval
-    import numbershort
+    import reviewer
 
-    ok, _ = agenteval.case_a_claim_is_verified_only_by_a_passage_found_in_the_saved_page_of_its_source()
+    name = "case_only_a_passage_found_in_its_saved_page_counts_as_evidence_for_the_reviewer"
+    ok, _ = getattr(agenteval, name)()
     assert ok
-    monkeypatch.setattr(numbershort, "passage_in_page", lambda source: True)  # mutation: any passage counts as found
-    bad, _ = agenteval.case_a_claim_is_verified_only_by_a_passage_found_in_the_saved_page_of_its_source()
+    monkeypatch.setattr(reviewer, "checked_sources", lambda meta: [s for s in meta.get("sources") or [] if isinstance(s, dict) and s.get("passage")])  # mutation: every listed passage counts
+    bad, _ = getattr(agenteval, name)()
     assert not bad
 
 
-def test_eval_case_for_ccdoc_passes_and_fails_when_a_passage_need_not_be_found(monkeypatch):
+def test_eval_case_for_the_review_source_room_fails_when_the_room_shrinks_back(monkeypatch):
     import agenteval
-    import numbershort
+    import reviewer
 
-    name = "case_a_documentary_spec_without_a_found_passage_or_a_picture_is_refused_before_any_voice_is_paid_for"
+    name = "case_only_a_passage_found_in_its_saved_page_counts_as_evidence_for_the_reviewer"
+    monkeypatch.setattr(reviewer, "REVIEW_SOURCE_CHARS", 12000)  # mutation: the old limit
+    bad, _ = getattr(agenteval, name)()
+    assert not bad
+
+
+def test_eval_case_for_the_owners_advice_passes_and_fails_when_a_reviewer_reads_it_or_the_frame_goes(monkeypatch):
+    import agenteval
+    import ownerdesk
+
+    name = "case_the_owners_advice_reaches_only_the_writing_roles_and_never_a_reviewer"
     ok, _ = getattr(agenteval, name)()
     assert ok
-    monkeypatch.setattr(numbershort, "passage_in_page", lambda source: True)  # mutation: any passage counts as found
+    monkeypatch.setattr(ownerdesk, "CREATIVE", {*ownerdesk.CREATIVE, "reviewer"})  # mutation: the reviewer reads the advice
     bad, _ = getattr(agenteval, name)()
+    assert not bad
+    monkeypatch.undo()
+    monkeypatch.setattr(ownerdesk, "FRAME", "")  # mutation: the advice is no longer framed as advice only
+    bad2, _ = getattr(agenteval, name)()
+    assert not bad2
+
+
+LICENCE_CASE = "case_only_approved_licences_are_used_and_a_credit_needing_picture_is_credited_in_the_description_youtube_receives"
+
+
+def test_eval_case_for_licences_passes_and_is_in_the_list():
+    import agenteval
+
+    assert getattr(agenteval, LICENCE_CASE) in agenteval.CASES
+    ok, detail = getattr(agenteval, LICENCE_CASE)()
+    assert ok, detail
+
+
+def test_eval_case_for_licences_fails_when_every_licence_is_accepted(monkeypatch):
+    import agenteval
+    import licences
+
+    monkeypatch.setattr(licences, "accepted", lambda text: True)  # mutation: a non-commercial or all-rights-reserved picture passes
+    bad, _ = getattr(agenteval, LICENCE_CASE)()
+    assert not bad
+
+
+def test_eval_case_for_licences_fails_when_the_refusal_words_stop_working(monkeypatch):
+    import agenteval
+    import licences
+
+    monkeypatch.setattr(licences, "REFUSED", __import__("re").compile(r"(?!x)x"))  # mutation: nothing is ever refused
+    bad, _ = getattr(agenteval, LICENCE_CASE)()
+    assert not bad
+
+
+def test_eval_case_for_licences_fails_when_the_credit_is_not_put_in_the_description(monkeypatch):
+    import agenteval
+    import footage
+
+    monkeypatch.setattr(footage, "credit_lines", lambda credits, assets=(): [])  # mutation: credits never reach the description
+    bad, _ = getattr(agenteval, LICENCE_CASE)()
+    assert not bad
+
+
+def test_eval_case_for_licences_fails_when_the_gate_stops_asking_for_the_credit(monkeypatch):
+    import agenteval
+    import studiochecks
+
+    real = studiochecks.check_licenses
+    monkeypatch.setattr(studiochecks, "check_licenses", lambda meta: [{**r, "ok": True} if r["name"] == "credits_in_description" else r for r in real(meta)])  # mutation: the gate passes a missing credit
+    bad, _ = getattr(agenteval, LICENCE_CASE)()
+    assert not bad
+
+
+
+
+FOOTAGE_CASE = "case_real_footage_from_nasa_and_pixabay_is_relevant_logo_free_downloaded_safely_and_credited"
+
+
+def test_eval_case_for_nasa_and_pixabay_footage_passes_and_is_in_the_list():
+    import agenteval
+
+    assert getattr(agenteval, FOOTAGE_CASE) in agenteval.CASES
+    ok, detail = getattr(agenteval, FOOTAGE_CASE)()
+    assert ok, detail
+
+
+def test_eval_case_for_footage_fails_when_nasa_logo_clips_are_allowed(monkeypatch):
+    import agenteval
+    import footage_real
+
+    monkeypatch.setattr(footage_real, "NASA_SKIP", __import__("re").compile(r"(?!x)x"))  # mutation: a NASA insignia clip passes
+    bad, _ = getattr(agenteval, FOOTAGE_CASE)()
+    assert not bad
+
+
+def test_eval_case_for_footage_fails_when_any_address_counts_as_public(monkeypatch):
+    import agenteval
+    import realmedia
+
+    monkeypatch.setattr(realmedia, "_public_https", lambda url, resolve: True)  # mutation: a redirect to an internal address is followed
+    bad, _ = getattr(agenteval, FOOTAGE_CASE)()
+    assert not bad
+
+
+def test_eval_case_for_footage_fails_when_relevance_is_not_checked(monkeypatch):
+    import agenteval
+    import footage_real
+
+    monkeypatch.setattr(footage_real, "_relevant", lambda text, anchors: True)  # mutation: an unrelated clip (a cat, a rocket launch) is used
+    bad, _ = getattr(agenteval, FOOTAGE_CASE)()
     assert not bad

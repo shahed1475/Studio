@@ -326,11 +326,22 @@ def shape_for(topic: str) -> tuple[int, int]:
 
     h = int(hashlib.md5(topic.lower().encode()).hexdigest(), 16)
     chapters, per = 6 + h % 4, 5 + (h // 7) % 3
+    per = min(7, max(per, -(-MIN_DOC_LINES // chapters)))  # 11 Nov 2026: a 30-line shape made the Antikythera film 7.2 minutes against the owner's 8 to 10
     while chapters * per > MAX_DOC_LINES and per > 5:  # about 8 minutes at 140 words a minute: longer videos lost viewers and picture quality (La Llorona, 9:44)
         per -= 1
     while chapters * per > MAX_DOC_LINES and chapters > 6:
         chapters -= 1
     return chapters, per
+
+
+MIN_DOC_LINES = 42  # with MAX_DOC_LINES and line_words() this keeps a film inside the owner's 8 to 10 minutes
+DOC_WORDS_TARGET = 1150  # about 9 minutes at WORDS_PER_SECOND plus the pause after each line
+
+
+def line_words(chapters: int, per: int) -> tuple[int, int]:
+    """(low, high) words for each narration line so the whole film lands near DOC_WORDS_TARGET whatever its shape: a 42-line film gets longer lines than a 58-line one."""
+    mid = DOC_WORDS_TARGET / max(1, chapters * per)
+    return max(16, round(mid - 3)), min(30, round(mid + 4))
 
 
 MAX_DOC_LINES = 58  # about 9 minutes at 138 words a minute with the pauses (30 Oct 2026: the owner asked for 8 to 10; the old cap of 50 made 7.6)
@@ -432,7 +443,7 @@ def doc_script(topic: str, facts: str | None = None, grounded: str | None = None
                 f"Style: {nc['style']}\n{rules}\n\n",  # the same for every chapter, source article included: sent once as a cache block
                 f"Story so far: {told or '(nothing yet, this is the opening)'}\n\n"
                 f"Write chapter {n}: '{ch.get('title', '')}' - {ch.get('summary', '')}\n"
-                f"Write {n_lines} narration lines of 16 to 24 words each. Do not repeat earlier chapters: a name, date or event already told in the story so far is never told again, "
+                f"Write {n_lines} narration lines of {line_words(n_chapters, n_lines)[0]} to {line_words(n_chapters, n_lines)[1]} words each. Do not repeat earlier chapters: a name, date or event already told in the story so far is never told again, "
                 "and an opening only teases its payoff in one line, saving the details for the chapter where they belong. "
                 "Never write chapter numbers, headings or phrases like 'this chapter' in a line: every line is story the listener hears. "
                 "For every line give 'visual': 2 to 4 words to search an archival image for (a real place, person, "

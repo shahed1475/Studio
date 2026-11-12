@@ -5,18 +5,6 @@
   const NS = "http://www.w3.org/2000/svg";
   const S = { state: null, plan: null, picked: new Set(), timer: null, rec: null, listening: false, busy: false, refreshing: false, lastJob: "", addOpen: false };
   const EXAMPLES = ["my last 5 videos", "my last 3 Shorts", "all my videos", "my 3 oldest videos", "my videos about "];
-  const STUDY_EXAMPLES = ["3 videos about heat transfer", "5 videos about circuit analysis", "2 videos about "];
-  const NOTES = { mine: "Looks only in the channels listed below.",
-    cc: "Looks for videos whose creators allow reuse (Creative Commons). They are saved in a separate Study folder with the creator's credit. Say what they are about, for example “3 videos about heat transfer”." };
-  const scope = () => (document.querySelector("input[name=scope]:checked") || { value: "mine" }).value;
-  function updateFind() { $("find").disabled = S.busy || (scope() === "mine" && !(S.state && S.state.channels.length)); }
-  function paintScope() {
-    $("scopenote").textContent = NOTES[scope()];
-    $("channels").hidden = scope() === "cc";
-    const chips = $("chips"); chips.replaceChildren();
-    for (const t of scope() === "cc" ? STUDY_EXAMPLES : EXAMPLES) chips.append(el("button", { type: "button", class: "chip", text: t.trim() + (t.endsWith(" ") ? "…" : ""), onclick: () => { const a = $("ask"); a.value = t; a.focus(); a.setSelectionRange(t.length, t.length); } }));
-    updateFind();
-  }
 
   function el(tag, props, ...kids) {
     const n = document.createElement(tag);
@@ -60,7 +48,7 @@
   }
   function busy(on, text) {
     S.busy = on;
-    if (on) $("find").disabled = true; else updateFind();
+    $("find").disabled = on;
     if (text) say(text);
   }
 
@@ -98,7 +86,7 @@
       box.append(el("button", { type: "button", class: "link", text: "Remove", "aria-label": "Remove a channel from my list", onclick: () => removeChannel(ch) }));
     }
     if (!ch.length || S.addOpen) box.append(addForm());
-    updateFind();
+    $("find").disabled = S.busy || !ch.length;
   }
 
   async function removeChannel(ch) {
@@ -147,14 +135,14 @@
   async function find() {
     const text = $("ask").value.trim();
     if (!text) { say("Tell me what to download, for example “my last 5 videos”.", "error"); $("ask").focus(); return; }
-    if (scope() === "mine" && !S.state.channels.length) { say("Add your channel first.", "error"); return; }
+    if (!S.state.channels.length) { say("Add your channel first.", "error"); return; }
     busy(true, "Looking through your channel…");
     try {
-      const p = await api("/api/plan", { text, channel: scope() === "mine" ? chanId() : null, scope: scope() });
+      const p = await api("/api/plan", { text, channel: chanId() });
       say("");
       renderPlan(p);
     } catch (e) { say(e.message, "error"); }
-    finally { busy(false); }
+    finally { busy(false); $("find").disabled = !S.state.channels.length; }
   }
 
   function renderPlan(p) {
@@ -178,7 +166,7 @@
       const can = i.owned && !i.error;
       const cb = el("input", { type: "checkbox", id: "p-" + i.id, checked: S.picked.has(i.id), disabled: !can });
       cb.addEventListener("change", () => { if (cb.checked) S.picked.add(i.id); else S.picked.delete(i.id); sync(); });
-      const meta = [i.kind === "short" ? "Short" : "Long video", dur(i.duration), i.channel, i.cc ? "Creative Commons" : "", i.partial ? "matches only some of your words" : "", i.saved ? "already saved" : ""].filter(Boolean).join(" · ");
+      const meta = [i.kind === "short" ? "Short" : "Long video", dur(i.duration), i.channel, i.partial ? "matches only some of your words" : "", i.saved ? "already saved" : ""].filter(Boolean).join(" · ");
       list.append(el("li", {}, el("label", { class: "row" + (can ? "" : " off"), for: "p-" + i.id }, cb,
         el("span", { class: "rt" }, el("span", { class: "title", text: i.title }), el("span", { class: "meta", text: i.refused || i.error || meta })))));
     }
@@ -261,12 +249,13 @@
 
   // ---------- start
   async function boot() {
-    for (const r of document.querySelectorAll("input[name=scope]")) r.addEventListener("change", paintScope);
+    const chips = $("chips");
+    for (const t of EXAMPLES) chips.append(el("button", { type: "button", class: "chip", text: t.trim() + (t.endsWith(" ") ? "…" : ""), onclick: () => { const a = $("ask"); a.value = t; a.focus(); a.setSelectionRange(t.length, t.length); } }));
     $("find").addEventListener("click", find);
     $("ask").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); find(); } });
     setupMic();
     try { S.state = await api("/api/state"); } catch (e) { say(e.message, "error"); S.state = { channels: [], job: null, folder: "", free_gb: 0 }; }
-    renderChannels(); paintScope(); renderJob(); renderFoot(); schedule();
+    renderChannels(); renderJob(); renderFoot(); schedule();
     document.documentElement.setAttribute("data-ready", "1");
   }
   boot();

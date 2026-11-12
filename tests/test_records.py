@@ -120,12 +120,17 @@ def test_fixer_save_replaces_the_record_atomically_and_upload_merge_keeps_other_
     assert records.read(f)["c"] == 4 and records.read(f)["video_id"] == "x"
 
 
-def _hold_lock(folder, seconds, ready):
+def _hold_lock(folder, seconds, ready, release=None):
+    """Hold the lock until `release` is set (or `seconds` pass). It waits on an Event, not time.sleep: conftest replaces time.sleep with a no-op for every test,
+    and a forked helper inherits that, so a sleep-based hold let go at once and the 'blocks' test never saw a held lock."""
     with records._lock(folder):
         ready.set()
-        import time
+        if release is not None:
+            release.wait(seconds)
+        else:
+            import threading
 
-        time.sleep(seconds)
+            threading.Event().wait(seconds)
 
 
 def test_a_lock_held_by_another_process_blocks_and_then_releases(tmp_path, monkeypatch):
@@ -135,14 +140,15 @@ def test_a_lock_held_by_another_process_blocks_and_then_releases(tmp_path, monke
 
     f = tmp_path / "v"
     records.create(f, {"n": 0})
-    ready = multiprocessing.Event()
-    other = multiprocessing.Process(target=_hold_lock, args=(f, 1.5, ready))
+    ready, release = multiprocessing.Event(), multiprocessing.Event()
+    other = multiprocessing.Process(target=_hold_lock, args=(f, 10, ready, release))
     other.start()
     try:
         assert ready.wait(10)
         monkeypatch.setattr(records, "LOCK_WAIT_SECONDS", 0.3)
         with pytest.raises(records.RecordError, match="could not lock"):
             records.merge(f, {"d": 1})
+        release.set()
         monkeypatch.setattr(records, "LOCK_WAIT_SECONDS", 10)
         records.merge(f, {"d": 1})  # waits for the other process to let go
     finally:

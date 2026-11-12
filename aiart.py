@@ -14,6 +14,7 @@ import io
 import re
 
 import config
+import freeart
 import llm
 import freeart
 import modelcfg

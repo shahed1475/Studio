@@ -25,11 +25,8 @@ class FakeEngine:
         return dict({"id": vid(n), "title": title, "kind": kind, "url": "u", "duration": 518 if kind == "long" else None, "channel": "The Sleeping Library", "channel_id": CID,
                      "saved": False, "owned": True, "refused": "", "error": "", "partial": False}, **kw)
 
-    def plan(self, it, only_channel=None, scope="mine"):
+    def plan(self, it, only_channel=None):
         self.asked.append((it.count, it.kind, only_channel))
-        self.scope = scope
-        if scope == "cc":
-            return {"items": [self._item(30, "Heat transfer lecture 1", cc=True, channel="Prof Rao"), self._item(31, "Heat transfer lecture 2", cc=True, channel="Prof Rao")], "notes": []}
         if it.kind == "short":
             return {"items": [self._item(2, "A Short", "short")], "notes": []}
         return {"items": [self._item(1, EVIL), self._item(3, "Saved already", saved=True), self._item(4, "Elsewhere", owned=False, refused="This video is on “Other”, which is not one of your channels, so I will not download it.")],
@@ -137,20 +134,6 @@ def test_speaking_fills_the_box_and_finds(page):
     assert b.js("document.getElementById('ask').value") == "my last 3 shorts"
     assert eng.asked[-1][:2] == (3, "short")
     assert b.js("document.getElementById('mic').getAttribute('aria-pressed')") == "false"
-
-
-def test_study_mode_finds_creative_commons_videos_even_with_no_channel_of_mine(page):
-    b, eng, tmp, _ = page
-    assert b.js("document.getElementById('scope-mine').checked") is True
-    b.click("document.getElementById('scope-cc')")
-    assert "Creative Commons" in b.js("document.getElementById('scopenote').textContent") and b.js("document.getElementById('find').disabled") is False
-    type_into(b, "#ask", "2 videos about heat transfer")
-    b.click("document.getElementById('find')")
-    b.until("document.querySelector('#result h2')?.textContent === 'Up to 2 Creative Commons videos about \u201cheat transfer\u201d'")
-    assert eng.scope == "cc" and "Creative Commons" in b.js("document.querySelector('#result .meta').textContent")
-    b.click("document.getElementById('go')")
-    b.until("document.querySelector('#job h2')?.textContent === 'Finished'")
-    assert (tmp / "Downloads" / "The Sleeping Library" / f"T [{vid(30)}].mp4").is_file()
 
 
 def test_a_chip_fills_the_box(page):

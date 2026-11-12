@@ -2,7 +2,7 @@
 
 Owner's request (2 Nov): (1) a button to choose how videos are made: OpenRouter key (Autopilot spends credit) or the current system (Claude Code, free); (2) render on the VPS and the PC together, fall back to whichever is on, never stop; (3) a task bar and a standing-instructions box in Story Studio; (4) if the Claude subscription runs out, continue tasks through OpenRouter Claude; (5) upload a video to YouTube and social media from a button; (6) research and enhance; use few tokens.
 
-Status: nothing below is built yet. Only the Voynich hand-over was finished this session. Each phase is small, test-first and deployed with `deploy.sh dry-run-first`.
+Status (2 Nov): phases 1 and 2 are BUILT (owner said 'build 1 and 2'): `ownerdesk.py`, the Tasks page, the two video-source buttons, tests/test_ownerdesk.py, an agenteval case with two mutation checks. Phases 3 to 5 are not built. Each phase is small, test-first and deployed with `deploy.sh dry-run-first`.
 
 ## What already exists (read from the code, 2 Nov)
 - `autopilot.json` `make_videos` (tick on Autopilot > Rules: "Make new videos"): off = repair, review, schedule, upload only. This IS the "current system" switch; the OpenRouter key is saved in Settings. Missing: a clear two-choice control and the words "Claude Code makes videos".

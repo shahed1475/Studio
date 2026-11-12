@@ -112,6 +112,10 @@ def pixabay_key() -> str:
     return config.PIXABAY_KEY or load_settings().get("pixabay_key", "")
 
 
+def smithsonian_key() -> str:
+    return config.SMITHSONIAN_KEY or load_settings().get("smithsonian_key", "")
+
+
 def yt_status() -> dict:
     s = {"secret": SECRET.exists(), "token": TOKEN.exists(), "connecting": YT_STATE["connecting"], "error": YT_STATE["error"],
          "channel": None}
@@ -223,7 +227,7 @@ def state() -> dict:
         "agent": {"unread": __import__("agentlog").unread()},
         "tenant": __import__("tenantmode").is_tenant(), "niche_confirmed": __import__("niche").current()["brief"] is not None and bool((__import__("niche").current()["brief"] or {}).get("confirmed")),
         "auth": {"on": webauth.enabled(), "email": webauth.owner_email()},
-        "settings": {"pexels_key": "saved" if load_settings().get("pexels_key") else "", "pixabay_key": "saved" if pixabay_key() else ""},
+        "settings": {"pexels_key": "saved" if load_settings().get("pexels_key") else "", "pixabay_key": "saved" if pixabay_key() else "", "smithsonian_key": "saved" if smithsonian_key() else ""},
     }
 
 
@@ -450,6 +454,8 @@ def start_job(cmd: str, args: list[str]) -> str:
         env["PEXELS_API_KEY"] = pexels_key()
     if pixabay_key():
         env["PIXABAY_API_KEY"] = pixabay_key()
+    if smithsonian_key():
+        env["SMITHSONIAN_API_KEY"] = smithsonian_key()
     before = sorted(x.name for x in config.OUT.iterdir()) if config.OUT.exists() else []  # what exists now: a stopped job sets aside only what it began
     # its own process group, so stopping it reaches what it started too (ffmpeg, downloads)
     proc = subprocess.Popen([PY, "run.py", cmd, *args], cwd=config.ROOT, stdout=log.open("w"), stderr=subprocess.STDOUT, env=env, start_new_session=True)
@@ -740,6 +746,10 @@ class H(BaseHTTPRequestHandler):
             self.send_page_file("notifications.html")
         elif u.path == "/api/notifications":
             self.send_json(notifications_view())
+        elif u.path == "/api/desk":
+            import ownerdesk
+
+            self.send_json(ownerdesk.view())
         elif u.path == "/api/growth":
             self.send_json(growth_view())
         elif u.path == "/now":
@@ -959,6 +969,10 @@ class H(BaseHTTPRequestHandler):
             self.send_json({"error": f"{e}"}, 400)
 
     def route(self, path, b):
+        if path.startswith("/api/desk/"):  # the owner's task bar and standing advice (ownerdesk.py): notes and advice only, never a switch
+            import ownerdesk
+
+            return ownerdesk.handle(path, b)
         if path == "/api/job/stop":
             return stop_job(str(b.get("id", "")))
         if path == "/api/job":
@@ -1100,9 +1114,13 @@ class H(BaseHTTPRequestHandler):
 
             records.update(p.parent, apply_edits)
             return {"ok": True}
+        if path == "/api/sources/test":  # read-only: one live search per library; keys are used, never returned
+            import openmedia
+
+            return {"ok": True, "rows": openmedia.selftest(str(b.get("query") or "pyramids")[:60])}
         if path == "/api/key/save":
             which, value = str(b.get("which", "")), str(b.get("value", "")).strip()
-            field = {"openrouter": "openrouter_key", "pexels": "pexels_key", "pixabay": "pixabay_key"}.get(which)
+            field = {"openrouter": "openrouter_key", "pexels": "pexels_key", "pixabay": "pixabay_key", "smithsonian": "smithsonian_key"}.get(which)
             if not field:
                 raise ValueError("unknown key")
             if not 10 <= len(value) <= 300 or re.search(r"\s", value):

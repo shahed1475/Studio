@@ -58,7 +58,10 @@ def final_description(meta: dict) -> str:
     """The description exactly as it is sent to YouTube: ours, the image credits, the channel's hashtags and the AI narration note."""
     is_doc = meta.get("format") == "doc"
     tags = " ".join(h for h in config.niche()["hashtags"] if not (is_doc and h == "#Shorts"))
-    credits = "\n\nFootage and image credits:\n" + "\n".join(meta["credits"]) if meta.get("credits") else ""
+    import footage  # CC BY, CC BY-SA, NASA and Pixabay items in full, public-domain ones as a count (the licence terms need the credit where viewers read it; the size limit needs the rest short)
+
+    lines = footage.credit_lines(meta.get("credits") or [], meta.get("assets") or [])
+    credits = "\n\nFootage and image credits:\n" + "\n".join(lines) if lines else ""
     return f"{meta.get('description', '')}{_cta()}{credits}\n\n{tags}\n\nNarration is AI-generated."
 
 

@@ -31,7 +31,7 @@ def build(meta: dict, source: str = "") -> list[dict]:
     conflicts = {c["claim"]: c for c in meta.get("conflicting_claims", []) if isinstance(c, dict) and "claim" in c}
     web_urls = [s.removeprefix("Checked against: ") for s in meta.get("sources", []) if str(s).startswith("Checked against: ")]
     article = reviewer.source_title(meta)
-    listed = [s for s in meta.get("sources", []) if isinstance(s, dict) and s.get("passage_checked") is True and s.get("passage")]
+    listed = reviewer.checked_sources(meta)
     rows = []
     for i, line in enumerate(l["text"] for l in meta.get("lines", [])):
         hedged = bool(reviewer.HEDGES.search(line))
