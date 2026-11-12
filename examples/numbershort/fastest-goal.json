@@ -1,0 +1,23 @@
+{
+ "title": "How Fast Can a World Cup Goal Be Scored?",
+ "kind": "football",
+ "voice_style": "energetic",
+ "say": {"Şükür": "Shookoor"},
+ "lines": [
+  {"text": "How fast can a World Cup goal be scored?", "card": {"type": "stopwatch", "value": "00.00", "label": "Fastest goal"}},
+  {"text": "In 2002, Turkey played Korea Republic in the third-place match, in Daegu.", "card": {"type": "versus", "a": "Turkey", "b": "Korea Republic", "note": "Third-place match", "detail": "Daegu · 29 June 2002"}},
+  {"text": "Hakan Şükür scored.", "card": {"type": "name", "first": "Hakan", "last": "Şükür", "small": "Turkey"}},
+  {"text": "Eleven seconds after kick-off.", "card": {"type": "counter", "to": 11, "label": "Seconds after kick-off"}},
+  {"text": "Guinness World Records lists it as the fastest World Cup goal, as recognised by FIFA.", "card": {"type": "record", "head": "Fastest", "sub": "World Cup goal", "by": "Guinness World Records", "note": "as recognised by FIFA"}},
+  {"text": "So on record, the answer is eleven seconds.", "card": {"type": "big", "number": "11", "unit": "Seconds"}},
+  {"text": "Subscribe for the next football number.", "card": {"type": "end", "text": "Subscribe", "small": "for the next football number"}}
+ ],
+ "description": "Eleven seconds. Hakan Şükür's goal for Turkey against Korea Republic in the 2002 third-place match in Daegu is listed by Guinness World Records as the fastest World Cup goal, as recognised by FIFA.",
+ "tags": ["world cup", "fastest goal", "football records", "hakan sukur"],
+ "sources": [
+  {"title": "Fastest goal in a football (soccer) FIFA World Cup match - Guinness World Records", "url": "https://www.guinnessworldrecords.com/world-records/fastest-goal-in-a-football-(soccer)-fifa-world-cup-match", "passage": "fastest goal in a World Cup finals match, as recognised by FIFA: Hakan Şükür, 11 seconds, Turkey v Korea Republic, Daegu, 29 June 2002", "read": "2026-10-31"},
+  {"title": "World Cup: Turkey downs South Korea for bronze - Lawrence Journal-World", "url": "https://www2.ljworld.com/news/2002/jun/29/world_cup_turkey2/", "passage": "Turkey's 3-2 victory over South Korea for third place in the World Cup; Sukur scored the fastest opening goal in World Cup history at 11 seconds", "published": "2002-06-29", "read": "2026-10-31"},
+  {"title": "Who scored the fastest goal in men's World Cup history - ESPN", "url": "https://africa.espn.com/football/story/_/id/49022241/who-scored-fastest-goal-men-world-cup-history", "passage": "Sukur scored the fastest goal in World Cup history in 2002 when he scored 11 seconds into a match against South Korea", "published": "2026-06-10", "read": "2026-10-31"}
+ ],
+ "limits": ["no source read covers the 2026 knockout rounds or final, so the video says 'on record', not 'still'", "the voice's reading of Şükür is a respelling and has not been listened to"]
+}

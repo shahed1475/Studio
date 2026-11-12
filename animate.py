@@ -21,6 +21,11 @@ def _drawn(path) -> bool:
     return bool(path) and (Path(config.CACHE) / "art") in Path(path).parents and Path(path).suffix.lower() in (".jpg", ".jpeg", ".png")
 
 
+def own_picture(path) -> bool:
+    """A picture the studio drew itself for free on the owner's PC (cache/cc: Z-Image, FLUX, Blender): it may get camera motion like any drawn picture, and it is never an archive picture."""
+    return bool(path) and (Path(config.CACHE) / "cc") in Path(path).parents and Path(path).suffix.lower() in (".jpg", ".jpeg", ".png")
+
+
 def pick_scenes(clips: list, n: int) -> list[int]:
     """The indexes of up to n drawn scenes, spread from the first to the last so the animation is not bunched at the start."""
     drawn = [i for i, c in enumerate(clips) if _drawn(c)]

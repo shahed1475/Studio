@@ -484,6 +484,9 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
     import random
 
     data = _apply_house_style(data, "doc", folder)
+    local = data.get("local_pictures") or []
+    if local and (len(local) != len(data["lines"]) or [p for p in local if not Path(p).exists()]):
+        raise SystemExit("pictures not ready: " + ", ".join(Path(p).name for p in local if not Path(p).exists()) if len(local) == len(data["lines"]) else "local_pictures needs one picture per line")
     if _real_media_on(data):
         data.setdefault("real_footage", 4)  # up to four real Commons clips where they truly fit (footage_real.py); none when none is found
 
@@ -505,26 +508,31 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
     tail = {"tail": data["voice_tail"]} if data.get("voice_tail") is not None else {}  # a video that asks keeps less of the voice service's silence after each line
     narration, _ass, durations = tts.narrate([l["text"] for l in data["lines"]], work, prof["sentence_pause_ms"] / 1000, **tail)
     data["voice_used"] = tts.voice_used(None)
-    print("Archival images (only pictures that name the subject)...")
-    anchors = data.get("anchors") or []
-    import aiart
+    if local:  # pictures drawn elsewhere for free (ccdoc.py): no search, no paid drawing, no stock footage, no animation
+        clips = [Path(p) for p in local]
+        credits = list(data.get("local_credits") or [])
+        stats = {"scenes": len(clips), "unique": len({str(c) for c in clips}), "missing": 0, "drawn": 0}
+    else:
+        print("Archival images (only pictures that name the subject)...")
+        anchors = data.get("anchors") or []
+        import aiart
 
-    art = lambda l: aiart.generate(l["text"], l.get("visual", ""), data["topic"], style=data.get("art_style"), case=_is_case(data))  # style "3d": a 3D animated-film look
-    finder = _real_finder(data, "doc")
-    pics = dict(judge=_image_judge(data["topic"]), art=art, art_first=bool(data.get("art_first")), force_art=_forced_art(data), finder=finder)
-    clips, credits, stats = footage.scene_images(data["lines"], data["topic"], anchors, art_limit=aiart.MAX_PER_VIDEO["doc"], **pics)
-    if stats["unique"] < MIN_VARIETY * stats["scenes"] and aiart.enabled():  # the same few pictures again and again: draw illustrations for the scenes that would repeat
-        print(f"  only {stats['unique']} different pictures for {stats['scenes']} scenes: drawing more")
-        clips, credits, stats = footage.scene_images(data["lines"], data["topic"], anchors, art_limit=aiart.MAX_PER_VIDEO["doc"] + aiart.EXTRA_FOR_VARIETY, **pics)
-    if stats["missing"] or stats["unique"] < 6:
-        shutil.rmtree(work if in_place else folder, ignore_errors=True)
-        raise SystemExit(f"only {stats['unique']} on-topic images found ({stats['missing']} scenes without one); "
-                         "not rendering a video of unrelated pictures")
-    clips, credits = _real_footage(data, clips, credits)  # real moving footage on the scenes that may carry it (before the animation step: a real clip is not animated)
-    clips, credits, anim = _animate(data, clips, credits)  # some drawn scenes become short moving clips when the video asks for it
-    if anim:
-        data["animation"] = anim
-        print(f"  animation: {anim['animated']} new clip(s), {anim['cached']} from the cache, {anim['failed']} failed, ${anim['spent']:.2f} spent")
+        art = lambda l: aiart.generate(l["text"], l.get("visual", ""), data["topic"], style=data.get("art_style"), case=_is_case(data))  # style "3d": a 3D animated-film look
+        finder = _real_finder(data, "doc")
+        pics = dict(judge=_image_judge(data["topic"]), art=art, art_first=bool(data.get("art_first")), force_art=_forced_art(data), finder=finder)
+        clips, credits, stats = footage.scene_images(data["lines"], data["topic"], anchors, art_limit=aiart.MAX_PER_VIDEO["doc"], **pics)
+        if stats["unique"] < MIN_VARIETY * stats["scenes"] and aiart.enabled():  # the same few pictures again and again: draw illustrations for the scenes that would repeat
+            print(f"  only {stats['unique']} different pictures for {stats['scenes']} scenes: drawing more")
+            clips, credits, stats = footage.scene_images(data["lines"], data["topic"], anchors, art_limit=aiart.MAX_PER_VIDEO["doc"] + aiart.EXTRA_FOR_VARIETY, **pics)
+        if stats["missing"] or stats["unique"] < 6:
+            shutil.rmtree(work if in_place else folder, ignore_errors=True)
+            raise SystemExit(f"only {stats['unique']} on-topic images found ({stats['missing']} scenes without one); "
+                             "not rendering a video of unrelated pictures")
+        clips, credits = _real_footage(data, clips, credits)  # real moving footage on the scenes that may carry it (before the animation step: a real clip is not animated)
+        clips, credits, anim = _animate(data, clips, credits)  # some drawn scenes become short moving clips when the video asks for it
+        if anim:
+            data["animation"] = anim
+            print(f"  animation: {anim['animated']} new clip(s), {anim['cached']} from the cache, {anim['failed']} failed, ${anim['spent']:.2f} spent")
     clips = _parallax(data, clips, durations, (1920, 1080))  # free 2.5D camera motion when the video asks for it
     music = sorted(Path("music").glob("*.mp3")) if Path("music").exists() else []
     print(f"Rendering ({sum(c is not None for c in clips)}/{len(clips)} scenes have footage)...")
@@ -1148,6 +1156,16 @@ def main() -> None:
         import autopilot
 
         print(json.dumps(autopilot.tick() if a[1:] == ["tick"] else autopilot.status(), indent=2))
+    elif a[0] == "specrun":  # free videos from specs written by Claude (specrun.py): tick (default), status, check DIR
+        import specrun
+
+        if a[1:2] == ["status"]:
+            print(json.dumps(specrun.status(), indent=1))
+        elif a[1:2] == ["check"]:
+            kind, _spec, errors, warns = specrun.check(Path(a[2]))
+            print(f"{kind}: " + ("REFUSED:\n- " + "\n- ".join(errors) if errors else "spec ok") + "".join(f"\nwarning: {w}" for w in warns))
+        else:
+            print(json.dumps(specrun.tick(), indent=1))
     elif a[0] == "approve":
         cmd_approve(a[1])
     elif a[0] == "upload":
