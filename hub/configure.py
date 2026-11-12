@@ -63,6 +63,31 @@ def _ask_password(ask, ask_secret, out, have: bool) -> str:
     return value
 
 
+def _edge(path: Path, ask, ask_secret, out) -> int:
+    """The Cloudflare settings. The edge secret must be the same text as the Worker's EDGE_SECRET (set there with `secret put`); the Turnstile site key is public, its secret is not."""
+    changes = {}
+    edge = re.sub(r"\s+", "", ask_secret("Edge secret (the same text you gave the Worker, 32 or more characters, hidden); empty to keep: "))
+    if edge:
+        if len(edge) < 32:
+            raise Refused("The edge secret must be at least 32 characters (make one with: openssl rand -hex 32). Nothing was saved.")
+        changes["HUB_EDGE_SECRET"] = edge
+    key = re.sub(r"\s+", "", ask("Turnstile site key (public, starts with 0x); empty to keep: "))
+    if key:
+        if not re.match(r"^[0-9A-Za-z_-]{6,80}$", key):
+            raise Refused("That does not look like a Turnstile site key. Nothing was saved.")
+        changes["HUB_TURNSTILE_SITEKEY"] = key
+    tsecret = re.sub(r"\s+", "", ask_secret("Turnstile secret key (hidden); empty to keep: "))
+    if tsecret:
+        if not re.match(r"^[0-9A-Za-z_-]{16,120}$", tsecret):
+            raise Refused("That does not look like a Turnstile secret. Nothing was saved.")
+        changes["HUB_TURNSTILE_SECRET"] = tsecret
+    if not changes:
+        out("Nothing to change. Nothing was saved.")
+        return 1
+    out(f"Saved to {secretstore.save(changes, path)} (readable only by you). Restart the hub to use it: ~/hub/deploy/hub.sh restart")
+    return 0
+
+
 def _hint(ex: Exception) -> str:
     if isinstance(ex, smtplib.SMTPAuthenticationError):
         return "Gmail refused the login. Check the address and the app password (the account needs 2-Step Verification to have one)."
@@ -161,6 +186,7 @@ def main(argv=None, ask=input, ask_secret=getpass.getpass, out=print, send_test=
     ap = argparse.ArgumentParser(prog="python -m hub.configure", description="Store the hub's Gmail app password and Google client id privately.")
     ap.add_argument("--status", action="store_true", help="show which settings are set (never their values) and exit")
     ap.add_argument("--no-test", action="store_true", help="do not offer to send a test email")
+    ap.add_argument("--edge", action="store_true", help="only set the Cloudflare settings: the edge secret and the Turnstile keys (typing of the secrets is hidden)")
     ap.add_argument("--contact", action="store_true", help="only set the contact line shown on the public privacy page")
     ap.add_argument("--file", help="use another secrets file (default: ~/.config/nightloom/hub.env or $HUB_SECRETS_FILE)")
     args = ap.parse_args(argv)
@@ -170,6 +196,8 @@ def main(argv=None, ask=input, ask_secret=getpass.getpass, out=print, send_test=
     try:
         if args.contact:
             return _contact(path, ask, out)
+        if args.edge:
+            return _edge(path, ask, ask_secret, out)
         return _run(args, path, ask, ask_secret, out, send_test or _send_test_mail)
     except (EOFError, KeyboardInterrupt):
         out("\nStopped. Nothing was saved.")

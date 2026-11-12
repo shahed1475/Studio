@@ -1,0 +1,14 @@
+{
+  // Nightloom on Cloudflare (path A, free workers.dev). Build the site folder first: python3 cloudflare/build.py
+  "name": "nightloom",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": true,
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/privacy.html"]
+  },
+  // the hub's public address on the owner's server (Caddy, HTTPS). The secret EDGE_SECRET is set with `secret put`, never written here.
+  "vars": { "ORIGIN": "https://hub.187-127-107-64.sslip.io" }
+}

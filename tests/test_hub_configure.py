@@ -204,3 +204,20 @@ def test_secretstore_refusal_is_reported_without_a_trace(tmp_path, monkeypatch):
     code, a, s, o = run(tmp_path, "--no-test", ask=[ADDRESS, ""], secret=[PASSWORD])
     assert code == 2 and "Not saved" in o.text() and "git work tree" in o.text()
     nothing_typed_is_echoed(o, a, s)
+
+
+EDGE = "e" * 40
+TSECRET = "0xSECRETKEYVALUE1234567890"
+
+
+def test_edge_prompt_saves_the_cloudflare_settings_and_echoes_no_secret(tmp_path):
+    code, a, s, o = run(tmp_path, "--edge", ask=["0x4AAAAAAAsitekey"], secret=[EDGE, TSECRET])
+    env = stored(tmp_path)
+    assert code == 0 and env == {"HUB_EDGE_SECRET": EDGE, "HUB_TURNSTILE_SITEKEY": "0x4AAAAAAAsitekey", "HUB_TURNSTILE_SECRET": TSECRET}
+    shown = o.text() + "\n".join(p for x in (a, s) for p in x.prompts)
+    assert EDGE not in shown and TSECRET not in shown
+
+
+def test_edge_prompt_refuses_a_short_edge_secret_and_saves_nothing(tmp_path):
+    code, *_ = run(tmp_path, "--edge", ask=[""], secret=["short", ""])
+    assert code == 2 and not (tmp_path / "hub.env").exists()

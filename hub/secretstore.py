@@ -12,7 +12,7 @@ from pathlib import Path
 
 ALLOWED = ("HUB_SMTP_HOST", "HUB_SMTP_PORT", "HUB_SMTP_USER", "HUB_SMTP_PASSWORD", "HUB_MAIL_FROM", "HUB_GOOGLE_CLIENT_ID",
            # on a server the same file also holds these (deploy/hub.sh reads it as the container's env file); the prompt must keep them when it saves the mail settings
-           "HUB_KEYSTORE_KEY", "HUB_PUBLIC_URL", "HUB_ALLOWED_EMAILS", "HUB_MAIL_DAILY_CAP", "HUB_INSECURE_DEV", "HUB_CONTACT")
+           "HUB_KEYSTORE_KEY", "HUB_PUBLIC_URL", "HUB_ALLOWED_EMAILS", "HUB_MAIL_DAILY_CAP", "HUB_INSECURE_DEV", "HUB_CONTACT", "HUB_EDGE_SECRET", "HUB_TURNSTILE_SECRET", "HUB_TURNSTILE_SITEKEY")
 MAX_VALUE = 512
 REPO = Path(__file__).resolve().parent.parent
 HEADER = "# Nightloom hub secrets. Private (mode 600). Never commit, copy into chat or share.\n"

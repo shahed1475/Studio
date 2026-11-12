@@ -10,6 +10,7 @@ const emailForm = $("email-form"), codeForm = $("code-form");
 let email = "", timer = 0;
 const MESSAGES = {
   bad_email: "Enter a full email address, like name@example.com.",
+  bot_check: "We could not confirm you are a person. Reload the page and try again.",
   too_many: "Too many tries. Wait a little while, then try again.",
   mail_unavailable: "We could not send the email right now. Try again in a few minutes.",
   invalid_or_expired: "That code did not work. It may have expired or been used already. Send a new one.",
@@ -31,8 +32,10 @@ function countdown() {
   const tick = () => { b.textContent = n > 0 ? `Send a new code in ${n}s` : "Send a new code"; if (n-- <= 0) { clearInterval(timer); b.disabled = false; } };
   tick(); timer = setInterval(tick, 1000);
 }
+let turnstile = { key: "", token: "", id: null };
 async function sendCode() {
-  const r = await api("/api/auth/request", { email });
+  const r = await api("/api/auth/request", { email, turnstile: turnstile.token });
+  if (turnstile.id !== null && window.turnstile) { window.turnstile.reset(turnstile.id); turnstile.token = ""; }  // a token works once
   if (!r.ok) throw new Error(MESSAGES[r.data.error] || "Something went wrong. Try again.");
 }
 
@@ -58,6 +61,14 @@ $("back").addEventListener("click", () => { clearInterval(timer); $("code").valu
 // Google: shown only when the server says it is configured; the page never decides trust, the server verifies the token
 (async () => {
   const c = await api("/api/config");
+  if (c.data.turnstile_site_key) {  // Cloudflare's bot check, shown only when the server asks for it; the server verifies the token
+    const t = h("script", { src: "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit", async: true, defer: true });
+    t.onload = () => {
+      const slot = h("div", { id: "ts-slot" }); $("send-btn").before(slot);
+      turnstile.id = window.turnstile.render(slot, { sitekey: c.data.turnstile_site_key, callback: (tok) => { turnstile.token = tok; }, "expired-callback": () => { turnstile.token = ""; } });
+    };
+    document.head.append(t);
+  }
   if (!c.data.google_enabled) { $("g-off").hidden = false; return; }
   const s = h("script", { src: "https://accounts.google.com/gsi/client", async: true, defer: true });
   s.onload = () => {

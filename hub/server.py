@@ -15,14 +15,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from . import a2a, agents as agent_team, auth, keystore, llm, profile, research, secretstore
+from . import a2a, agents as agent_team, auth, edge, keystore, llm, profile, research, secretstore
 
 WEB = Path(__file__).parent / "web"
 COOKIE, CSRF_COOKIE = "hub_session", "hub_csrf"
 MAX_BODY = 64 * 1024
 CALLS_PER_MINUTE = 60
-CSP = ("default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; frame-src https://accounts.google.com/gsi/; "
-       "connect-src 'self' https://accounts.google.com/gsi/; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; img-src 'self' data:; "
+CSP = ("default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client https://challenges.cloudflare.com; frame-src https://accounts.google.com/gsi/ https://challenges.cloudflare.com; "
+       "connect-src 'self' https://accounts.google.com/gsi/ https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; img-src 'self' data:; "
        "font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 
 
@@ -50,6 +50,9 @@ class Hub(BaseHTTPRequestHandler):
 
     # ---- helpers ----
     def _ip(self) -> str:
+        edge_ip = edge.client_ip(self.headers)  # only believed when the request carried the edge secret
+        if edge_ip:
+            return edge_ip
         if os.getenv("HUB_TRUST_PROXY") == "1":
             xff = self.headers.get("X-Forwarded-For", "")
             if xff:
@@ -110,7 +113,7 @@ class Hub(BaseHTTPRequestHandler):
         if self.headers.get("X-Hub") != "1":
             return False
         origin = self.headers.get("Origin")
-        return not origin or urlsplit(origin).netloc == self.headers.get("Host", "")
+        return not origin or urlsplit(origin).netloc == (edge.forwarded_host(self.headers) or self.headers.get("Host", ""))
 
     def _session_cookie(self, token: str | None) -> list:
         secure = "" if os.getenv("HUB_INSECURE_DEV") == "1" else "; Secure"
@@ -128,11 +131,13 @@ class Hub(BaseHTTPRequestHandler):
     # ---- GET ----
     def do_GET(self):
         path = urlsplit(self.path).path
+        if not edge.edge_ok(self.headers, path):
+            return self._json(403, {"ok": False, "error": "forbidden"})
         if path == "/healthz":
             return self._json(200, {"ok": True})
         if path == "/api/config":
             csrf = secrets.token_urlsafe(24)
-            return self._json(200, {"google_enabled": auth.google_configured(), "google_client_id": os.getenv("HUB_GOOGLE_CLIENT_ID", "").strip(), "csrf": csrf},
+            return self._json(200, {"google_enabled": auth.google_configured(), "google_client_id": os.getenv("HUB_GOOGLE_CLIENT_ID", "").strip(), "turnstile_site_key": edge.site_key(), "csrf": csrf},
                               {"Set-Cookie": [f"{CSRF_COOKIE}={csrf}; Path=/; Max-Age=3600; SameSite=Lax" + ("" if os.getenv("HUB_INSECURE_DEV") == "1" else "; Secure")]})
         if path == "/api/me":
             acc, _ = self._auth()
@@ -190,6 +195,8 @@ class Hub(BaseHTTPRequestHandler):
     # ---- POST ----
     def do_POST(self):
         path = urlsplit(self.path).path
+        if not edge.edge_ok(self.headers, path):
+            return self._json(403, {"ok": False, "error": "forbidden"})
         acc, how = self._auth()
         if ((how == "cookie" and acc) or path.startswith("/api/")) and not self._same_site():
             return self._json(403, {"ok": False, "error": "forbidden"})
@@ -198,6 +205,8 @@ class Hub(BaseHTTPRequestHandler):
             return
         ip = self._ip()
         if path == "/api/auth/request":
+            if not edge.turnstile_ok(data.get("turnstile"), ip):
+                return self._json(400, {"ok": False, "error": "bot_check"})
             r = auth.request_code(data.get("email"), ip, mailer=self.mailer)
             return self._json(429 if r.get("error") == "too_many" else (200 if r["ok"] else 400), r)
         if path == "/api/auth/verify":
