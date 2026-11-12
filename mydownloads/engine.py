@@ -1,14 +1,15 @@
 """Finding the owner's videos on YouTube and saving them (yt-dlp used as a library).
 
-The one rule that matters: a video is downloaded only when its own fresh metadata says its channel is on the owner's list (store.channels).
-That check runs when the list is built and again right before each download, so a stale or edited list cannot get another creator's video through.
+The one rule that matters: a video is downloaded only when its own fresh metadata says either that its channel is on the owner's list (store.channels)
+or that its creator marked it Creative Commons (reuse allowed). That check runs when the list is built and again right before each download, so a stale or
+edited list cannot get any other video through. Creative Commons videos go to their own "Study" folder with an attribution note beside each.
 """
 import os
 import re
 import shutil
 import time
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote_plus, urlparse
 
 from . import intent as intents
 from . import store
@@ -24,6 +25,11 @@ OUTTMPL = "%(channel)s/%(title).120B [%(id)s].%(ext)s"
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 HANDLE = re.compile(r"^@[\w.-]{3,40}$")
 NOT_MINE = "is not one of your channels, so I will not download it."
+NOT_ALLOWED = "is not one of your channels and is not marked Creative Commons, so I will not download it."
+CC_FILTER = "EgIwAQ%3D%3D"  # YouTube's search filter for Creative Commons videos
+STUDY = "Study (Creative Commons)"
+MAX_CC = 20  # most study videos one request returns
+MAX_CC_CHECKS = 60  # most videos looked at to find them
 
 
 class NotMine(Exception):
@@ -32,6 +38,11 @@ class NotMine(Exception):
 
 class Cancelled(_CancelBase):
     """The owner pressed Stop."""
+
+
+def is_cc(info) -> bool:
+    """The creator marked the video Creative Commons (YouTube's own licence field, read from the video itself)."""
+    return "creative commons" in str((info or {}).get("license") or "").lower()
 
 
 def friendly(exc) -> str:
@@ -138,14 +149,53 @@ class Engine:
         return {"id": cid, "title": info.get("channel") or info.get("uploader") or "", "handle": info.get("uploader_id") or ""}
 
     # -- finding videos
-    def plan(self, it, only_channel=None) -> dict:
+    def plan(self, it, only_channel=None, scope="mine") -> dict:
         notes = list(it.notes)
+        if scope == "cc":
+            return self._plan_cc(it, notes)
         chans = [c for c in store.channels() if only_channel in (None, c["id"])]
         if not chans:
             return {"items": [], "notes": notes + ["No channel of yours is set up yet. Add your channel first."]}
         if it.urls:
             return self._plan_links(it, chans, notes)
         return self._plan_search(it, chans, notes)
+
+    def _plan_cc(self, it, notes):
+        """Videos of other creators, only those whose own licence says Creative Commons. Each is read from YouTube one by one."""
+        mine = store.channel_ids()
+        if it.urls:
+            items = []
+            for url in it.urls:
+                kind, ident = _classify(url)
+                if kind == "video":
+                    items.append(self._link_item(ident, url, mine, cc=True))
+                else:
+                    notes.append("In study mode I take video links only.")
+            return {"items": items, "notes": notes}
+        if not it.keywords:
+            notes.append("Say what the videos are about, for example “3 videos about heat transfer”.")
+            return {"items": [], "notes": notes}
+        want = min(it.count or MAX_CC, MAX_CC)
+        try:
+            found = self._flat(f"https://www.youtube.com/results?search_query={quote_plus(' '.join(it.keywords))}&sp={CC_FILTER}", min(want * 4, MAX_CC_CHECKS)).get("entries") or []
+        except Exception as e:
+            return {"items": [], "notes": notes + [f"I could not search YouTube: {friendly(e)}"]}
+        items, looked = [], 0
+        for e in found:
+            if len(items) >= want or looked >= MAX_CC_CHECKS:
+                break
+            if not _is_video(e):
+                continue
+            looked += 1
+            it2 = self._link_item(e["id"], _watch(e["id"]), mine, cc=True)
+            if it2["owned"] and not it2["error"]:
+                items.append(it2)
+        if not items:
+            notes.append("No Creative Commons video found for " + " ".join(f"“{k}”" for k in it.keywords) + ". Try other words.")
+        elif len(items) < want:
+            notes.append(f"Only {len(items)} Creative Commons video{'s' if len(items) != 1 else ''} found.")
+        notes.append("Results come in YouTube's order of relevance, not by date.")
+        return {"items": items, "notes": notes}
 
     def _plan_search(self, it, chans, notes):
         lists = []
@@ -188,7 +238,7 @@ class Engine:
 
     def _item(self, e, kind, c):
         return {"id": e["id"], "title": e.get("title") or e["id"], "url": _watch(e["id"], kind), "duration": e.get("duration"), "kind": kind,
-                "channel_id": c["id"], "channel": c["title"], "saved": store.saved_path(e["id"]) is not None, "owned": True, "refused": "", "error": "", "partial": False}
+                "channel_id": c["id"], "channel": c["title"], "saved": store.saved_path(e["id"]) is not None, "owned": True, "refused": "", "error": "", "partial": False, "cc": False}
 
     def _plan_links(self, it, chans, notes):
         mine = {c["id"] for c in chans}
@@ -218,29 +268,29 @@ class Engine:
                 out.append(i)
         return {"items": out, "notes": notes}
 
-    def _link_item(self, video_id, url, mine):
+    def _link_item(self, video_id, url, mine, cc=False):
         kind = "short" if "/shorts/" in url else "long"
         base = {"id": video_id, "title": video_id, "url": _watch(video_id, kind), "duration": None, "kind": kind, "channel_id": "", "channel": "",
-                "saved": store.saved_path(video_id) is not None, "owned": False, "refused": "", "error": "", "partial": False}
+                "saved": store.saved_path(video_id) is not None, "owned": False, "refused": "", "error": "", "partial": False, "cc": False}
         try:
             info = self.video_info(video_id)
         except Exception as e:
             return dict(base, error=friendly(e))
-        owned = info.get("channel_id") in mine
+        mine_video = info.get("channel_id") in mine
+        owned = mine_video or (cc and is_cc(info))
+        why = NOT_ALLOWED if cc else NOT_MINE
         return dict(base, title=info.get("title") or video_id, duration=info.get("duration"), channel_id=info.get("channel_id") or "", channel=info.get("channel") or "",
-                    owned=owned, refused="" if owned else f"This video is on “{info.get('channel') or 'another channel'}”, which {NOT_MINE}")
+                    owned=owned, cc=owned and not mine_video, refused="" if owned else f"This video is on “{info.get('channel') or 'another channel'}”, which {why}")
 
     # -- saving a video
     def download(self, video_id, folder, on_progress, stop) -> Path:
         if not isinstance(video_id, str) or not store.VIDEO_ID.match(video_id):
             raise ValueError("that is not a video id")
-        mine = store.channel_ids()
-        if not mine:
-            raise NotMine("No channel of yours is set up, so nothing can be downloaded.")
-        info = self.video_info(video_id)  # fresh from YouTube: the channel is read now, not trusted from the list
-        if info.get("channel_id") not in mine:
-            raise NotMine(f"This video is on “{info.get('channel') or 'another channel'}”, which {NOT_MINE}")
-        folder = Path(folder)
+        info = self.video_info(video_id)  # fresh from YouTube: the channel and the licence are read now, not trusted from the list
+        mine_video = info.get("channel_id") in store.channel_ids()
+        if not mine_video and not is_cc(info):
+            raise NotMine(f"This video is on “{info.get('channel') or 'another channel'}”, which {NOT_ALLOWED}")
+        folder = Path(folder) if mine_video else Path(folder) / STUDY
 
         # YouTube serves the picture and the sound as two downloads, each reporting 0 to 100: one overall figure, weighted by size when YouTube says the sizes, else in equal halves
         wanted = info.get("requested_formats") or [None]
@@ -280,6 +330,10 @@ class Engine:
         path = Path(files[0]["filepath"]) if files and files[0].get("filepath") else store.saved_path(video_id)
         if not path or not Path(path).is_file() or os.path.getsize(path) == 0:
             raise RuntimeError("YouTube finished but no video file was saved.")
+        if not mine_video:  # Creative Commons asks for credit: keep it beside the video
+            Path(str(path) + ".attribution.txt").write_text(
+                f"{info.get('title')}\nby {info.get('channel')}\nhttps://www.youtube.com/watch?v={video_id}\nLicence: {info.get('license')}\n"
+                "Saved for personal study. If you share or reuse it, give this credit and keep the licence terms.\n")
         return Path(path)
 
 

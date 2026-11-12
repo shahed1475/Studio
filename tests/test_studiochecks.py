@@ -91,3 +91,8 @@ def test_the_gate_fails_on_any_blocking_row_and_reports_a_check_that_cannot_run(
     result = sc.quality_gate("v", quick=True)  # video.mp4 does not exist: that check cannot run and must say so
     assert result["verdict"] == "FAIL" and any(r["name"] == "video: could not run" and not r["ok"] for r in result["rows"])
     assert sc.main(["gate", "missing-slug"]) == 2 and sc.main(["nonsense"]) == 2
+
+
+def test_a_picture_drawn_by_the_studios_own_code_is_an_allowed_credit():
+    rows = sc.check_licenses({"credits": ["Pictures drawn by code (original work)"], "footage": {}})
+    assert by(rows, "licenses_allowed")["ok"]

@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, urlparse
 
 import config
 import records
+import freeart
 import llm
 import webauth
 
@@ -107,6 +108,10 @@ def pexels_key() -> str:
     return config.PEXELS_KEY or load_settings().get("pexels_key", "")
 
 
+def pixabay_key() -> str:
+    return config.PIXABAY_KEY or load_settings().get("pixabay_key", "")
+
+
 def yt_status() -> dict:
     s = {"secret": SECRET.exists(), "token": TOKEN.exists(), "connecting": YT_STATE["connecting"], "error": YT_STATE["error"],
          "channel": None}
@@ -180,7 +185,7 @@ def llm_view() -> dict:
     role_prices = {r: (prices.get(cfg["models"][r]) if cfg["models"][r] else (0.0, 0.0)) for r in llm.ROLES}
     known = all(v is not None for v in role_prices.values())
     ap = autopilot.load_config()
-    art = (aiart.MAX_PER_VIDEO["doc"] * aiart.PRICE_EACH, aiart.MAX_PER_VIDEO["short"] * aiart.PRICE_EACH) if cfg.get("ai_art") else (0.0, 0.0)
+    art = (aiart.MAX_PER_VIDEO["doc"] * aiart.PRICE_EACH, aiart.MAX_PER_VIDEO["short"] * aiart.PRICE_EACH) if cfg.get("ai_art") and not freeart.usable(cfg) else (0.0, 0.0)
     est = llm.estimate({r: v for r, v in role_prices.items() if v}, ap["uploads_per_day"], ap["shorts_per_day"] if ap["shorts"] else 0, art=art) if known else None
     today = usage.get(llm._day(now), {})
     return {
@@ -218,7 +223,7 @@ def state() -> dict:
         "agent": {"unread": __import__("agentlog").unread()},
         "tenant": __import__("tenantmode").is_tenant(), "niche_confirmed": __import__("niche").current()["brief"] is not None and bool((__import__("niche").current()["brief"] or {}).get("confirmed")),
         "auth": {"on": webauth.enabled(), "email": webauth.owner_email()},
-        "settings": {"pexels_key": "saved" if load_settings().get("pexels_key") else ""},
+        "settings": {"pexels_key": "saved" if load_settings().get("pexels_key") else "", "pixabay_key": "saved" if pixabay_key() else ""},
     }
 
 
@@ -443,6 +448,8 @@ def start_job(cmd: str, args: list[str]) -> str:
     env = dict(os.environ, PYTHONUNBUFFERED="1")
     if pexels_key():
         env["PEXELS_API_KEY"] = pexels_key()
+    if pixabay_key():
+        env["PIXABAY_API_KEY"] = pixabay_key()
     before = sorted(x.name for x in config.OUT.iterdir()) if config.OUT.exists() else []  # what exists now: a stopped job sets aside only what it began
     # its own process group, so stopping it reaches what it started too (ffmpeg, downloads)
     proc = subprocess.Popen([PY, "run.py", cmd, *args], cwd=config.ROOT, stdout=log.open("w"), stderr=subprocess.STDOUT, env=env, start_new_session=True)
@@ -1095,7 +1102,7 @@ class H(BaseHTTPRequestHandler):
             return {"ok": True}
         if path == "/api/key/save":
             which, value = str(b.get("which", "")), str(b.get("value", "")).strip()
-            field = {"openrouter": "openrouter_key", "pexels": "pexels_key"}.get(which)
+            field = {"openrouter": "openrouter_key", "pexels": "pexels_key", "pixabay": "pixabay_key"}.get(which)
             if not field:
                 raise ValueError("unknown key")
             if not 10 <= len(value) <= 300 or re.search(r"\s", value):

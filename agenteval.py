@@ -1253,6 +1253,43 @@ def case_a_cleared_schedule_is_put_back_in_the_future_once_only_when_the_owner_a
     return ok, "a lost schedule gets a new future time on a private video, once, only on the owner's command, and a public video is never changed" if ok else f"future={future} public_safe={public_safe} once={once} owner_only={owner_only}"
 
 
+def case_a_claim_is_verified_only_by_a_passage_found_in_the_saved_page_of_its_source():
+    import ledger
+    import numbershort
+
+    with tempfile.TemporaryDirectory() as d:
+        page = Path(d) / "page.txt"
+        page.write_text("He scored in 2006 against Iran.")
+        real = {"title": "Real page", "url": "https://example.org/real", "passage": "He scored in 2006 against Iran", "file": str(page), "read": "2026-11-01"}
+        invented = {"title": "Made up", "url": "https://example.org/made", "passage": "He scored in 1999 against Peru", "file": str(page), "read": "2026-11-01"}
+        marked = numbershort.mark_checked([real, invented])
+        meta = {"sources": marked, "lines": [{"text": "He first scored in 2006."}, {"text": "He also scored in 1999."}]}
+        rows = {r["claim_text"]: r for r in ledger.build(meta, "")}
+    ok = (marked[0]["passage_checked"] is True and marked[1]["passage_checked"] is False and rows["2006"]["verification_status"] == "VERIFIED"
+          and rows["2006"]["source_url"] == real["url"] and rows["1999"]["verification_status"] == "UNVERIFIED")
+    return ok, ("a passage is trusted only when it is found in its saved page; an invented passage leaves its claim UNVERIFIED" if ok
+                else f"checked={[m['passage_checked'] for m in marked]} rows={ {k: v['verification_status'] for k, v in rows.items()} }")
+
+
+def case_a_documentary_spec_without_a_found_passage_or_a_picture_is_refused_before_any_voice_is_paid_for():
+    import ccdoc
+
+    with tempfile.TemporaryDirectory() as d:
+        page = Path(d) / "page.txt"
+        page.write_text("Beta scored twice in 2001 against Gamma. Alpha won in 1990.")
+        body = " ".join(["The record says so plainly."] * 9)
+        lines = [{"chapter": "One", "text": "Who did Beta score against?", "src": [], "picture": "a.png"}] + \
+                [{"chapter": "One", "text": f"Beta scored against Gamma in 2001, line {i}. {body}", "src": ["s1"], "picture": "a.png"} for i in range(1, 9)] + \
+                [{"chapter": "One", "text": "Subscribe for the next record.", "src": [], "picture": "a.png"}]
+        srcs = [{"id": "s1", "title": "One", "url": "https://example.org/1", "passage": "Beta scored twice in 2001 against Gamma", "file": str(page), "read": "2026-11-01"},
+                {"id": "s2", "title": "Two", "url": "https://example.org/2", "passage": "Alpha won in 1990", "file": str(page), "read": "2026-11-01"}]
+        good = {"title": "T", "lines": lines, "sources": srcs}
+        invented = {**good, "sources": [{**srcs[0], "passage": "Beta scored six times in 2001"}, srcs[1]]}
+        no_picture = {**good, "lines": [{**lines[0], "picture": ""}, *lines[1:]]}
+        ok = not ccdoc.validate(good)[0] and bool(ccdoc.validate(invented)[0]) and bool(ccdoc.validate(no_picture)[0])
+    return ok, ("a documentary spec is built only when every passage is in its saved page and every line has a picture" if ok else "ccdoc accepted a spec with an invented passage or a missing picture")
+
+
 CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic,
          case_ladder_ends_with_owner_not_a_crash, case_ladder_respects_budget_and_whitelist_and_lessons, case_outside_text_is_cleaned,
          case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules, case_registry_is_consistent,
@@ -1284,7 +1321,9 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_the_weekly_programme_rotates_the_kinds_and_the_sixth_short_copies_the_winner,
          case_a_real_case_is_written_and_drawn_with_care_and_a_careless_script_is_warned,
          case_the_narration_is_finished_to_the_target_loudness_and_the_channel_voice_is_the_owners_choice,
-         case_a_cleared_schedule_is_put_back_in_the_future_once_only_when_the_owner_asks_and_a_public_video_is_never_touched]
+         case_a_cleared_schedule_is_put_back_in_the_future_once_only_when_the_owner_asks_and_a_public_video_is_never_touched,
+         case_a_claim_is_verified_only_by_a_passage_found_in_the_saved_page_of_its_source,
+         case_a_documentary_spec_without_a_found_passage_or_a_picture_is_refused_before_any_voice_is_paid_for]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:

@@ -21,7 +21,7 @@ FONTS = Path(__file__).parent / "static" / "fonts"  # Noto Sans (SIL Open Font L
 FONT_FILES = (FONTS / "NotoSans-Black.ttf", FONTS / "NotoSans-ExtraCondensedBlack.ttf")
 YEL, WHITE, DIM, RING = (250, 204, 21), (248, 250, 252), (148, 163, 184), (60, 100, 75)
 MAX_TEXT = 30       # characters on one card line: cards use big type
-MAX_WORDS = 80      # a Short of about 30 s; the studio's own check allows 20 to 180 s
+MAX_WORDS = 130     # a Short of 35 to 58 s: the studio's review wants at least 100 words (reviewer.LIMITS) and targets 35 to 58 s
 MAX_TITLE = 70      # YouTube cuts a title near 70 characters on a phone
 RUN_TO = 0.82       # the counter reaches its number at 82 percent of its line, then holds
 FORBIDDEN = ("video", "clip", "clips", "footage", "source_video", "youtube_url", "download", "image", "images", "face", "person")
@@ -56,6 +56,25 @@ def sources_ok(sources: list) -> bool:
     """At least two sources, each with a title, an https address, the passage that carries the claim and the date it was read (CLAUDE.md A and B)."""
     good = [x for x in sources if str(x.get("url", "")).startswith("https://") and (x.get("passage") or "").strip() and (x.get("title") or "").strip() and x.get("read")]
     return len(good) >= 2
+
+
+def _norm(text: str) -> str:
+    """Quotes, dashes and spacing made plain so a passage typed by hand can be found in a saved page."""
+    t = str(text).replace("’", "'").replace("‘", "'").replace("“", '"').replace("”", '"').replace("–", "-").replace("—", "-")
+    return " ".join(t.split()).casefold()
+
+
+def passage_in_page(source: dict) -> bool:
+    """True when the source names a saved page (`file`) and its passage is in that page. A passage that nobody can find in the page proves nothing (CLAUDE.md A)."""
+    try:
+        return _norm(source["passage"]) in _norm(Path(source["file"]).read_text(errors="ignore"))
+    except (KeyError, OSError, TypeError):
+        return False
+
+
+def mark_checked(sources: list) -> list:
+    """Each source with `passage_checked`: true only when its passage was found in the saved page it names."""
+    return [{**s, "passage_checked": passage_in_page(s)} for s in sources]
 
 
 def validate(spec: dict) -> tuple[list[str], list[str]]:
@@ -97,6 +116,9 @@ def validate(spec: dict) -> tuple[list[str], list[str]]:
         errors.append("at most one counter card")
     if not sources_ok(spec.get("sources") or []):
         errors.append("at least two sources, each with title, https address, the passage that carries the claim and the date it was read")
+    for s in spec.get("sources") or []:
+        if s.get("file") and not passage_in_page(s):
+            errors.append(f"the passage of '{(s.get('title') or '')[:40]}' is not in the saved page {s.get('file')}")
     if lines and not (lines[0].get("text") or "").strip().endswith("?"):
         warns.append("the hook is not a question (the studio's taste is an open who, what, where, why or how question)")
     if lines and "subscribe" not in (lines[-1].get("text") or "").lower():
@@ -297,14 +319,21 @@ def build(spec: dict, out_root: Path | None = None, replace: bool = False) -> Pa
     words = subtitles.load_words(work / "words.json")
     shutil.copy(work / "words.json", folder / "words.json")
     subtitles.write_files(folder, subtitles.with_punctuation(words, lines))
+    checked = mark_checked(spec["sources"])
+    if not any(s["passage_checked"] for s in checked):
+        warns = [*warns, "no passage was checked against a saved page, so the claim ledger cannot mark anything VERIFIED"]
     meta = {
         "title": spec["title"], "format": "short", "kind": spec.get("kind", "number"), "built_by": "numbershort", "voice_style": spec.get("voice_style", "energetic"),
         "hold": True, "hold_reason": "a number Short built by numbershort.py: the owner watches it and releases it", "lines": [{"text": t, "visual": ""} for t in lines],
         "description": (spec.get("description") or "").rstrip() + "\n\nPictures: drawn by code for this video. Voice: synthetic.\n\nSources:\n" + "\n".join(f"- {s['title']}: {s['url']}" for s in spec["sources"]),
-        "tags": spec.get("tags", []), "sources": spec["sources"], "credits": ["Pictures drawn by code (original work)"], "limits": spec.get("limits", []),
+        "tags": spec.get("tags", []), "sources": checked, "credits": ["Pictures drawn by code (original work)"], "limits": spec.get("limits", []),
         "warnings": warns, "durations": [round(x, 2) for x in durations],
     }
     records.create(folder, meta)
+    import ledger
+    import reviewer
+
+    ledger.write(folder, meta, reviewer.source_text(meta))  # claims.json: each claim names the page whose saved text carries it, else it stays UNVERIFIED
     return folder
 
 

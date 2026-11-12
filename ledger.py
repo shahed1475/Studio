@@ -31,6 +31,7 @@ def build(meta: dict, source: str = "") -> list[dict]:
     conflicts = {c["claim"]: c for c in meta.get("conflicting_claims", []) if isinstance(c, dict) and "claim" in c}
     web_urls = [s.removeprefix("Checked against: ") for s in meta.get("sources", []) if str(s).startswith("Checked against: ")]
     article = reviewer.source_title(meta)
+    listed = [s for s in meta.get("sources", []) if isinstance(s, dict) and s.get("passage_checked") is True and s.get("passage")]
     rows = []
     for i, line in enumerate(l["text"] for l in meta.get("lines", [])):
         hedged = bool(reviewer.HEDGES.search(line))
@@ -39,8 +40,11 @@ def build(meta: dict, source: str = "") -> list[dict]:
             if not m:
                 continue
             claim = m.group(0).strip()
+            own = next((s for s in listed if reviewer._in_source(claim, s["passage"])), None)
             if claim in conflicts:
                 status, url, title, ev, note = "CONFLICTING", (web_urls[:1] or [""])[0], "web check", "", f"A reliable source says: {conflicts[claim].get('fact', 'otherwise')}"
+            elif own:  # a listed source whose passage was found in its saved page: the row names that source, not Wikipedia
+                status, url, title, ev, note = "VERIFIED", own.get("url", ""), own.get("title", ""), excerpt(own["passage"], claim), "passage found in the saved page of this source"
             elif reviewer._in_source(claim, source):
                 status, url, title, ev, note = "VERIFIED", f"https://en.wikipedia.org/wiki/{article.replace(' ', '_')}", f"Wikipedia: {article}", excerpt(source, claim), ""
             elif claim in verified:

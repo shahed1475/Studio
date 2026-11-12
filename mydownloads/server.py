@@ -71,12 +71,18 @@ class App:
         only = body.get("channel") or None
         if only is not None and not (isinstance(only, str) and store.CHANNEL_ID.match(only)):
             raise ValueError("That channel is not valid.")
+        scope = body.get("scope") or "mine"
+        if scope not in ("mine", "cc"):
+            raise ValueError("That search mode is not valid.")
         it = intent.parse(text)
         try:
-            res = self.engine.plan(it, only)
+            res = self.engine.plan(it, only, scope)
         except Exception as e:
             raise Upstream(engines.friendly(e))
-        return {"summary": intent.describe(it), "intent": {"count": it.count, "order": it.order, "kind": it.kind, "keywords": it.keywords, "urls": it.urls},
+        summary = intent.describe(it)
+        if scope == "cc" and not it.urls:
+            summary = f"Up to {min(it.count or engines.MAX_CC, engines.MAX_CC)} Creative Commons video{'s' if (it.count or 2) != 1 else ''}" + (f" about “{' '.join(it.keywords)}”" if it.keywords else "")
+        return {"summary": summary, "intent": {"count": it.count, "order": it.order, "kind": it.kind, "keywords": it.keywords, "urls": it.urls},
                 "items": res["items"], "notes": res["notes"]}
 
     def download(self, body) -> dict:

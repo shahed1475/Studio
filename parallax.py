@@ -131,7 +131,7 @@ def apply(clips: list, durations: list[float], size: tuple[int, int], workers: i
     cache.mkdir(parents=True, exist_ok=True)
     jobs = []
     for i, (clip, dur) in enumerate(zip(clips, durations)):
-        if not animate._drawn(clip) or dur <= 0:
+        if not (animate._drawn(clip) or animate.own_picture(clip)) or dur <= 0:
             stats["skipped"] += 1
             continue
         dmap, how = depth.depth_for(clip)

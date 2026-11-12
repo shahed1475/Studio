@@ -17,7 +17,7 @@ import config
 import ledger
 import reviewer
 
-ALLOWED_LICENSES = ("public domain", "cc0", "pdm", "ai-generated")
+ALLOWED_LICENSES = ("public domain", "cc0", "pdm", "ai-generated", "drawn by code (original work)")  # the last is numbershort's own cards
 CAUTION_LICENSES = ("cc by-sa", "cc by 4.0", "cc by 3.0", "cc by 2.0", "cc by")  # allowed with attribution, which the credits provide
 FORBIDDEN_WORDS = ("all rights reserved", "copyright", "fair use", "used with permission", "non-commercial", "cc by-nc", "cc by-nd")
 

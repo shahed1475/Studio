@@ -23,7 +23,7 @@ SETTINGS_FILE = config.ROOT / "settings.json"
 PRICES_FILE = config.ROOT / "data" / "or_prices.json"
 ROLES = ("script", "review", "cheap")
 DEFAULTS = {"enabled": False, "models": {"script": "", "review": "", "cheap": ""}, "daily_budget_usd": 1.0, "max_output_tokens": 6000,
-            "free": False, "free_daily_limit": 900, "local_fallback": False, "ai_art": False}  # free: try OpenRouter free models first; local_fallback: ask the local Ollama model when no cloud model answers (slow, off by default)
+            "free": False, "free_daily_limit": 900, "local_fallback": False, "ai_art": False, "free_art": False, "free_art_cap": 9000}  # free: try OpenRouter free models first; local_fallback: ask the local Ollama model when no cloud model answers (slow, off by default)
 MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9/._:+-]{1,99}$")
 UNKNOWN_PRICE = (10.0, 30.0)  # per million tokens: deliberately high, so an unknown model cannot slip past the cap
 
@@ -74,7 +74,10 @@ def validate_config(raw: dict) -> dict:
         elif k == "free":
             if not isinstance(v, bool):
                 raise ValueError("free models must be on or off")
-        elif k in ("local_fallback", "ai_art"):
+        elif k == "free_art_cap":
+            if isinstance(v, bool) or not isinstance(v, int) or not 100 <= v <= 10000:
+                raise ValueError("the free picture allowance must be between 100 and 10,000 Neurons a day")
+        elif k in ("local_fallback", "ai_art", "free_art"):
             if not isinstance(v, bool):
                 raise ValueError(f"{k} must be on or off")
         elif k == "free_daily_limit":

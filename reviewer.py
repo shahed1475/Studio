@@ -91,8 +91,10 @@ def source_title(meta: dict) -> str:
 def source_text(meta: dict) -> str:
     """The text of every source article of the video, cached on disk. Empty for a script with no source."""
     titles = source_titles(meta)
+    # a listed source (numbershort, ccbuild) counts only when its passage was found in the saved page it names
+    extra = "\n\n".join(s["passage"] for s in meta.get("sources") or [] if isinstance(s, dict) and s.get("passage_checked") is True and s.get("passage"))
     if not titles or meta.get("grounded") is not True:
-        return ""
+        return extra
     import config
     import wikipedia
 
@@ -107,7 +109,7 @@ def source_text(meta: dict) -> str:
             f.parent.mkdir(parents=True, exist_ok=True)
             f.write_text(text)
             parts.append(text)
-    return "\n\n".join(parts)
+    return "\n\n".join([*parts, *([extra] if extra else [])])
 
 
 _SRC_STOP = set("the a an and of to in on at for with from by is was were are be been it its this that these those as but or not no yet then there their they he she his her "

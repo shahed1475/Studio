@@ -1085,3 +1085,26 @@ def test_the_real_case_case_passes_and_fails_when_a_rule_a_warning_or_the_pictur
     monkeypatch.setattr(aiart, "CASE_PICTURES", "")  # mutation: a case's pictures may show anyone
     ok, detail = case()
     assert not ok and "pictures=False" in detail
+
+
+def test_eval_case_a_passage_must_be_found_in_its_page_and_breaking_that_rule_fails_it(monkeypatch):
+    import agenteval
+    import numbershort
+
+    ok, _ = agenteval.case_a_claim_is_verified_only_by_a_passage_found_in_the_saved_page_of_its_source()
+    assert ok
+    monkeypatch.setattr(numbershort, "passage_in_page", lambda source: True)  # mutation: any passage counts as found
+    bad, _ = agenteval.case_a_claim_is_verified_only_by_a_passage_found_in_the_saved_page_of_its_source()
+    assert not bad
+
+
+def test_eval_case_for_ccdoc_passes_and_fails_when_a_passage_need_not_be_found(monkeypatch):
+    import agenteval
+    import numbershort
+
+    name = "case_a_documentary_spec_without_a_found_passage_or_a_picture_is_refused_before_any_voice_is_paid_for"
+    ok, _ = getattr(agenteval, name)()
+    assert ok
+    monkeypatch.setattr(numbershort, "passage_in_page", lambda source: True)  # mutation: any passage counts as found
+    bad, _ = getattr(agenteval, name)()
+    assert not bad

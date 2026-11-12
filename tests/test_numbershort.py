@@ -147,3 +147,56 @@ def test_a_low_big_card_keeps_clear_of_the_hook_caption():
     a, b = numbershort.draw_card(top), numbershort.draw_card({**top, "low": True})
     box_a, box_b = a.convert("L").point(lambda v: 255 if v > 150 else 0).getbbox(), b.convert("L").point(lambda v: 255 if v > 150 else 0).getbbox()
     assert box_b[1] > 600 > box_a[1] - 1 or box_b[1] > box_a[1]  # the low card's glyphs start lower than the normal card's
+
+
+def _src_file(tmp_path, text):
+    f = tmp_path / "page.txt"
+    f.write_text(text)
+    return str(f)
+
+
+def test_a_passage_must_be_in_the_saved_page_it_names(tmp_path):
+    f = _src_file(tmp_path, "Ronaldo  became the first male player\nto score at five World Cups.")
+    good = [{**s, "file": f, "passage": "Ronaldo became the first male player to score at five World Cups"} for s in SPEC["sources"]]
+    assert numbershort.validate(spec(sources=good))[0] == []
+    bad = [{**s, "file": f, "passage": "Ronaldo scored at six World Cups"} for s in SPEC["sources"]]
+    assert any("not in the saved page" in e for e in numbershort.validate(spec(sources=bad))[0])
+
+
+def test_a_listed_page_that_is_missing_is_refused(tmp_path):
+    gone = [{**s, "file": str(tmp_path / "nope.txt")} for s in SPEC["sources"]]
+    assert any("not in the saved page" in e for e in numbershort.validate(spec(sources=gone))[0])
+
+
+def test_only_a_source_whose_passage_was_found_in_its_page_is_marked_checked(tmp_path):
+    f = _src_file(tmp_path, "alpha beta gamma")
+    srcs = [{**SPEC["sources"][0], "file": f, "passage": "alpha beta"}, {**SPEC["sources"][1]}]
+    out = numbershort.mark_checked(srcs)
+    assert out[0]["passage_checked"] is True and out[1]["passage_checked"] is False
+
+
+def test_a_number_short_may_run_long_enough_for_the_studios_hundred_word_rule():
+    assert numbershort.MAX_WORDS >= 130
+
+
+def test_a_build_writes_a_claim_ledger_naming_the_listed_source_and_leaves_unchecked_claims_open(tmp_path, monkeypatch):
+    page = tmp_path / "page.txt"
+    page.write_text("Hakan Şükür scored in 2002 for Turkey.")
+    srcs = [{**SPEC["sources"][0], "file": str(page), "passage": "Hakan Şükür scored in 2002 for Turkey"}, SPEC["sources"][1]]
+
+    def narrate(lines, work, *a, **k):
+        work.mkdir(parents=True, exist_ok=True)
+        ass = work / "captions.ass"
+        ass.write_text("x")
+        (work / "words.json").write_text(json.dumps([{"s": i, "e": i + 0.5, "w": f"w{i}", "i": i} for i in range(len(lines))]))
+        return work / "narration.mp3", ass, [1.0] * len(lines)
+
+    monkeypatch.setattr(tts, "narrate", narrate)
+    import render
+
+    monkeypatch.setattr(render, "render", lambda clips, durations, narration, ass, work, out, **k: (Path(out).write_bytes(b"x"), out)[1])
+    monkeypatch.setattr(numbershort, "counter_clip", lambda card, seconds, folder, work, theme="pitch": folder / "anim" / "counter.mp4")
+    folder = numbershort.build(spec(sources=srcs), out_root=tmp_path)
+    rows = json.loads((folder / "claims.json").read_text())
+    by_claim = {r["claim_text"]: r for r in rows}
+    assert by_claim["2002"]["verification_status"] == "VERIFIED" and by_claim["2002"]["source_url"] == srcs[0]["url"]

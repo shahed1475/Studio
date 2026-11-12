@@ -44,3 +44,8 @@ backups/
 .agents/
 skills-lock.json
 .cto-toolkit/
+
+# CC0 asset files are re-downloadable; the ledger is kept
+assets/cc0/hdri/
+assets/cc0/tex/
+output_remote/
