@@ -35,7 +35,8 @@ trap cleanup EXIT
 die() { echo "hub.sh: $*" >&2; exit 2; }
 run() { if [[ "${DRY:-0}" == "1" ]]; then echo "DRY: $*"; else "$@"; fi; }
 has() { grep -qE "^$1=.+" "$ENV_FILE"; }
-compose() { HUB_ENV_FILE="$ENV_FILE" HUB_DATA_DIR="$DATA" HUB_UID="$(id -u)" HUB_GID="$(id -g)" run docker compose -f "$HERE/hub-compose.yml" "$@"; }
+MAIL_DIR="${HUB_MAIL_DIR:-$HOME/studio/data/hubmail}"   # written by the studio dashboard (Settings, Mail for the Creator Hub); mounted read-only
+compose() { mkdir -p "$MAIL_DIR"; chmod 700 "$MAIL_DIR"; HUB_MAIL_DIR="$MAIL_DIR" HUB_ENV_FILE="$ENV_FILE" HUB_DATA_DIR="$DATA" HUB_UID="$(id -u)" HUB_GID="$(id -g)" run docker compose -f "$HERE/hub-compose.yml" "$@"; }
 
 check() {
   local public=0 open=0 a

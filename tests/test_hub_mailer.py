@@ -105,3 +105,33 @@ def test_bad_port_is_a_clear_error(monkeypatch, bad):
         return
     with pytest.raises(ValueError, match="HUB_SMTP_PORT"):
         mailer.from_env()
+
+
+def _bridge(tmp_path, monkeypatch, data, mode=0o600):
+    import json
+    f = tmp_path / "mail.json"
+    f.write_text(json.dumps(data))
+    f.chmod(mode)
+    monkeypatch.setenv("HUB_MAIL_BRIDGE", str(f))
+    monkeypatch.delenv("HUB_SMTP_HOST", raising=False)
+    return f
+
+
+def test_the_dashboards_gmail_becomes_the_mailer_with_a_fixed_gmail_host(tmp_path, monkeypatch):
+    from hub import mailer
+    _bridge(tmp_path, monkeypatch, {"address": "Me@Gmail.com", "app_password": "abcdefghijklmnop"})
+    m = mailer.from_env()
+    assert isinstance(m, mailer.SMTPMailer) and (m.host, m.port, m.user, m.sender) == ("smtp.gmail.com", 587, "me@gmail.com", "me@gmail.com")
+
+
+def test_a_loose_or_malformed_bridge_file_is_ignored_and_removing_it_falls_back(tmp_path, monkeypatch):
+    from hub import mailer
+    f = _bridge(tmp_path, monkeypatch, {"address": "me@gmail.com", "app_password": "abcdefghijklmnop"}, mode=0o644)
+    assert isinstance(mailer.from_env(), mailer.OutboxMailer)  # readable by others: not trusted
+    f.chmod(0o600)
+    assert isinstance(mailer.from_env(), mailer.SMTPMailer)
+    f.unlink()
+    assert isinstance(mailer.from_env(), mailer.OutboxMailer)  # removed in the dashboard: back to the local outbox
+    for bad in ({"address": "me@evil.com", "app_password": "abcdefghijklmnop"}, {"address": "me@gmail.com", "app_password": "short"}, ["x"]):
+        _bridge(tmp_path, monkeypatch, bad)
+        assert isinstance(mailer.from_env(), mailer.OutboxMailer)

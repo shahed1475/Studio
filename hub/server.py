@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from . import a2a, agents as agent_team, auth, edge, keystore, llm, profile, research, secretstore
+from . import a2a, agents as agent_team, auth, edge, keystore, llm, mailer, profile, research, secretstore
 
 WEB = Path(__file__).parent / "web"
 COOKIE, CSRF_COOKIE = "hub_session", "hub_csrf"
@@ -304,7 +304,9 @@ def startup_report(environ=None, path=None) -> list[str]:
     lines = [f"Secrets file ignored: {loaded['ignored']}"] if loaded["ignored"] else []
     mail_parts = ("HUB_SMTP_HOST", "HUB_SMTP_USER", "HUB_SMTP_PASSWORD")
     missing = [n for n in mail_parts if not st[n]]
-    if not missing:
+    if mailer.bridge():
+        lines.append("Mail: Gmail saved in the main dashboard, sign-in codes are sent by email (read at every send)")
+    elif not missing:
         lines.append("Mail: SMTP is set, sign-in codes are sent by email")
     elif len(missing) == len(mail_parts):
         lines.append("Mail: local outbox only (nothing is sent; codes are written to data/hub/outbox/)")

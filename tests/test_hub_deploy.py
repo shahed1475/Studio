@@ -65,11 +65,12 @@ def test_compose_file_is_valid_and_rendered_settings_are_locked_down(tmp_path):
     env_file = tmp_path / "hub.env"
     env_file.write_text("HUB_KEYSTORE_KEY=x\n")
     r = subprocess.run(["docker", "compose", "-f", str(D / "hub-compose.yml"), "config", "--format", "json"], capture_output=True, text=True,
-                       env={**os.environ, "HUB_ENV_FILE": str(env_file), "HUB_DATA_DIR": str(tmp_path), "HUB_UID": "1000", "HUB_GID": "1000"})
+                       env={**os.environ, "HUB_ENV_FILE": str(env_file), "HUB_DATA_DIR": str(tmp_path), "HUB_MAIL_DIR": str(tmp_path), "HUB_UID": "1000", "HUB_GID": "1000"})
     assert r.returncode == 0, r.stderr[-300:]
     svc = json.loads(r.stdout)["services"]["hub"]
     assert svc["read_only"] is True and svc["cap_drop"] == ["ALL"] and svc["ports"][0]["host_ip"] == "127.0.0.1" and "network_mode" not in svc
-    assert [v["target"] for v in svc["volumes"]] == ["/app/data/hub"] and svc["user"] == "1000:1000"
+    assert [v["target"] for v in svc["volumes"]] == ["/app/data/hub", "/hubmail"] and svc["user"] == "1000:1000"
+    assert [v.get("read_only") for v in svc["volumes"]] == [None, True]  # the studio's Gmail bridge is mounted read-only
 
 
 # ---- hub.sh ----

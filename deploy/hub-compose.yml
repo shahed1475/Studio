@@ -20,7 +20,9 @@ services:
     env_file: ["${HUB_ENV_FILE:?HUB_ENV_FILE must name the owner-only env file}"]
     environment:
       HUB_TRUST_PROXY: "1"   # the proxy in front sets the client address; rate limits use it
-    volumes: ["${HUB_DATA_DIR:?HUB_DATA_DIR must name the data folder}:/app/data/hub"]
+    volumes:
+      - "${HUB_DATA_DIR:?HUB_DATA_DIR must name the data folder}:/app/data/hub"
+      - "${HUB_MAIL_DIR:?HUB_MAIL_DIR must name the folder the studio dashboard writes the Gmail bridge to}:/hubmail:ro"  # the main dashboard's Gmail, read-only, read at every send
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8931/healthz', timeout=5).status == 200 else 1)"]
       interval: 60s
