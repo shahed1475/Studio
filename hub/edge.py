@@ -38,7 +38,7 @@ def forwarded_host(headers) -> str | None:
     """The address the visitor's browser used (the Worker's), only when the request proved it came from the Worker; the same-site check compares the page's origin with it."""
     if not edge_secret() or not edge_ok(headers, "/"):
         return None
-    return str(headers.get("X-Forwarded-Host", "")).strip()[:253] or None
+    return str(headers.get("X-Edge-Host", "")).strip()[:253] or None
 
 
 def turnstile_enabled() -> bool:

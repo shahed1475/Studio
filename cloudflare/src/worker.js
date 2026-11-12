@@ -1,7 +1,7 @@
 // Nightloom's edge on Cloudflare (13 Nov 2026): static site files come from Workers Static Assets; only /api/* and the privacy page reach this Worker,
 // which forwards them to the hub on the owner's server with the edge secret and the visitor's address. Everything else the visitor sends is dropped, never trusted.
 const FORWARD = [/^\/api\//, /^\/privacy\.html$/];
-const STRIP = ["x-edge-secret", "x-client-ip", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-real-ip", "forwarded", "cf-connecting-ip", "host"];
+const STRIP = ["x-edge-secret", "x-client-ip", "x-forwarded-for", "x-forwarded-host", "x-edge-host", "x-forwarded-proto", "x-real-ip", "forwarded", "cf-connecting-ip", "host"];
 const MAX_BODY = 100_000;
 
 export const forwarded = (pathname) => FORWARD.some((r) => r.test(pathname));
@@ -16,7 +16,7 @@ export async function handle(request, env, fetchFn = fetch) {
   if (sends && Number(request.headers.get("content-length") || 0) > MAX_BODY) return new Response("Too large", { status: 413 });
   headers.set("X-Edge-Secret", env.EDGE_SECRET);
   headers.set("X-Client-IP", request.headers.get("cf-connecting-ip") || "");
-  headers.set("X-Forwarded-Host", url.host);
+  headers.set("X-Edge-Host", url.host);  // not X-Forwarded-Host: the proxy in front of the hub overwrites that one with its own name
   let res;
   try {
     res = await fetchFn(new URL(url.pathname + url.search, env.ORIGIN), { method: request.method, headers, body: sends ? request.body : undefined, redirect: "manual" });

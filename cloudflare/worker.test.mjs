@@ -21,7 +21,7 @@ test("the origin gets the secret and the visitor address; spoofed headers are dr
   const h = calls[0].init.headers;
   assert.equal(calls[0].u, "https://origin.example/api/config?x=1");
   assert.equal(h.get("x-edge-secret"), "s3cret"); assert.equal(h.get("x-client-ip"), "203.0.113.9");
-  assert.equal(h.get("x-forwarded-host"), "n.workers.dev"); assert.equal(h.get("x-forwarded-for"), null);
+  assert.equal(h.get("x-edge-host"), "n.workers.dev"); assert.equal(h.get("x-forwarded-host"), null); assert.equal(h.get("x-forwarded-for"), null);
   assert.equal(h.get("cookie"), "hub_session=t"); assert.equal(res.headers.get("set-cookie"), "a=b");
 });
 test("a missing secret or origin is a 503, an unreachable origin a 502, a big body a 413", async () => {

@@ -75,6 +75,6 @@ def test_behind_the_worker_the_pages_origin_is_checked_against_the_forwarded_hos
     monkeypatch.setenv("HUB_EDGE_SECRET", SECRET)
     monkeypatch.delenv("HUB_TURNSTILE_SECRET", raising=False)
     port, mail = hub
-    ok = {**XH, "X-Edge-Secret": SECRET, "X-Forwarded-Host": "nightloom.me.workers.dev", "Origin": "https://nightloom.me.workers.dev"}
+    ok = {**XH, "X-Edge-Secret": SECRET, "X-Edge-Host": "nightloom.me.workers.dev", "Origin": "https://nightloom.me.workers.dev"}
     assert call(port, "POST", "/api/auth/request", {"email": "a@b.co"}, headers=ok)[0] == 200
     assert call(port, "POST", "/api/auth/request", {"email": "a@b.co"}, headers={**ok, "Origin": "https://evil.example"})[0] == 403  # another site's page is still refused
