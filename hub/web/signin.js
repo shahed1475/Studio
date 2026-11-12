@@ -33,6 +33,10 @@ function countdown() {
   tick(); timer = setInterval(tick, 1000);
 }
 let turnstile = { key: "", token: "", id: null };
+async function tsReady() {  // the bot check takes a moment: wait for it (up to 12 s) instead of failing the first click
+  for (let i = 0; i < 60 && turnstile.id !== null && !turnstile.token; i++) { say($("email-err"), ""); $("email-err").textContent = "Checking that you are a person..."; await new Promise((r) => setTimeout(r, 200)); }
+  $("email-err").textContent = "";
+}
 async function sendCode() {
   const r = await api("/api/auth/request", { email, turnstile: turnstile.token });
   if (turnstile.id !== null && window.turnstile) { window.turnstile.reset(turnstile.id); turnstile.token = ""; }  // a token works once
@@ -43,7 +47,7 @@ emailForm.addEventListener("submit", async (ev) => {
   ev.preventDefault(); say($("email-err"), ""); email = $("email").value.trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return say($("email-err"), MESSAGES.bad_email);
   $("send-btn").disabled = true;
-  try { await sendCode(); step("code"); countdown(); } catch (e) { say($("email-err"), e.message); } finally { $("send-btn").disabled = false; }
+  try { await tsReady(); await sendCode(); step("code"); countdown(); } catch (e) { say($("email-err"), e.message); } finally { $("send-btn").disabled = false; }
 });
 codeForm.addEventListener("submit", async (ev) => {
   ev.preventDefault(); say($("code-err"), "");

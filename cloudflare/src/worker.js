@@ -1,6 +1,6 @@
 // Nightloom's edge on Cloudflare (13 Nov 2026): static site files come from Workers Static Assets; only /api/* and the privacy page reach this Worker,
 // which forwards them to the hub on the owner's server with the edge secret and the visitor's address. Everything else the visitor sends is dropped, never trusted.
-const FORWARD = [/^\/api\//, /^\/privacy\.html$/];
+const FORWARD = [/^\/api\//, /^\/a2a\//, /^\/\.well-known\//, /^\/privacy\.html$/];
 const STRIP = ["x-edge-secret", "x-client-ip", "x-forwarded-for", "x-forwarded-host", "x-edge-host", "x-forwarded-proto", "x-real-ip", "forwarded", "cf-connecting-ip", "host"];
 const MAX_BODY = 100_000;
 

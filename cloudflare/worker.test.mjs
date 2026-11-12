@@ -6,7 +6,7 @@ const env = { EDGE_SECRET: "s3cret", ORIGIN: "https://origin.example" };
 const spy = () => { const calls = []; const f = async (u, init) => { calls.push({ u: String(u), init }); return new Response("{}", { status: 200, headers: { "set-cookie": "a=b" } }); }; return { calls, f }; };
 
 test("only the api and the privacy page are forwarded", () => {
-  assert.ok(forwarded("/api/config") && forwarded("/privacy.html"));
+  assert.ok(forwarded("/api/config") && forwarded("/privacy.html") && forwarded("/a2a/concierge") && forwarded("/.well-known/agent-card.json"));
   assert.ok(!forwarded("/") && !forwarded("/app.html") && !forwarded("/apix") && !forwarded("/../api/x") === true);
 });
 test("a request for anything else is a 404 and never reaches the origin", async () => {
