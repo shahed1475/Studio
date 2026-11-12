@@ -92,3 +92,8 @@ def test_without_a_linked_chat_nothing_is_sent_and_nothing_raises():
 def test_errors_never_carry_a_secret():
     alerts._save({"telegram_bot_token": TOKEN})
     assert TOKEN not in alerts.clean(f"failed https://api.telegram.org/bot{TOKEN}/getMe") and "bot***" in alerts.clean(f"https://api.telegram.org/bot{TOKEN}/x")
+
+
+def test_an_app_password_pasted_with_capitals_dashes_or_odd_spaces_is_accepted_in_its_clean_form():
+    alerts.save_gmail("me@gmail.com", "ABCD-efgh\u00a0ijkl mnop ")
+    assert json.loads(alerts.BRIDGE.read_text())["app_password"] == PW

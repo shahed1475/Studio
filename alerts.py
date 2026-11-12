@@ -68,7 +68,7 @@ def clean(text: str, *secrets: str) -> str:
 
 # ---- Gmail ----
 def save_gmail(address: str, app_password: str) -> None:
-    address, pw = str(address).strip().lower(), re.sub(r"\s+", "", str(app_password))  # Google shows the password in four groups with spaces
+    address, pw = str(address).strip().lower(), re.sub(r"[\s\u00a0\u200b-]+", "", str(app_password)).lower()  # Google shows it in four groups; a copy can add spaces, dashes, a non-breaking space or capitals  # Google shows the password in four groups with spaces
     if not EMAIL.match(address):
         raise ValueError("use your full Gmail address (name@gmail.com)")
     if not APP_PASSWORD.match(pw):
