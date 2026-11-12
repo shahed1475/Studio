@@ -145,3 +145,15 @@ def test_the_credit_names_the_model_that_really_drew_the_pictures(env):
     (base / "doc.json").write_text(json.dumps(spec))
     got = specrun.prepare(base, "doc")
     assert "Cloudflare" in got["ai_credit"] and "AI-generated" in got["ai_credit"] and "Z-Image" not in got["ai_credit"]
+
+
+def test_a_picture_must_be_a_job_id_never_a_file_path(env):
+    put(env, change=lambda s: s["lines"][2].update(picture="/etc/passwd"))
+    assert specrun.tick(github=False)["rejected"] == ["the-test-film"] and env["built"] == []
+    assert "not an id in pictures.json" in specrun.status()["specs"]["the-test-film"]["reasons"][0]
+
+
+def test_a_short_slug_can_never_leave_the_output_folder(tmp_path):
+    import re
+    slug = "../../x/Evil Slug"
+    assert re.sub(r"[^a-z0-9]+", "-", slug.lower()).strip("-") == "x-evil-slug"

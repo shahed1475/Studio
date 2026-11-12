@@ -150,9 +150,13 @@ def check(base: Path) -> tuple[str | None, dict | None, list[str], list[str]]:
         spec = prepare(base, kind)
     except (OSError, ValueError) as e:
         return kind, None, [f"the spec files cannot be read: {e}"], []
-    if kind == "doc":
-        import ccdoc
+    import ccdoc
 
+    ids = set(ccdoc.load_jobs(base))
+    bad = [p for p in [l.get("picture") for l in spec.get("lines") or []] + [spec.get("thumb_picture")] if p and p not in ids]
+    if bad:  # a picture is a job id from pictures.json, never a file path: a spec from a public repo must not name a file on the server
+        return kind, spec, [f"picture '{str(p)[:40]}' is not an id in pictures.json" for p in dict.fromkeys(bad)][:8], []
+    if kind == "doc":
         errors, warns = ccdoc.validate(spec, base)
     else:
         import ccbuild

@@ -151,7 +151,7 @@ def build(spec: dict, base: Path, out_root: Path | None = None, replace: bool = 
     missing = [str(p) for p in pics if not p.exists()]
     if missing:
         raise FileNotFoundError("pictures not drawn yet: " + ", ".join(Path(m).name for m in missing))
-    slug = spec.get("slug") or re.sub(r"[^a-z0-9]+", "-", spec["title"].lower()).strip("-")[:50]
+    slug = re.sub(r"[^a-z0-9]+", "-", (spec.get("slug") or spec["title"]).lower()).strip("-")[:50] or "short"  # never a path: a spec may come from a public repo
     folder = (out_root or config.OUT) / slug
     if folder.exists():
         mine = False
