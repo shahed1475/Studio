@@ -745,6 +745,8 @@ class H(BaseHTTPRequestHandler):
             self.send_page_file("monitor.html")
         elif u.path == "/notifications":
             self.send_page_file("notifications.html")
+        elif u.path == "/mail":  # a small page just for the Gmail and Telegram settings (alerts.py), behind the same login as everything else
+            self.send_page_file("mail.html")
         elif u.path == "/api/notifications":
             self.send_json(notifications_view())
         elif u.path == "/api/desk":

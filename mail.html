@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Mail and alerts · Story Studio</title>
+<style>
+:root{color-scheme:light;--bg:#f3f3f3;--surface:#fff;--ink:#0a0a0a;--ink2:#595959;--line:#dedede;--bad:#0a0a0a}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#050505;--surface:#0f0f0f;--ink:#f5f5f5;--ink2:#a3a3a3;--line:#262626}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 ui-sans-serif,system-ui,sans-serif}
+main{max-width:640px;margin:0 auto;padding:24px 16px 64px}
+h1{font-size:28px;letter-spacing:-.03em;margin:8px 0 4px}h2{font-size:18px;margin:0 0 6px}
+.sub{color:var(--ink2);margin:0 0 20px}.card{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:20px;margin-top:16px}
+p{margin:6px 0 12px;color:var(--ink2)}label{display:block;font-weight:600;margin:12px 0 4px;color:var(--ink)}
+input{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--ink);font:inherit}
+.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+button{padding:12px 18px;min-height:44px;border-radius:999px;border:1px solid var(--ink);background:var(--ink);color:var(--bg);font:inherit;font-weight:600;cursor:pointer}
+button.ghost{background:transparent;color:var(--ink)}button:disabled{opacity:.4;cursor:not-allowed}
+.msg{margin-top:14px;padding:10px 14px;border:1px solid var(--line);border-radius:12px;min-height:1.5em}
+.msg.err{border-color:var(--ink);font-weight:600}a{color:var(--ink)}
+</style>
+</head>
+<body>
+<main>
+  <p><a href="/">&larr; Back to the dashboard</a></p>
+  <h1>Mail and alerts</h1>
+  <p class="sub">Saved privately on your server. A password or token is never shown again.</p>
+
+  <section class="card" aria-labelledby="gm-h">
+    <h2 id="gm-h">Gmail for the Creator Hub's sign-in codes</h2>
+    <p id="gm-state">Checking...</p>
+    <p>Use a Google <b>app password</b>, not your normal password: <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">create one here</a> (2-Step Verification must be on). It is 16 letters, shown in four groups.</p>
+    <label for="gm-addr">Gmail address</label><input id="gm-addr" type="text" inputmode="email" autocomplete="off" spellcheck="false" placeholder="you@gmail.com">
+    <label for="gm-pw">App password</label><input id="gm-pw" type="password" autocomplete="new-password" spellcheck="false" placeholder="16 letters">
+    <div class="row"><button id="gm-save">Save</button><button class="ghost" id="gm-test" disabled>Send a test email</button><button class="ghost" id="gm-rm" disabled>Remove</button></div>
+    <div class="msg" id="gm-msg" role="status" aria-live="polite"></div>
+  </section>
+
+  <section class="card" aria-labelledby="tg-h">
+    <h2 id="tg-h">Alerts on Telegram</h2>
+    <p id="tg-state">Checking...</p>
+    <p>In Telegram, open <b>@BotFather</b>, send <b>/newbot</b>, and paste the token it gives you. Then open your new bot, press <b>Start</b>, send it any word, and press <b>Find my chat</b>.</p>
+    <label for="tg-token">Bot token</label><input id="tg-token" type="password" autocomplete="new-password" spellcheck="false" placeholder="123456789:AA...">
+    <div class="row"><button id="tg-save">Save</button><button class="ghost" id="tg-find" disabled>Find my chat</button><button class="ghost" id="tg-test" disabled>Send a test message</button><button class="ghost" id="tg-rm" disabled>Remove</button></div>
+    <div class="msg" id="tg-msg" role="status" aria-live="polite"></div>
+  </section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+async function post(body,msgEl){
+  msgEl.className="msg";msgEl.textContent="Working...";
+  try{
+    const r=await fetch("/api/alerts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const j=await r.json().catch(()=>({error:"The dashboard answered something unexpected. Reload the page."}));
+    if(!r.ok||j.error){msgEl.className="msg err";msgEl.textContent=j.error||"Something went wrong.";return false}
+    msgEl.textContent=j.message||"Done.";show(j.alerts);return true
+  }catch(e){msgEl.className="msg err";msgEl.textContent="The dashboard is not reachable. Check that Tailscale is connected.";return false}
+}
+function show(a){
+  if(!a){$("gm-state").textContent="Not available in this studio.";return}
+  const g=a.gmail,t=a.telegram;
+  $("gm-state").textContent=g.saved?"Saved for "+g.address+". The hub is using it.":"Nothing saved yet.";
+  if(g.address&&!$("gm-addr").value)$("gm-addr").value=g.address;
+  $("gm-test").disabled=$("gm-rm").disabled=!g.saved;$("gm-pw").value="";
+  $("tg-state").textContent=t.saved?("Bot @"+t.bot+" saved"+(t.chat?", your chat is linked.":". Your chat is not linked yet.")):"Nothing saved yet.";
+  $("tg-find").disabled=!t.saved;$("tg-test").disabled=!t.chat;$("tg-rm").disabled=!t.saved;$("tg-token").value="";
+}
+async function load(){try{const r=await fetch("/api/state");if(r.status===401||r.redirected){location.href="/login";return}show((await r.json()).settings.alerts)}catch(e){$("gm-state").textContent=$("tg-state").textContent="Could not load. Reload the page."}}
+$("gm-save").onclick=()=>{const a=$("gm-addr").value.trim(),p=$("gm-pw").value;if(!a||!p.trim()){$("gm-msg").className="msg err";$("gm-msg").textContent="Enter the Gmail address and the app password.";return}post({action:"save",which:"gmail",address:a,password:p},$("gm-msg"))};
+$("gm-test").onclick=()=>post({action:"test",which:"gmail"},$("gm-msg"));
+$("gm-rm").onclick=()=>{if(confirm("Remove the saved Gmail? The hub will stop sending codes."))post({action:"remove",which:"gmail"},$("gm-msg"))};
+$("tg-save").onclick=()=>{const t=$("tg-token").value.trim();if(!t){$("tg-msg").className="msg err";$("tg-msg").textContent="Paste the bot token first.";return}post({action:"save",which:"telegram",token:t},$("tg-msg"))};
+$("tg-find").onclick=()=>post({action:"find",which:"telegram"},$("tg-msg"));
+$("tg-test").onclick=()=>post({action:"test",which:"telegram"},$("tg-msg"));
+$("tg-rm").onclick=()=>{if(confirm("Remove the saved Telegram bot?"))post({action:"remove",which:"telegram"},$("tg-msg"))};
+load();
+</script>
+</body>
+</html>

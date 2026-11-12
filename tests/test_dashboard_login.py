@@ -70,3 +70,12 @@ def test_wrong_password_and_lockout(server):
 
 def test_unknown_host_refused(server):
     assert call(server, "GET", "/healthz", host="evil.example:80")[0] == 403
+
+
+def test_the_mail_page_and_its_endpoint_need_the_login_and_the_page_never_holds_a_secret(server):
+    webauth.set_password("me@gmail.com", "correct horse battery")
+    assert call(server, "GET", "/mail")[0] == 303 and call(server, "POST", "/api/alerts", "{}")[0] == 401  # signed out: sent to the login, endpoint refused
+    cookie = login(server)[1]["Set-Cookie"].split(";")[0]
+    st, _h, body = call(server, "GET", "/mail", headers={"Cookie": cookie})
+    assert st == 200 and b"/api/alerts" in body and b"apppasswords" in body
+    assert b"abcdefghijklmnop" not in body  # the page carries no password, only forms
