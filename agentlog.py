@@ -24,6 +24,12 @@ def event(kind: str, title: str, detail: str = "", notify: bool = False, now: dt
             subprocess.run(["notify-send", "-a", "Story Studio", title, detail], timeout=5, capture_output=True)
         except Exception:  # no notify-send, no desktop session: the feed still has it
             pass
+    try:  # an important event also reaches the owner's Telegram (alerts.py: best effort, deduped, capped, never raises)
+        import alerts
+
+        alerts.push(e["kind"], title, detail, notify, now)
+    except Exception:
+        pass
     return e
 
 

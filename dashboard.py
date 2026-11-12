@@ -3,6 +3,7 @@
 
 Stdlib only. Binds to localhost; POSTs must come from the dashboard page itself.
 """
+import alerts
 import json
 import os
 import re
@@ -227,7 +228,7 @@ def state() -> dict:
         "agent": {"unread": __import__("agentlog").unread()},
         "tenant": __import__("tenantmode").is_tenant(), "niche_confirmed": __import__("niche").current()["brief"] is not None and bool((__import__("niche").current()["brief"] or {}).get("confirmed")),
         "auth": {"on": webauth.enabled(), "email": webauth.owner_email()},
-        "settings": {"pexels_key": "saved" if load_settings().get("pexels_key") else "", "pixabay_key": "saved" if pixabay_key() else "", "smithsonian_key": "saved" if smithsonian_key() else ""},
+        "settings": {"pexels_key": "saved" if load_settings().get("pexels_key") else "", "pixabay_key": "saved" if pixabay_key() else "", "smithsonian_key": "saved" if smithsonian_key() else "", "alerts": None if __import__("tenantmode").is_tenant() else alerts.status()},
     }
 
 
@@ -1131,6 +1132,31 @@ class H(BaseHTTPRequestHandler):
             if which == "openrouter" and __import__("tenantmode").is_tenant():
                 __import__("tenantmode").on_key_saved()
             return {"ok": True}
+        if path == "/api/alerts":  # (the owner's studio only) Gmail for the hub's sign-in codes, Telegram for studio alerts: secrets in, never out (alerts.py)
+            if __import__("tenantmode").is_tenant():
+                raise ValueError("not available in a user studio")
+            act, which = str(b.get("action", "")), str(b.get("which", ""))
+            if (act, which) == ("save", "gmail"):
+                alerts.save_gmail(b.get("address"), b.get("password"))
+                msg = "Gmail saved and hidden. Press Send a test email."
+            elif (act, which) == ("save", "telegram"):
+                name = alerts.save_telegram(b.get("token"))
+                msg = f"Saved. Now open @{name} in Telegram, press Start, send it any word, then press Find my chat." if name else "Saved. Open your bot in Telegram, press Start and send it any word."
+            elif (act, which) == ("find", "telegram"):
+                msg = alerts.find_chat()
+            elif (act, which) == ("test", "gmail"):
+                msg = alerts.test_gmail()
+            elif (act, which) == ("test", "telegram"):
+                msg = alerts.test_telegram()
+            elif (act, which) == ("remove", "gmail"):
+                alerts.remove_gmail()
+                msg = "Gmail removed."
+            elif (act, which) == ("remove", "telegram"):
+                alerts.remove_telegram()
+                msg = "Telegram removed."
+            else:
+                raise ValueError("unknown action")
+            return {"ok": True, "message": msg, "alerts": alerts.status()}
         if path == "/api/settings":
             s = load_settings()
             if b.get("pexels_key"):

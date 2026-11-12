@@ -15,6 +15,16 @@ def _isolate_autopilot_log(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_alert_files(tmp_path, monkeypatch):
+    """No test may read the owner's saved Gmail or Telegram settings, write the hub's mail bridge, or send an alert."""
+    import alerts
+
+    monkeypatch.setattr(alerts, "SETTINGS", tmp_path / "alerts-settings.json")
+    monkeypatch.setattr(alerts, "BRIDGE", tmp_path / "hubmail" / "mail.json")
+    monkeypatch.setattr(alerts, "STATE", tmp_path / "alerts_state.json")
+
+
+@pytest.fixture(autouse=True)
 def _isolate_agent_files(tmp_path, monkeypatch):
     """No test may write the owner's real activity feed, inbox or lessons (tests/test_duplicates.py once filled the local feed with 34 invented 'Roswell Incident' events)."""
     import agentbus
