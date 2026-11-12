@@ -54,3 +54,29 @@ def test_only_a_new_video_gets_the_house_style_never_a_redo_a_repair_or_a_video_
 def test_the_setting_is_part_of_autopilots_known_settings_and_off_by_default():
     assert autopilot.DEFAULTS["house_style"]["enabled"] is False and autopilot.DEFAULTS["house_style"]["min_credit"] >= 8.0
     assert autopilot.DEFAULTS["house_style"]["look"] == "photo"
+
+
+def test_with_the_free_cloudflare_pictures_the_look_needs_only_the_script_money_and_buys_no_clips(monkeypatch):
+    """13 Nov 2026: the pictures cost nothing on the owner's free account, so a $0.83 balance can still make a realistic-look video, but never pays for animated clips."""
+    import freeart
+
+    fund(monkeypatch, 0.83)
+    assert run._house_style("doc") == {}  # paid pictures and clips: not at this balance
+    monkeypatch.setattr(freeart, "usable", lambda *a, **k: True)
+    got = run._house_style("doc")
+    assert got["art_style"] == "photo" and got["animate"] == 0 and got["animate_budget"] == 0.0 and got["parallax"] is True
+    fund(monkeypatch, 0.4)
+    assert run._house_style("doc") == {}  # below the free floor the reviews cannot be paid
+
+
+def test_autopilot_starts_a_video_at_the_lower_floor_only_while_free_pictures_are_usable(monkeypatch):
+    import freeart
+    import test_autopilot as t
+
+    low = autopilot.MIN_CREDIT_FREE_ART + 0.05
+    assert autopilot.MIN_CREDIT_FREE_ART < autopilot.MIN_CREDIT_TO_MAKE
+    monkeypatch.setattr(freeart, "usable", lambda *a, **k: False)
+    assert ("make", None) not in t.plan(t.state([], credit_left=low))
+    monkeypatch.setattr(freeart, "usable", lambda *a, **k: True)
+    assert ("make", None) in t.plan(t.state([], credit_left=low))
+    assert ("make", None) not in t.plan(t.state([], credit_left=autopilot.MIN_CREDIT_FREE_ART - 0.01))

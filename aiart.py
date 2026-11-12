@@ -14,6 +14,7 @@ import io
 import re
 
 import config
+import freeart
 import llm
 import modelcfg
 
@@ -36,10 +37,16 @@ PRICE_EACH = 0.034  # dollars per picture, measured 20 Oct 2026: $3.19 for 95 pi
 _off_until: dict = {}  # a failed call (no credit) pauses drawing for the rest of the day
 
 
-def enabled(now: dt.datetime | None = None) -> bool:
+def paid_enabled(now: dt.datetime | None = None) -> bool:
+    """The OpenRouter image model: switched on in Settings, a key, and no 402 today."""
     now = now or llm._now()
     cfg = llm.load_config()
     return bool(cfg.get("ai_art") and llm.api_key() and _off_until.get("day") != now.strftime("%Y-%m-%d"))
+
+
+def enabled(now: dt.datetime | None = None) -> bool:
+    """Any way of drawing: the free Cloudflare account (freeart, tried first) or the paid model."""
+    return freeart.available(now=now) or paid_enabled(now)
 
 
 def _clean(text: str, limit: int = 220) -> str:
@@ -96,7 +103,10 @@ def generate(line: str, visual: str, topic: str, vertical: bool = False, now: dt
     dest = config.CACHE / "art" / (hashlib.md5(prompt.encode()).hexdigest()[:16] + ".jpg")
     if dest.exists():  # a picture already drawn costs nothing, so it is served even when drawing is off or the day's budget is spent (a re-render at the cap found no pictures)
         return dest, credit_for(style)
-    if not enabled(now):
+    got = freeart.draw(prompt, "short" if vertical else "film", dest, style, now=now)  # the free account first: no money
+    if got:
+        return got
+    if not paid_enabled(now):
         return None
     cfg = llm.load_config()
     if llm.spent_today(now) >= cfg["daily_budget_usd"]:
@@ -147,7 +157,10 @@ def thumbnail_art(scene: str, now: dt.datetime | None = None, style: str | None 
     dest = config.CACHE / "art" / ("thumb-" + hashlib.md5(prompt.encode()).hexdigest()[:16] + ".jpg")
     if dest.exists():  # already drawn: served for free whatever the budget
         return dest, credit_for(style)
-    if not enabled(now) or llm.spent_today(now) >= llm.load_config()["daily_budget_usd"]:
+    got = freeart.draw(prompt, "thumb", dest, style, now=now)
+    if got:
+        return got
+    if not paid_enabled(now) or llm.spent_today(now) >= llm.load_config()["daily_budget_usd"]:
         return None
     try:
         model = modelcfg.get("thumbnail_art")

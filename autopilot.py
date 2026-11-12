@@ -8,6 +8,7 @@ from pathlib import Path
 
 import agents
 import config
+import freeart
 import llm
 import planner
 import playbook
@@ -20,6 +21,7 @@ CONFIG_FILE = config.ROOT / "autopilot.json"
 STATE_FILE = config.ROOT / "autopilot_state.json"
 LOCK_FILE = config.ROOT / "autopilot.lock"
 MAX_VIDEO_COST = {"doc": 2.5, "short": 0.7}  # dollars one video may cost in all (script, pictures, reviews, repairs) before Autopilot stops repairing it and asks the owner
+MIN_CREDIT_FREE_ART = 0.6  # the same floor when the pictures are drawn on the free Cloudflare account (freeart): only the script and the reviews are paid, about $0.5
 MIN_CREDIT_TO_MAKE = 1.5  # dollars on the OpenRouter account below which no new video is started: a documentary costs about $1 and a stopped render wastes it
 NEWS_QUEUE = config.ROOT / "news_queue.json"
 LOG = config.ROOT / "logs" / "autopilot.log"
@@ -242,7 +244,8 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict
     if todo and state.get("spend_ok", True):  # the fixer agent repairs what it can, then the reviewer decides again: one video at a time. Not when the day's cap is spent: a video's two tries are not used on weak free models
         acts.append({"do": "fix", "slug": min(todo, key=focus_rank)["slug"]})
     credit = state.get("credit_left")
-    can_pay = (credit is None or credit >= MIN_CREDIT_TO_MAKE) and not state.get("storage_full")  # a balance that cannot be read does not block work; a known low one does
+    floor = MIN_CREDIT_FREE_ART if freeart.usable() else MIN_CREDIT_TO_MAKE
+    can_pay = (credit is None or credit >= floor) and not state.get("storage_full")  # a balance that cannot be read does not block work; a known low one does
     if can_pay and not state["busy"] and cfg["make_videos"] and not fixable:
         need = planner.needs(cfg, state["videos"], now)  # only the slots no video covers need a new one
         if state["queue_len"] < cfg["min_queue"]:

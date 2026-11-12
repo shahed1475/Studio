@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, urlparse
 
 import config
 import records
+import freeart
 import llm
 import webauth
 
@@ -188,7 +189,7 @@ def llm_view() -> dict:
     role_prices = {r: (prices.get(cfg["models"][r]) if cfg["models"][r] else (0.0, 0.0)) for r in llm.ROLES}
     known = all(v is not None for v in role_prices.values())
     ap = autopilot.load_config()
-    art = (aiart.MAX_PER_VIDEO["doc"] * aiart.PRICE_EACH, aiart.MAX_PER_VIDEO["short"] * aiart.PRICE_EACH) if cfg.get("ai_art") else (0.0, 0.0)
+    art = (aiart.MAX_PER_VIDEO["doc"] * aiart.PRICE_EACH, aiart.MAX_PER_VIDEO["short"] * aiart.PRICE_EACH) if cfg.get("ai_art") and not freeart.usable(cfg) else (0.0, 0.0)
     est = llm.estimate({r: v for r, v in role_prices.items() if v}, ap["uploads_per_day"], ap["shorts_per_day"] if ap["shorts"] else 0, art=art) if known else None
     today = usage.get(llm._day(now), {})
     return {

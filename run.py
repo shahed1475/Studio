@@ -629,10 +629,13 @@ def _house_style(kind: str) -> dict:
         credit = risk.credit_left(llm.api_key()) if llm.api_key() else None
     except Exception:
         credit = None
-    if credit is None or credit < float(hs.get("min_credit", 8.0)):
+    import freeart
+
+    free = freeart.usable()  # pictures drawn on the owner's free Cloudflare account: only the script and the reviews cost money, and no paid clips
+    if credit is None or credit < float(hs.get("min_credit_free", 0.6) if free else hs.get("min_credit", 8.0)):
         return {}
     look = hs.get("look") if hs.get("look") in LOOKS else DEFAULT_LOOK  # an unknown look is the default, never an error in the middle of a build
-    return {"art_style": look, "animate": int(part.get("clips", 0)), "animate_budget": float(part.get("budget", 1.0)), "art_first": True, "house_style": True, **LOOKS[look].get(kind, {})}
+    return {"art_style": look, "animate": 0 if free else int(part.get("clips", 0)), "animate_budget": 0.0 if free else float(part.get("budget", 1.0)), "art_first": True, "house_style": True, **LOOKS[look].get(kind, {})}
 
 
 def _apply_house_style(data: dict, kind: str, folder) -> dict:
