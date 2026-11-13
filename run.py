@@ -263,16 +263,19 @@ def _cmd_make(topic: str | None = None, extra: dict | None = None) -> Path:
     import wikipedia
 
     src = wikipedia.facts_for(topic, chars=SHORT_SOURCE_CHARS)
+    note = ""
     for attempt in range(3):
         try:
-            data = scriptgen.script(topic, grounded=src[1] if src else None)
+            data = scriptgen.script(topic, grounded=src[1] if src else None, note=note)
             data = _script_gate(data, src[1] if src else "", topic)
             if src:
                 data["sources"] = [f"Wikipedia: {src[0]} (CC BY-SA 4.0), retold in our own words"]
             data["anchors"] = anchor_terms(topic, data.get("anchors", []), src[0] if src else "")
             break
-        except Exception as e:  # bad JSON or too short: ask again
+        except Exception as e:  # bad JSON or too short: ask again, and say what was wrong
             print(f"  script attempt {attempt + 1} failed: {e}")
+            lo, hi = scriptgen.short_word_range()
+            note = f"YOUR LAST ATTEMPT WAS REJECTED: {str(e)[:200]}. Fix exactly that. Count the words of every line: the whole script must have between {lo + 6} and {hi} words (a longer script is better than a shorter one here), 11 lines."
     if not data:
         raise SystemExit("could not generate a script")
     data.update(extra or {})

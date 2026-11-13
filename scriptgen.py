@@ -110,10 +110,12 @@ def short_prompt(topic: str, grounded: str | None = None) -> str:
     )
 
 
-def script(topic: str, grounded: str | None = None) -> dict:
-    data = _script_chat(short_prompt(topic, grounded))
+def script(topic: str, grounded: str | None = None, note: str = "") -> dict:
+    """`note` is what went wrong with the last try (run._cmd_make): free writers undershoot the word budget by about 15 percent and a retry that repeats the same prompt repeats the mistake."""
+    base = short_prompt(topic, grounded) + (f"\n{note}\n" if note else "")
+    data = _script_chat(base)
     if not case_rules(topic) and case_rules(topic, title=str(data.get("title", "")), anchors=data.get("anchors") or []):
-        data = _script_chat(short_prompt(topic, grounded) + "\n" + CASE_RULES)  # the title shows it is a real case: written again once, with the rules
+        data = _script_chat(base + "\n" + CASE_RULES)  # the title shows it is a real case: written again once, with the rules
     lines = [
         {"text": str(l["text"]).strip(), "visual": str(l.get("visual", "")).strip()}
         for l in data["lines"]
