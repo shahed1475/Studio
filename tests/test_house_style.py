@@ -80,3 +80,18 @@ def test_autopilot_starts_a_video_at_the_lower_floor_only_while_free_pictures_ar
     monkeypatch.setattr(freeart, "usable", lambda *a, **k: True)
     assert ("make", None) in t.plan(t.state([], credit_left=low))
     assert ("make", None) not in t.plan(t.state([], credit_left=autopilot.MIN_CREDIT_FREE_ART - 0.01))
+
+
+def test_a_free_only_studio_gets_the_look_with_no_credit_but_never_paid_clips(monkeypatch):
+    """13 Nov 2026: free pictures, free models, nothing is spent, so a $0.27 balance must not strip the look from new videos; a studio that can still spend keeps its floor."""
+    import freeart
+
+    monkeypatch.setattr(freeart, "usable", lambda: True)
+    fund(monkeypatch, 0.27)
+    monkeypatch.setattr(llm, "free_only", lambda: False)
+    assert run._house_style("doc") == {}  # paid models still on and the balance under the floor: as before
+    monkeypatch.setattr(llm, "free_only", lambda: True)
+    got = run._house_style("doc")
+    assert got["art_style"] == "photo" and got["animate"] == 0 and got["animate_budget"] == 0.0 and got["parallax"] is True
+    monkeypatch.setattr(freeart, "usable", lambda: False)
+    assert run._house_style("doc") == {}  # no free pictures: the paid floor applies whatever else is free

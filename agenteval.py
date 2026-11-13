@@ -376,11 +376,13 @@ def case_scriptreview_asks_the_doctor_once_and_the_doctor_closes_the_loop():
 
 def case_creator_house_style_is_funded_new_only_and_off_by_default():
     import autopilot
+    import freeart
     import llm
     import risk
     import run
 
-    old = (autopilot.load_config, risk.credit_left, llm.api_key)
+    old = (autopilot.load_config, risk.credit_left, llm.api_key, freeart.usable)
+    freeart.usable = lambda: False  # the paid-pictures case: the server has free pictures on since 13 Nov, which gives a different (free, no paid clips) result and made this check fail there
     on = {"house_style": {"enabled": True, "min_credit": 8.0, "doc": {"clips": 4, "budget": 1.5}, "short": {"clips": 1, "budget": 0.5}}}
     try:
         llm.api_key = lambda: "k"
@@ -393,7 +395,7 @@ def case_creator_house_style_is_funded_new_only_and_off_by_default():
         risk.credit_left = lambda key, *a, **k: 20.0
         off = run._apply_house_style({"title": "t"}, "doc", None)
     finally:
-        autopilot.load_config, risk.credit_left, llm.api_key = old
+        autopilot.load_config, risk.credit_left, llm.api_key, freeart.usable = old
     looks = funded.get("art_style") == "photo" and funded.get("parallax") is True and funded.get("graphics") is True and funded.get("animate") == 4  # the Lost Army film's look, with its camera motion and chapter cards
     ok = looks and "art_style" not in redo and "art_style" not in poor and "art_style" not in off and autopilot.DEFAULTS["house_style"]["enabled"] is False
     return ok, "a new video gets the realistic look with camera motion only when it is on and funded; a redo, a poor account and the default never do" if ok else f"funded={funded} redo={redo} poor={poor} off={off}"

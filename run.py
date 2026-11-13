@@ -640,8 +640,8 @@ def _house_style(kind: str) -> dict:
     import freeart
 
     free = freeart.usable()  # pictures drawn on the owner's free Cloudflare account: only the script and the reviews cost money, and no paid clips
-    if credit is None or credit < float(hs.get("min_credit_free", 0.6) if free else hs.get("min_credit", 8.0)):
-        return {}
+    if not (free and llm.free_only()) and (credit is None or credit < float(hs.get("min_credit_free", 0.6) if free else hs.get("min_credit", 8.0))):
+        return {}  # a free-only studio (free models, free pictures, paid models off) spends nothing, so the balance does not matter (13 Nov 2026)
     look = hs.get("look") if hs.get("look") in LOOKS else DEFAULT_LOOK  # an unknown look is the default, never an error in the middle of a build
     return {"art_style": look, "animate": 0 if free else int(part.get("clips", 0)), "animate_budget": 0.0 if free else float(part.get("budget", 1.0)), "art_first": True, "house_style": True, **LOOKS[look].get(kind, {})}
 

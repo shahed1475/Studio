@@ -1211,3 +1211,13 @@ def test_the_free_review_case_passes_and_fails_when_one_model_passes_a_video_or_
     monkeypatch.setattr(llm, "_free_review", lambda p, c, k, n: {"risk": 0})  # mutation: the review answers whether or not it was asked or the switch is on
     ok, detail = case()
     assert not ok
+
+
+def test_the_house_style_case_does_not_depend_on_whether_free_pictures_are_on(monkeypatch):
+    import freeart
+
+    monkeypatch.setattr(freeart, "usable", lambda: True)  # the server's state since 13 Nov 2026: the case failed there while it passed on the PC
+    case = getattr(agenteval, "case_creator_house_style_is_funded_new_only_and_off_by_default")
+    ok, detail = case()
+    assert ok, detail
+    assert freeart.usable() is True  # the case put the switch back
