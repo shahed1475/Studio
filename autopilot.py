@@ -202,7 +202,8 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict
             continue
         fmt = v.get("format") or "doc"
         by_you = v["approved"] and v.get("approved_by") == "you"
-        eligible = (v["verdict"] == "pass" and v["source"] != "news") or (v["verdict"] == "needs_human" and by_you)
+        eligible = (v["verdict"] == "pass" and v["source"] != "news") or (v["verdict"] == "needs_human" and by_you) \
+            or (bool(v.get("unreviewed")) and by_you)  # every rule check passed and only the paid AI review could not run (no credit): the owner's own approval stands in for it, it is never withdrawn
         limit = (cfg.get("max_video_cost_usd") or MAX_VIDEO_COST).get(fmt, MAX_VIDEO_COST.get(fmt, 2.5))
         over = float(v.get("cost", 0.0)) >= limit
         if over and v["verdict"] in ("fail", "needs_human") and not eligible and not by_you and not v.get("cost_alerted"):
@@ -211,7 +212,7 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict
             and v.get("fix_attempts", 0) < v.get("fix_limit", 2) and not (v.get("gave_up") and v.get("fix_limit", 2) <= 2) and not over
         if v["verdict"] in ("fail", "needs_human") and not eligible and not by_you and not repairable:
             stuck[fmt] += 1
-        if v["verdict"] is None:
+        if v["verdict"] is None and not (v.get("unreviewed") and by_you):
             acts.append({"do": "review", "slug": v["slug"]})
         elif repairable:
             fixable.append(v)
@@ -326,6 +327,7 @@ def build_state(now: dt.datetime, cfg: dict) -> dict:
         d = json.loads(m.read_text())
         videos.append({
             "slug": m.parent.name, "format": records.format_of(d, m.parent.name), "source": d.get("source"), "approved": bool(d.get("approved")),
+            "unreviewed": (d.get("review") or {}).get("verdict") == "unreviewed",
             "verdict": None if any(c["name"] == "llm_review" and not c["ok"] for c in (d.get("review") or {}).get("checks", [])) else (d.get("review") or {}).get("verdict"),
             "hold": bool(d.get("hold")),
             "approved_by": d.get("approved_by"), "fix_attempts": d.get("fix_attempts", 0), "gave_up": bool(d.get("fix_gave_up")), "cost": llm.video_cost(m.parent.name), "cost_alerted": bool(d.get("cost_alerted")), "fix_limit": fixer.attempt_limit((d.get("review") or {}).get("checks", [])),

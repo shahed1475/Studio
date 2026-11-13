@@ -601,3 +601,13 @@ def test_a_polish_outcome_becomes_a_lesson(tmp_path, monkeypatch):
     autopilot.do_polish("v", {**CFG}, NOW)                                    # a skipped polish teaches nothing
     got = lessons.recall("fixer", "invented facts warning after a passed review")
     assert len(got) == 1 and got[0]["wins"] == 1 and got[0]["losses"] == 1
+
+
+def test_a_video_the_owner_approved_goes_on_when_only_the_paid_ai_review_could_not_run_but_an_unapproved_one_still_waits_for_the_review():
+    mine = vid("mine", approved=True, approved_by="you", unreviewed=True, verdict=None, publish_at=None)
+    assert ("review", "mine") not in plan(state([mine], credit_left=0.2))  # not sent back to a review that cannot be paid
+    assert ("schedule", "mine") in plan(state([mine], credit_left=0.2)) or ("upload", "mine") in plan(state([mine], credit_left=0.2))
+    other = vid("other", approved=False, unreviewed=True, verdict=None)
+    assert ("review", "other") in plan(state([other], credit_left=0.2))  # no approval of yours: it waits for the AI review as before
+    agent = vid("agent", approved=True, approved_by="reviewer-agent", unreviewed=True, verdict=None)
+    assert ("schedule", "agent") not in plan(state([agent], credit_left=0.2))  # only YOUR approval stands in for the review
