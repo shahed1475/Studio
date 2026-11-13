@@ -1204,6 +1204,10 @@ def test_the_free_review_case_passes_and_fails_when_one_model_passes_a_video_or_
     ok, detail = case()
     assert not ok and "one=" in detail
     monkeypatch.undo()
+    monkeypatch.setattr(llm, "_leaf", lambda v, other: v)  # mutation: text numbers are not read, so "7" never beats 2
+    ok, detail = case()
+    assert not ok and "text=" in detail
+    monkeypatch.undo()
     monkeypatch.setattr(llm, "_free_review", lambda p, c, k, n: {"risk": 0})  # mutation: the review answers whether or not it was asked or the switch is on
     ok, detail = case()
     assert not ok

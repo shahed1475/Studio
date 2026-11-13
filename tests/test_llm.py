@@ -357,14 +357,14 @@ def _free_pair(monkeypatch, answers, **over):
 def test_a_review_never_uses_free_models_unless_the_owner_switched_free_review_on(monkeypatch):
     asked = _free_pair(monkeypatch, [{"invented_facts_risk": 0}])
     with pytest.raises(llm.ModelUnavailable):
-        llm.chat("check this", "review", now=NOW)
+        llm.chat("check this", "review", now=NOW, strict=True)
     assert asked == []  # the default stays: free models never judge a video
 
 
 def test_free_review_asks_two_different_models_and_keeps_the_strictest_answer(monkeypatch):
     asked = _free_pair(monkeypatch, [{"invented_facts_risk": 2, "misleading_title": False, "issues": ["a"]},
                                      {"invented_facts_risk": 6, "misleading_title": True, "issues": ["b"]}], free_review=True)
-    got = llm.chat("check this", "review", now=NOW)
+    got = llm.chat("check this", "review", now=NOW, strict=True)
     assert got == {"invented_facts_risk": 6, "misleading_title": True, "issues": ["a", "b"]}
     assert len(asked) == 2 and asked[1][1] and "free/model-1" in asked[1][1]  # the second opinion avoids the first model
     assert llm.LAST_REVIEW == {"mode": "free", "models": ["free/model-1", "free/model-2"]}
@@ -373,17 +373,17 @@ def test_free_review_asks_two_different_models_and_keeps_the_strictest_answer(mo
 def test_free_review_needs_both_models_to_answer(monkeypatch):
     _free_pair(monkeypatch, [{"invented_facts_risk": 0}, None], free_review=True)
     with pytest.raises(llm.ModelUnavailable):
-        llm.chat("check this", "review", now=NOW)  # one opinion is not a review: it is asked again later
+        llm.chat("check this", "review", now=NOW, strict=True)  # one opinion is not a review: it is asked again later
     _free_pair(monkeypatch, [{}, {"invented_facts_risk": 0}], free_review=True)
     with pytest.raises(llm.ModelUnavailable):
-        llm.chat("check this", "review", now=NOW)  # an empty answer is no answer
+        llm.chat("check this", "review", now=NOW, strict=True)  # an empty answer is no answer
 
 
 def test_free_review_is_only_used_when_the_paid_review_could_not_answer(monkeypatch):
     asked = _free_pair(monkeypatch, [], free_review=True)
     enable(monkeypatch, enabled=True, free=True, free_review=True, models={"script": "vendor/writer", "review": "vendor/checker", "cheap": "vendor/small"})
     monkeypatch.setattr(llm, "_post", lambda payload, key: reply('{"invented_facts_risk": 1}'))
-    assert llm.chat("check this", "review", now=NOW) == {"invented_facts_risk": 1}
+    assert llm.chat("check this", "review", now=NOW, strict=True) == {"invented_facts_risk": 1}
     assert asked == [] and llm.LAST_REVIEW == {"mode": "paid"}
 
 
@@ -411,3 +411,29 @@ def test_free_review_must_be_a_switch():
     assert llm.validate_config({"free_review": True}) == {"free_review": True}
     with pytest.raises(ValueError):
         llm.validate_config({"free_review": "yes"})
+
+
+def test_a_review_prompt_that_is_not_a_judge_never_goes_to_free_models(monkeypatch):
+    asked = _free_pair(monkeypatch, [{"relevance": 9}, {"relevance": 9}], free_review=True)
+    with pytest.raises(llm.ModelUnavailable):
+        llm.chat("pick the best passage", "review", now=NOW)  # strict is not set: a score where higher is BETTER must never meet the larger-wins merge
+    assert asked == []
+
+
+def test_strictest_reads_numbers_and_flags_that_arrive_as_text():
+    s = llm.strictest
+    assert s({"risk": "7", "bad": "true"}, {"risk": 2, "bad": False}) == {"risk": 7, "bad": True}
+    assert s({"risk": 8.5}, {"risk": "3"}) == {"risk": 8.5}
+    assert s({"u": []}, {"u": [1]}) == {"u": [1]} and s({"risk": 0}, {"risk": ""}) == {"risk": 0}
+
+
+def test_strictest_refuses_answers_that_cannot_be_reconciled():
+    for a, b in (({"x": "high"}, {"x": 3}), ({"x": True}, {"x": 3}), ({"x": [1]}, {"x": "a"}), ({"x": {"a": 1}}, {"x": 5}), ({"x": "yes"}, {"x": False})):
+        with pytest.raises(ValueError):
+            llm.strictest(a, b)
+
+
+def test_two_judges_that_disagree_in_shape_give_no_review(monkeypatch):
+    _free_pair(monkeypatch, [{"invented_facts_risk": 2}, {"invented_facts_risk": "very low"}], free_review=True)
+    with pytest.raises(llm.ModelUnavailable):
+        llm.chat("check this", "review", now=NOW, strict=True)

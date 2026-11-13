@@ -36,8 +36,8 @@ def _ollama_chat(prompt: str) -> dict:
     return json.loads(text)
 
 
-def _chat(prompt: str, role: str = "cheap") -> dict:
-    return llm.chat(prompt, role, fallback=_ollama_chat)
+def _chat(prompt: str, role: str = "cheap", strict: bool = False) -> dict:
+    return llm.chat(prompt, role, fallback=_ollama_chat, strict=strict)
 
 
 def _script_chat(prompt: str) -> dict:
@@ -46,8 +46,8 @@ def _script_chat(prompt: str) -> dict:
 
 
 def _review_chat(prompt: str) -> dict:
-    """Fact-check: a different model from the writer."""
-    return _chat(prompt, "review")
+    """Fact-check: a different model from the writer. Every caller is a judge prompt whose larger number, true flag or longer list means a worse video, so two free models may answer it (llm.strictest)."""
+    return _chat(prompt, "review", strict=True)
 
 
 def ideas(n: int = 10) -> list[str]:

@@ -1337,7 +1337,7 @@ def case_a_free_review_needs_two_free_models_the_strictest_counts_and_it_is_off_
         llm.load_config, llm.api_key, llm._free_chat = (lambda: cfg), (lambda: "k"), fake
         answers[:] = list(replies)
         try:
-            return llm.chat("check", "review")
+            return llm.chat("check", "review", strict=True)
         except llm.ModelUnavailable:
             return None
 
@@ -1345,12 +1345,14 @@ def case_a_free_review_needs_two_free_models_the_strictest_counts_and_it_is_off_
         strict = ask(on, [{"risk": 2, "flag": False, "issues": ["a"]}, {"risk": 7, "flag": True, "issues": ["b"]}])
         one = ask(on, [{"risk": 0}, None])
         off = ask({**on, "free_review": False}, [{"risk": 0}, {"risk": 0}])
+        text = ask(on, [{"risk": "7", "flag": "true"}, {"risk": 2, "flag": False}])  # numbers and flags that come back as text are read, not skipped
+        clash = ask(on, [{"risk": "low"}, {"risk": 2}])  # answers that cannot be compared are no review
     finally:
         llm.load_config, llm.api_key, llm._free_chat = real[:3]
         llm._last_free.clear()
         llm._last_free.update(real[3])
-    ok = strict == {"risk": 7, "flag": True, "issues": ["a", "b"]} and one is None and off is None
-    return ok, "two free models both answer and the worse answer counts; one silent model, or the switch off, gives no review" if ok else f"strict={strict} one={one} off={off}"
+    ok = strict == {"risk": 7, "flag": True, "issues": ["a", "b"]} and one is None and off is None and text == {"risk": 7, "flag": True} and clash is None
+    return ok, "two free models both answer and the worse answer counts; one silent model, the switch off, or answers that cannot be compared give no review" if ok else f"strict={strict} one={one} off={off} text={text} clash={clash}"
 
 
 CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic,

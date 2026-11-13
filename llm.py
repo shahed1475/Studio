@@ -402,12 +402,35 @@ def _free_chat(prompt: str, role: str, cfg: dict, key: str, now: dt.datetime, av
 LAST_REVIEW: dict = {}  # how the newest review call was answered: {"mode": "paid"} or {"mode": "free", "models": [...]}; read by reviewer.llm_review for its note
 
 
+def _leaf(v, other):
+    """A value next to a number or a flag may come back as text ("7", "true"): read it as the number or flag. Text that is neither raises ValueError."""
+    if isinstance(v, str) and isinstance(other, (bool, int, float)):
+        t = v.strip().lower()
+        if t in ("true", "false"):
+            return t == "true"
+        try:
+            return float(t) if "." in t else int(t)
+        except ValueError:
+            raise ValueError(f"cannot read {v!r} as a number or a flag") from None
+    return v
+
+
 def strictest(a, b):
-    """Two answers merged so that the worse one counts: the larger number, true over false, every item either one listed, the first text that is not empty.
-    A claim passes a free review only when neither free model flagged it."""
-    if isinstance(a, dict) and isinstance(b, dict):
+    """Two judges' answers merged so that the worse one counts: the larger number, true over false, every item either one listed, the first text that is not empty.
+    ONLY for the judge prompts that ask for a risk score, a "misleading" flag or a list of unsupported lines (scriptgen._review_chat): for them larger, true and
+    more items always mean a worse video. Numbers and flags that arrive as text are read as numbers and flags; two answers that cannot be reconciled raise ValueError."""
+    empty = (None, "", [], {})
+    if a in empty and not isinstance(a, bool):
+        return b
+    if b in empty and not isinstance(b, bool):
+        return a
+    if isinstance(a, dict) or isinstance(b, dict):
+        if not (isinstance(a, dict) and isinstance(b, dict)):
+            raise ValueError("one answer is an object and the other is not")
         return {k: (strictest(a[k], b[k]) if k in a and k in b else a[k] if k in a else b[k]) for k in list(a) + [k for k in b if k not in a]}
-    if isinstance(a, list) and isinstance(b, list):
+    if isinstance(a, list) or isinstance(b, list):
+        if not (isinstance(a, list) and isinstance(b, list)):
+            raise ValueError("one answer is a list and the other is not")
         seen, out = set(), []
         for item in a + b:
             key = json.dumps(item, sort_keys=True, default=str)
@@ -415,11 +438,16 @@ def strictest(a, b):
                 seen.add(key)
                 out.append(item)
         return out
+    a, b = _leaf(a, b), _leaf(b, a)
     if isinstance(a, bool) and isinstance(b, bool):
         return a or b
-    if isinstance(a, (int, float)) and isinstance(b, (int, float)) and not isinstance(a, bool) and not isinstance(b, bool):
+    if isinstance(a, bool) != isinstance(b, bool):
+        raise ValueError("a flag and a number cannot be compared")
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
         return max(a, b)
-    return a if a not in (None, "", [], {}) else b
+    if isinstance(a, (int, float)) != isinstance(b, (int, float)):
+        raise ValueError("a number and a text cannot be compared")
+    return a
 
 
 def _free_review(prompt: str, cfg: dict, key: str, now: dt.datetime) -> dict | None:
@@ -433,7 +461,12 @@ def _free_review(prompt: str, cfg: dict, key: str, now: dt.datetime) -> dict | N
         return None
     LAST_REVIEW.clear()
     LAST_REVIEW.update({"mode": "free", "models": [one, _last_free.get("review")]})
-    return strictest(first, second)
+    try:
+        return strictest(first, second)
+    except ValueError:  # the two answers disagree in shape: that is no review, never a pass
+        LAST_REVIEW.clear()
+        LAST_REVIEW["mode"] = "paid"
+        return None
 
 
 def free_only() -> bool:
@@ -442,8 +475,9 @@ def free_only() -> bool:
     return bool(not cfg["enabled"] and cfg["free"] and cfg.get("free_review") and not cfg.get("ai_art"))
 
 
-def chat(prompt: str, role: str = "cheap", fallback=None, now: dt.datetime | None = None) -> dict:
-    """JSON from the model assigned to this role, or from the local fallback when that is not possible."""
+def chat(prompt: str, role: str = "cheap", fallback=None, now: dt.datetime | None = None, strict: bool = False) -> dict:
+    """JSON from the model assigned to this role, or from the local fallback when that is not possible.
+    `strict` marks a judge prompt (risk scores, misleading flags, unsupported lines) that two free models may answer when `free_review` is on; other review-role prompts never go to free models."""
     import playbook
 
     stable, mark, rest = prompt.partition(CACHE_MARK)
@@ -477,7 +511,7 @@ def chat(prompt: str, role: str = "cheap", fallback=None, now: dt.datetime | Non
                     continue
             else:
                 _note(now, f"{role}: invalid JSON from {model}, used the local model")
-    if cfg["free"] and api_key() and (role != "review" or cfg.get("free_review")):  # free models judge a video only when the owner switched free_review on (13 Nov 2026): then two of them must answer
+    if cfg["free"] and api_key() and (role != "review" or (strict and cfg.get("free_review"))):  # free models judge a video only when the owner switched free_review on (13 Nov 2026) and the caller is a judge prompt: then two of them must answer
         key = api_key()
         got = _free_review(plain, cfg, key, now) if role == "review" else _free_chat(plain, role, cfg, key, now)
         if got is not None:
