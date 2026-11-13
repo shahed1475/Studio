@@ -1357,6 +1357,31 @@ def case_a_free_review_needs_two_free_models_the_strictest_counts_and_it_is_off_
     return ok, "two free models both answer and the worse answer counts; one silent model, the switch off, or answers that cannot be compared give no review" if ok else f"strict={strict} one={one} off={off} text={text} clash={clash}"
 
 
+def case_a_drawn_scene_takes_a_real_photo_only_when_the_file_is_named_for_its_subject():
+    """13 Nov 2026 (owner: use real photos). Under the photo look every scene is drawn, and the picture model draws a real monument wrongly (a wooden pagoda for the stone Seokgatap).
+    A scene whose search words name an anchor of the story gets the public-domain or CC0 photo titled with that name; a loosely matching photo, a person's portrait for an unrelated scene,
+    a real case and a video that draws everything on purpose never do."""
+    from pathlib import Path
+
+    import footage
+    import run
+
+    real = footage.images_for
+    try:
+        footage.images_for = lambda q, anchors, n, skip=(), judge=None: [(Path("Seokgatap Pagoda.jpg"), "Seokgatap Pagoda.jpg (Wikimedia Commons, CC0)")] if q == "Seokgatap pagoda" else [(Path("Gyeongju street.jpg"), "Gyeongju street.jpg (Wikimedia Commons, CC0)")]
+        art = lambda l: (Path("drawn.jpg"), "AI-generated")
+        lines = [{"text": "a", "visual": "Seokgatap pagoda"}, {"text": "b", "visual": "Seokgatap view"}]
+        clips, _, stats = footage.scene_images(lines, "Bulguksa Temple", ["Seokgatap"], art=art, art_limit=5, force_art={"a", "b"}, real_when_named=True)
+        off, _, _ = footage.scene_images(lines[:1], "Bulguksa Temple", ["Seokgatap"], art=art, art_limit=5, force_art={"a"})
+    finally:
+        footage.images_for = real
+    named = [c.name for c in clips] == ["Seokgatap Pagoda.jpg", "drawn.jpg"] and stats["drawn"] == 1
+    default = off[0].name == "drawn.jpg"
+    gated = run._real_photos_on({"art_style": "photo"}) and not any(run._real_photos_on(d) for d in ({"art_style": "3d"}, {"art_style": "photo", "draw_all": True}, {"art_style": "photo", "kind": "case"}))
+    ok = named and default and gated
+    return ok, "a forced scene takes the photo named for its subject and is drawn otherwise; the default, a case, 3D and draw-all never use photos" if ok else f"named={named} default={default} gated={gated}"
+
+
 CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic,
          case_ladder_ends_with_owner_not_a_crash, case_ladder_respects_budget_and_whitelist_and_lessons, case_outside_text_is_cleaned,
          case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules, case_registry_is_consistent,
@@ -1392,7 +1417,8 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_the_owners_advice_reaches_only_the_writing_roles_and_never_a_reviewer,
          case_only_approved_licences_are_used_and_a_credit_needing_picture_is_credited_in_the_description_youtube_receives,
          case_real_footage_from_nasa_and_pixabay_is_relevant_logo_free_downloaded_safely_and_credited,
-         case_a_free_review_needs_two_free_models_the_strictest_counts_and_it_is_off_unless_switched_on]
+         case_a_free_review_needs_two_free_models_the_strictest_counts_and_it_is_off_unless_switched_on,
+         case_a_drawn_scene_takes_a_real_photo_only_when_the_file_is_named_for_its_subject]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:

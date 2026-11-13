@@ -318,7 +318,7 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
         finder = _real_finder(data, "short")
         clips, credits, stats = footage.scene_images(data["lines"], topic, data.get("anchors") or [], pool_size=pool_size, judge=_image_judge(topic),
                                                      art=art, art_limit=12 if data.get("art_style") == "3d" else aiart.MAX_PER_VIDEO["short"],
-                                                     art_first=bool(data.get("art_first")), force_art=_forced_art(data), finder=finder)
+                                                     art_first=bool(data.get("art_first")), force_art=_forced_art(data), finder=finder, real_when_named=_real_photos_on(data))
         data["assets"] = finder.assets if finder else []
         data["footage"] = stats
         if stats["missing"] or stats["unique"] < min_unique:
@@ -522,7 +522,7 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
 
         art = lambda l: aiart.generate(l["text"], l.get("visual", ""), data["topic"], style=data.get("art_style"), case=_is_case(data))  # style "3d": a 3D animated-film look
         finder = _real_finder(data, "doc")
-        pics = dict(judge=_image_judge(data["topic"]), art=art, art_first=bool(data.get("art_first")), force_art=_forced_art(data), finder=finder)
+        pics = dict(judge=_image_judge(data["topic"]), art=art, art_first=bool(data.get("art_first")), force_art=_forced_art(data), finder=finder, real_when_named=_real_photos_on(data))
         clips, credits, stats = footage.scene_images(data["lines"], data["topic"], anchors, art_limit=aiart.MAX_PER_VIDEO["doc"], **pics)
         if stats["unique"] < MIN_VARIETY * stats["scenes"] and aiart.enabled():  # the same few pictures again and again: draw illustrations for the scenes that would repeat
             print(f"  only {stats['unique']} different pictures for {stats['scenes']} scenes: drawing more")
@@ -654,6 +654,12 @@ def _apply_house_style(data: dict, kind: str, folder) -> dict:
     if folder is None and "art_style" not in data:
         data.update(_house_style(kind))
     return data
+
+
+def _real_photos_on(data: dict) -> bool:
+    """A forced (drawn) scene still takes a real photo that is named for its subject (footage.named_photo). Not for a 3D video, a video that draws everything on purpose, one that
+    switched it off (`real_photos` false) or a real case (no photograph of a real victim or suspect)."""
+    return data.get("real_photos") is not False and data.get("art_style") != "3d" and not data.get("draw_all") and not _is_case(data)
 
 
 def _forced_art(data: dict) -> set[str]:

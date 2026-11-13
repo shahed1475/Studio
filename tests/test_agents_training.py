@@ -1221,3 +1221,20 @@ def test_the_house_style_case_does_not_depend_on_whether_free_pictures_are_on(mo
     ok, detail = case()
     assert ok, detail
     assert freeart.usable() is True  # the case put the switch back
+
+
+def test_the_real_photo_case_passes_and_fails_when_any_photo_is_taken_or_the_gate_is_gone(monkeypatch):
+    import footage
+    import run
+
+    case = getattr(agenteval, "case_a_drawn_scene_takes_a_real_photo_only_when_the_file_is_named_for_its_subject")
+    assert case in agenteval.CASES
+    ok, detail = case()
+    assert ok, detail
+    monkeypatch.setattr(footage, "named_photo", lambda visual, anchors, hits: hits[0] if hits else None)  # mutation: the first photo found is taken, named or not
+    ok, detail = case()
+    assert not ok and "named=False" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(run, "_real_photos_on", lambda data: True)  # mutation: a case, 3D and draw-all use photos too
+    ok, detail = case()
+    assert not ok and "gated=False" in detail

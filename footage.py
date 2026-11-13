@@ -221,11 +221,24 @@ def image_for(query: str, anchors: list[str] | None = None) -> tuple[Path, str] 
     return hits[0] if hits else None
 
 
+def named_photo(visual: str, anchors: list[str], hits: list[tuple[Path, str]]) -> tuple[Path, str] | None:
+    """The first photo whose file title names an anchor that the scene's own search words also name ("Seokgatap pagoda" and Seokgatap Pagoda.jpg). A photo that only matches loosely is not
+    taken: the scene is drawn instead. A credit starts with the file name, then the source in brackets."""
+    names = [a.lower() for a in anchors if len(a) >= 5 and a.lower() in str(visual).lower()]
+    for hit in hits:
+        title = hit[1].split(" (", 1)[0].lower()
+        if any(n in title for n in names) and not unrelated_portrait(title, visual):
+            return hit
+    return None
+
+
 def scene_images(lines: list[dict], topic: str, anchors: list[str], pool_size: int = 10, judge=None, art=None, art_limit: int = 0, art_first: bool = False, force_art: set[str] | None = None,
-                 finder=None) -> tuple[list, list[str], dict]:
+                 finder=None, real_when_named: bool = False) -> tuple[list, list[str], dict]:
     """One relevant image per scene: a specific search first, then unused images about the subject, then reuse.
     When no real picture is left, art(line) may draw one illustration (up to art_limit per video) instead of repeating a picture.
     art_first: skip the generic reserve of subject pictures (the usual source of a ruin or map that is not quite the place) and draw instead.
+    real_when_named: a forced scene still gets a real public-domain or CC0 photo when its own search words name an anchor of the story and the photo's file is titled with that name (a real monument or
+    object drawn by a picture model comes out as a generic one: a wooden pagoda for a stone one, 13 Nov 2026); every other forced scene is drawn as before.
     force_art: narration lines whose picture was judged wrong: they are drawn whatever a search finds, outside the art cap (the cache makes a repeat free).
     finder (realmedia.Finder, off by default): after the Commons public-domain search, the other approved libraries and licences are tried before any picture is drawn.
     A scene only goes blank when nothing about the subject can be found at all."""
@@ -246,8 +259,11 @@ def scene_images(lines: list[dict], topic: str, anchors: list[str], pool_size: i
     for l in lines:
         hit = None
         if art and l.get("text") in (force_art or ()):
-            hit = art(l)
-            forced += bool(hit)
+            if real_when_named and l.get("visual"):
+                hit = named_photo(l["visual"], anchors, look(l["visual"], 3, used))
+            if not hit:
+                hit = art(l)
+                forced += bool(hit)
         if not hit and l.get("visual"):
             hits = look(l["visual"], 1, used)
             hit = hits[0] if hits else None
