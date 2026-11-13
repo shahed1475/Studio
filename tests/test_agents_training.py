@@ -1186,3 +1186,24 @@ def test_eval_case_for_footage_fails_when_relevance_is_not_checked(monkeypatch):
     monkeypatch.setattr(footage_real, "_relevant", lambda text, anchors: True)  # mutation: an unrelated clip (a cat, a rocket launch) is used
     bad, _ = getattr(agenteval, FOOTAGE_CASE)()
     assert not bad
+
+
+def test_the_free_review_case_passes_and_fails_when_one_model_passes_a_video_or_the_switch_is_ignored(monkeypatch):
+    import llm
+
+    case = getattr(agenteval, "case_a_free_review_needs_two_free_models_the_strictest_counts_and_it_is_off_unless_switched_on")
+    assert case in agenteval.CASES
+    ok, detail = case()
+    assert ok, detail
+    monkeypatch.setattr(llm, "strictest", lambda a, b: a)  # mutation: the first model's word alone counts
+    ok, detail = case()
+    assert not ok and "strict=" in detail
+    monkeypatch.undo()
+    real = llm._free_review
+    monkeypatch.setattr(llm, "_free_review", lambda p, c, k, n: (real.__globals__["_free_chat"](p, "review", c, k, n)))  # mutation: no second opinion
+    ok, detail = case()
+    assert not ok and "one=" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(llm, "_free_review", lambda p, c, k, n: {"risk": 0})  # mutation: the review answers whether or not it was asked or the switch is on
+    ok, detail = case()
+    assert not ok

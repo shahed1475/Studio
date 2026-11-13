@@ -23,7 +23,7 @@ SETTINGS_FILE = config.ROOT / "settings.json"
 PRICES_FILE = config.ROOT / "data" / "or_prices.json"
 ROLES = ("script", "review", "cheap")
 DEFAULTS = {"enabled": False, "models": {"script": "", "review": "", "cheap": ""}, "daily_budget_usd": 1.0, "max_output_tokens": 6000,
-            "free": False, "free_daily_limit": 900, "local_fallback": False, "ai_art": False, "free_art": False, "free_art_cap": 9000}  # free: try OpenRouter free models first; local_fallback: ask the local Ollama model when no cloud model answers (slow, off by default)
+            "free": False, "free_daily_limit": 900, "local_fallback": False, "ai_art": False, "free_art": False, "free_art_cap": 9000, "free_review": False}  # free: try OpenRouter free models first; local_fallback: ask the local Ollama model when no cloud model answers (slow, off by default)
 MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9/._:+-]{1,99}$")
 UNKNOWN_PRICE = (10.0, 30.0)  # per million tokens: deliberately high, so an unknown model cannot slip past the cap
 
@@ -77,7 +77,7 @@ def validate_config(raw: dict) -> dict:
         elif k == "free_art_cap":
             if isinstance(v, bool) or not isinstance(v, int) or not 100 <= v <= 10000:
                 raise ValueError("the free picture allowance must be between 100 and 10,000 Neurons a day")
-        elif k in ("local_fallback", "ai_art", "free_art"):
+        elif k in ("local_fallback", "ai_art", "free_art", "free_review"):
             if not isinstance(v, bool):
                 raise ValueError(f"{k} must be on or off")
         elif k == "free_daily_limit":
@@ -359,11 +359,11 @@ REVIEW_RESERVE_USD = 0.50  # the quality gate may spend this much past the daily
 ROUNDS = 3  # passes over the free models; a busy provider (429) usually frees up within a minute or two
 
 
-def _free_chat(prompt: str, role: str, cfg: dict, key: str, now: dt.datetime) -> dict | None:
-    """Try the free models in turn, waiting and trying again when they are all busy. None means: nothing answered."""
+def _free_chat(prompt: str, role: str, cfg: dict, key: str, now: dt.datetime, avoid=None) -> dict | None:
+    """Try the free models in turn, waiting and trying again when they are all busy. None means: nothing answered. `avoid` (a model or a set of them) is never asked."""
     freemodels.refresh(now)
     for rnd in range(ROUNDS):
-        models = freemodels.choose(role, now, avoid=_last_free.get("script") if role == "review" else None, n=4)
+        models = freemodels.choose(role, now, avoid=(avoid or set()) | ({_last_free["script"]} if role == "review" and _last_free.get("script") else set()), n=4)
         if not models:
             break
         for mid in models:
@@ -399,6 +399,49 @@ def _free_chat(prompt: str, role: str, cfg: dict, key: str, now: dt.datetime) ->
     return None
 
 
+LAST_REVIEW: dict = {}  # how the newest review call was answered: {"mode": "paid"} or {"mode": "free", "models": [...]}; read by reviewer.llm_review for its note
+
+
+def strictest(a, b):
+    """Two answers merged so that the worse one counts: the larger number, true over false, every item either one listed, the first text that is not empty.
+    A claim passes a free review only when neither free model flagged it."""
+    if isinstance(a, dict) and isinstance(b, dict):
+        return {k: (strictest(a[k], b[k]) if k in a and k in b else a[k] if k in a else b[k]) for k in list(a) + [k for k in b if k not in a]}
+    if isinstance(a, list) and isinstance(b, list):
+        seen, out = set(), []
+        for item in a + b:
+            key = json.dumps(item, sort_keys=True, default=str)
+            if key not in seen:
+                seen.add(key)
+                out.append(item)
+        return out
+    if isinstance(a, bool) and isinstance(b, bool):
+        return a or b
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)) and not isinstance(a, bool) and not isinstance(b, bool):
+        return max(a, b)
+    return a if a not in (None, "", [], {}) else b
+
+
+def _free_review(prompt: str, cfg: dict, key: str, now: dt.datetime) -> dict | None:
+    """A review by two different free models (never the writer): None unless both gave a usable answer, so one model's word never passes a video."""
+    first = _free_chat(prompt, "review", cfg, key, now)
+    if not isinstance(first, dict) or not first:
+        return None
+    one = _last_free.get("review")
+    second = _free_chat(prompt, "review", cfg, key, now, avoid={one} if one else None)
+    if not isinstance(second, dict) or not second:
+        return None
+    LAST_REVIEW.clear()
+    LAST_REVIEW.update({"mode": "free", "models": [one, _last_free.get("review")]})
+    return strictest(first, second)
+
+
+def free_only() -> bool:
+    """Paid models and paid pictures are off and free models do every job, reviews included: nothing is spent, so the credit floors do not apply."""
+    cfg = load_config()
+    return bool(not cfg["enabled"] and cfg["free"] and cfg.get("free_review") and not cfg.get("ai_art"))
+
+
 def chat(prompt: str, role: str = "cheap", fallback=None, now: dt.datetime | None = None) -> dict:
     """JSON from the model assigned to this role, or from the local fallback when that is not possible."""
     import playbook
@@ -411,6 +454,9 @@ def chat(prompt: str, role: str = "cheap", fallback=None, now: dt.datetime | Non
     cfg, key = load_config(), api_key()
     model = cfg["models"].get(role, "")
     capped = False
+    if role == "review":
+        LAST_REVIEW.clear()
+        LAST_REVIEW["mode"] = "paid"
     if model and is_claude(model):
         key = anthropic_key()
     if cfg["enabled"] and key and model:
@@ -431,9 +477,9 @@ def chat(prompt: str, role: str = "cheap", fallback=None, now: dt.datetime | Non
                     continue
             else:
                 _note(now, f"{role}: invalid JSON from {model}, used the local model")
-    if cfg["free"] and api_key() and role != "review":  # free models never judge a video: their answers are too unreliable to pass or fail one
+    if cfg["free"] and api_key() and (role != "review" or cfg.get("free_review")):  # free models judge a video only when the owner switched free_review on (13 Nov 2026): then two of them must answer
         key = api_key()
-        got = _free_chat(plain, role, cfg, key, now)
+        got = _free_review(plain, cfg, key, now) if role == "review" else _free_chat(plain, role, cfg, key, now)
         if got is not None:
             return got
     if fallback is None or not cfg.get("local_fallback"):

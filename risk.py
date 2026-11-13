@@ -159,6 +159,12 @@ def daily_spend(days: int = 7) -> float:
 def money(left: float | None, avg: float) -> dict:
     if left is None:
         return ind("money", "Running out of money", "watch", "the account balance could not be read", "daily dollar cap, free-model fallback, AI drawing and paid models switch off by themselves when credit is low")
+    import llm
+
+    if llm.free_only():  # paid models and paid pictures are off: the studio spends nothing, so a low balance is not a danger (13 Nov 2026)
+        return ind("money", "Running out of money", "ok", f"${left:.2f} left, and nothing is being spent: the studio runs on free models and free pictures",
+                   "paid models and AI drawing are off, free models do every job, the daily cap still applies if paid models are switched back on",
+                   "Nothing: top up OpenRouter only to bring back the paid Claude writer and reviewer.")
     runway = left / avg if avg > 0 else 999
     level = "act" if left < CREDIT_ACT or runway < RUNWAY_ACT else "watch" if left < CREDIT_WATCH or runway < RUNWAY_WATCH else "ok"
     return ind("money", "Running out of money", level, f"${left:.2f} left, about ${avg:.2f} a day over the last days, roughly {min(runway, 99):.0f} days",

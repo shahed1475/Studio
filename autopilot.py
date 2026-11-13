@@ -246,7 +246,7 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict
         acts.append({"do": "fix", "slug": min(todo, key=focus_rank)["slug"]})
     credit = state.get("credit_left")
     floor = MIN_CREDIT_FREE_ART if freeart.usable() else MIN_CREDIT_TO_MAKE
-    can_pay = (credit is None or credit >= floor) and not state.get("storage_full")  # a balance that cannot be read does not block work; a known low one does
+    can_pay = (credit is None or credit >= floor or bool(state.get("free_only"))) and not state.get("storage_full")  # a free-only studio (llm.free_only) spends nothing, so no floor  # a balance that cannot be read does not block work; a known low one does
     if can_pay and not state["busy"] and cfg["make_videos"] and not fixable:
         need = planner.needs(cfg, state["videos"], now)  # only the slots no video covers need a new one
         if state["queue_len"] < cfg["min_queue"]:
@@ -360,7 +360,7 @@ def build_state(now: dt.datetime, cfg: dict) -> dict:
         "queue_len": len(queue), "connected": upload.SECRET.exists() and upload.TOKEN.exists(), "busy": dashboard_busy(),
         "uploads_today": upload.uploads_today(config.OUT, now), "uploads_by_format": by_fmt,
         "news_pending": sum(1 for n in news if n.get("status") == "queued"), "videos": videos,
-        "clippable": __import__("clipper").clippable(), "winner_due": _winner_due(cfg, now), "spend_ok": spend_ok, "cap_left": cap_left, "credit_left": credit_left, "storage_full": _storage_full(),
+        "clippable": __import__("clipper").clippable(), "winner_due": _winner_due(cfg, now), "spend_ok": spend_ok, "cap_left": cap_left, "credit_left": credit_left, "free_only": llm.free_only(), "storage_full": _storage_full(),
     }
 
 

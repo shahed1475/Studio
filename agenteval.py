@@ -1318,6 +1318,41 @@ def case_real_footage_from_nasa_and_pixabay_is_relevant_logo_free_downloaded_saf
                 else f"relevant={relevant} safe={safe} credited={credited}")
 
 
+def case_a_free_review_needs_two_free_models_the_strictest_counts_and_it_is_off_unless_switched_on():
+    """13 Nov 2026 (owner: run on free models, no dollars). The review job may use free models only when `free_review` is on; then two different free models must both answer,
+    the worse answer counts (a number is the larger, a flag is true if either raised it), and one silent model means no review (asked again later), never a pass."""
+    import llm
+
+    real = (llm.load_config, llm.api_key, llm._free_chat, dict(llm._last_free))
+    answers = []
+    on = {**llm.DEFAULTS, "enabled": False, "free": True, "free_review": True}
+
+    def fake(prompt, role, cfg, key, now, avoid=None):
+        out = answers.pop(0) if answers else None
+        if out is not None:
+            llm._last_free[role] = f"free/m{len(answers)}"
+        return out
+
+    def ask(cfg, replies):
+        llm.load_config, llm.api_key, llm._free_chat = (lambda: cfg), (lambda: "k"), fake
+        answers[:] = list(replies)
+        try:
+            return llm.chat("check", "review")
+        except llm.ModelUnavailable:
+            return None
+
+    try:
+        strict = ask(on, [{"risk": 2, "flag": False, "issues": ["a"]}, {"risk": 7, "flag": True, "issues": ["b"]}])
+        one = ask(on, [{"risk": 0}, None])
+        off = ask({**on, "free_review": False}, [{"risk": 0}, {"risk": 0}])
+    finally:
+        llm.load_config, llm.api_key, llm._free_chat = real[:3]
+        llm._last_free.clear()
+        llm._last_free.update(real[3])
+    ok = strict == {"risk": 7, "flag": True, "issues": ["a", "b"]} and one is None and off is None
+    return ok, "two free models both answer and the worse answer counts; one silent model, or the switch off, gives no review" if ok else f"strict={strict} one={one} off={off}"
+
+
 CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic,
          case_ladder_ends_with_owner_not_a_crash, case_ladder_respects_budget_and_whitelist_and_lessons, case_outside_text_is_cleaned,
          case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules, case_registry_is_consistent,
@@ -1352,7 +1387,8 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_only_a_passage_found_in_its_saved_page_counts_as_evidence_for_the_reviewer,
          case_the_owners_advice_reaches_only_the_writing_roles_and_never_a_reviewer,
          case_only_approved_licences_are_used_and_a_credit_needing_picture_is_credited_in_the_description_youtube_receives,
-         case_real_footage_from_nasa_and_pixabay_is_relevant_logo_free_downloaded_safely_and_credited]
+         case_real_footage_from_nasa_and_pixabay_is_relevant_logo_free_downloaded_safely_and_credited,
+         case_a_free_review_needs_two_free_models_the_strictest_counts_and_it_is_off_unless_switched_on]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:

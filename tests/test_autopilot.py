@@ -611,3 +611,10 @@ def test_a_video_the_owner_approved_goes_on_when_only_the_paid_ai_review_could_n
     assert ("review", "other") in plan(state([other], credit_left=0.2))  # no approval of yours: it waits for the AI review as before
     agent = vid("agent", approved=True, approved_by="reviewer-agent", unreviewed=True, verdict=None)
     assert ("schedule", "agent") not in plan(state([agent], credit_left=0.2))  # only YOUR approval stands in for the review
+
+
+def test_a_free_only_studio_starts_videos_with_no_credit():
+    """13 Nov 2026: paid models off, free models and free pictures on: nothing is paid, so the credit floor (1.50 / 0.60) must not stop the studio."""
+    assert ("make", None) not in plan(state([], credit_left=0.2))
+    assert ("make", None) in plan(state([], credit_left=0.2, free_only=True))
+    assert ("make_short", None) in plan(state([], credit_left=0.2, free_only=True))

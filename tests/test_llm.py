@@ -335,3 +335,79 @@ def test_cached_input_tokens_are_counted_next_to_the_real_cost(monkeypatch):
     llm.chat(llm.cached(BIG, "rest"), "script", fallback=LOCAL, now=NOW)
     day = json.loads(llm.USAGE_FILE.read_text())["2026-10-19"]
     assert day["by_role"]["script"]["cached_in"] == 800 and day["usd"] == pytest.approx(0.01)
+
+
+# ---- free review (13 Nov 2026): the owner runs the whole studio on free models; a review is then two free models, the strictest answer counts ----
+def _free_pair(monkeypatch, answers, **over):
+    """Free models on, paid off. `answers` is what each free model says in turn (None = nobody answered)."""
+    enable(monkeypatch, enabled=False, free=True, models={"script": "", "review": "", "cheap": ""}, **over)
+    asked = []
+
+    def fake(prompt, role, cfg, key, now, avoid=None):
+        asked.append((role, avoid))
+        out = answers.pop(0) if answers else None
+        if out is not None:
+            llm._last_free[role] = f"free/model-{len(asked)}"
+        return out
+
+    monkeypatch.setattr(llm, "_free_chat", fake)
+    return asked
+
+
+def test_a_review_never_uses_free_models_unless_the_owner_switched_free_review_on(monkeypatch):
+    asked = _free_pair(monkeypatch, [{"invented_facts_risk": 0}])
+    with pytest.raises(llm.ModelUnavailable):
+        llm.chat("check this", "review", now=NOW)
+    assert asked == []  # the default stays: free models never judge a video
+
+
+def test_free_review_asks_two_different_models_and_keeps_the_strictest_answer(monkeypatch):
+    asked = _free_pair(monkeypatch, [{"invented_facts_risk": 2, "misleading_title": False, "issues": ["a"]},
+                                     {"invented_facts_risk": 6, "misleading_title": True, "issues": ["b"]}], free_review=True)
+    got = llm.chat("check this", "review", now=NOW)
+    assert got == {"invented_facts_risk": 6, "misleading_title": True, "issues": ["a", "b"]}
+    assert len(asked) == 2 and asked[1][1] and "free/model-1" in asked[1][1]  # the second opinion avoids the first model
+    assert llm.LAST_REVIEW == {"mode": "free", "models": ["free/model-1", "free/model-2"]}
+
+
+def test_free_review_needs_both_models_to_answer(monkeypatch):
+    _free_pair(monkeypatch, [{"invented_facts_risk": 0}, None], free_review=True)
+    with pytest.raises(llm.ModelUnavailable):
+        llm.chat("check this", "review", now=NOW)  # one opinion is not a review: it is asked again later
+    _free_pair(monkeypatch, [{}, {"invented_facts_risk": 0}], free_review=True)
+    with pytest.raises(llm.ModelUnavailable):
+        llm.chat("check this", "review", now=NOW)  # an empty answer is no answer
+
+
+def test_free_review_is_only_used_when_the_paid_review_could_not_answer(monkeypatch):
+    asked = _free_pair(monkeypatch, [], free_review=True)
+    enable(monkeypatch, enabled=True, free=True, free_review=True, models={"script": "vendor/writer", "review": "vendor/checker", "cheap": "vendor/small"})
+    monkeypatch.setattr(llm, "_post", lambda payload, key: reply('{"invented_facts_risk": 1}'))
+    assert llm.chat("check this", "review", now=NOW) == {"invented_facts_risk": 1}
+    assert asked == [] and llm.LAST_REVIEW == {"mode": "paid"}
+
+
+def test_strictest_merge_takes_the_worse_of_every_value():
+    s = llm.strictest
+    assert s({"n": 2, "ok": False, "t": ""}, {"n": 5, "ok": True, "t": "x"}) == {"n": 5, "ok": True, "t": "x"}
+    assert s({"u": [1, 2]}, {"u": [2, 3]}) == {"u": [1, 2, 3]}
+    assert s({"u": [{"n": 1, "why": "a"}]}, {"u": [{"n": 1, "why": "a"}, {"n": 4, "why": "b"}]}) == {"u": [{"n": 1, "why": "a"}, {"n": 4, "why": "b"}]}
+    assert s({"only_a": 1}, {"only_b": 2}) == {"only_a": 1, "only_b": 2}
+
+
+def test_free_only_means_paid_off_free_on_and_free_review_on(monkeypatch):
+    assert llm.free_only() is False
+    enable(monkeypatch, enabled=False, free=True, free_review=True)
+    assert llm.free_only() is True
+    enable(monkeypatch, enabled=True, free=True, free_review=True)
+    assert llm.free_only() is False  # paid models on: money can be spent, the credit floors apply
+    enable(monkeypatch, enabled=False, free=True, free_review=False)
+    assert llm.free_only() is False
+    enable(monkeypatch, enabled=False, free=True, free_review=True, ai_art=True)
+    assert llm.free_only() is False  # a paid picture model is on
+
+
+def test_free_review_must_be_a_switch():
+    assert llm.validate_config({"free_review": True}) == {"free_review": True}
+    with pytest.raises(ValueError):
+        llm.validate_config({"free_review": "yes"})

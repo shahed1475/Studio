@@ -350,3 +350,21 @@ def test_the_review_reads_all_of_a_source_that_fits_so_no_supporting_passage_loo
     monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p: seen.append(str(p)) or {"invented_facts_risk": 1, "policy_risk": 0, "misleading_title": False, "issues": []})
     reviewer.llm_review({"title": "t", "description": "d", "lines": [{"text": "Thing number 3 and thing number 39 happened."}]}, source)
     assert all(p in seen[0] for p in passages)  # the first and the last, not 12,000 characters of them
+
+
+def test_a_review_read_by_free_models_says_so(monkeypatch):
+    import llm
+
+    reply = {"invented_facts_risk": 1, "policy_risk": 0, "misleading_title": False, "issues": []}
+
+    def chat(p):
+        llm.LAST_REVIEW.clear()
+        llm.LAST_REVIEW.update({"mode": "free", "models": ["a/x:free", "b/y:free"]})
+        return reply
+
+    monkeypatch.setattr(reviewer.scriptgen, "_review_chat", chat)
+    checks = {c["name"]: c for c in reviewer.llm_review({"title": "t", "description": "d", "lines": [{"text": "a line"}]})}
+    assert "two free models" in checks["invented_facts"]["detail"] and "a/x:free" in checks["invented_facts"]["detail"]
+    monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p: (llm.LAST_REVIEW.clear(), llm.LAST_REVIEW.update({"mode": "paid"}), reply)[2])
+    checks = {c["name"]: c for c in reviewer.llm_review({"title": "t", "description": "d", "lines": [{"text": "a line"}]})}
+    assert "free" not in checks["invented_facts"]["detail"]

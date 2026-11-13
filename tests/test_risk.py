@@ -305,3 +305,13 @@ def test_a_held_video_with_an_old_unfinished_upload_is_a_watch_not_an_act(world)
     vid(world / "output", "deleted", approved=True, upload_started="2026-10-30T18:42:54Z")
     r = risk.publishing(risk.videos(), NOW)
     assert r["level"] == "act" and "deleted" in r["evidence"]
+
+
+def test_money_is_not_a_worry_when_the_studio_runs_on_free_models(monkeypatch):
+    import llm
+
+    monkeypatch.setattr(llm, "free_only", lambda: True)
+    row = risk.money(0.27, 0.5)
+    assert row["level"] == "ok" and "free" in row["evidence"]
+    monkeypatch.setattr(llm, "free_only", lambda: False)
+    assert risk.money(0.27, 0.5)["level"] == "act"

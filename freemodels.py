@@ -86,7 +86,9 @@ def refresh(now: dt.datetime, get=requests.get, force: bool = False) -> list[dic
     return models
 
 
-def choose(role: str, now: dt.datetime, avoid: str | None = None, n: int = 3) -> list[str]:
+def choose(role: str, now: dt.datetime, avoid=None, n: int = 3) -> list[str]:
+    """`avoid` is one model ID or a set of them: they are never chosen."""
+    skip = {avoid} if isinstance(avoid, str) else set(avoid or ())
     d = _load()
     health = d.get("health", {})
     need = MIN_CTX.get(role, DEFAULT_MIN_CTX)
@@ -95,7 +97,7 @@ def choose(role: str, now: dt.datetime, avoid: str | None = None, n: int = 3) ->
         h = health.get(m["id"], {})
         cooling = h.get("fails", 0) >= MAX_FAILS and now - _parse(h["last_fail"]) < COOLDOWN
         busy = bool(h.get("busy_until")) and now < _parse(h["busy_until"])
-        if m["context"] >= need and m["id"] != avoid and not cooling and not busy:
+        if m["context"] >= need and m["id"] not in skip and not cooling and not busy:
             out.append(m)
     out.sort(key=lambda m: -min(health.get(m["id"], {}).get("ok", 0), 5))  # models that answered well before go first (stable otherwise)
     return [m["id"] for m in out][:n]

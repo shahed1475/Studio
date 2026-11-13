@@ -441,6 +441,8 @@ def llm_review(meta: dict, source: str = "") -> list[dict]:
         facts, policy = int(r["invented_facts_risk"]), int(r["policy_risk"])
         issues = [str(i) for i in r.get("issues", [])[:3]]
         note = "; ".join(issues)
+        if llm.LAST_REVIEW.get("mode") == "free":  # the owner's free-only mode (13 Nov 2026): say who read it, so nobody mistakes it for the paid Claude review
+            note = (note + " " if note else "") + f"(read by two free models, the stricter answer counts: {', '.join(str(m) for m in llm.LAST_REVIEW.get('models', []))})"
     except Exception as e:  # cannot verify, so never auto-pass
         return [_c("llm_review", False, f"review unavailable: {type(e).__name__}")]
     out = [{**_c("invented_facts", facts < 7, f"risk {facts}/10. {note}"), "issues": issues},
