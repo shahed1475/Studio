@@ -141,3 +141,14 @@ def test_every_verified_claim_leaves_a_checked_source_entry_the_gate_can_read():
 
     rows = ledger.build({"sources": out, "lines": [{"text": "A book of 1742 says so."}]}, "")
     assert rows[0]["verification_status"] == "VERIFIED" and rows[0]["source_url"] == "https://example.org/a"
+
+
+def test_a_spec_without_photos_says_every_picture_is_ai_generated():
+    assert ccbuild.pictures_line({}) == "Pictures: AI-generated illustrations, not photographs of the real place. Voice: synthetic."
+
+
+def test_a_spec_with_photos_lists_each_credit_and_says_the_rest_is_ai_art():
+    line = ccbuild.pictures_line({"photo_credits": ["Golden Kappa statue by A Person, CC BY 2.0, https://commons.wikimedia.org/wiki/File:X.jpg"]})
+    assert "Golden Kappa statue by A Person, CC BY 2.0" in line
+    assert line.startswith("Real photographs (free licence):")
+    assert "Other pictures: AI-generated illustrations" in line

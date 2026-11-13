@@ -90,7 +90,7 @@ def test_the_risks_card_shows_the_rules_file_state(tmp_path, monkeypatch):
 def test_the_modules_read_their_numbers_from_the_rules_file_not_from_literals():
     assert packaging.TITLE_BEST == tuple(rulesfile.get("benchmarks", "title_chars")) and packaging.TITLE_HARD_MAX == 70
     assert reviewer.PACE_RANGE == tuple(rulesfile.get("benchmarks", "pace_wpm"))
-    assert reviewer.LIMITS["doc"]["duration"] == tuple(rulesfile.get("limits", "doc_duration_s")) == (180, 900)
+    assert reviewer.LIMITS["doc"]["duration"] == tuple(rulesfile.get("limits", "doc_duration_s")) == (180, 1800)  # raised from 900 on 14 Nov 2026: the owner ordered 20 to 25 minute documentaries
     assert reviewer.LIMITS["short"]["duration"] == (20, 180)
     for name, banned in (("reviewer.py", ["(180, 900)", "(105, 175)", "(20, 180)"]), ("packaging.py", ["(40, 62)", "n <= 70"])):
         src = Path(name).read_text()

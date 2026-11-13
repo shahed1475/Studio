@@ -44,7 +44,7 @@
   "limits": {
     "doc_duration_s": [
       180,
-      900
+      1800
     ],
     "short_duration_s": [
       20,

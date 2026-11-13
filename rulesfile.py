@@ -46,7 +46,7 @@ DEFAULTS = {
         "drift_sigma": 2, "drift_recent_days": 7, "drift_baseline_days": 28, "drift_min_videos": 3,
         "title_chars": [40, 62], "title_hard_max": 70, "pace_wpm": [105, 175], "pace_target_wpm": [140, 155], "thumb_words": [2, 4],
     },
-    "limits": {"doc_duration_s": [180, 900], "short_duration_s": [20, 180]},  # what the reviewer blocks on: unchanged until the owner raises the minimum length
+    "limits": {"doc_duration_s": [180, 1800], "short_duration_s": [20, 180]},  # what the reviewer blocks on: unchanged until the owner raises the minimum length
     "policy_constraints": [
         {"id": "inauthentic_content", "status": "VERIFIED", "source": "YouTube Help, 'YouTube channel monetization policies' (support.google.com/youtube/answer/1311392), section 'Generic or repetitive content', renamed 'inauthentic content' on 15 Jul 2025; read 29 Oct 2026", "summary": "Not eligible: content that looks made from a template, has minimal variation, or is AI content from generic templates giving the impression of mass production; original, authentic insight or perspective is needed. Two sources beyond Wikipedia and an original element are the studio's own safeguard, not YouTube's wording."},
         {"id": "synthetic_disclosure", "status": "VERIFIED", "source": "compliance.RULES ai_disclosure, YouTube Help page watched daily",

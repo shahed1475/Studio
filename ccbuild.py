@@ -74,12 +74,17 @@ def validate(spec: dict, base: Path) -> tuple[list[str], list[str]]:
     return e, w
 
 
-def fit(src: Path, out: Path, flip: bool = False) -> Path:
-    """The picture cover-fitted to 1080x1920 (Lanczos); the optional flip makes a second use of one picture look different."""
+def fit(src: Path, out: Path, flip: bool = False, look: str | None = None) -> Path:
+    """The picture cover-fitted to 1080x1920 (Lanczos); the optional flip makes a second use of one picture look different; `look` grades it (grade.py)."""
     im = Image.open(src).convert("RGB")
     if flip:
         im = ImageOps.mirror(im)
-    ImageOps.fit(im, SIZE, Image.LANCZOS, centering=(0.5, 0.5)).save(out)
+    im = ImageOps.fit(im, SIZE, Image.LANCZOS, centering=(0.5, 0.5))
+    if look:
+        import filmgrade
+
+        im = filmgrade.apply(im, look)
+    im.save(out)
     return out
 
 
@@ -95,14 +100,14 @@ def claim_sources(spec: dict) -> list[dict]:
             for c in spec.get("claims") or [] if c.get("status") == "VERIFIED" and c.get("source") in srcs and c.get("passage")]
 
 
-def fitted(src: Path, flip: bool = False) -> Path:
+def fitted(src: Path, flip: bool = False, look: str | None = None) -> Path:
     """The picture fitted to the video's size, kept in cache/cc where animate.own_picture lets it have camera motion (in the video's folder it never did)."""
     import hashlib
 
-    key = hashlib.sha256(Path(src).read_bytes() + repr((SIZE, flip)).encode()).hexdigest()[:16]
+    key = hashlib.sha256(Path(src).read_bytes() + repr((SIZE, flip) if not look else (SIZE, flip, look)).encode()).hexdigest()[:16]  # no look: the same key as before, so old cache entries stay valid
     out = Path(config.CACHE) / "cc" / f"fit-{key}.png"
     out.parent.mkdir(parents=True, exist_ok=True)
-    return out if out.exists() else fit(Path(src), out, flip)
+    return out if out.exists() else fit(Path(src), out, flip, look)
 
 
 def resolve(pic: str, jobs: dict) -> Path:
@@ -132,6 +137,15 @@ def ledger(spec: dict, srcs: dict) -> list[dict]:
         out.append({"claim_id": f"c{i}", "claim_text": c["text"], "source_url": s["url"], "source_title": s["title"], "evidence_excerpt": c["passage"], "source_date": s.get("published", ""),
                     "verification_status": c["status"], "confidence": "high" if c["status"] == "VERIFIED" else "medium", "notes": c.get("note", "")})
     return out
+
+
+def pictures_line(spec: dict) -> str:
+    """The description's picture credit. A spec with `photo_credits` (real photographs under a free licence, each with author, licence and address) lists them and says the rest is AI art;
+    one without says all pictures are AI-generated, as before."""
+    photos = [p for p in spec.get("photo_credits") or [] if p]
+    if not photos:
+        return "Pictures: AI-generated illustrations, not photographs of the real place. Voice: synthetic."
+    return "Real photographs (free licence):\n" + "\n".join(f"- {p}" for p in photos) + "\n\nOther pictures: AI-generated illustrations, not photographs of the real place. Voice: synthetic."
 
 
 def build(spec: dict, base: Path, out_root: Path | None = None, replace: bool = False) -> Path:
@@ -174,7 +188,7 @@ def build(spec: dict, base: Path, out_root: Path | None = None, replace: bool = 
     print("Voice + captions...")
     narration, ass, durations = tts.narrate(lines, work, editprofile.short_pause(prof), prof["motion"], prof["caption_pos"], **voice)
     data["voice_used"] = tts.voice_used(data.get("voice_style"))
-    clips = [fitted(p, bool(l.get("flip"))) for p, l in zip(pics, spec["lines"])]
+    clips = [fitted(p, bool(l.get("flip")), spec.get("grade")) for p, l in zip(pics, spec["lines"])]
     clips = run._parallax(data, clips, durations, SIZE)
     print("Rendering...")
     render.render(clips, durations, narration, ass, work, folder / "video.mp4", loudness=editprofile.lufs_for(data, prof), shots=prof["motion"] >= 1,
@@ -189,7 +203,7 @@ def build(spec: dict, base: Path, out_root: Path | None = None, replace: bool = 
     (folder / "claims.json").write_text(json.dumps(ledger(spec, srcs), indent=1, ensure_ascii=False))
     shutil.rmtree(work)
     meta = {**data, "grounded": True, "anchors": spec.get("anchors", []), "description": spec["description"].rstrip() + "\n\nSources:\n" + "\n".join(f"- {s['title']}: {s['url']}" for s in spec["sources"])
-            + "\n\nPictures: AI-generated illustrations, not photographs of the real place. Voice: synthetic.",
+            + "\n\n" + pictures_line(spec),
             "tags": spec.get("tags", []), "sources": [{k: v for k, v in s.items() if k != "file"} | {"passages": [c["passage"] for c in spec["claims"] if c["source"] == s["id"]]} for s in spec["sources"]] + claim_sources(spec),
             "footage": {"scenes": len(clips), "unique": len({str(p) for p in pics}), "missing": 0}, "subtitles": "burned", "credits": spec["credits"], "limits": spec.get("limits", []),
             "approved": False, "hold": True, "hold_reason": "made in a Claude Code session by ccbuild.py: the owner watches it and releases it", "built_by": "ccbuild", "warnings": warns,
