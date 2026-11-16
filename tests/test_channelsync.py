@@ -149,17 +149,16 @@ def test_apply_skips_a_folder_that_got_an_id_in_the_meantime(tmp_path):
     assert records.read(tmp_path / "a")["video_id"] == "MINE"
 
 
-def test_a_broken_record_stops_the_check_before_anything_is_written(tmp_path):
-    import pytest
-
+def test_a_broken_record_is_listed_and_every_other_video_is_still_checked(tmp_path):
     (tmp_path / "good").mkdir()
     (tmp_path / "good" / "meta.json").write_text(json.dumps({"title": "A", "approved": True}))
     (tmp_path / "bad").mkdir()
     (tmp_path / "bad" / "meta.json").write_text("{not json")
-    with pytest.raises(ValueError):
-        channelsync.local_metas(tmp_path)
-    assert "video_id" not in records.read(tmp_path / "good")
-
+    metas = channelsync.local_metas(tmp_path)
+    plan = channelsync.match(metas, [{"id": "YT1", "title": "A", "description": "", "publishedAt": "x", "privacyStatus": "private", "publishAt": None}])
+    assert plan["unreadable"] == ["bad"]
+    assert [r["slug"] for r in plan["adopt"]] == ["good"]
+    assert (tmp_path / "bad" / "meta.json").read_text() == "{not json"  # a broken record is reported, never rewritten
 
 def test_apply_run_twice_writes_once(tmp_path):
     (tmp_path / "a").mkdir()
@@ -187,3 +186,21 @@ def test_channel_sync_command_reports_a_refused_login_and_writes_nothing(tmp_pat
     assert e.value.code == 2
     assert "login expired or refused" in capsys.readouterr().out
     assert "video_id" not in records.read(tmp_path / "a")
+
+
+def test_apply_keeps_going_when_one_record_cannot_be_written(tmp_path, monkeypatch):
+    for slug in ("a", "b"):
+        (tmp_path / slug).mkdir()
+        (tmp_path / slug / "meta.json").write_text(json.dumps({"title": slug}))
+    real = records.merge
+
+    def merge(folder, changes):
+        if folder.name == "a":
+            raise OSError("disk full")
+        return real(folder, changes)
+
+    monkeypatch.setattr(records, "merge", merge)
+    plan = {"adopt": [{"slug": s, "video_id": "YT" + s, "by": "title", "publishedAt": "x", "publishAt": None} for s in ("a", "b")]}
+    assert channelsync.apply(tmp_path, plan) == 1
+    assert plan["failed"] == [{"slug": "a", "error": "OSError: disk full"}]
+    assert records.read(tmp_path / "b")["video_id"] == "YTb"

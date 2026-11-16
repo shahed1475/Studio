@@ -45,6 +45,8 @@ def _same(meta: dict, v: dict) -> str | None:
 
 def match(metas: list[dict], videos: list[dict]) -> dict:
     """Which local folders without an id are already on the channel. A video claimed by two folders (or a folder matching two videos) is a conflict for the owner."""
+    unreadable = [m["slug"] for m in metas if m.get("unreadable")]
+    metas = [m for m in metas if not m.get("unreadable")]
     held = {m["video_id"] for m in metas if m.get("video_id")}
     free = [v for v in videos if v["id"] not in held]
     open_ = [m for m in metas if not m.get("video_id")]
@@ -63,21 +65,33 @@ def match(metas: list[dict], videos: list[dict]) -> dict:
             v, by = hs[0]
             adopt.append({"slug": slug, "video_id": v["id"], "by": by, "publishedAt": v["publishedAt"], "publishAt": v["publishAt"]})
     return {"adopt": adopt, "conflicts": conflicts, "unmatched_local": [m["slug"] for m in open_ if m.get("approved") and not hits[m["slug"]]],
-            "already": len(metas) - len(open_)}
+            "already": len(metas) - len(open_), "unreadable": unreadable}
 
 
 def apply(out_dir: Path, plan: dict) -> int:
-    """Merge each adopted id into its folder's record, unless the folder got an id in the meantime."""
+    """Merge each adopted id into its folder's record, unless the folder got an id in the meantime. A record that cannot be written is
+    listed in plan["failed"] and the others are still written; running it again finishes the job."""
     n = 0
+    plan["failed"] = []
     for row in plan.get("adopt", []):
         folder = Path(out_dir) / row["slug"]
-        if records.read(folder).get("video_id"):
-            continue
-        records.merge(folder, {"video_id": row["video_id"], "uploaded_at": row["publishedAt"], "publish_at": row["publishAt"], "adopted_from_channel": True,
-                               "adopted_at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")})
-        n += 1
+        try:
+            if records.read(folder).get("video_id"):
+                continue
+            records.merge(folder, {"video_id": row["video_id"], "uploaded_at": row["publishedAt"], "publish_at": row["publishAt"], "adopted_from_channel": True,
+                                   "adopted_at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")})
+            n += 1
+        except (OSError, ValueError) as e:
+            plan["failed"].append({"slug": row["slug"], "error": f"{type(e).__name__}: {e}"})
     return n
 
 
 def local_metas(out_dir: Path) -> list[dict]:
-    return [{**records.read(m.parent), "slug": m.parent.name} for m in sorted(Path(out_dir).glob("*/meta.json"))]
+    """Every local record; one that cannot be read comes back as {"slug", "unreadable": True} so the others are still checked."""
+    out = []
+    for m in sorted(Path(out_dir).glob("*/meta.json")):
+        try:
+            out.append({**records.read(m.parent), "slug": m.parent.name})
+        except (OSError, ValueError):
+            out.append({"slug": m.parent.name, "unreadable": True})
+    return out

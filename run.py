@@ -1009,8 +1009,12 @@ def main() -> None:
             print(f"  CONFLICT (owner decides, nothing written): {json.dumps(c)}")
         for s in plan["unmatched_local"]:
             print(f"  approved but NOT on the channel: {s}")
+        for s in plan["unreadable"]:
+            print(f"  UNREADABLE record (not checked, not changed; it cannot be uploaded either): {s}/meta.json")
         if "--apply" in a:
             print(f"Written: {channelsync.apply(config.OUT, plan)} records.")
+            for f in plan["failed"]:
+                print(f"  NOT written, run again: {f['slug']} ({f['error']})")
         else:
             print("Preview only. Run again with --apply to write the ids.")
     elif a[0] == "reschedule" and len(a) > 1:  # the owner's command: a new future time for an approved video that is private past its publish time with no schedule (Autopilot never does this by itself)
