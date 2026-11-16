@@ -5,7 +5,7 @@ description: "Use to ship code changes to the VPS safely: test, commit, rebase o
 
 # Deploy the studio
 
-The studio runs in two containers on the VPS (`studio-dashboard`, `studio-worker`) from a bind-mounted checkout in `~/studio`. Another Claude session also pushes to this repo.
+The studio runs in two containers on the owner's PC since 17 Nov 2026 (the VPS was deleted) (`studio-dashboard`, `studio-worker`) from a bind-mounted checkout in `~/studio`; use `STUDIO_VPS=local` wherever this skill says `STUDIO_VPS=deploy@...` (docs/HOME_SERVER.md). Another Claude session also pushes to this repo.
 
 ## Steps
 1. `.venv/bin/python -m pytest -q` must pass. Never push a failing suite.

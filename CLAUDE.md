@@ -5,7 +5,7 @@ Read this first. It applies to every session in this project.
 ## What this project is
 A studio that researches, writes, voices, illustrates, renders, reviews and schedules history/legend videos for one YouTube channel (`thesleepinglib`).
 - Code: this folder; GitHub `shahed1475/Studio` (public). Another Claude session also pushes here: `git pull --rebase origin main` before every push.
-- Runs 24/7 on the VPS as two Docker containers (`studio-dashboard`, `studio-worker`) from `~/studio`. Dashboard through the owner's Tailscale at `http://vps-ai:8913` behind a login.
+- Runs 24/7 on the owner's Fedora PC (since 17 Nov 2026: Hostinger deleted the VPS and its data; $0, no paid plans) as two Docker containers (`studio-dashboard`, `studio-worker`) from `~/studio`, with `deploy/home-compose.yml` (desktop and Blender first). Dashboard at `http://fedora:8913` over Tailscale behind a login. `~/Desktop/Youtube-automation` is the workshop, not the running studio. Guide: docs/HOME_SERVER.md; update with `STUDIO_VPS=local deploy/deploy.sh dry-run-first`.
 - Tests: `.venv/bin/python -m pytest -q` (must pass before any commit). Skills: `.claude/skills/` (fact-check, research, scriptwriter, copyright, video editor, quality gate, publisher, packaging, QA, deploy, watch).
 - Models: one OpenRouter key runs everything (Claude for writing and review, free models as fallback, AI storybook art for missing pictures). The local Ollama model is off.
 - Never commit: `.env`, `client_secret.json`, `token.json`, `settings.json`, `llm.json`, `agent.json`, `autopilot.json`, `data/`, `output/`, `output_old/`, `backups/`. Secrets reach the server by `scp` only.
