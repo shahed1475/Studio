@@ -18,7 +18,7 @@ C. **Cloudflare Containers**: the closest to "everything on Cloudflare", but nee
 Recommendation: A (or B for free) now, Cloudflare in front for the public parts (done), C later only if wanted.
 
 ## Steps
-1. DONE: fix the dashboard link (the full Tailscale name was refused: STUDIO_HOSTS now lists vps-ai.tail4c5c78.ts.net; backup .env.bak-hosts-13nov).
+1. DONE: fix the dashboard link (the full Tailscale name was refused: STUDIO_HOSTS now lists <the VPS ts.net name>; backup .env.bak-hosts-13nov).
 2. IN PROGRESS: read-only copy of ~/studio, ~/hub, ~/tenants to `~/vps-backup-2026-11-13/` on the PC (rsync -a, no --delete). Verify by file count and a checksum sample.
 3. Owner picks A, B or C and gives the VPS end date.
 4. Build the move script and runbook (`deploy/move-host.sh`, docs/MOVE_HOST.md): restore, env, compose, health checks, rollback = keep the old host running.
