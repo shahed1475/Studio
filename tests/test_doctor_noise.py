@@ -76,3 +76,18 @@ def test_tasks_that_belong_to_a_person_or_a_video_are_never_closed_by_triage(tmp
     tracetriage.triage(7, NOW, [], report=tmp_path / "t.json")
     states = {t["kind"]: t["state"] for t in agentbus.tasks()}
     assert states["public_video_problem"] == "open" and states["triage_family"] == "done"
+
+
+def test_a_setup_request_closes_when_the_missing_thing_is_there_again(tmp_path):
+    """The 25 Oct "dashboard does not answer" task stayed open for weeks after the dashboard came back: nothing ever closed a setup request."""
+    def go(status, now):
+        return doctor.run(now, chat=lambda p, r: {}, get=lambda u: status, state={}, lines=[], may_spend=False, busy=lambda: [], report=tmp_path / "doc.json",
+                          triage_file=families(tmp_path), proposals=tmp_path / "proposals")
+
+    def live(slug):
+        return [t for t in agentbus.tasks() if t["kind"] == "setup_request" and t["slug"] == slug and t["state"] in agentbus.LIVE]
+
+    assert "dashboard" in go(500, NOW)["needs"] and len(live("dashboard")) == 1
+    assert "dashboard" not in go(200, NOW + dt.timedelta(hours=6))["needs"]
+    assert live("dashboard") == []
+    assert "dashboard" in go(500, NOW + dt.timedelta(hours=12))["needs"] and len(live("dashboard")) == 1  # a new failure opens a new task

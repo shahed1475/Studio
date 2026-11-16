@@ -304,6 +304,9 @@ def run(now: dt.datetime | None = None, chat=None, get=None, state=None, lines=N
     for n in needs(result["dashboard"], now):
         agentbus.post("setup_request", "doctor", "owner", n["need"], reason=n["why"], now=now, commands=n["commands"])
         result["needs"].append(n["need"])
+    for r in agentbus.tasks():  # a setup item that is there again is no longer a request: close what the doctor itself posted
+        if r["kind"] == "setup_request" and r["source"] == "doctor" and r["state"] in agentbus.LIVE and r["slug"] not in result["needs"]:
+            agentbus.close_for(r["slug"], "no longer missing", True, "setup_request", now)
     try:
         fam = [f for f in json.loads((triage_file or config.ROOT / "data" / "agent" / "triage.json").read_text())["families"] if f["state"] != "known" and f["count"] >= 3]
     except (OSError, ValueError, KeyError):
