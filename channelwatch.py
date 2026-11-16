@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import config
+import craftlearn
 import scriptgen
 import trendwatch
 
@@ -128,16 +129,17 @@ def breakdown(yt, ref: str, scan: int = 50, now: dt.datetime | None = None) -> d
     ch = resolve(yt, ref)
     ids = [i["contentDetails"]["videoId"] for i in
            yt.playlistItems().list(part="contentDetails", playlistId=ch["uploads"], maxResults=scan).execute().get("items", [])]
-    vids = []
+    vids, scan = [], []
     for v in yt.videos().list(part="snippet,statistics,contentDetails", id=",".join(ids)).execute().get("items", []) if ids else []:
         vids.append({"id": v["id"], "title": v["snippet"]["title"], "channel": v["snippet"]["channelTitle"], "channel_id": v["snippet"]["channelId"],
                      "views": int(v["statistics"].get("viewCount", 0)), "seconds": trendwatch.iso_seconds(v["contentDetails"]["duration"]),
                      "published": v["snippet"]["publishedAt"], "url": f"https://www.youtube.com/watch?v={v['id']}"})
+        scan.append(craftlearn.compact({**vids[-1], "description": v["snippet"].get("description", "")}))  # length, views, age and chapter pace only; the text is not kept
     vids.sort(key=lambda x: -x["views"])
     year_ago = (now or dt.datetime.now(dt.timezone.utc)) - dt.timedelta(days=365)
     recent = [v for v in vids if v["published"][:10] >= year_ago.strftime("%Y-%m-%d")]
     return {"channel": ch["title"], "channel_id": ch["id"], "top": vids[:5], "fresh": fresh_hits(vids, now or dt.datetime.now(dt.timezone.utc))[:3], "summary": trendwatch.summarize_videos(vids), "scanned": len(vids),
-            "latest": max((v["published"] for v in vids), default=""), "recent_year": len(recent)}
+            "latest": max((v["published"] for v in vids), default=""), "recent_year": len(recent), "scan": scan}
 
 
 def suggest(trends: dict | None) -> list[dict]:
@@ -190,6 +192,13 @@ def run(now: dt.datetime | None = None, yt=None) -> Path:
                 digest["ideas"] = [t.strip() for t in got.get("topics", []) if isinstance(t, str) and t.strip() and _norm(t) not in scraped]
             except Exception as e:
                 digest["ideas_error"] = f"{type(e).__name__}: {e}"
+    try:  # what the reference channels' numbers say about length and chapter pace; a failure here never costs the digest
+        digest["craft"] = craftlearn.learn(digest)
+        craftlearn.save(digest["craft"])
+    except Exception as e:
+        digest["craft_error"] = f"{type(e).__name__}: {e}"
+    for c in digest["channels"]:
+        c.pop("scan", None)  # the per-video list was only for learning
     path.write_text(json.dumps(digest, indent=2))
     return path
 

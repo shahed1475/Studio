@@ -822,7 +822,7 @@ function videos(m){
     m.innerHTML=`<div class="head"><div><button class="btn quiet sm" onclick="openSlug=null;editing=false;render()">${ico("arrow-left")}All videos</button></div><h1>${esc(v.title)}</h1>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${stateBadge(v.state)}<span class="mute">${v.format==="doc"?"Documentary":"Short"}, ${v.mb} MB, made ${esc(v.made)}${v.cost?`, cost so far ${usd(v.cost)}`:""}</span></div></div>
     <div class="detail">
-      <div class="stack"><video controls preload="metadata" poster="${posterUrl(v)}" src="/video/${esc(v.slug)}"></video>
+      <div class="stack">${v.mb>0?`<video controls preload="metadata" poster="${posterUrl(v)}" src="/video/${esc(v.slug)}"></video>`:`<div class="panel pad stack" style="gap:10px"><h2>The file is not on this computer</h2><p class="sub">${v.video_id?"This video is on your channel; the local copy was not kept. Watch it on YouTube.":"The video file is missing from this computer."}</p>${v.video_id?`<div><a class="btn" target="_blank" rel="noopener" href="https://youtu.be/${esc(v.video_id)}">Open on YouTube</a></div>`:""}</div>`}
         ${v.format==="doc"?thumbPanel(v):""}
         ${v.format==="doc"?seoPanel(v):""}
         ${subsPanel(v)}
