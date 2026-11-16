@@ -40,6 +40,27 @@ def test_deploy_dry_runs_locally_without_ssh(tmp_path):
     assert "DRY RUN" in r.stdout and "Fast-forward: yes" in r.stdout
 
 
+def test_local_deploy_uses_the_native_docker_engine_not_docker_desktop(tmp_path):
+    """Docker Desktop runs containers in a VM that starts only at login and hides host networking: the studio uses Fedora's own engine."""
+    origin = tmp_path / "origin.git"
+    _git(tmp_path, "init", "-q", "--bare", "-b", "main", str(origin))
+    work = tmp_path / "w"
+    _git(tmp_path, "clone", "-q", str(origin), str(work))
+    _git(work, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "one")
+    _git(work, "push", "-q", "origin", "HEAD:main")
+    home = tmp_path / "home"
+    home.mkdir()
+    _git(tmp_path, "clone", "-q", str(origin), str(home / "studio"))
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    seen = tmp_path / "ctx"
+    (fake / "docker").write_text(f'#!/bin/sh\necho "$DOCKER_CONTEXT" >> {seen}\n')
+    (fake / "docker").chmod(0o755)
+    env = {**os.environ, "HOME": str(home), "STUDIO_VPS": "local", "PATH": f"{fake}:{os.environ['PATH']}", "DOCKER_CONTEXT": "desktop-linux"}
+    subprocess.run(["bash", str(ROOT / "deploy/deploy.sh"), "dry"], env=env, capture_output=True, text=True, timeout=60)
+    assert seen.exists() and set(seen.read_text().split()) == {"default"}
+
+
 def test_deploy_without_a_target_refuses():
     env = {k: v for k, v in os.environ.items() if k != "STUDIO_VPS"}
     r = subprocess.run(["bash", str(ROOT / "deploy/deploy.sh"), "dry"], env=env, capture_output=True, text=True, timeout=30)

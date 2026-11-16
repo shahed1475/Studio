@@ -5,11 +5,11 @@ Hostinger deleted the VPS and everything on it. The studio now runs on this Fedo
 ## Where things are
 - **The running studio:** `~/studio` (its own folder). Do not edit files there by hand.
 - **Your workshop:** `~/Desktop/Youtube-automation` (code changes, tests). It is NOT the running studio.
-- **Open the dashboard:** on this PC `http://127.0.0.1:8913`; on your phone (Tailscale on) `http://fedora:8913`. Same login as before.
+- **Open the dashboard:** on this PC `http://127.0.0.1:8913`; on your phone (Tailscale on) `http://fedora:8913`. The old login was lost with the VPS: set it once with `docker --context default exec -it studio-dashboard python set_password.py you@gmail.com`, then `docker --context default restart studio-dashboard` (the phone address opens only after a login exists).
 - A dashboard started from the Desktop folder must use another port: `DASH_PORT=8914 .venv/bin/python dashboard.py`.
 
 ## It starts by itself
-Docker starts at boot and brings back `studio-dashboard` and `studio-worker` (restart unless-stopped). Check: `docker ps`.
+Fedora's own Docker engine (not Docker Desktop: always add `--context default`, or `export DOCKER_CONTEXT=default`) starts at boot and brings back `studio-dashboard` and `studio-worker` (restart unless-stopped). Check: `docker --context default ps`.
 
 Two things only you can set, once:
 1. The PC must not fall asleep: `gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type 'nothing'`
