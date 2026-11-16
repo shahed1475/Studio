@@ -24,7 +24,8 @@ def leaks(text: str) -> list[str]:
 
 
 def test_the_finder_catches_an_address_and_a_tailnet_name_but_not_test_boundaries():
-    assert leaks("open http://100.66.1.2:8913 or pc.tail1234.ts.net") == ["100.66.1.2", "pc.tail1234.ts.net"]
+    ip, name = "100." + "66.1.2", "pc.tail1234." + "ts.net"  # built from parts so this file never holds a full example itself
+    assert leaks(f"open http://{ip}:8913 or {name}") == [ip, name]
     assert leaks("refuse 100.64.0.1 and 100.127.255.254; 10.0.0.1 is fine") == []
 
 
