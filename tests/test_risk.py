@@ -263,7 +263,7 @@ def test_deploy_safe_mode_previews_first_and_stops_on_a_dirty_preview():
     from pathlib import Path
     text = (Path(__file__).parent.parent / "deploy" / "deploy.sh").read_text()
     safe = text[text.index('if [[ "${1:-}" == "dry-run-first" || "${1:-}" == "safe" ]]'):text.index('[[ "${1:-}" == "dry" ]] && DRY=1')]
-    assert '"$0" dry' in safe and "Fast-forward: yes" in safe and "No render is running" in safe and safe.index('"$0" dry') < safe.index('exec "$0"') and "exit 2" in safe and "exit 3" in safe
+    assert '"$0" dry' in safe and "Fast-forward: yes" in safe and "Blocked: yes" in safe and safe.index('"$0" dry') < safe.index('exec "$0"') and "exit 2" in safe and "exit 3" in safe
 
 
 def test_the_clean_checkout_script_never_uses_rm_and_removes_its_worktree_with_git():

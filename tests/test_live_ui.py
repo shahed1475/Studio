@@ -183,7 +183,7 @@ def test_the_app_installs_on_android_and_its_pages_are_built_for_touch():
 def test_the_deploy_script_never_restarts_the_dashboard_under_a_build_the_owner_started_from_it():
     """29 Oct 2026: it only looked for builds in the worker, so a deploy would have ended a documentary started from the dashboard."""
     sh = (ROOT / "deploy" / "deploy.sh").read_text()
-    assert sh.count("docker exec studio-dashboard") >= 2  # looked for in the preview and in the real run
+    assert "dashjobs=$(jobs_in studio-dashboard)" in sh and sh.index("dashjobs=$(jobs_in studio-dashboard)") < sh.index('if [[ "${DRY:-0}" == "1" ]]')  # looked for once, before both the preview and the real run (behaviour: tests/test_deploy_local.py)
     guard = sh[sh.index("Python files are loaded once"):]
     assert 'dashjobs' in guard and 'FORCE:-0' in guard and "docker compose restart dashboard" in guard
     assert guard.index("dashjobs") < guard.index("docker compose restart dashboard")  # checked before the restart
