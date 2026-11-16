@@ -991,6 +991,28 @@ def main() -> None:
             if res["heard_as"]:
                 print("  heard differently (leads, not proof):", "; ".join(f"{x} -> {y}" for x, y in res["heard_as"]))
             print(" ", res["coverage"])
+    elif a[0] == "channel-sync":  # read the channel, write its real video ids into local records (after the VPS records were lost, 17 Nov 2026); --apply writes
+        import channelsync
+        import upload
+
+        try:
+            yt = upload._service()
+            vids = channelsync.channel_videos(yt)
+        except Exception as e:
+            print(f"YouTube login expired or refused ({type(e).__name__}): re-run the login. Nothing was changed.")
+            raise SystemExit(2)
+        plan = channelsync.match(channelsync.local_metas(config.OUT), vids)
+        print(f"Channel: {len(vids)} videos. Local folders already holding an id: {plan['already']}.")
+        for r in plan["adopt"]:
+            print(f"  ON YOUTUBE, record missing: {r['slug']} -> {r['video_id']} (matched by {r['by']}, scheduled {r['publishAt']})")
+        for c in plan["conflicts"]:
+            print(f"  CONFLICT (owner decides, nothing written): {json.dumps(c)}")
+        for s in plan["unmatched_local"]:
+            print(f"  approved but NOT on the channel: {s}")
+        if "--apply" in a:
+            print(f"Written: {channelsync.apply(config.OUT, plan)} records.")
+        else:
+            print("Preview only. Run again with --apply to write the ids.")
     elif a[0] == "reschedule" and len(a) > 1:  # the owner's command: a new future time for an approved video that is private past its publish time with no schedule (Autopilot never does this by itself)
         import datetime as dt
 
