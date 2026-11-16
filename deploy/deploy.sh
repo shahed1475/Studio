@@ -14,7 +14,7 @@ DIR="${STUDIO_DIR:-studio}"
 if [[ "${1:-}" == "dry-run-first" || "${1:-}" == "safe" ]]; then  # preview first, then deploy only when the preview is clean: one command, so the preview is never skipped
   out=$("$0" dry) || exit 1; echo "$out"
   echo "$out" | grep -q "Fast-forward: yes" || { echo "Stopped: the server cannot fast-forward."; exit 2; }
-  if ! echo "$out" | grep -q "No render is running"; then echo "A render is running."; [[ "${FORCE:-0}" == "1" ]] || { echo "Stopped (FORCE=1 overrides)."; exit 3; }; fi
+  if echo "$out" | grep -q "Blocked: yes"; then echo "A job runs in a container this update would restart."; [[ "${FORCE:-0}" == "1" ]] || { echo "Stopped (FORCE=1 overrides)."; exit 3; }; fi  # a job in a container that stays up never blocks
   exec "$0"
 fi
 [[ "${1:-}" == "dry" ]] && DRY=1  # preview only: say what a real run would do, change nothing
@@ -30,6 +30,10 @@ fi
 on_server "FORCE=${FORCE:-0}" "DRY=${DRY:-0}" "DIR=$DIR" <<'REMOTE'
 set -euo pipefail
 cd "$DIR"
+docker info >/dev/null 2>&1 || { echo "Docker is not reachable (is the docker service running? on the PC the studio uses context default). Nothing changed."; exit 4; }
+jobs_in() { docker exec "$1" sh -c 'for p in /proc/[0-9]*/cmdline; do tr "\0" " " < "$p" 2>/dev/null; echo; done' 2>/dev/null | grep -E 'run\.py (doc|make|redo|clip|newsvideo|batch|autopilot)' | head -3 || true; }
+renders=$(jobs_in studio-worker)
+dashjobs=$(jobs_in studio-dashboard)  # a build started from the dashboard runs inside the dashboard container: a restart of it ends that build
 if [[ "${DRY:-0}" == "1" ]]; then
   git fetch -q origin
   OLD=$(git rev-parse HEAD); NEW=$(git rev-parse origin/main)
@@ -37,13 +41,19 @@ if [[ "${DRY:-0}" == "1" ]]; then
   if git merge-base --is-ancestor "$OLD" "$NEW"; then echo "Fast-forward: yes."; else echo "Fast-forward: NO, the real run would stop here."; fi
   changed=$(git diff --name-only "$OLD" "$NEW" || true)
   echo "Files that would change: $(echo "$changed" | grep -c . || true)"; echo "$changed" | sed 's/^/  /'
-  if echo "$changed" | grep -qE '^(Dockerfile|requirements.*\.txt|docker-compose\.yml)$'; then echo "Would rebuild the containers."; fi
-  if echo "$changed" | grep -qE '^worker\.py$'; then echo "Would restart the worker."; fi
-  if echo "$changed" | grep -qE '^[^/]+\.py$'; then echo "Would restart the dashboard (a Python file changed; pages and styles alone need no restart)."; fi
-  renders=$(docker exec studio-worker sh -c 'for p in /proc/[0-9]*/cmdline; do tr "\0" " " < "$p" 2>/dev/null; echo; done' 2>/dev/null | grep -E 'run\.py (doc|make|redo|clip|newsvideo|batch|autopilot)' | head -3 || true)
-  dashjobs=$(docker exec studio-dashboard sh -c 'for p in /proc/[0-9]*/cmdline; do tr "\0" " " < "$p" 2>/dev/null; echo; done' 2>/dev/null | grep -E 'run\.py (doc|make|redo|clip|newsvideo|batch|autopilot)' | head -3 || true)  # a build started from the dashboard runs inside the dashboard container: a restart of it ends that build
-  if [[ -n "$dashjobs" ]]; then renders="$renders"$'\n'"$dashjobs (started from the dashboard)"; fi
-  if [[ -n "$renders" ]]; then echo "Renders are running now:"; echo "$renders"; else echo "No render is running."; fi
+  rebuild=0; wrk=0; dash=0
+  echo "$changed" | grep -qE '^(Dockerfile|requirements.*\.txt|docker-compose\.yml)$' && rebuild=1
+  echo "$changed" | grep -qE '^worker\.py$' && wrk=1
+  echo "$changed" | grep -qE '^[^/]+\.py$' && dash=1
+  ((rebuild)) && echo "Would rebuild the containers."
+  ((wrk)) && echo "Would restart the worker."
+  ((dash)) && echo "Would restart the dashboard (a Python file changed; pages and styles alone need no restart)."
+  [[ -n "$renders" ]] && { echo "Jobs in the worker:"; echo "$renders"; }
+  [[ -n "$dashjobs" ]] && { echo "Jobs started from the dashboard:"; echo "$dashjobs"; }
+  [[ -z "$renders$dashjobs" ]] && echo "No render is running."
+  blocked=no
+  if { ((rebuild)) && [[ -n "$renders$dashjobs" ]]; } || { ((wrk)) && [[ -n "$renders" ]]; } || { ((dash)) && [[ -n "$dashjobs" ]]; }; then blocked=yes; fi
+  echo "Blocked: $blocked"
   exit 0
 fi
 OLD=$(git rev-parse HEAD)
@@ -51,8 +61,6 @@ git pull -q --ff-only
 NEW=$(git rev-parse HEAD)
 changed=$(git diff --name-only "$OLD" "$NEW" || true)
 export STUDIO_UID=$(id -u) STUDIO_GID=$(id -g)
-renders=$(docker exec studio-worker sh -c 'for p in /proc/[0-9]*/cmdline; do tr "\0" " " < "$p" 2>/dev/null; echo; done' 2>/dev/null | grep -E 'run\.py (doc|make|redo|clip|newsvideo|batch|autopilot)' | head -3 || true)
-dashjobs=$(docker exec studio-dashboard sh -c 'for p in /proc/[0-9]*/cmdline; do tr "\0" " " < "$p" 2>/dev/null; echo; done' 2>/dev/null | grep -E 'run\.py (doc|make|redo|clip|newsvideo|batch|autopilot)' | head -3 || true)
 if [[ "$OLD" == "$NEW" ]]; then echo "Already up to date ($NEW)."; fi
 if echo "$changed" | grep -qE '^(Dockerfile|requirements.*\.txt|docker-compose\.yml)$'; then
   if [[ -n "$renders" && "${FORCE:-0}" != "1" ]]; then
