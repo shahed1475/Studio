@@ -7,11 +7,15 @@ import compliance
 import records
 
 
+RETRIES_SEEN = []
+
+
 class _Call:
     def __init__(self, result):
         self.result = result
 
-    def execute(self):
+    def execute(self, num_retries=0):
+        RETRIES_SEEN.append(num_retries)
         return self.result
 
 
@@ -204,3 +208,10 @@ def test_apply_keeps_going_when_one_record_cannot_be_written(tmp_path, monkeypat
     assert channelsync.apply(tmp_path, plan) == 1
     assert plan["failed"] == [{"slug": "a", "error": "OSError: disk full"}]
     assert records.read(tmp_path / "b")["video_id"] == "YTb"
+
+
+def test_every_youtube_read_retries_with_the_librarys_backoff():
+    """google-api-python-client retries 5xx, 429 and rate-limit 403s with exponential backoff only when execute() gets num_retries; the default is 0."""
+    RETRIES_SEEN.clear()
+    channelsync.channel_videos(FakeYT([yt_video(f"v{i}", "t") for i in range(60)], page=50))  # 1 channel + 2 list pages + 2 detail batches
+    assert len(RETRIES_SEEN) == 5 and set(RETRIES_SEEN) == {channelsync.RETRIES} and channelsync.RETRIES >= 3

@@ -9,20 +9,22 @@ from pathlib import Path
 import compliance
 import records
 
+RETRIES = 5  # google-api-python-client retries 5xx, 429 and rate-limit 403s with exponential backoff only when execute() is given num_retries
+
 
 def channel_videos(yt) -> list[dict]:
     """Every upload of the channel (all pages), with the fields matching needs."""
-    uploads = yt.channels().list(part="contentDetails", mine=True).execute()["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
+    uploads = yt.channels().list(part="contentDetails", mine=True).execute(num_retries=RETRIES)["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
     ids, token = [], None
     while True:
-        res = yt.playlistItems().list(part="contentDetails", playlistId=uploads, maxResults=50, pageToken=token).execute()
+        res = yt.playlistItems().list(part="contentDetails", playlistId=uploads, maxResults=50, pageToken=token).execute(num_retries=RETRIES)
         ids += [i["contentDetails"]["videoId"] for i in res.get("items", [])]
         token = res.get("nextPageToken")
         if not token:
             break
     out = []
     for k in range(0, len(ids), 50):
-        got = {v["id"]: v for v in yt.videos().list(part="snippet,status", id=",".join(ids[k:k + 50])).execute().get("items", [])}
+        got = {v["id"]: v for v in yt.videos().list(part="snippet,status", id=",".join(ids[k:k + 50])).execute(num_retries=RETRIES).get("items", [])}
         for i in ids[k:k + 50]:
             if i in got:
                 sn, st = got[i].get("snippet", {}), got[i].get("status", {})
