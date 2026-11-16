@@ -1001,7 +1001,7 @@ def main() -> None:
         except Exception as e:
             print(f"YouTube login expired or refused ({type(e).__name__}): re-run the login. Nothing was changed.")
             raise SystemExit(2)
-        plan = channelsync.match(channelsync.local_metas(config.OUT), vids)
+        plan = channelsync.plan_adoptions(channelsync.local_records(config.OUT), vids)
         print(f"Channel: {len(vids)} videos. Local folders already holding an id: {plan['already']}.")
         for r in plan["adopt"]:
             print(f"  ON YOUTUBE, record missing: {r['slug']} -> {r['video_id']} (matched by {r['by']}, scheduled {r['publishAt']})")
@@ -1012,7 +1012,7 @@ def main() -> None:
         for s in plan["unreadable"]:
             print(f"  UNREADABLE record (not checked, not changed; it cannot be uploaded either): {s}/meta.json")
         if "--apply" in a:
-            print(f"Written: {channelsync.apply(config.OUT, plan)} records.")
+            print(f"Written: {channelsync.apply_adoptions(config.OUT, plan)} records.")
             for f in plan["failed"]:
                 print(f"  NOT written, run again: {f['slug']} ({f['error']})")
         else:

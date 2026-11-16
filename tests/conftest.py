@@ -126,7 +126,7 @@ def _isolate_owner_model_settings(tmp_path, monkeypatch):
     import config
 
     real_root = config.ROOT  # a test wrote the real data/governor.json and, once a day, posted a 'caps changed' notice into the next test's feed
-    monkeypatch.setattr(governor, "path", lambda: iso / "governor.json" if config.ROOT == real_root else config.ROOT / governor.FILE)
+    monkeypatch.setattr(governor, "caps_file", lambda: iso / "governor.json" if config.ROOT == real_root else config.ROOT / governor.FILE)
     for key in ("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN"):  # the owner's real free-picture keys; tests of the free account set their own
         monkeypatch.delenv(key, raising=False)
 

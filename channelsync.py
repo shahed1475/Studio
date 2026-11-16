@@ -33,7 +33,7 @@ def channel_videos(yt) -> list[dict]:
     return out
 
 
-def _same(meta: dict, v: dict) -> str | None:
+def _matched_by(meta: dict, v: dict) -> str | None:
     if meta.get("title") and v["title"] == meta["title"]:
         return "title"
     try:
@@ -45,14 +45,14 @@ def _same(meta: dict, v: dict) -> str | None:
     return None
 
 
-def match(metas: list[dict], videos: list[dict]) -> dict:
+def plan_adoptions(metas: list[dict], videos: list[dict]) -> dict:
     """Which local folders without an id are already on the channel. A video claimed by two folders (or a folder matching two videos) is a conflict for the owner."""
     unreadable = [m["slug"] for m in metas if m.get("unreadable")]
     metas = [m for m in metas if not m.get("unreadable")]
     held = {m["video_id"] for m in metas if m.get("video_id")}
     free = [v for v in videos if v["id"] not in held]
     open_ = [m for m in metas if not m.get("video_id")]
-    hits = {m["slug"]: [(v, by) for v in free if (by := _same(m, v))] for m in open_}
+    hits = {m["slug"]: [(v, by) for v in free if (by := _matched_by(m, v))] for m in open_}
     claims: dict[str, list[str]] = {}
     for slug, hs in hits.items():
         for v, _ in hs:
@@ -70,7 +70,7 @@ def match(metas: list[dict], videos: list[dict]) -> dict:
             "already": len(metas) - len(open_), "unreadable": unreadable}
 
 
-def apply(out_dir: Path, plan: dict) -> int:
+def apply_adoptions(out_dir: Path, plan: dict) -> int:
     """Merge each adopted id into its folder's record, unless the folder got an id in the meantime. A record that cannot be written is
     listed in plan["failed"] and the others are still written; running it again finishes the job."""
     n = 0
@@ -88,7 +88,7 @@ def apply(out_dir: Path, plan: dict) -> int:
     return n
 
 
-def local_metas(out_dir: Path) -> list[dict]:
+def local_records(out_dir: Path) -> list[dict]:
     """Every local record; one that cannot be read comes back as {"slug", "unreadable": True} so the others are still checked."""
     out = []
     for m in sorted(Path(out_dir).glob("*/meta.json")):

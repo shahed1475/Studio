@@ -93,7 +93,7 @@ def caps(vs, now: dt.datetime, base: dict | None = None) -> dict:
     return {"doc": max(1, doc), "short": max(1, short), "level": "watch" if why else "ok", "why": why}
 
 
-def path() -> Path:
+def caps_file() -> Path:
     """Where the current caps are kept (one place, so the tests can keep the owner's real file out of their reach)."""
     return config.ROOT / FILE
 
@@ -101,7 +101,7 @@ def path() -> Path:
 def record(c: dict, now: dt.datetime) -> None:
     """Save the caps and tell the owner once when they change. Never raises."""
     try:
-        where = path()
+        where = caps_file()
         old = json.loads(where.read_text()) if where.exists() else {}
         if (old.get("doc"), old.get("short")) == (c["doc"], c["short"]):
             return

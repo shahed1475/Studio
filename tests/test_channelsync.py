@@ -101,7 +101,7 @@ def test_channel_videos_tolerates_missing_fields():
 
 def test_match_adopts_a_video_with_the_same_title():
     metas = [{"slug": "a", "title": "The Lost Army", "approved": True}]
-    plan = channelsync.match(metas, [{"id": "YT1", "title": "The Lost Army", "description": "", "publishedAt": "2026-11-12T08:00:00Z", "privacyStatus": "private", "publishAt": "2026-11-20T14:00:00Z"}])
+    plan = channelsync.plan_adoptions(metas, [{"id": "YT1", "title": "The Lost Army", "description": "", "publishedAt": "2026-11-12T08:00:00Z", "privacyStatus": "private", "publishAt": "2026-11-20T14:00:00Z"}])
     assert plan["adopt"] == [{"slug": "a", "video_id": "YT1", "by": "title", "publishedAt": "2026-11-12T08:00:00Z", "publishAt": "2026-11-20T14:00:00Z"}]
     assert plan["unmatched_local"] == [] and plan["conflicts"] == []
 
@@ -109,13 +109,13 @@ def test_match_adopts_a_video_with_the_same_title():
 def test_match_finds_a_retitled_video_by_its_description():
     meta = {"slug": "b", "title": "New title after a fix", "description": "Fifty thousand Persian soldiers marched into the desert and were never seen again.", "tags": [], "approved": True}
     on_yt = compliance.final_description(meta)
-    plan = channelsync.match([meta], [{"id": "YT2", "title": "Old title", "description": on_yt, "publishedAt": "x", "privacyStatus": "private", "publishAt": None}])
+    plan = channelsync.plan_adoptions([meta], [{"id": "YT2", "title": "Old title", "description": on_yt, "publishedAt": "x", "privacyStatus": "private", "publishAt": None}])
     assert [(r["slug"], r["video_id"], r["by"]) for r in plan["adopt"]] == [("b", "YT2", "description")]
 
 
 def test_match_never_touches_a_folder_that_already_has_an_id():
     metas = [{"slug": "c", "title": "Same", "video_id": "OLD"}, {"slug": "d", "title": "Other"}]
-    plan = channelsync.match(metas, [{"id": "NEW", "title": "Same", "description": "", "publishedAt": "x", "privacyStatus": "private", "publishAt": None},
+    plan = channelsync.plan_adoptions(metas, [{"id": "NEW", "title": "Same", "description": "", "publishedAt": "x", "privacyStatus": "private", "publishAt": None},
                                      {"id": "OLD", "title": "Same", "description": "", "publishedAt": "x", "privacyStatus": "public", "publishAt": None}])
     assert plan["adopt"] == []
     assert plan["already"] == 1
@@ -123,14 +123,14 @@ def test_match_never_touches_a_folder_that_already_has_an_id():
 
 def test_match_reports_two_folders_claiming_one_video_and_adopts_neither():
     metas = [{"slug": "e1", "title": "Twin", "approved": True}, {"slug": "e2", "title": "Twin", "approved": True}]
-    plan = channelsync.match(metas, [{"id": "YT3", "title": "Twin", "description": "", "publishedAt": "x", "privacyStatus": "private", "publishAt": None}])
+    plan = channelsync.plan_adoptions(metas, [{"id": "YT3", "title": "Twin", "description": "", "publishedAt": "x", "privacyStatus": "private", "publishAt": None}])
     assert plan["adopt"] == []
     assert plan["conflicts"] == [{"video_id": "YT3", "slugs": ["e1", "e2"]}]
 
 
 def test_match_lists_approved_videos_that_are_not_on_the_channel():
     metas = [{"slug": "f", "title": "Never sent", "approved": True}, {"slug": "g", "title": "Draft", "approved": False}]
-    plan = channelsync.match(metas, [])
+    plan = channelsync.plan_adoptions(metas, [])
     assert plan["unmatched_local"] == ["f"]
 
 
@@ -139,7 +139,7 @@ def test_apply_writes_only_the_adopt_rows(tmp_path):
         (tmp_path / slug).mkdir()
         (tmp_path / slug / "meta.json").write_text(json.dumps(meta))
     plan = {"adopt": [{"slug": "a", "video_id": "YT1", "by": "title", "publishedAt": "2026-11-12T08:00:00Z", "publishAt": "2026-11-20T14:00:00Z"}], "conflicts": [], "unmatched_local": [], "already": 0}
-    assert channelsync.apply(tmp_path, plan) == 1
+    assert channelsync.apply_adoptions(tmp_path, plan) == 1
     a = records.read(tmp_path / "a")
     assert a["video_id"] == "YT1" and a["uploaded_at"] == "2026-11-12T08:00:00Z" and a["publish_at"] == "2026-11-20T14:00:00Z" and a["adopted_from_channel"] is True
     assert "video_id" not in records.read(tmp_path / "z")
@@ -149,7 +149,7 @@ def test_apply_skips_a_folder_that_got_an_id_in_the_meantime(tmp_path):
     (tmp_path / "a").mkdir()
     (tmp_path / "a" / "meta.json").write_text(json.dumps({"title": "A", "video_id": "MINE"}))
     plan = {"adopt": [{"slug": "a", "video_id": "YT1", "by": "title", "publishedAt": "x", "publishAt": None}]}
-    assert channelsync.apply(tmp_path, plan) == 0
+    assert channelsync.apply_adoptions(tmp_path, plan) == 0
     assert records.read(tmp_path / "a")["video_id"] == "MINE"
 
 
@@ -158,8 +158,8 @@ def test_a_broken_record_is_listed_and_every_other_video_is_still_checked(tmp_pa
     (tmp_path / "good" / "meta.json").write_text(json.dumps({"title": "A", "approved": True}))
     (tmp_path / "bad").mkdir()
     (tmp_path / "bad" / "meta.json").write_text("{not json")
-    metas = channelsync.local_metas(tmp_path)
-    plan = channelsync.match(metas, [{"id": "YT1", "title": "A", "description": "", "publishedAt": "x", "privacyStatus": "private", "publishAt": None}])
+    metas = channelsync.local_records(tmp_path)
+    plan = channelsync.plan_adoptions(metas, [{"id": "YT1", "title": "A", "description": "", "publishedAt": "x", "privacyStatus": "private", "publishAt": None}])
     assert plan["unreadable"] == ["bad"]
     assert [r["slug"] for r in plan["adopt"]] == ["good"]
     assert (tmp_path / "bad" / "meta.json").read_text() == "{not json"  # a broken record is reported, never rewritten
@@ -168,8 +168,8 @@ def test_apply_run_twice_writes_once(tmp_path):
     (tmp_path / "a").mkdir()
     (tmp_path / "a" / "meta.json").write_text(json.dumps({"title": "A"}))
     plan = {"adopt": [{"slug": "a", "video_id": "YT1", "by": "title", "publishedAt": "x", "publishAt": None}]}
-    assert channelsync.apply(tmp_path, plan) == 1
-    assert channelsync.apply(tmp_path, plan) == 0
+    assert channelsync.apply_adoptions(tmp_path, plan) == 1
+    assert channelsync.apply_adoptions(tmp_path, plan) == 0
     assert records.read(tmp_path / "a")["video_id"] == "YT1"
 
 
@@ -205,7 +205,7 @@ def test_apply_keeps_going_when_one_record_cannot_be_written(tmp_path, monkeypat
 
     monkeypatch.setattr(records, "merge", merge)
     plan = {"adopt": [{"slug": s, "video_id": "YT" + s, "by": "title", "publishedAt": "x", "publishAt": None} for s in ("a", "b")]}
-    assert channelsync.apply(tmp_path, plan) == 1
+    assert channelsync.apply_adoptions(tmp_path, plan) == 1
     assert plan["failed"] == [{"slug": "a", "error": "OSError: disk full"}]
     assert records.read(tmp_path / "b")["video_id"] == "YTb"
 
