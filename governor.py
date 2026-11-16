@@ -93,15 +93,20 @@ def caps(vs, now: dt.datetime, base: dict | None = None) -> dict:
     return {"doc": max(1, doc), "short": max(1, short), "level": "watch" if why else "ok", "why": why}
 
 
+def path() -> Path:
+    """Where the current caps are kept (one place, so the tests can keep the owner's real file out of their reach)."""
+    return config.ROOT / FILE
+
+
 def record(c: dict, now: dt.datetime) -> None:
     """Save the caps and tell the owner once when they change. Never raises."""
     try:
-        path = config.ROOT / FILE
-        old = json.loads(path.read_text()) if path.exists() else {}
+        where = path()
+        old = json.loads(where.read_text()) if where.exists() else {}
         if (old.get("doc"), old.get("short")) == (c["doc"], c["short"]):
             return
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({**c, "at": now.strftime("%Y-%m-%dT%H:%M:%SZ")}, indent=1))
+        where.parent.mkdir(parents=True, exist_ok=True)
+        where.write_text(json.dumps({**c, "at": now.strftime("%Y-%m-%dT%H:%M:%SZ")}, indent=1))
         import agentlog
 
         agentlog.event("info", f"Autopilot changed its weekly pace: {c['doc']} documentaries, {c['short']} Shorts",

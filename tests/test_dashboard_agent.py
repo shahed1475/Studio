@@ -57,8 +57,9 @@ def test_strategy_apply_advice_kind_returns_error_and_dismiss_restore():
 
 
 def test_read_marks_events_read():
+    before = dashboard.state()["agent"]["unread"]  # the dashboard may post its own notice (the governor's 'weekly pace' on a first look); count only this event
     agentlog.event("info", "x")
-    assert dashboard.state()["agent"]["unread"] == 1
+    assert dashboard.state()["agent"]["unread"] == before + 1
     dashboard.agent_read()
     assert dashboard.state()["agent"]["unread"] == 0
 

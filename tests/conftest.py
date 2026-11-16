@@ -107,6 +107,31 @@ def _local_fallback_for_old_tests(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_owner_model_settings(tmp_path, monkeypatch):
+    """No test may read the owner's llm.json, settings.json, spend records, free-picture account or downloaded depth model: on the owner's PC
+    (17 Nov 2026) free review, free Cloudflare pictures and the depth model made 10 tests pass on a clean checkout and fail there. Every test
+    starts from the shipped defaults, as on a clean checkout; a test that needs a setting writes or patches its own."""
+    import freeart
+    import llm
+
+    iso = tmp_path / "_model_settings_isolated"
+    iso.mkdir()
+    monkeypatch.setattr(llm, "CONFIG_FILE", iso / "llm.json")
+    monkeypatch.setattr(llm, "SETTINGS_FILE", iso / "settings.json")
+    monkeypatch.setattr(llm, "USAGE_FILE", iso / "llm_usage.json")
+    monkeypatch.setattr(freeart, "USAGE", iso / "cloudflare_usage.json")
+    monkeypatch.setattr(llm, "_costs_file", lambda: iso / "video_costs.json")  # tests booked invented spend into the real data/video_costs.json
+    import governor
+
+    import config
+
+    real_root = config.ROOT  # a test wrote the real data/governor.json and, once a day, posted a 'caps changed' notice into the next test's feed
+    monkeypatch.setattr(governor, "path", lambda: iso / "governor.json" if config.ROOT == real_root else config.ROOT / governor.FILE)
+    for key in ("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN"):  # the owner's real free-picture keys; tests of the free account set their own
+        monkeypatch.delenv(key, raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _no_listening_in_tests(monkeypatch):
     """The studio listens to the narration of a video it approves (a model call). No test may do that by accident; the tests of the check itself switch it on and use a fake model."""
     import voicecheck
