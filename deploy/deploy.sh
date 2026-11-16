@@ -18,12 +18,15 @@ if [[ "${1:-}" == "dry-run-first" || "${1:-}" == "safe" ]]; then  # preview firs
   exec "$0"
 fi
 [[ "${1:-}" == "dry" ]] && DRY=1  # preview only: say what a real run would do, change nothing
+# STUDIO_VPS=local: the studio runs on this machine in ~/$DIR (the owner's PC since 17 Nov 2026, the VPS was deleted); the same steps run here without ssh.
+on_server() { if [[ "$STUDIO_VPS" == "local" ]]; then (cd "$HOME" && env "$@" bash -s); else ssh "$STUDIO_VPS" "$* bash -s"; fi; }
+if [[ "${1:-}" == "first" && "$STUDIO_VPS" == "local" ]]; then echo "'first' copies secrets to a remote server, not with STUDIO_VPS=local; on this PC set ~/$DIR up by hand (docs/HOME_SERVER.md)." >&2; exit 2; fi
 if [[ "${1:-}" == "first" ]]; then
   ssh "$STUDIO_VPS" "test -d $DIR/.git || git clone $REPO $DIR"
   cd "$(dirname "$0")/.."
   for f in .env client_secret.json token.json; do [[ -f "$f" ]] && scp -q "$f" "$STUDIO_VPS:$DIR/$f" && ssh "$STUDIO_VPS" "chmod 600 $DIR/$f"; done
 fi
-ssh "$STUDIO_VPS" "FORCE=${FORCE:-0} DRY=${DRY:-0} DIR=$DIR bash -s" <<'REMOTE'
+on_server "FORCE=${FORCE:-0}" "DRY=${DRY:-0}" "DIR=$DIR" <<'REMOTE'
 set -euo pipefail
 cd "$DIR"
 if [[ "${DRY:-0}" == "1" ]]; then
