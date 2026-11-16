@@ -55,7 +55,7 @@
 ### Task 4: build the server folder (no code)
 - `git clone` of GitHub `main` into `~/studio`; copy from `~/vps-backup-2026-11-13/studio` every file the clone lacks (`rsync -a --ignore-existing`, excluding `.git`, `data`, `output`, `output_old`, `__pycache__`), then the server's two `branding/*.png`.
 - `cp -a --reflink=always` the Desktop `data/` and `output/` into `~/studio`.
-- Back up `.env` and `autopilot.json`; set `STUDIO_BIND=100.66.186.116`, `STUDIO_HOSTS=100.66.186.116,fedora,fedora.tail4c5c78.ts.net`, `COMPOSE_FILE=docker-compose.yml:deploy/home-compose.yml`; set `pause_scheduling: true`. chmod 600 on secrets.
+- Back up `.env` and `autopilot.json`; set `STUDIO_BIND=<this PC's Tailscale IP>`, `STUDIO_HOSTS=<this PC's Tailscale IP>,fedora,<its ts.net name>`, `COMPOSE_FILE=docker-compose.yml:deploy/home-compose.yml`; set `pause_scheduling: true`. chmod 600 on secrets.
 - Verify: `git status` clean apart from ignored files; secret files present (names only).
 
 ### Task 5: start and reconcile
