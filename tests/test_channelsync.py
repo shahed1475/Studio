@@ -147,3 +147,24 @@ def test_apply_skips_a_folder_that_got_an_id_in_the_meantime(tmp_path):
     plan = {"adopt": [{"slug": "a", "video_id": "YT1", "by": "title", "publishedAt": "x", "publishAt": None}]}
     assert channelsync.apply(tmp_path, plan) == 0
     assert records.read(tmp_path / "a")["video_id"] == "MINE"
+
+
+def test_a_broken_record_stops_the_check_before_anything_is_written(tmp_path):
+    import pytest
+
+    (tmp_path / "good").mkdir()
+    (tmp_path / "good" / "meta.json").write_text(json.dumps({"title": "A", "approved": True}))
+    (tmp_path / "bad").mkdir()
+    (tmp_path / "bad" / "meta.json").write_text("{not json")
+    with pytest.raises(ValueError):
+        channelsync.local_metas(tmp_path)
+    assert "video_id" not in records.read(tmp_path / "good")
+
+
+def test_apply_run_twice_writes_once(tmp_path):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "a" / "meta.json").write_text(json.dumps({"title": "A"}))
+    plan = {"adopt": [{"slug": "a", "video_id": "YT1", "by": "title", "publishedAt": "x", "publishAt": None}]}
+    assert channelsync.apply(tmp_path, plan) == 1
+    assert channelsync.apply(tmp_path, plan) == 0
+    assert records.read(tmp_path / "a")["video_id"] == "YT1"
