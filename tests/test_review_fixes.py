@@ -194,9 +194,11 @@ def test_prune_logs_removes_only_old_job_logs(tmp_path):
     old, new, keep = tmp_path / "101010-make.log", tmp_path / "111111-make.log", tmp_path / "worker.log"
     for f in (old, new, keep):
         f.write_text("x")
-    past = time.time() - 40 * 86400
+    past = NOW.timestamp() - 40 * 86400  # age the files against the same clock the function is given, not against today's date
     for f in (old, keep):
         os.utime(f, (past, past))
+    new_t = NOW.timestamp() - 1 * 86400
+    os.utime(new, (new_t, new_t))  # "new" is a day old at NOW: it must stay however far the real clock has moved on
     assert worker.prune_logs(tmp_path, 14, NOW) == 1
     assert not old.exists() and new.exists() and keep.exists()  # named logs are never pruned
 

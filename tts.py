@@ -1,5 +1,6 @@
 """US-English neural voice (free, edge-tts) plus word-timed captions."""
 import asyncio
+import time
 import json
 import re
 import subprocess
@@ -249,7 +250,14 @@ def narrate(lines: list[str], work: Path, pause: float = 0.12, motion: int = 0, 
         mp3 = work / f"line{i:02d}.mp3"
         pros = line_prosody(style, text, i, len(lines))
         said = spoken(text)
-        words = asyncio.run(_synth_line(said, mp3) if pros is None else _synth_line(said, mp3, pros))
+        for attempt in range(5):  # the voice service sometimes returns no audio for one line of a long film: wait and ask again instead of losing the whole build
+            try:
+                words = asyncio.run(_synth_line(said, mp3) if pros is None else _synth_line(said, mp3, pros))
+                break
+            except Exception as e:
+                if type(e).__name__ != "NoAudioReceived" or attempt == 4:
+                    raise
+                time.sleep(5 * (attempt + 1))
         d = line_length(_duration(mp3), words, pause, tail)  # small breath between lines
         all_words += [(s + offset, e + offset, unspoken(w), i) for s, e, w in words]
         durations.append(d)

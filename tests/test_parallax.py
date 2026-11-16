@@ -15,6 +15,9 @@ def _cache(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CACHE", tmp_path / "cache")
     (tmp_path / "cache" / "art").mkdir(parents=True)
     (tmp_path / "cache" / "anim").mkdir()
+    # a picture with no stored map must get the approximate one here, even on a machine that has the real depth model in data/models
+    monkeypatch.setattr(depth, "model_path", lambda: tmp_path / "no-model" / "missing.onnx")
+    depth._session.cache_clear()
 
 
 def gradient(tmp_path, name="g.jpg", size=(320, 180), where="art"):

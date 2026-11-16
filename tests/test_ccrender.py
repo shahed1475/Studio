@@ -1,4 +1,6 @@
 """ccrender.py (1 Nov 2026): the parts that need no Blender, and one real render when Blender is installed."""
+from pathlib import Path
+
 import pytest
 from PIL import Image
 
@@ -32,6 +34,8 @@ def test_missing_blender_is_a_clear_error(monkeypatch, tmp_path):
 
 
 @pytest.mark.skipif(not ccrender.BLENDER.exists(), reason="Blender is not installed here")
+@pytest.mark.skipif(not any((Path(__file__).resolve().parent.parent / "assets" / "cc0" / "hdri").glob("*")),
+                    reason="the CC0 sky files (assets/cc0/hdri) are not in git; a clean checkout has none")
 def test_real_render_writes_picture_and_depth(monkeypatch, tmp_path):
     import config
     import depth

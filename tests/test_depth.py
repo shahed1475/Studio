@@ -11,6 +11,9 @@ import depth
 def _cache(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CACHE", tmp_path / "cache")
     (tmp_path / "cache" / "art").mkdir(parents=True)
+    # these tests are about a picture WITHOUT a map: never let the real model in data/models (present on the owner's PC and the server) make one
+    monkeypatch.setattr(depth, "model_path", lambda: tmp_path / "no-model" / "missing.onnx")
+    depth._session.cache_clear()
 
 
 def picture(tmp_path, colour=(200, 120, 60), name="a.jpg", size=(320, 180)):
