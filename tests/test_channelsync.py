@@ -168,3 +168,22 @@ def test_apply_run_twice_writes_once(tmp_path):
     assert channelsync.apply(tmp_path, plan) == 1
     assert channelsync.apply(tmp_path, plan) == 0
     assert records.read(tmp_path / "a")["video_id"] == "YT1"
+
+
+def test_channel_sync_command_reports_a_refused_login_and_writes_nothing(tmp_path, monkeypatch, capsys):
+    import pytest
+
+    import config
+    import run
+    import upload
+
+    (tmp_path / "a").mkdir()
+    (tmp_path / "a" / "meta.json").write_text(json.dumps({"title": "A", "approved": True}))
+    monkeypatch.setattr(config, "OUT", tmp_path)
+    monkeypatch.setattr(upload, "_service", lambda: (_ for _ in ()).throw(RuntimeError("invalid_grant")))
+    monkeypatch.setattr("sys.argv", ["run.py", "channel-sync", "--apply"])
+    with pytest.raises(SystemExit) as e:
+        run.main()
+    assert e.value.code == 2
+    assert "login expired or refused" in capsys.readouterr().out
+    assert "video_id" not in records.read(tmp_path / "a")
