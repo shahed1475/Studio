@@ -27,3 +27,6 @@ The server's video folders and records (upload records, claim ledgers, action lo
 
 ## Disk
 The disk is about 95% full. The studio's folder shares space with the Desktop copy by btrfs reflinks (no double space until files change). Nothing is deleted automatically.
+
+## After changing `~/studio/.env` (for example the Tailscale address)
+`docker compose restart` does NOT re-read `.env`: the container keeps its old settings and, with a dead address, crashes in a loop ("Cannot assign requested address"). Recreate the container instead: `cd ~/studio && DOCKER_CONTEXT=default STUDIO_UID=$(id -u) STUDIO_GID=$(id -g) docker compose up -d dashboard`. The worker is not touched by that.
