@@ -11,7 +11,7 @@ Owner's question: the Delphi and Pied Piper documentaries are still drafts ("Nee
   3. The reviewer also says the ending repeats itself (the same museum line 4+ times).
 - Pied Piper: last visual reading is from 02:35 UTC (before the newer remedies), 0 repair tries used. Nothing wrong with the flow; it waits.
 - Money: $3.95 spent today, $2.66 of it on AI pictures; about $5.3 left. A blanket redraw of 16 scenes costs about $0.55, two scenes cost about $0.07.
-- Browser: the dashboard answers at http://100.123.254.63:8913 (the name vps-ai does not resolve in Chrome) and asks for the owner's sign-in. I do not enter the password, so the page-by-page visual check needs the owner to sign in first.
+- Browser: the dashboard answers at http://<the VPS Tailscale IP>:8913 (the name vps-ai does not resolve in Chrome) and asks for the owner's sign-in. I do not enter the password, so the page-by-page visual check needs the owner to sign in first.
 
 ## Fixes (each test-first, one change at a time)
 1. `scriptgen.strip_labels`: remove "Chapter N:" style prefixes, drop lines that are only a heading or "Chapter N examines..." and re-map the chapter start lines. Used when a script is written and by the fixer.
