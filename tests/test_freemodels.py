@@ -340,22 +340,23 @@ def test_a_cut_off_json_answer_is_counted_with_its_finish_reason():
     assert c["a/m1:free"]["script"]["json_bad"] == 2 and c["a/m1:free"]["script"]["finish"] == {"length": 1, "stop": 1}
 
 
-def test_each_free_call_is_timed_and_records_why_a_reply_was_not_json(router, monkeypatch):
-    """One model asked once is the unit now (`_ask_free`): `_free_chat` races the top two for a script, so two calls are made here one after the other."""
-    stamps = [100.0, 142.0, 200.0, 207.0]                                     # call one took 42 s, call two took 7 s
+def test_each_free_call_is_timed_and_a_cut_off_reply_is_recorded(router, monkeypatch):
+    """One model asked once is the unit now (`_ask_free`): `_free_chat` races the top two for a script. Here the first reply is cut off,
+    the retry with twice the room answers, and both calls' times and the truncation are recorded."""
+    stamps = [100.0, 142.0, 200.0, 207.0]                                     # call one took 42 s, the retry took 7 s
     monkeypatch.setattr(llm.time, "monotonic", lambda: stamps.pop(0) if len(stamps) > 1 else stamps[0])
-    seen = []
+    caps = []
 
     def post(payload, key):
-        seen.append(payload["model"])
-        if len(seen) == 1:
+        caps.append(payload["max_tokens"])
+        if len(caps) == 1:
             return {"choices": [{"message": {"content": '{"lines": [{"n": 1, "text": "cut'}, "finish_reason": "length"}], "usage": {}}
         return reply('{"ok": 1}')
 
     monkeypatch.setattr(llm, "_post", post)
     cfg = llm.load_config()
-    assert llm._ask_free("a/m1:free", "p", "script", cfg, "k", NOW) is None   # a reply cut off by the output limit is no answer
-    assert llm._ask_free("b/m2:free", "p", "script", cfg, "k", NOW) == {"ok": 1}
-    rep = freemodels.failure_report()
-    assert rep["a/m1:free"]["script"]["finish"] == {"length": 1} and rep["a/m1:free"]["script"]["json_bad"] == 1
-    assert freemodels.median_seconds("b/m2:free", "script") == 7.0             # the second call took 207 - 200 seconds
+    assert llm._ask_free("a/m1:free", "p", "script", cfg, "k", NOW) == {"ok": 1}
+    assert caps == [6000, 12000]                                              # the same model, one retry with twice the room
+    rep = freemodels.failure_report()["a/m1:free"]["script"]
+    assert rep["finish"] == {"length": 1} and rep["json_bad"] == 1 and rep["ok"] == 1
+    assert freemodels._load()["health"]["a/m1:free"]["roles"]["script"]["secs"] == [42.0, 7.0]

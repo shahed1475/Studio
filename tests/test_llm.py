@@ -516,3 +516,60 @@ def test_free_timeout_comes_from_config(monkeypatch, tmp_path):
     monkeypatch.setattr(llm.requests, "post", lambda url, **kw: seen.append(kw.get("timeout")) or Reply())
     assert llm._free_chat("p", "script", cfg, "sk-x", NOW) == {"ok": 1}
     assert seen == [7]  # the free model got the configured 7 seconds, not the fixed 240
+
+
+# ---- 17 Nov 2026: a free reasoning model spends the output cap on thinking, so the JSON is cut off (`finish_reason: length`) ----
+
+def test_a_reply_cut_off_by_the_output_limit_is_asked_again_with_a_larger_cap(monkeypatch, tmp_path):
+    import freemodels
+
+    cfg = _race_setup(monkeypatch, tmp_path, ["a/m1:free"], max_output_tokens=6000)
+    counted = []
+    monkeypatch.setattr(freemodels, "count_request", lambda now, role: counted.append(role))
+    caps, calls = [], []
+
+    def post(payload, key):
+        caps.append(payload["max_tokens"])
+        calls.append(payload["model"])
+        if len(calls) == 1:
+            return {"choices": [{"message": {"content": '{"lines": [{"n": 1'}, "finish_reason": "length"}], "usage": {}}
+        return {"choices": [{"message": {"content": '{"ok": 1}'}}], "usage": {}}
+
+    monkeypatch.setattr(llm, "_post", post)
+    assert llm._ask_free("a/m1:free", "p", "review", cfg, "k", NOW) == {"ok": 1}
+    assert caps == [6000, 12000]                       # the same model was asked once more with twice the room
+    assert len(counted) == 2                           # and both requests count against the free allowance
+    h = freemodels.failure_report()["a/m1:free"]["review"]
+    assert h["finish"] == {"length": 1} and h["json_bad"] == 1 and h["ok"] == 1
+
+
+def test_the_larger_cap_never_passes_the_owners_maximum_and_the_retry_is_only_one(monkeypatch, tmp_path):
+    import freemodels
+
+    cfg = _race_setup(monkeypatch, tmp_path, ["a/m1:free"], max_output_tokens=12000)
+    monkeypatch.setattr(freemodels, "count_request", lambda now, role: None)
+    caps = []
+
+    def post(payload, key):
+        caps.append(payload["max_tokens"])
+        return {"choices": [{"message": {"content": '{"cut'}, "finish_reason": "length"}], "usage": {}}
+
+    monkeypatch.setattr(llm, "_post", post)
+    assert llm._ask_free("a/m1:free", "p", "review", cfg, "k", NOW) is None
+    assert caps == [12000, 16000]                      # 16,000 is llm.validate_config's ceiling; no third try
+
+
+def test_a_rambling_reply_that_was_not_cut_off_is_not_retried(monkeypatch, tmp_path):
+    import freemodels
+
+    cfg = _race_setup(monkeypatch, tmp_path, ["a/m1:free"], max_output_tokens=6000)
+    monkeypatch.setattr(freemodels, "count_request", lambda now, role: None)
+    calls = []
+
+    def post(payload, key):
+        calls.append(payload["max_tokens"])
+        return {"choices": [{"message": {"content": "Sure! Here is the review:"}, "finish_reason": "stop"}], "usage": {}}
+
+    monkeypatch.setattr(llm, "_post", post)
+    assert llm._ask_free("a/m1:free", "p", "review", cfg, "k", NOW) is None
+    assert calls == [6000]                             # a paid request is not spent on a model that simply cannot follow the format

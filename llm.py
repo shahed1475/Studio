@@ -484,6 +484,7 @@ REVIEW_RESERVE_USD = 0.50  # the quality gate may spend this much past the daily
 
 ROUNDS = 3  # passes over the free models; a busy provider (429) usually frees up within a minute or two
 FREE_TIMEOUT = 120  # seconds a free model gets to answer (llm.json `free_timeout_s`; the paid models keep 240)
+FREE_MAX_TOKENS = 16000  # the ceiling llm.validate_config sets: a cut-off free reply is asked again once, with up to this much room
 RACE_ROLES = ("script", "review")  # the jobs where a wrong or missing answer costs the most: two models are asked at once
 
 
@@ -493,26 +494,30 @@ class _NoAllowance(Exception):
 
 def _ask_free(mid: str, prompt: str, role: str, cfg: dict, key: str, now: dt.datetime) -> dict | None:
     """One free model asked once (JSON mode, then plain when the provider refuses JSON). Counts the request and records the outcome;
-    None means it failed, so the caller moves on. Raises `_NoAllowance` before asking when the day's requests are used up."""
+    None means it failed, so the caller moves on. Raises `_NoAllowance` before asking when the day's requests are used up.
+    A reply the output limit cut off (`finish_reason: length`) is asked once more with twice the room, because a reasoning model can spend the
+    whole cap on thinking and never reach its JSON (three of six failing review models on 17 Nov 2026)."""
     is_extra = mid.startswith(EXTRA_PREFIX)
     if not is_extra and freemodels.remaining(now, key, cfg["free_daily_limit"]) <= 0:
         _note(now, f"{role}: today's free request allowance is used up")
         raise _NoAllowance
     if not is_extra and role == "cheap" and freemodels.requests_today(now, "cheap") >= int(cfg["free_daily_limit"] * CHEAP_SHARE):
         raise _NoAllowance  # keep the rest of the free requests for scripts and fact-checks
-    for json_mode in (True, False):
+    json_mode, cap, retried = True, int(cfg["max_output_tokens"]), False
+    while True:
         if not is_extra:
             freemodels.count_request(now, role)  # failed requests count against the limit too
         else:
             _pace_extra(mid)
         t0 = time.monotonic()
-        payload = _payload(mid, prompt, cfg["max_output_tokens"], json_mode, role)
+        payload = _payload(mid, prompt, cap, json_mode, role)
         payload["_timeout_s"] = cfg.get("free_timeout_s") or FREE_TIMEOUT
         try:
             body = _post(payload, key)
         except Exception as e:
             code = getattr(getattr(e, "response", None), "status_code", None)
             if json_mode and isinstance(e, requests.HTTPError) and code == 400:
+                json_mode = False  # some free models reject JSON mode: ask the same one again without it
                 continue
             try:
                 ra = int(float((getattr(getattr(e, "response", None), "headers", None) or {}).get("Retry-After")))
@@ -532,6 +537,11 @@ def _ask_free(mid: str, prompt: str, role: str, cfg: dict, key: str, now: dt.dat
             except (KeyError, IndexError, TypeError, AttributeError):
                 fin = None
             freemodels.record(mid, False, now, role=role, seconds=took, reason="json", finish=fin)
+            if fin == "length" and not retried and cap < FREE_MAX_TOKENS:
+                retried = True
+                cap = min(FREE_MAX_TOKENS, cap * 2)
+                _note(now, f"{role}: free model {mid} was cut off by the output limit; asked again with {cap} tokens")
+                continue
             _note(now, f"{role}: free model {mid} did not return JSON" + (" (cut off by the output limit)" if fin == "length" else f" (finish: {fin})" if fin else ""))
             return None
         freemodels.record(mid, True, now, role=role, seconds=took)
