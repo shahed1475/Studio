@@ -573,7 +573,8 @@ function liveControls(){
   return "";
 }
 function heroHTML(){
-  const st=L.stage,on=wasBusy(),m=L.money,cr=L.credit,stale=on&&st.age_s>90;
+  const st=L.stage,quiet=!!(L.pass_running&&st.idle&&st.key&&st.age_s!=null&&st.age_s>180&&st.age_s<7200&&!/^Done:/.test(st.last_line||"")),  // the lock is held and the build log went quiet: a long model call (a script written by a free model) prints nothing, so it is working, not idle
+    on=wasBusy()||quiet,m=L.money,cr=L.credit,stale=on&&st.age_s>90;
   const title=on?(st.topic?"Making "+esc(st.topic):"Working on a video"):(L.autopilot_on?"Idle, waiting for the next slot":"Idle, Autopilot is off");
   const old=!on&&st.age_s!=null&&st.age_s>21600;  // a log from days ago is not news
   const beat=old?`<div class="heartbeat">No build has run in the last ${secs(st.age_s)}.</div>`:st.last_line?`<div class="heartbeat ${stale?"stale":""}" title="${esc(st.last_line)}">${on?`<b>${esc(st.label||"")}</b> last output ${secs(st.age_s)} ago${stale?", it may be stuck":""}. `:(st.age_s!=null?`Last build output ${secs(st.age_s)} ago. `:"")}${esc(st.last_line)}</div>`:"";
