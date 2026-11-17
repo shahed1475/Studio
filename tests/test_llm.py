@@ -437,3 +437,82 @@ def test_two_judges_that_disagree_in_shape_give_no_review(monkeypatch):
     _free_pair(monkeypatch, [{"invented_facts_risk": 2}, {"invented_facts_risk": "very low"}], free_review=True)
     with pytest.raises(llm.ModelUnavailable):
         llm.chat("check this", "review", now=NOW, strict=True)
+
+
+# ---- 17 Nov 2026, free-quality plan Task 2: the top two free models raced for a script or a review ----
+
+def _race_setup(monkeypatch, tmp_path, ids, **over):
+    import freemodels
+
+    monkeypatch.setattr(freemodels, "FILE", tmp_path / "free_models.json")
+    monkeypatch.setattr(freemodels, "refresh", lambda now: None)
+    monkeypatch.setattr(freemodels, "choose", lambda *a, **k: list(ids))
+    monkeypatch.setattr(freemodels, "remaining", lambda *a, **k: 500)
+    monkeypatch.setattr(freemodels, "requests_today", lambda *a, **k: 0)
+    monkeypatch.setattr(llm, "extra_models", lambda role: [])
+    return {**llm.DEFAULTS, "free": True, "free_timeout_s": 7, **over}
+
+
+def test_race_returns_the_first_valid_answer_and_counts_both_requests(monkeypatch, tmp_path):
+    import threading
+
+    import freemodels
+
+    cfg = _race_setup(monkeypatch, tmp_path, ["a/fast:free", "b/slow:free"])
+    counted = []
+    monkeypatch.setattr(freemodels, "count_request", lambda now, role: counted.append(role))
+    started, release = threading.Event(), threading.Event()  # the loser never answers during the race (tests do not sleep: conftest stops time.sleep)
+
+    def post(payload, key):
+        if payload["model"] == "b/slow:free":
+            started.set()
+            release.wait(10)
+        return {"choices": [{"message": {"content": '{"who": "%s"}' % payload["model"]}}], "usage": {}}
+
+    monkeypatch.setattr(llm, "_post", post)
+    try:
+        got = llm._race(["a/fast:free", "b/slow:free"], "p", "script", cfg, "sk-x", NOW)
+        assert got == {"who": "a/fast:free"}
+        assert llm._last_free["script"] == "a/fast:free"  # the loser never claims the role
+        assert started.wait(5) and len(counted) == 2  # both requests were sent and count against the allowance
+    finally:
+        release.set()
+
+
+def test_race_survives_one_model_failing(monkeypatch, tmp_path):
+    import requests
+
+    cfg = _race_setup(monkeypatch, tmp_path, ["a/bad:free", "b/good:free"])
+
+    def post(payload, key):
+        if payload["model"] == "a/bad:free":
+            raise requests.ConnectionError("no route to host")
+        return {"choices": [{"message": {"content": '{"who": "good"}'}}], "usage": {}}
+
+    monkeypatch.setattr(llm, "_post", post)
+    assert llm._race(["a/bad:free", "b/good:free"], "p", "script", cfg, "sk-x", NOW) == {"who": "good"}
+
+
+def test_race_returns_none_when_both_fail(monkeypatch, tmp_path):
+    cfg = _race_setup(monkeypatch, tmp_path, ["a/x:free", "b/y:free"])
+    monkeypatch.setattr(llm, "_post", lambda p, k: {"choices": [{"message": {"content": "not json at all"}}], "usage": {}})
+    assert llm._race(["a/x:free", "b/y:free"], "p", "script", cfg, "sk-x", NOW) is None
+
+
+def test_free_timeout_comes_from_config(monkeypatch, tmp_path):
+    cfg = _race_setup(monkeypatch, tmp_path, ["a/one:free"], free_timeout_s=7)
+    seen = []
+
+    class Reply:
+        status_code = 200
+        headers = {}
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"message": {"content": '{"ok": 1}'}}], "usage": {}}
+
+    monkeypatch.setattr(llm.requests, "post", lambda url, **kw: seen.append(kw.get("timeout")) or Reply())
+    assert llm._free_chat("p", "script", cfg, "sk-x", NOW) == {"ok": 1}
+    assert seen == [7]  # the free model got the configured 7 seconds, not the fixed 240

@@ -13,6 +13,7 @@ llm.json
 output/
 cache/
 logs/
+.logs/
 data/
 music/
 topics.json

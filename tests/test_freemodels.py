@@ -340,7 +340,8 @@ def test_a_cut_off_json_answer_is_counted_with_its_finish_reason():
     assert c["a/m1:free"]["script"]["json_bad"] == 2 and c["a/m1:free"]["script"]["finish"] == {"length": 1, "stop": 1}
 
 
-def test_free_chat_times_each_call_and_records_why_a_reply_was_not_json(router, monkeypatch):
+def test_each_free_call_is_timed_and_records_why_a_reply_was_not_json(router, monkeypatch):
+    """One model asked once is the unit now (`_ask_free`): `_free_chat` races the top two for a script, so two calls are made here one after the other."""
     stamps = [100.0, 142.0, 200.0, 207.0]                                     # call one took 42 s, call two took 7 s
     monkeypatch.setattr(llm.time, "monotonic", lambda: stamps.pop(0) if len(stamps) > 1 else stamps[0])
     seen = []
@@ -352,8 +353,9 @@ def test_free_chat_times_each_call_and_records_why_a_reply_was_not_json(router, 
         return reply('{"ok": 1}')
 
     monkeypatch.setattr(llm, "_post", post)
-    assert llm._free_chat("p", "script", llm.load_config(), "k", NOW) == {"ok": 1}
+    cfg = llm.load_config()
+    assert llm._ask_free("a/m1:free", "p", "script", cfg, "k", NOW) is None   # a reply cut off by the output limit is no answer
+    assert llm._ask_free("b/m2:free", "p", "script", cfg, "k", NOW) == {"ok": 1}
     rep = freemodels.failure_report()
-    first, second = seen[0], seen[1]
-    assert rep[first]["script"]["finish"] == {"length": 1} and rep[first]["script"]["json_bad"] == 1
-    assert freemodels.median_seconds(second, "script") == 7.0                 # the second call took 207 - 200 seconds
+    assert rep["a/m1:free"]["script"]["finish"] == {"length": 1} and rep["a/m1:free"]["script"]["json_bad"] == 1
+    assert freemodels.median_seconds("b/m2:free", "script") == 7.0             # the second call took 207 - 200 seconds

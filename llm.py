@@ -10,6 +10,7 @@ import datetime as dt
 import json
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 
@@ -23,7 +24,7 @@ SETTINGS_FILE = config.ROOT / "settings.json"
 PRICES_FILE = config.ROOT / "data" / "or_prices.json"
 ROLES = ("script", "review", "cheap")
 DEFAULTS = {"enabled": False, "models": {"script": "", "review": "", "cheap": ""}, "daily_budget_usd": 1.0, "max_output_tokens": 6000,
-            "free": False, "free_daily_limit": 900, "local_fallback": False, "ai_art": False, "free_art": False, "free_art_cap": 9000, "free_review": False}  # free: try OpenRouter free models first; local_fallback: ask the local Ollama model when no cloud model answers (slow, off by default)
+            "free": False, "free_daily_limit": 900, "free_timeout_s": 120, "local_fallback": False, "ai_art": False, "free_art": False, "free_art_cap": 9000, "free_review": False}  # free: try OpenRouter free models first; local_fallback: ask the local Ollama model when no cloud model answers (slow, off by default)
 MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9/._:+-]{1,99}$")
 UNKNOWN_PRICE = (10.0, 30.0)  # per million tokens: deliberately high, so an unknown model cannot slip past the cap
 
@@ -83,6 +84,9 @@ def validate_config(raw: dict) -> dict:
         elif k == "free_daily_limit":
             if isinstance(v, bool) or not isinstance(v, int) or not 1 <= v <= 1000:
                 raise ValueError("the free request limit must be between 1 and 1000 a day")
+        elif k == "free_timeout_s":
+            if isinstance(v, bool) or not isinstance(v, int) or not 10 <= v <= 600:
+                raise ValueError("a free model's timeout must be between 10 and 600 seconds")
         elif k == "models":
             if not isinstance(v, dict):
                 raise ValueError("models must be a set of job names and model IDs")
@@ -418,11 +422,12 @@ def extra_ping(model: str) -> str:
 
 
 def _post(payload: dict, key: str) -> dict:
+    timeout = payload.pop("_timeout_s", None) or 240  # the free path puts a free model's limit here (`free_timeout_s`); it is never sent to the provider
     if payload["model"].startswith(EXTRA_PREFIX):
         return _post_extra(payload)
     if is_claude(payload["model"]):
         return _post_anthropic(payload, key)
-    r = requests.post("https://openrouter.ai/api/v1/chat/completions", json=payload, timeout=240,
+    r = requests.post("https://openrouter.ai/api/v1/chat/completions", json=payload, timeout=timeout,
                       headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json", "X-Title": "Story Studio"})
     r.raise_for_status()
     return r.json()
@@ -478,10 +483,91 @@ REVIEW_RESERVE_USD = 0.50  # the quality gate may spend this much past the daily
 
 
 ROUNDS = 3  # passes over the free models; a busy provider (429) usually frees up within a minute or two
+FREE_TIMEOUT = 120  # seconds a free model gets to answer (llm.json `free_timeout_s`; the paid models keep 240)
+RACE_ROLES = ("script", "review")  # the jobs where a wrong or missing answer costs the most: two models are asked at once
+
+
+class _NoAllowance(Exception):
+    """Today's free requests (or the cheap share of them) are used up: no round of waiting will help."""
+
+
+def _ask_free(mid: str, prompt: str, role: str, cfg: dict, key: str, now: dt.datetime) -> dict | None:
+    """One free model asked once (JSON mode, then plain when the provider refuses JSON). Counts the request and records the outcome;
+    None means it failed, so the caller moves on. Raises `_NoAllowance` before asking when the day's requests are used up."""
+    is_extra = mid.startswith(EXTRA_PREFIX)
+    if not is_extra and freemodels.remaining(now, key, cfg["free_daily_limit"]) <= 0:
+        _note(now, f"{role}: today's free request allowance is used up")
+        raise _NoAllowance
+    if not is_extra and role == "cheap" and freemodels.requests_today(now, "cheap") >= int(cfg["free_daily_limit"] * CHEAP_SHARE):
+        raise _NoAllowance  # keep the rest of the free requests for scripts and fact-checks
+    for json_mode in (True, False):
+        if not is_extra:
+            freemodels.count_request(now, role)  # failed requests count against the limit too
+        else:
+            _pace_extra(mid)
+        t0 = time.monotonic()
+        payload = _payload(mid, prompt, cfg["max_output_tokens"], json_mode, role)
+        payload["_timeout_s"] = cfg.get("free_timeout_s") or FREE_TIMEOUT
+        try:
+            body = _post(payload, key)
+        except Exception as e:
+            code = getattr(getattr(e, "response", None), "status_code", None)
+            if json_mode and isinstance(e, requests.HTTPError) and code == 400:
+                continue
+            try:
+                ra = int(float((getattr(getattr(e, "response", None), "headers", None) or {}).get("Retry-After")))
+            except (TypeError, ValueError):
+                ra = None
+            freemodels.record(mid, False, now, status=code, retry_after=ra, role=role, seconds=(time.monotonic() - t0) if isinstance(e, requests.Timeout) else None)
+            _note(now, f"{role}: free model {mid}: {type(e).__name__}{f' {code}' if code else ''}")
+            return None
+        took = time.monotonic() - t0
+        u = body.get("usage") or {}
+        record(now, role, mid, int(u.get("prompt_tokens", 0)), int(u.get("completion_tokens", 0)), 0.0)
+        try:
+            out = parse_json(body["choices"][0]["message"]["content"])
+        except (ValueError, KeyError, IndexError, TypeError):
+            try:
+                fin = str(body["choices"][0].get("finish_reason") or "") or None
+            except (KeyError, IndexError, TypeError, AttributeError):
+                fin = None
+            freemodels.record(mid, False, now, role=role, seconds=took, reason="json", finish=fin)
+            _note(now, f"{role}: free model {mid} did not return JSON" + (" (cut off by the output limit)" if fin == "length" else f" (finish: {fin})" if fin else ""))
+            return None
+        freemodels.record(mid, True, now, role=role, seconds=took)
+        return out  # who answered is recorded by the caller: a raced loser must not claim the role
+    return None
+
+
+def _race(models: list[str], prompt: str, role: str, cfg: dict, key: str, now: dt.datetime) -> dict | None:
+    """The top two free models asked at once: the first answer that parses is used and the other is ignored. The loser's request is not cancelled
+    (an HTTP call cannot be recalled), so both count against the daily allowance; the race costs at most one extra request."""
+    top = list(models)[:2]
+    if not top:
+        return None
+    if len(top) == 1:
+        return _ask_free(top[0], prompt, role, cfg, key, now)
+    pool = ThreadPoolExecutor(max_workers=2)
+    try:
+        futures = {pool.submit(_ask_free, m, prompt, role, cfg, key, now): m for m in top}
+        for f in as_completed(futures):
+            err = f.exception()
+            if isinstance(err, _NoAllowance):
+                raise err
+            if err is not None:
+                continue
+            got = f.result()
+            if got is not None:
+                _last_free[role] = futures[f]  # only the winning model is the one that answered this role
+                return got
+        return None
+    finally:
+        pool.shutdown(wait=False)  # the loser may still be answering: nobody waits for it
 
 
 def _free_chat(prompt: str, role: str, cfg: dict, key: str, now: dt.datetime, avoid=None) -> dict | None:
-    """Try the free models in turn, waiting and trying again when they are all busy. None means: nothing answered. `avoid` (a model or a set of them) is never asked."""
+    """Try the free models in turn, waiting and trying again when they are all busy. None means: nothing answered. `avoid` (a model or a set of them) is never asked.
+    A script or a review starts with the two best models raced (Task 2 of the 17 Nov plan); the rest of the round then walks the remaining ones in order."""
     freemodels.refresh(now)
     for rnd in range(ROUNDS):
         skip = (set(avoid) if isinstance(avoid, (set, frozenset, list, tuple)) else ({avoid} if avoid else set())) | ({_last_free["script"]} if role == "review" and _last_free.get("script") else set())
@@ -494,48 +580,24 @@ def _free_chat(prompt: str, role: str, cfg: dict, key: str, now: dt.datetime, av
                 now = now + dt.timedelta(seconds=wait + 1)
                 continue
             break
-        for mid in models:
-            is_extra = mid.startswith(EXTRA_PREFIX)
-            for json_mode in (True, False):
-                if not is_extra:
-                    if freemodels.remaining(now, key, cfg["free_daily_limit"]) <= 0:
-                        _note(now, f"{role}: today's free request allowance is used up")
-                        return None
-                    if role == "cheap" and freemodels.requests_today(now, "cheap") >= int(cfg["free_daily_limit"] * CHEAP_SHARE):
-                        return None  # keep the rest of the free requests for scripts and fact-checks
-                    freemodels.count_request(now, role)  # failed requests count against the limit too
-                if is_extra:
-                    _pace_extra(mid)
-                t0 = time.monotonic()
-                try:
-                    body = _post(_payload(mid, prompt, cfg["max_output_tokens"], json_mode, role), key)
-                except Exception as e:
-                    code = getattr(getattr(e, "response", None), "status_code", None)
-                    if json_mode and isinstance(e, requests.HTTPError) and code == 400:
-                        continue
-                    try:
-                        ra = int(float((getattr(getattr(e, "response", None), "headers", None) or {}).get("Retry-After")))
-                    except (TypeError, ValueError):
-                        ra = None
-                    freemodels.record(mid, False, now, status=code, retry_after=ra, role=role, seconds=(time.monotonic() - t0) if isinstance(e, requests.Timeout) else None)
-                    _note(now, f"{role}: free model {mid}: {type(e).__name__}{f' {code}' if code else ''}")
-                    break
-                took = time.monotonic() - t0
-                u = body.get("usage") or {}
-                record(now, role, mid, int(u.get("prompt_tokens", 0)), int(u.get("completion_tokens", 0)), 0.0)
-                try:
-                    out = parse_json(body["choices"][0]["message"]["content"])
-                except (ValueError, KeyError, IndexError, TypeError):
-                    try:
-                        fin = str(body["choices"][0].get("finish_reason") or "") or None
-                    except (KeyError, IndexError, TypeError, AttributeError):
-                        fin = None
-                    freemodels.record(mid, False, now, role=role, seconds=took, reason="json", finish=fin)
-                    _note(now, f"{role}: free model {mid} did not return JSON" + (" (cut off by the output limit)" if fin == "length" else f" (finish: {fin})" if fin else ""))
-                    break
-                freemodels.record(mid, True, now, role=role, seconds=took)
+        rest = models
+        if role in RACE_ROLES and len(models) >= 2:
+            try:
+                raced = _race(models[:2], prompt, role, cfg, key, now)
+            except _NoAllowance:
+                return None
+            if raced is not None:
+                return raced
+            rest = models[2:]
+        for mid in rest:
+            try:
+                got = _ask_free(mid, prompt, role, cfg, key, now)
+            except _NoAllowance:
+                return None
+            if got is not None:
                 _last_free[role] = mid
-                return out
+                return got
+            break  # a network failure or a reply that is not JSON ends this round: wait, then ask again
         if rnd < ROUNDS - 1:
             pause = 20 * (rnd + 1)  # everyone was busy: wait, then ask again (only as long as the first model needs, when it said so)
             soon = freemodels.soonest_free(extra_models(role) + freemodels.roster_ids(), now)
