@@ -117,6 +117,14 @@ def smithsonian_key() -> str:
     return config.SMITHSONIAN_KEY or load_settings().get("smithsonian_key", "")
 
 
+def extra_llm_status() -> dict:
+    """What the Settings card shows about the owner's own model provider. The key is only ever "saved" or empty: it is never sent to a browser."""
+    st = load_settings()
+    m = st.get("extra_llm_models") or {}
+    return {"key": "saved" if st.get("extra_llm_key") else "", "on": bool(st.get("extra_llm_on")), "url": st.get("extra_llm_url", ""), "local": bool(st.get("extra_llm_local")),
+            "script": m.get("script", ""), "review": m.get("review", "")}
+
+
 def yt_status() -> dict:
     s = {"secret": SECRET.exists(), "token": TOKEN.exists(), "connecting": YT_STATE["connecting"], "error": YT_STATE["error"],
          "channel": None}
@@ -228,7 +236,7 @@ def state() -> dict:
         "agent": {"unread": __import__("agentlog").unread()},
         "tenant": __import__("tenantmode").is_tenant(), "niche_confirmed": __import__("niche").current()["brief"] is not None and bool((__import__("niche").current()["brief"] or {}).get("confirmed")),
         "auth": {"on": webauth.enabled(), "email": webauth.owner_email()},
-        "settings": {"pexels_key": "saved" if load_settings().get("pexels_key") else "", "pixabay_key": "saved" if pixabay_key() else "", "smithsonian_key": "saved" if smithsonian_key() else "", "alerts": None if __import__("tenantmode").is_tenant() else alerts.status()},
+        "settings": {"pexels_key": "saved" if load_settings().get("pexels_key") else "", "pixabay_key": "saved" if pixabay_key() else "", "smithsonian_key": "saved" if smithsonian_key() else "", "extra_llm": extra_llm_status(), "alerts": None if __import__("tenantmode").is_tenant() else alerts.status()},
     }
 
 
@@ -1121,9 +1129,48 @@ class H(BaseHTTPRequestHandler):
             import openmedia
 
             return {"ok": True, "rows": openmedia.selftest(str(b.get("query") or "pyramids")[:60])}
+        if path == "/api/extra-llm/save":  # the owner's own OpenAI-compatible provider: address, model names and switches (the key goes through /api/key/save)
+            if __import__("tenantmode").is_tenant():
+                raise ValueError("not available in a user studio")
+            import llm
+
+            url, local, on = str(b.get("url", "")).strip(), bool(b.get("local")), bool(b.get("on"))
+            ok, why = llm.extra_url_ok(url, local)
+            if not ok:
+                raise ValueError(why)
+            names = {}
+            for role in ("script", "review"):
+                raw = str(b.get(role, "")).strip()[:300]
+                parts = [x.strip() for x in raw.split(",") if x.strip()]
+                if len(parts) > 6 or any(not llm._MODEL_NAME.match(x) for x in parts):
+                    raise ValueError(f"the {role} model names may hold letters, digits and . _ : / - only, separated by commas (at most 6)")
+                names[role] = ", ".join(parts)
+            st = load_settings()
+            st.update(extra_llm_on=on, extra_llm_url=url, extra_llm_local=local, extra_llm_models=names)
+            save_settings(st)
+            llm._url_cache.clear()
+            return {"ok": True, "status": extra_llm_status()}
+        if path == "/api/extra-llm/test":  # one tiny question to the first model: reports whether it answered and how fast; never the key
+            if __import__("tenantmode").is_tenant():
+                raise ValueError("not available in a user studio")
+            import time as _t
+
+            import llm
+
+            mids = llm.extra_models("script") or llm.extra_models("review")
+            if not mids:
+                return {"ok": False, "detail": "Switch the provider on, save a key, an address your rules accept, and at least one model name first."}
+            t0 = _t.monotonic()
+            try:
+                text = llm.extra_ping(mids[0])
+                return {"ok": bool(text.strip()), "model": mids[0][len(llm.EXTRA_PREFIX):], "seconds": round(_t.monotonic() - t0, 1), "detail": "answered" if text.strip() else "empty answer"}
+            except Exception as e:
+                return {"ok": False, "model": mids[0][len(llm.EXTRA_PREFIX):], "seconds": round(_t.monotonic() - t0, 1), "detail": llm.scrub(f"{type(e).__name__}: {e}")[:200]}
         if path == "/api/key/save":
             which, value = str(b.get("which", "")), str(b.get("value", "")).strip()
-            field = {"openrouter": "openrouter_key", "pexels": "pexels_key", "pixabay": "pixabay_key", "smithsonian": "smithsonian_key"}.get(which)
+            field = {"openrouter": "openrouter_key", "pexels": "pexels_key", "pixabay": "pixabay_key", "smithsonian": "smithsonian_key", "extra_llm": "extra_llm_key"}.get(which)
+            if which == "extra_llm" and __import__("tenantmode").is_tenant():
+                raise ValueError("not available in a user studio")
             if not field:
                 raise ValueError("unknown key")
             if not 10 <= len(value) <= 300 or re.search(r"\s", value):

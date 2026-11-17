@@ -103,6 +103,14 @@ def choose(role: str, now: dt.datetime, avoid=None, n: int = 3) -> list[str]:
     return [m["id"] for m in out][:n]
 
 
+def available(model: str, now: dt.datetime) -> bool:
+    """False while a model is cooling down after repeated failures or busy after a 429. A model never seen before is available."""
+    h = _load().get("health", {}).get(model, {})
+    if h.get("fails", 0) >= MAX_FAILS and h.get("last_fail") and now - _parse(h["last_fail"]) < COOLDOWN:
+        return False
+    return not (h.get("busy_until") and now < _parse(h["busy_until"]))
+
+
 def record(model: str, ok: bool, now: dt.datetime, status: int | None = None) -> None:
     d = _load()
     h = d.setdefault("health", {}).setdefault(model, {"fails": 0})

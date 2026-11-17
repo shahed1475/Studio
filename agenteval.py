@@ -1382,6 +1382,45 @@ def case_a_drawn_scene_takes_a_real_photo_only_when_the_file_is_named_for_its_su
     return ok, "a forced scene takes the photo named for its subject and is drawn otherwise; the default, a case, 3D and draw-all never use photos" if ok else f"named={named} default={default} gated={gated}"
 
 
+def case_the_owners_own_model_provider_key_never_leaves_the_settings_file_and_its_address_is_checked():
+    import json
+    import socket
+    import tempfile
+    from pathlib import Path
+
+    import llm
+
+    key = "provider-SECRET-key-0123456789"
+    seen = {}
+    real_file, real_post, real_gai = llm.SETTINGS_FILE, llm.requests.post, socket.getaddrinfo
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "settings.json"
+            f.write_text(json.dumps({"extra_llm_on": True, "extra_llm_url": "http://127.0.0.1:31415/v1", "extra_llm_local": True, "extra_llm_key": key, "openrouter_key": "or-key-0123456789",
+                                     "extra_llm_models": {"script": "m1", "review": "m2"}}))
+            llm.SETTINGS_FILE = f
+            llm._url_cache.clear()
+
+            class R:
+                def raise_for_status(self):
+                    pass
+
+                def json(self):
+                    return {"choices": [{"message": {"content": "{}"}}]}
+
+            llm.requests.post = lambda url, json=None, headers=None, **k: (seen.update(headers=headers, body=json), R())[1]
+            llm._post_extra({"model": "extra:m1", "messages": [], "usage": {"include": True}})
+            routed = seen["headers"]["Authorization"] == f"Bearer {key}" and "or-key" not in str(seen["headers"]) and "usage" not in seen["body"]
+            cleaned = key not in llm.scrub(f"401 for {key}") and "or-key-0123456789" not in llm.scrub("x or-key-0123456789")
+            socket.getaddrinfo = lambda host, *a, **k: [(socket.AF_INET, 0, 0, "", ("10.0.0.5", 443))]
+            refused = not llm.extra_url_ok("https://api.example.com/v1", False)[0] and not llm.extra_url_ok("http://api.example.com/v1", True)[0] and not llm.extra_url_ok("http://127.0.0.1/v1", False)[0]
+    finally:
+        llm.SETTINGS_FILE, llm.requests.post, socket.getaddrinfo = real_file, real_post, real_gai
+        llm._url_cache.clear()
+    ok = routed and cleaned and refused
+    return ok, "the provider gets only its own key, errors are scrubbed, private or plain-http addresses are refused" if ok else f"routed={routed} cleaned={cleaned} refused={refused}"
+
+
 CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic,
          case_ladder_ends_with_owner_not_a_crash, case_ladder_respects_budget_and_whitelist_and_lessons, case_outside_text_is_cleaned,
          case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules, case_registry_is_consistent,
@@ -1418,7 +1457,8 @@ CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metada
          case_only_approved_licences_are_used_and_a_credit_needing_picture_is_credited_in_the_description_youtube_receives,
          case_real_footage_from_nasa_and_pixabay_is_relevant_logo_free_downloaded_safely_and_credited,
          case_a_free_review_needs_two_free_models_the_strictest_counts_and_it_is_off_unless_switched_on,
-         case_a_drawn_scene_takes_a_real_photo_only_when_the_file_is_named_for_its_subject]
+         case_a_drawn_scene_takes_a_real_photo_only_when_the_file_is_named_for_its_subject,
+         case_the_owners_own_model_provider_key_never_leaves_the_settings_file_and_its_address_is_checked]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:

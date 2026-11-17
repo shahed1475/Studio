@@ -298,7 +298,111 @@ def _post_anthropic(payload: dict, key: str) -> dict:
     return {"choices": [{"message": {"content": text}}], "usage": {"prompt_tokens": u.get("input_tokens", 0), "completion_tokens": u.get("output_tokens", 0)}}
 
 
+# ---- the owner's own OpenAI-compatible provider (17 Nov 2026): a FreeLLMAPI proxy on this PC, DeepSeek, GLM, anything that speaks /v1/chat/completions ----
+# Settings (settings.json, owner-only): extra_llm_on, extra_llm_url, extra_llm_local, extra_llm_key (write-only), extra_llm_models {"script": "a, b", "review": "c"}.
+# Its models are asked before the OpenRouter free ones and cost nothing here (calls and tokens are still counted); only public text is ever sent to it.
+EXTRA_PREFIX = "extra:"
+EXTRA_TIMEOUT = 120
+_MODEL_NAME = re.compile(r"^[A-Za-z0-9._:/-]{1,80}$")
+_url_cache: dict = {}
+
+
+def extra_url_ok(url: str, local: bool) -> tuple[bool, str]:
+    """(ok, why). https to a public host, or plain http to this PC only when the owner ticked the local-box option. Never credentials in the address, never a name that resolves to a private address."""
+    import ipaddress
+    import socket
+    from urllib.parse import urlparse
+
+    u = urlparse(str(url or "").strip())
+    if u.scheme not in ("http", "https") or not u.hostname or u.username or u.password:
+        return False, "the address must start with https:// (or http:// to this PC) and hold no user name or password"
+    if u.scheme == "http":
+        if u.hostname in ("127.0.0.1", "localhost", "::1") and local:
+            return True, ""
+        return False, "plain http is only allowed to this PC, and only with the local-box option ticked"
+    try:
+        infos = socket.getaddrinfo(u.hostname, u.port or 443, proto=socket.IPPROTO_TCP)
+    except OSError:
+        return False, "that host name does not resolve"
+    for info in infos:
+        if not ipaddress.ip_address(info[4][0]).is_global:
+            return False, "that address points inside a private network"
+    return True, ""
+
+
+def _extra_models_of(raw) -> list[str]:
+    names = [n.strip() for n in str(raw or "").split(",")]
+    return [n for n in names if _MODEL_NAME.match(n)][:6]
+
+
+def extra_cfg() -> dict | None:
+    """The provider's settings when it is on, has a key and an address the rules accept; None otherwise. Not in a user studio."""
+    try:
+        import tenantmode
+
+        if tenantmode.is_tenant():
+            return None
+    except Exception:
+        pass
+    try:
+        s = json.loads(SETTINGS_FILE.read_text()) if SETTINGS_FILE.exists() else {}
+    except (OSError, ValueError):
+        return None
+    if not s.get("extra_llm_on") or not s.get("extra_llm_key") or not s.get("extra_llm_url"):
+        return None
+    url, local = str(s["extra_llm_url"]).strip(), bool(s.get("extra_llm_local"))
+    hit = _url_cache.get((url, local))
+    if not hit or time.monotonic() - hit[0] > 300:
+        hit = (time.monotonic(), extra_url_ok(url, local)[0])
+        _url_cache[(url, local)] = hit
+    if not hit[1]:
+        return None
+    models = s.get("extra_llm_models") or {}
+    return {"url": url.rstrip("/"), "key": s["extra_llm_key"], "script": _extra_models_of(models.get("script")), "review": _extra_models_of(models.get("review"))}
+
+
+def extra_models(role: str) -> list[str]:
+    """Model ids (prefixed `extra:`) the owner's provider offers for this role; small jobs use the writer list."""
+    cfg = extra_cfg()
+    if not cfg:
+        return []
+    return [EXTRA_PREFIX + m for m in cfg["review" if role == "review" else "script"]]
+
+
+def scrub(text) -> str:
+    """Error text with the provider's key (and the OpenRouter key) taken out, before it is shown or stored anywhere."""
+    t = str(text)
+    try:
+        s = json.loads(SETTINGS_FILE.read_text()) if SETTINGS_FILE.exists() else {}
+    except (OSError, ValueError):
+        s = {}
+    for secret in (s.get("extra_llm_key"), s.get("openrouter_key")):
+        if secret:
+            t = t.replace(secret, "***")
+    return t
+
+
+def _post_extra(payload: dict) -> dict:
+    cfg = extra_cfg()
+    if not cfg:
+        raise RuntimeError("the extra model provider is off, has no key, or its address is refused")
+    body = {k: v for k, v in payload.items() if k != "usage"}  # `usage` is an OpenRouter field
+    body["model"] = payload["model"][len(EXTRA_PREFIX):]
+    r = requests.post(cfg["url"] + "/chat/completions", json=body, timeout=EXTRA_TIMEOUT, allow_redirects=False,
+                      headers={"Authorization": f"Bearer {cfg['key']}", "Content-Type": "application/json"})
+    r.raise_for_status()
+    return r.json()
+
+
+def extra_ping(model: str) -> str:
+    """One tiny question to a provider model for the Settings test button: its answer text. Raises on failure (callers scrub the message with `scrub`)."""
+    body = _post(_payload(model, "Reply with the single word: pong", 50, json_mode=False, role="cheap"), "")
+    return str(((body.get("choices") or [{}])[0].get("message") or {}).get("content", ""))[:80]
+
+
 def _post(payload: dict, key: str) -> dict:
+    if payload["model"].startswith(EXTRA_PREFIX):
+        return _post_extra(payload)
     if is_claude(payload["model"]):
         return _post_anthropic(payload, key)
     r = requests.post("https://openrouter.ai/api/v1/chat/completions", json=payload, timeout=240,
@@ -363,17 +467,21 @@ def _free_chat(prompt: str, role: str, cfg: dict, key: str, now: dt.datetime, av
     """Try the free models in turn, waiting and trying again when they are all busy. None means: nothing answered. `avoid` (a model or a set of them) is never asked."""
     freemodels.refresh(now)
     for rnd in range(ROUNDS):
-        models = freemodels.choose(role, now, avoid=(avoid or set()) | ({_last_free["script"]} if role == "review" and _last_free.get("script") else set()), n=4)
+        skip = (set(avoid) if isinstance(avoid, (set, frozenset, list, tuple)) else ({avoid} if avoid else set())) | ({_last_free["script"]} if role == "review" and _last_free.get("script") else set())
+        extras = [m for m in extra_models(role) if m not in skip and freemodels.available(m, now)]  # the owner's own provider is asked first: it needs none of OpenRouter's allowance
+        models = extras + freemodels.choose(role, now, avoid=skip, n=4)
         if not models:
             break
         for mid in models:
+            is_extra = mid.startswith(EXTRA_PREFIX)
             for json_mode in (True, False):
-                if freemodels.remaining(now, key, cfg["free_daily_limit"]) <= 0:
-                    _note(now, f"{role}: today's free request allowance is used up")
-                    return None
-                if role == "cheap" and freemodels.requests_today(now, "cheap") >= int(cfg["free_daily_limit"] * CHEAP_SHARE):
-                    return None  # keep the rest of the free requests for scripts and fact-checks
-                freemodels.count_request(now, role)  # failed requests count against the limit too
+                if not is_extra:
+                    if freemodels.remaining(now, key, cfg["free_daily_limit"]) <= 0:
+                        _note(now, f"{role}: today's free request allowance is used up")
+                        return None
+                    if role == "cheap" and freemodels.requests_today(now, "cheap") >= int(cfg["free_daily_limit"] * CHEAP_SHARE):
+                        return None  # keep the rest of the free requests for scripts and fact-checks
+                    freemodels.count_request(now, role)  # failed requests count against the limit too
                 try:
                     body = _post(_payload(mid, prompt, cfg["max_output_tokens"], json_mode, role), key)
                 except Exception as e:
