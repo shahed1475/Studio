@@ -86,7 +86,8 @@ def test_the_live_log_is_the_newest_build_log_never_the_action_summary(tmp_path,
     (tmp_path / "logs").mkdir()
     old, new, quiet = (tmp_path / "logs" / n for n in ("a-doc.log", "b-doc.log", "autopilot.log"))
     old.write_text("Voice...\n"), new.write_text("Rendering...\n"), quiet.write_text("ok approve x\n")
-    os.utime(old, (1, 1)), os.utime(new, (100, 100))  # the quiet file is the newest by time and must still be skipped
+    (tmp_path / "logs" / "worker.log").write_text("2026-11-17T00:16:36Z specbuild specrun tick -> exit 0\n")  # the scheduler's job summary must not hide a running build
+    os.utime(old, (1, 1)), os.utime(new, (100, 100))  # the quiet files are the newest by time and must still be skipped
     path, lines, age = nowview.live_log()
     assert path.name == "b-doc.log" and lines == ["Rendering..."] and age > 0
     (tmp_path / "logs" / "b-doc.log").unlink(), old.unlink()

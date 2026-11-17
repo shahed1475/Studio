@@ -16,7 +16,7 @@ STEPS = (("plan", "Plan", re.compile(r"^(Documentary|Short|Topic):|source articl
          ("pictures", "Pictures", re.compile(r"^(Archival images|Footage|Pictures)|animation:|AI art", re.I)),
          ("render", "Render", re.compile(r"^Rendering")),
          ("check", "Check", re.compile(r"^Done:|core phrase|keywords found|verdict|thumbnail", re.I)))
-QUIET_LOGS = {"autopilot.log", "backup_push.log"}  # action summaries, not a build's own output
+QUIET_LOGS = {"autopilot.log", "backup_push.log", "worker.log"}  # action and job summaries, not a build's own output (worker.log gets a line every 20 minutes and hid a running build's log: 17 Nov 2026)
 LIVE_SECONDS = 180  # a log written in the last three minutes counts as work in progress
 PLAN_TTL = 20.0
 _plan_cache: dict = {}
