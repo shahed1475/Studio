@@ -142,5 +142,25 @@ The owner has a free-LLM key they already use for coding and wants Autopilot to 
 
 **Done means:** a documentary and a Short pass the reviewer with at most one repair, use at least two real-media libraries beyond Commons, spend $0, and the first free-model script is no longer thrown away.
 
+### Task 7: A2A, so the studio's agents can ask and answer each other (the owner's order of 17 Nov; item H1 of docs/superpowers/plans/2026-11-14-free-autopilot-and-new-films.md)
+
+A2A is the open Agent2Agent protocol: each agent publishes an Agent Card, and peers send it a message and read back a task. The studio already has the parts: 26 agents with playbooks and a hand-over map (`agents.py`), a task inbox (`agentbus.py`: `post`, `claim`, `finish`, `to_owner`), a ladder that picks only whitelisted safe fixes (`escalate.py`), and an unmerged A2A gateway on branch `feature/hub` (`hub/a2a.py`, built for the multi-creator Hub and to be reused only after a security review). This task adds a thin A2A layer on top of those; it does not add a second bus.
+
+**Files:**
+- Create: `a2a.py`, `playbooks/a2a.md` (cut at 1,500 characters)
+- Modify: `agents.py` (cards come from `AGENTS`), `agentbus.py` (kind `a2a`), `dashboard.py` (optional HTTP door, off by default), `agenteval.py`
+- Test: `tests/test_a2a.py`
+
+**Interfaces:**
+- Produces: `a2a.card(agent: str) -> dict`: an A2A Agent Card (`name`, `description` from the playbook's Role line, `skills` from the agent's commands, `capabilities` all false, text and JSON input modes). `a2a.send(source, target, text, slug="", context_id=None) -> dict`: posts an `a2a` task through `agentbus.post` and returns `{id, contextId, status: {state}}` (states submitted, working, input-required, completed, failed, canceled). `a2a.get(task_id)` and `a2a.cancel(task_id)`. `a2a.consult(source, question, targets, slug) -> {answers, summary, recommended_fix, needs_owner}`: each target answers once as a free-model call made under its own playbook (`playbook.acting_as`), in the form `{answer, evidence: [..], confidence 0..1}`; one synthesis by the arbiter (`autopilot`); the result can only name a fix already in `escalate`'s whitelist.
+- Safety (these are the rules the tests pin): a consult is at most 4 agents, 2 rounds and 8 model calls, and 3 consults per video a day; no agent messages itself or an agent it has no hand-over to unless it is the doctor or autopilot; identical messages are dropped; every text is cleaned and labelled as data (`seo.plain`, `seo.linky`), never an instruction; an answer without evidence counts as an opinion and cannot raise a fix; **nothing here can publish, delete, change a public video, flip an owner switch, release a policy hold or spend money**; only free models are used (`llm.free_only` or the owner's provider); the outside HTTP door (`POST /a2a`, `GET /.well-known/agent-card.json`) is off by default, loopback only, behind a bearer token the owner creates in Settings, and read-only for cards.
+- Where it is used first: (1) the fixer asks the script reviewer and the reviewer why a draft fails and which safe fix fits; (2) the doctor and the triage agent consult before they draft a skill or a post-mortem; (3) the growth loop: collector, diagnoser, research and creator pass evidence (a video that held viewers, a dropping traffic share) to a topic suggestion that still needs its own source article and every existing gate; (4) autopilot asks the guardian before it schedules.
+
+- [ ] **Step 1: Write failing tests**: `test_every_agent_has_a_complete_card_and_a_playbook_role`, `test_send_creates_one_agentbus_task_and_get_reads_its_state`, `test_a_duplicate_or_self_message_is_dropped`, `test_a_consult_stops_at_four_agents_two_rounds_and_eight_calls`, `test_a_recommended_fix_outside_the_whitelist_is_ignored`, `test_an_answer_without_evidence_cannot_raise_a_fix`, `test_no_a2a_path_reaches_publish_delete_or_an_owner_switch`, `test_the_http_door_is_off_without_a_token_and_never_listens_beyond_loopback`, `test_text_with_links_or_instructions_is_cleaned`.
+- [ ] **Step 2: Run** them and see them fail.
+- [ ] **Step 3: Implement** `a2a.py` on `agentbus` and `escalate`; read `feature/hub`'s `hub/a2a.py` first and take only what survives the review.
+- [ ] **Step 4: Run** `tests/test_a2a.py tests/test_agents_training.py` and the full suite; add `agenteval` cases "an A2A consult never reaches an owner-only action" and "a consult is capped" with a mutation check each; pass.
+- [ ] **Step 5: Commit** "A2A: Agent Cards and consults over the agent bus".
+
 ## What stays true after this plan
 Free models are weaker judges than Claude. This plan narrows the gap with more calls (about 40 to 60 free requests a film out of 1,000 a day), staged writing and code checks; it does not make a free model equal to a paid one. A one-time top-up would still make scripts faster and more reliable; that is the owner's money decision and nothing here depends on it.
