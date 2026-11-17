@@ -15,9 +15,14 @@ URL = "https://openrouter.ai/api/v1/models"
 TTL = dt.timedelta(hours=24)
 COOLDOWN = dt.timedelta(hours=6)
 BUSY_COOLDOWN = dt.timedelta(minutes=10)  # a 429 means the provider is busy right now, not that the model is broken
+EXTRA_BUSY_SECONDS = 60  # the owner's own provider pools free tiers whose limits are per minute: a 429 there is short (17 Nov 2026: ten minutes parked every model and a script was lost)
+MAX_RETRY_AFTER = 300  # a Retry-After header is believed up to this many seconds
 RESERVE = 5  # of the count OpenRouter reports, always left unused, so a failed attempt cannot push the account over its limit
 QUOTA_TTL = 60  # seconds the daily-quota answer is reused
 MAX_FAILS = 3
+SLOW_SECONDS = 90  # an answer that took longer than this counts as slow
+NEUTRAL_SECONDS = 45  # a model with no timing yet ranks as if it took this long (it is not punished and not favoured)
+KEEP_SECONDS = 9  # timings kept per model and role: the median of the last nine
 DEFAULT_MIN_CTX = 16000
 MIN_CTX = {"script": 32000}  # a documentary prompt is long
 SKIP = ("image", "audio", "embed", "vision", "guard", "moderation", "safeguard", "tts", "rerank", "lyria", "music", "video")
@@ -99,8 +104,64 @@ def choose(role: str, now: dt.datetime, avoid=None, n: int = 3) -> list[str]:
         busy = bool(h.get("busy_until")) and now < _parse(h["busy_until"])
         if m["context"] >= need and m["id"] not in skip and not cooling and not busy:
             out.append(m)
-    out.sort(key=lambda m: -min(health.get(m["id"], {}).get("ok", 0), 5))  # models that answered well before go first (stable otherwise)
+    # the model that answered valid JSON most often for this role goes first, then the faster one (stable otherwise: the roster score decides)
+    out.sort(key=lambda m: (-round(_reliability(health.get(m["id"], {}), role), 2), _median(health.get(m["id"], {}), role) or NEUTRAL_SECONDS))
     return [m["id"] for m in out][:n]
+
+
+def _reliability(h: dict, role: str) -> float:
+    """(answers + 1) / (answers + failures + 2) for this role: 0.5 for a model never tried, so a new model is neither punished nor favoured.
+    A 429 is not a failure here (it only makes the model busy). Answers recorded without a role (older files) count for every role."""
+    rs = (h.get("roles") or {}).get(role) or {}
+    ok, bad = rs.get("ok", 0), rs.get("bad", 0)
+    if ok + bad == 0:
+        ok = h.get("ok", 0)
+    return (ok + 1) / (ok + bad + 2)
+
+
+def _median(h: dict, role: str) -> float | None:
+    secs = sorted(((h.get("roles") or {}).get(role) or {}).get("secs", []))
+    if not secs:
+        return None
+    mid = len(secs) // 2
+    return secs[mid] if len(secs) % 2 else round((secs[mid - 1] + secs[mid]) / 2, 1)
+
+
+def reliability(model: str, role: str) -> float:
+    return _reliability(_load().get("health", {}).get(model, {}), role)
+
+
+def median_seconds(model: str, role: str) -> float | None:
+    return _median(_load().get("health", {}).get(model, {}), role)
+
+
+def failure_report() -> dict:
+    """What was measured, per model and role: {model: {role: {ok, bad, json_bad, slow, finish: {reason: n}, median_s}}}.
+    `finish` says how the failed answers ended ("length" means the reply was cut off by the output limit)."""
+    out: dict = {}
+    for mid, h in _load().get("health", {}).items():
+        for role, rs in (h.get("roles") or {}).items():
+            out.setdefault(mid, {})[role] = {"ok": rs.get("ok", 0), "bad": rs.get("bad", 0), "json_bad": rs.get("json_bad", 0), "slow": rs.get("slow", 0),
+                                             "finish": dict(rs.get("finish", {})), "median_s": _median(h, role)}
+    return out
+
+
+def roster_ids() -> list[str]:
+    return [m["id"] for m in _load().get("models", [])]
+
+
+def soonest_free(ids: list[str], now: dt.datetime) -> int | None:
+    """Seconds until the first of these models stops being busy (a 429, not a run of failures); None when none of them is only busy."""
+    import math
+
+    health, waits = _load().get("health", {}), []
+    for mid in ids:
+        h = health.get(mid, {})
+        if h.get("fails", 0) >= MAX_FAILS and h.get("last_fail") and now - _parse(h["last_fail"]) < COOLDOWN:
+            continue  # cooling after real failures: not a short wait
+        if h.get("busy_until") and now < _parse(h["busy_until"]):
+            waits.append((_parse(h["busy_until"]) - now).total_seconds())
+    return math.ceil(min(waits)) if waits else None
 
 
 def available(model: str, now: dt.datetime) -> bool:
@@ -111,18 +172,39 @@ def available(model: str, now: dt.datetime) -> bool:
     return not (h.get("busy_until") and now < _parse(h["busy_until"]))
 
 
-def record(model: str, ok: bool, now: dt.datetime, status: int | None = None) -> None:
+def record(model: str, ok: bool, now: dt.datetime, status: int | None = None, retry_after: int | None = None,
+           role: str | None = None, seconds: float | None = None, reason: str | None = None, finish: str | None = None) -> None:
+    """One answer or failure. `role` and `seconds` feed the per-role ranking; `reason` "json" marks a reply that was not JSON and `finish` is the
+    reply's finish_reason ("length" = cut off by the output limit). A 429 only makes the model busy: it is not counted as a failure."""
     d = _load()
     h = d.setdefault("health", {}).setdefault(model, {"fails": 0})
+    rs = h.setdefault("roles", {}).setdefault(role, {}) if role else None
+    if rs is not None and seconds is not None and status != 429:
+        rs["secs"] = (rs.get("secs", []) + [round(float(seconds), 1)])[-KEEP_SECONDS:]
+        if seconds > SLOW_SECONDS:
+            rs["slow"] = rs.get("slow", 0) + 1
     if ok:
         h["fails"] = 0
         h["ok"] = h.get("ok", 0) + 1
         h.pop("busy_until", None)
+        if rs is not None:
+            rs["ok"] = rs.get("ok", 0) + 1
     elif status == 429:
-        h["busy_until"] = _ts(now + BUSY_COOLDOWN)  # skip it for ten minutes; no long penalty
+        if retry_after:
+            secs = min(max(int(retry_after), 1), MAX_RETRY_AFTER)  # the provider said how long
+        else:
+            secs = EXTRA_BUSY_SECONDS if model.startswith("extra:") else int(BUSY_COOLDOWN.total_seconds())  # skip it for ten minutes; no long penalty
+        h["busy_until"] = _ts(now + dt.timedelta(seconds=secs))
     else:
         h["fails"] += 1
         h["last_fail"] = _ts(now)
+        if rs is not None:
+            rs["bad"] = rs.get("bad", 0) + 1
+            if reason == "json":
+                rs["json_bad"] = rs.get("json_bad", 0) + 1
+            if finish:
+                fin = rs.setdefault("finish", {})
+                fin[finish] = fin.get(finish, 0) + 1
     _save(d)
 
 

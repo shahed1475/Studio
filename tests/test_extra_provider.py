@@ -201,3 +201,95 @@ def test_agenteval_case_passes_and_fails_when_a_rule_is_broken(monkeypatch):
     monkeypatch.setattr(llm, "_post_extra", leaky)
     ok, detail = case()
     assert not ok and "routed=False" in detail
+
+
+# ---- 17 Nov 2026: the pooled free tiers answer 429 often; a script was lost because every model sat in a ten-minute cooldown and the call gave up at once ----
+import datetime as dt
+
+NOW = dt.datetime(2026, 11, 17, 1, 0, tzinfo=dt.timezone.utc)
+
+
+def test_a_429_busies_a_provider_model_for_its_retry_after_or_a_short_default_and_openrouter_keeps_ten_minutes(tmp_path, monkeypatch):
+    monkeypatch.setattr(freemodels, "FILE", tmp_path / "free.json")
+    freemodels.record("extra:gemini-3.5-flash", False, NOW, status=429, retry_after=30)
+    assert not freemodels.available("extra:gemini-3.5-flash", NOW + dt.timedelta(seconds=20))
+    assert freemodels.available("extra:gemini-3.5-flash", NOW + dt.timedelta(seconds=31))
+    freemodels.record("extra:glm", False, NOW, status=429)                              # no header: a short default, not ten minutes
+    assert freemodels.available("extra:glm", NOW + dt.timedelta(seconds=freemodels.EXTRA_BUSY_SECONDS + 1))
+    freemodels.record("or/x:free", False, NOW, status=429)
+    assert not freemodels.available("or/x:free", NOW + dt.timedelta(minutes=5))        # unchanged for OpenRouter
+    freemodels.record("extra:hog", False, NOW, status=429, retry_after=99999)
+    assert freemodels.available("extra:hog", NOW + dt.timedelta(seconds=freemodels.MAX_RETRY_AFTER + 1))  # a silly header cannot park a model for a day
+
+
+def test_soonest_free_reports_the_wait_for_busy_models_only(tmp_path, monkeypatch):
+    monkeypatch.setattr(freemodels, "FILE", tmp_path / "free.json")
+    assert freemodels.soonest_free(["extra:a"], NOW) is None
+    freemodels.record("extra:a", False, NOW, status=429, retry_after=40)
+    freemodels.record("extra:b", False, NOW, status=429, retry_after=15)
+    assert freemodels.soonest_free(["extra:a", "extra:b"], NOW) == 15
+    assert freemodels.soonest_free(["extra:a"], NOW + dt.timedelta(seconds=50)) is None  # already free again
+
+
+def test_free_chat_waits_for_a_busy_model_instead_of_giving_up(tmp_path, monkeypatch):
+    import requests
+    monkeypatch.setattr(freemodels, "FILE", tmp_path / "free.json")
+    _settings(tmp_path, monkeypatch, extra_llm_models={"script": "only-model", "review": "only-model"})
+    monkeypatch.setattr(freemodels, "refresh", lambda now: None)
+    monkeypatch.setattr(freemodels, "choose", lambda *a, **k: [])
+    monkeypatch.setattr(freemodels, "remaining", lambda *a, **k: 500)
+    monkeypatch.setattr(freemodels, "requests_today", lambda *a, **k: 0)
+    monkeypatch.setattr(freemodels, "count_request", lambda *a: None)
+    slept, calls = [], []
+    monkeypatch.setattr(llm.time, "sleep", lambda s: slept.append(s))
+
+    def post(payload, key):
+        calls.append(payload["model"])
+        if len(calls) == 1:
+            r = requests.Response()
+            r.status_code = 429
+            r.headers["Retry-After"] = "7"
+            raise requests.HTTPError("429", response=r)
+        return {"choices": [{"message": {"content": '{"ok": true}'}}], "usage": {}}
+
+    monkeypatch.setattr(llm, "_post", post)
+    out = llm._free_chat("p", "script", llm.load_config(), "KEY", NOW)
+    assert out == {"ok": True} and len(calls) == 2
+    assert any(7 <= s <= 12 for s in slept)                                            # it waited about the Retry-After, not ten minutes and not zero
+
+
+def test_free_chat_does_not_wait_longer_than_the_limit(tmp_path, monkeypatch):
+    monkeypatch.setattr(freemodels, "FILE", tmp_path / "free.json")
+    _settings(tmp_path, monkeypatch, extra_llm_models={"script": "only-model", "review": "only-model"})
+    monkeypatch.setattr(freemodels, "refresh", lambda now: None)
+    monkeypatch.setattr(freemodels, "choose", lambda *a, **k: [])
+    monkeypatch.setattr(freemodels, "remaining", lambda *a, **k: 500)
+    monkeypatch.setattr(freemodels, "requests_today", lambda *a, **k: 0)
+    monkeypatch.setattr(freemodels, "count_request", lambda *a: None)
+    slept = []
+    monkeypatch.setattr(llm.time, "sleep", lambda s: slept.append(s))
+    freemodels.record("extra:only-model", False, NOW, status=429, retry_after=freemodels.MAX_RETRY_AFTER)
+    monkeypatch.setattr(llm, "_post", lambda payload, key: (_ for _ in ()).throw(AssertionError("must not be asked while busy for longer than the wait limit")))
+    assert llm._free_chat("p", "script", llm.load_config(), "KEY", NOW) is None
+    assert all(s <= llm.FREE_WAIT_LIMIT + 1 for s in slept)
+
+
+def test_calls_to_the_same_provider_model_are_spaced_by_the_gap(tmp_path, monkeypatch):
+    _settings(tmp_path, monkeypatch, extra_llm_gap_s=6)
+    clock = [100.0]
+    slept = []
+    monkeypatch.setattr(llm.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(llm.time, "sleep", lambda s: (slept.append(s), clock.__setitem__(0, clock[0] + s)))
+    llm._extra_last.clear()
+    llm._pace_extra("extra:m")
+    assert slept == []                                                                 # the first call goes at once
+    clock[0] += 2
+    llm._pace_extra("extra:m")
+    assert slept and 3.9 <= slept[0] <= 4.1                                            # 6 s gap minus the 2 s already passed
+    llm._pace_extra("extra:other")
+    assert len(slept) == 1                                                             # another model has its own limit
+    _settings(tmp_path, monkeypatch, extra_llm_gap_s=0)
+    llm._extra_last.clear()
+    llm._pace_extra("extra:m")
+    llm._pace_extra("extra:m")
+    assert len(slept) == 1                                                             # 0 switches the spacing off

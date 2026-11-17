@@ -263,3 +263,97 @@ def test_the_review_may_spend_a_little_past_the_daily_cap_but_other_jobs_may_not
     with pytest.raises(llm.ModelUnavailable):
         llm.chat("p", "script", now=NOW)
     assert calls == ["m/r"]
+
+
+# ---- 17 Nov 2026, plan Task 1: rank the free models by what they measurably did, per role ----
+def _roster(*ids, ctx=131072):
+    freemodels.refresh(NOW, get=lambda *a, **k: Resp([model(i, ctx=ctx) for i in ids]))
+
+
+def _many(mid, role, ok, bad, seconds=10.0, reason="json"):
+    for _ in range(ok):
+        freemodels.record(mid, True, NOW, role=role, seconds=seconds)
+    for _ in range(bad):
+        freemodels.record(mid, False, NOW, role=role, seconds=seconds, reason=reason)
+
+
+def test_choose_prefers_the_model_that_answered_valid_json_fast():
+    _roster("a/plain:free", "gemma/flaky:free")                               # the family bonus puts gemma first before anything is measured
+    assert freemodels.choose("script", NOW)[0] == "gemma/flaky:free"          # before any measurement the family bonus decides
+    _many("a/plain:free", "script", ok=9, bad=1, seconds=20)
+    _many("gemma/flaky:free", "script", ok=3, bad=7, seconds=20)
+    # keep the cool-down out of it: a run of failures that ended with a success is not cooling
+    freemodels.record("gemma/flaky:free", True, NOW, role="script", seconds=20)
+    assert freemodels.choose("script", NOW)[0] == "a/plain:free"
+
+
+def test_unknown_model_is_neutral_and_still_tried():
+    _roster("a/good:free", "b/new:free", "c/bad:free")
+    _many("a/good:free", "script", ok=8, bad=0)
+    _many("c/bad:free", "script", ok=1, bad=6)
+    freemodels.record("c/bad:free", True, NOW, role="script", seconds=10)
+    got = freemodels.choose("script", NOW)
+    assert got == ["a/good:free", "b/new:free", "c/bad:free"]
+    assert freemodels.reliability("b/new:free", "script") == 0.5
+
+
+def test_a_429_is_busy_not_unreliable():
+    _roster("a/m1:free", "b/m2:free")
+    freemodels.record("a/m1:free", False, NOW, status=429, role="script", seconds=1.0)
+    assert freemodels.reliability("a/m1:free", "script") == 0.5               # unchanged: it was busy, not wrong
+    h = freemodels._load()["health"]["a/m1:free"]
+    assert h["fails"] == 0 and not h.get("roles", {}).get("script", {}).get("bad")
+    assert "a/m1:free" in freemodels.choose("script", NOW + dt.timedelta(minutes=11))
+
+
+def test_reliability_is_kept_per_role():
+    _roster("a/m1:free")
+    _many("a/m1:free", "script", ok=9, bad=0)
+    _many("a/m1:free", "review", ok=0, bad=2)
+    freemodels.record("a/m1:free", True, NOW, role="review", seconds=5)       # not cooling: the last answer was good
+    assert freemodels.reliability("a/m1:free", "script") > 0.85
+    assert freemodels.reliability("a/m1:free", "review") < 0.5
+
+
+def test_speed_breaks_a_tie_between_equally_reliable_models():
+    _roster("a/slow:free", "b/fast:free")
+    _many("a/slow:free", "script", ok=4, bad=0, seconds=80)
+    _many("b/fast:free", "script", ok=4, bad=0, seconds=12)
+    assert freemodels.choose("script", NOW)[0] == "b/fast:free"
+    assert freemodels.median_seconds("b/fast:free", "script") == 12
+
+
+def test_an_older_health_file_without_roles_still_loads_and_ranks():
+    _roster("a/m1:free", "b/m2:free")
+    d = freemodels._load()
+    d["health"] = {"b/m2:free": {"fails": 0, "ok": 4}}
+    freemodels._save(d)
+    assert freemodels.choose("script", NOW)[0] == "b/m2:free"
+    assert freemodels.reliability("b/m2:free", "script") > 0.5
+
+
+def test_a_cut_off_json_answer_is_counted_with_its_finish_reason():
+    _roster("a/m1:free")
+    freemodels.record("a/m1:free", False, NOW, role="script", seconds=60, reason="json", finish="length")
+    freemodels.record("a/m1:free", False, NOW, role="script", seconds=30, reason="json", finish="stop")
+    c = freemodels.failure_report()
+    assert c["a/m1:free"]["script"]["json_bad"] == 2 and c["a/m1:free"]["script"]["finish"] == {"length": 1, "stop": 1}
+
+
+def test_free_chat_times_each_call_and_records_why_a_reply_was_not_json(router, monkeypatch):
+    stamps = [100.0, 142.0, 200.0, 207.0]                                     # call one took 42 s, call two took 7 s
+    monkeypatch.setattr(llm.time, "monotonic", lambda: stamps.pop(0) if len(stamps) > 1 else stamps[0])
+    seen = []
+
+    def post(payload, key):
+        seen.append(payload["model"])
+        if len(seen) == 1:
+            return {"choices": [{"message": {"content": '{"lines": [{"n": 1, "text": "cut'}, "finish_reason": "length"}], "usage": {}}
+        return reply('{"ok": 1}')
+
+    monkeypatch.setattr(llm, "_post", post)
+    assert llm._free_chat("p", "script", llm.load_config(), "k", NOW) == {"ok": 1}
+    rep = freemodels.failure_report()
+    first, second = seen[0], seen[1]
+    assert rep[first]["script"]["finish"] == {"length": 1} and rep[first]["script"]["json_bad"] == 1
+    assert freemodels.median_seconds(second, "script") == 7.0                 # the second call took 207 - 200 seconds
