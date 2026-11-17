@@ -178,18 +178,21 @@ def unsupported(lines: list[dict], sources: str) -> dict[int, str]:
         raise ValueError(f"the script could not be fact-checked ({type(e).__name__})") from e
 
 
-def verify_and_revise(lines: list[dict], chapters: list[dict], sources: str, rounds: int = REVISE_ROUNDS) -> tuple[list[dict], list[dict]]:
+def verify_and_revise(lines: list[dict], chapters: list[dict], sources: str, rounds: int = REVISE_ROUNDS, patient: bool | None = None) -> tuple[list[dict], list[dict]]:
     """Draft, check against the sources, rewrite what is flagged from the sources only, check again (chain-of-verification: the judge sees the sources,
     not the writer's reasoning). A line the writer cannot support is dropped. A script the sources mostly do not support is refused outright, so
     the writer is asked again before any voice or picture is paid for."""
     lines = [dict(l) for l in lines]
+    patient = llm.free_only() if patient is None else patient  # free judges are noisy (17 Nov 2026: 48 of 56 lines flagged, script discarded): the flagged lines are rewritten from the sources first and the refusal comes after the rewrites
     for r in range(rounds + 1):
         bad = unsupported(lines, sources)
         if not bad:
             return lines, chapters
-        if r == 0 and len(bad) > len(lines) * MOST_UNSUPPORTED:
+        if r == 0 and not patient and len(bad) > len(lines) * MOST_UNSUPPORTED:
             raise ValueError(f"the sources do not support {len(bad)} of {len(lines)} lines")
         if r == rounds:
+            if patient and len(bad) > len(lines) * MOST_UNSUPPORTED:
+                raise ValueError(f"the sources do not support {len(bad)} of {len(lines)} lines")
             return _drop_lines(lines, chapters, set(bad))
         listing = "\n".join(f"{n}: {lines[n]['text']}  (problem: {bad[n] or 'not in SOURCES'})" for n in sorted(bad))
         got = _script_chat(llm.cached(

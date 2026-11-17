@@ -378,3 +378,38 @@ def test_a_portrait_in_the_reserve_pool_is_not_used_for_a_scene_about_something_
     lines = [{"text": "a", "visual": "Ancient Corinth"}, {"text": "b", "visual": "Ancient Corinth"}, {"text": "c", "visual": "Mike Edmunds"}]
     clips, credits, _ = footage.scene_images(lines, "The Antikythera Mechanism", ["Mike Edmunds"])
     assert clips[0] == Path("gears.jpg") and clips[1] == Path("gears.jpg")  # nothing else is left for scene two, so the picture repeats rather than showing his face
+
+
+def test_a_patient_check_rewrites_a_heavily_flagged_script_from_the_sources_instead_of_refusing_it(monkeypatch):
+    """17 Nov 2026: a free judge flagged 48 of 56 lines and the whole script was thrown away. With free models the flagged lines are rewritten from the sources first."""
+    import scriptgen
+    judged = []
+
+    def judge(prompt, *a, **k):
+        judged.append(1)
+        return {"unsupported": [{"n": i, "why": "x"} for i in range(8)]} if len(judged) == 1 else {"unsupported": []}
+
+    monkeypatch.setattr(scriptgen, "_review_chat", judge)
+    monkeypatch.setattr(scriptgen, "_script_chat", lambda p, *a, **k: {"lines": [{"n": i, "text": f"from source {i}", "visual": "v"} for i in range(8)]})
+    out, _ = scriptgen.verify_and_revise(_lines(), [{"title": "a", "start_line": 0}], "S", patient=True)
+    assert len(out) == 10 and out[0]["text"] == "from source 0" and len(judged) == 2
+
+
+def test_a_patient_check_still_refuses_a_script_that_stays_mostly_unsupported_after_the_rewrites(monkeypatch):
+    import pytest
+    import scriptgen
+    monkeypatch.setattr(scriptgen, "_review_chat", lambda p, *a, **k: {"unsupported": [{"n": i, "why": "x"} for i in range(8)]})
+    monkeypatch.setattr(scriptgen, "_script_chat", lambda p, *a, **k: {"lines": [{"n": i, "text": f"still wrong {i}", "visual": "v"} for i in range(8)]})
+    with pytest.raises(ValueError, match="do not support"):
+        scriptgen.verify_and_revise(_lines(), [{"title": "a", "start_line": 0}], "S", patient=True)
+
+
+def test_without_patience_the_early_refusal_is_unchanged_and_free_only_switches_patience_on(monkeypatch):
+    import scriptgen
+
+    import llm
+    monkeypatch.setattr(llm, "free_only", lambda: True)
+    monkeypatch.setattr(scriptgen, "_review_chat", lambda p, *a, **k: {"unsupported": [{"n": i, "why": "x"} for i in range(8)]} if "SOURCES" in p and "from source" not in p else {"unsupported": []})
+    monkeypatch.setattr(scriptgen, "_script_chat", lambda p, *a, **k: {"lines": [{"n": i, "text": f"from source {i}", "visual": "v"} for i in range(8)]})
+    out, _ = scriptgen.verify_and_revise(_lines(), [{"title": "a", "start_line": 0}], "S")  # default: patient when the studio runs on free models
+    assert len(out) == 10
