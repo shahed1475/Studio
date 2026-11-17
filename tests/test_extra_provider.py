@@ -99,7 +99,8 @@ def test_free_chat_tries_the_extra_models_first_then_falls_back_and_counts_only_
     monkeypatch.setattr(llm.time, "sleep", lambda s: None)
     out = llm._free_chat("p", "script", llm.load_config(), "KEY", dt.datetime.now(dt.timezone.utc))
     assert out == {"ok": True}
-    assert calls[0] == "extra:deepseek-chat" and calls[-1] == "or/model:free"
+    assert calls[-1] == "or/model:free"                                                # the OpenRouter free model was the fallback after both extras failed
+    assert set(calls[:2]) == {"extra:deepseek-chat", "extra:glm-4.6"}                   # both of the owner's models were asked first; for a script they are raced, so their order is not fixed
     assert counted == ["script"]                                                       # only the OpenRouter request used the OpenRouter allowance
 
 
