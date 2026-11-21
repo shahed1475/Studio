@@ -368,3 +368,15 @@ def test_a_review_read_by_free_models_says_so(monkeypatch):
     monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p, **k: (llm.LAST_REVIEW.clear(), llm.LAST_REVIEW.update({"mode": "paid"}), reply)[2])
     checks = {c["name"]: c for c in reviewer.llm_review({"title": "t", "description": "d", "lines": [{"text": "a line"}]})}
     assert "free" not in checks["invented_facts"]["detail"]
+
+
+def test_a_long_films_three_articles_reach_the_review_whole():
+    """21 Nov 2026: a 20-minute film on three articles (25,602 characters) was blocked for 'old coins' and 'the bishop was summoned', which are in the
+    article: at 16,000 characters relevant_source kept the paragraphs that matched the 81 lines best and cut those. A source of that size now goes in whole."""
+    paras = [f"Paragraph {i} tells of the cave, the sleepers and the city of Ephesus, and adds one more plain detail number {i}." for i in range(240)]
+    source = "\n\n".join(paras)
+    assert 25000 < len(source) < reviewer.REVIEW_SOURCE_CHARS
+    narration = " ".join(f"The sleepers and the cave of Ephesus, detail {i}." for i in range(0, 240, 3))
+    got = reviewer.relevant_source(source, narration, reviewer.REVIEW_SOURCE_CHARS)
+    assert all(p in got for p in paras)
+    assert not all(p in reviewer.relevant_source(source, narration, 16000) for p in paras)  # the old limit cut part of it

@@ -1093,6 +1093,9 @@ def test_eval_case_for_the_review_source_room_fails_when_the_room_shrinks_back(m
     monkeypatch.setattr(reviewer, "REVIEW_SOURCE_CHARS", 12000)  # mutation: the old limit
     bad, _ = getattr(agenteval, name)()
     assert not bad
+    monkeypatch.setattr(reviewer, "REVIEW_SOURCE_CHARS", 16000)  # mutation: the limit that cut the Seven Sleepers film's passages (21 Nov 2026)
+    bad, _ = getattr(agenteval, name)()
+    assert not bad
 
 
 def test_eval_case_for_the_owners_advice_passes_and_fails_when_a_reviewer_reads_it_or_the_frame_goes(monkeypatch):

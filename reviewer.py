@@ -508,7 +508,7 @@ def description_head(meta: dict, limit: int = 600) -> str:
     return cut[:at] if at > limit // 2 else cut
 
 
-REVIEW_SOURCE_CHARS = 16000  # of the source the AI review reads; relevant_source returns a shorter source whole. 12000 hid part of a film's 13,906 characters of checked passages and the review called supported facts invented (2 Nov 2026), at about $0.001 more a call
+REVIEW_SOURCE_CHARS = 32000  # of the source the AI review reads; relevant_source returns a shorter source whole. 12000 hid part of a film's 13,906 characters of checked passages and the review called supported facts invented (2 Nov 2026); 16000 did the same to a 20-minute film on three articles (25,602 characters): the old-coins, bishop and church-veneration passages were cut and the review blocked them as invented (Seven Sleepers, 21 Nov 2026). 32000 matches REVIEW_TEXT_CHARS, about 8,000 tokens, $0 on free models
 REVIEW_TEXT_CHARS = 32000  # 20 Nov 2026: a 20 to 26 minute film is 84 to 100 lines, up to about 26,000 characters, and the review must read its last chapter; of the narration the AI review and the title check read; 7000 cut the closing chapter of an 8 to 10 minute documentary (58 lines are about 9,600 characters), and 12000 still cut the closing chapters of a 21-minute film whose last lines carry the six-tournaments answer (19 Nov 2026), at about $0.006 more a call in paid mode
 
 

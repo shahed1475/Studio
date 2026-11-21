@@ -1261,7 +1261,7 @@ def case_only_a_passage_found_in_its_saved_page_counts_as_evidence_for_the_revie
                         {"passage": "no mark at all"}, "Checked against: https://x.org"]}
     text = reviewer.source_text(meta)
     ok = "2006" in text and "1999" not in text and "no mark" not in text and len(reviewer.checked_sources(meta)) == 1
-    room = reviewer.REVIEW_SOURCE_CHARS >= 14000  # a film's checked passages came to 13,906 characters and the review was shown 12,000 of them
+    room = reviewer.REVIEW_SOURCE_CHARS >= 26000  # a film's checked passages came to 13,906 characters and the review was shown 12,000 of them; a 20-minute film's three articles came to 25,602 and 16,000 cut the passages it was blocked for (21 Nov 2026)
     return ok and room, ("only a listed passage found in its saved page is read as a source, with room for all of it" if ok and room else f"the reviewer read {text!r}; room for {reviewer.REVIEW_SOURCE_CHARS} characters")
 
 
