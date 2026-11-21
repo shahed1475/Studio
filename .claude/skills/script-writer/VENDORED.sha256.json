@@ -1,0 +1,12 @@
+{
+ "source": "https://github.com/ailabs-393/ai-labs-claude-skills.git",
+ "commit": "1a12bc7",
+ "files": {
+  "SKILL.md": "6540fa70c0284345eb51c4a89dbd6be56b76ba58a0c730b956ba9ec2f1cb85c4",
+  "index.js": "8462ae17effc9370b9c27d89ce293622609164ecc9214dfa149b8447bdb06095",
+  "package.json": "5debbfa9a79bd45dd007b815474f91997e7e4b50a2812acd0cad6886279a8ee3",
+  "references/script_formats.md": "248926f149d1d78383ee8319b4f36697ccdc99662a92e3a65a13ffd596290d4b",
+  "references/templates_and_tone.md": "5882ee657d7d12a4fd19b63d50f486376df805ffc40458df2bb7d808e5e7ff48",
+  "scripts/script_db.py": "c0b62987f9c0a13ada3776091cc8a4fd48669dbc8bff5a33f7429e6b6841ac12"
+ }
+}
