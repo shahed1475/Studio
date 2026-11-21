@@ -10,7 +10,12 @@ from test_animation import NOW, art  # noqa: F401  (the fixture that fakes the p
 def doc_world(tmp_path, monkeypatch):
     monkeypatch.setattr(run.config, "OUT", tmp_path / "out")
     monkeypatch.setattr(run, "PENDING_DOC", tmp_path / "pending_doc.json")
-    monkeypatch.setattr(run.tts, "narrate", lambda texts, work, pause: ("n.wav", "a.ass", [2.0] * len(texts)))
+    def narrate(texts, work, pause):
+        work.mkdir(parents=True, exist_ok=True)
+        (work / "n.wav").write_bytes(b"RIFF")  # like the real voice step: a narration file (the voice hand-over checks it, a2a.py)
+        return work / "n.wav", "a.ass", [2.0] * len(texts)
+
+    monkeypatch.setattr(run.tts, "narrate", narrate)
     monkeypatch.setattr(run.editprofile, "load", lambda: {"sentence_pause_ms": 300})
     monkeypatch.setattr(run, "_image_judge", lambda topic: None)
     monkeypatch.setattr(aiart, "enabled", lambda now=None: False)

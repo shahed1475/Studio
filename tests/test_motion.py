@@ -1,3 +1,4 @@
+from pathlib import Path
 import shutil
 import subprocess
 
@@ -67,7 +68,8 @@ def test_render_with_shots_crossfade_and_grain_really_runs(tmp_path):
 
 def test_crossfade_command_lengths_and_offsets(tmp_path, monkeypatch):
     calls = []
-    monkeypatch.setattr(render, "_ff", lambda *a, cwd: calls.append(list(a)))
+    monkeypatch.setattr(render, "_ff", lambda *a, cwd: (calls.append(list(a)), (Path(cwd) / str(a[-1])).write_bytes(b"x")))  # a stand-in file per command
+    monkeypatch.setattr(render.checkpoint, "check_media", lambda *a, **k: None)  # the stand-in passes the scene and final checks
     work = tmp_path / "w"
     work.mkdir()
     render.render([None, None, None], [3.0, 3.0, 3.0], work / "n.mp3", None, work, tmp_path / "o.mp4", crossfade=0.3)

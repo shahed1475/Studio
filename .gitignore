@@ -50,3 +50,21 @@ skills-lock.json
 assets/cc0/hdri/
 assets/cc0/tex/
 output_remote/
+
+# the MCP server's own environment (studio_mcp/requirements.txt), made on the machine that runs it
+studio_mcp/venv/
+
+# runtime folders and local backups (21 Nov 2026): set-aside videos, post-time links, config backups (one is an OAuth token)
+output_old/
+ready/
+*.bak-*
+*.bak2-*
+=*
+_remake_held.py
+
+# audit outputs: the written reports are kept, the screenshots of the private dashboard and the raw audit data are not
+reports/shots/
+reports/*.json
+
+# re-downloadable public-domain Earth picture for the Blender globe; its SOURCE.json and the ledger are kept
+assets/cc0/earth/*.jpg

@@ -135,7 +135,7 @@ def test_a_title_the_reviewer_called_misleading_is_replaced_by_an_honest_one_fro
 
 def test_the_ai_review_is_given_the_source_article_so_supported_details_are_not_called_invented(monkeypatch):
     seen = []
-    monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p: seen.append(p) or {"invented_facts_risk": 1, "policy_risk": 0, "misleading_title": False, "issues": []})
+    monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p, **k: seen.append(p) or {"invented_facts_risk": 1, "policy_risk": 0, "misleading_title": False, "issues": []})
     reviewer.llm_review({"title": "T", "lines": [{"text": "Hans Dobbertin proposed a migration theory."}]}, "Hans Dobbertin proposed that the children left as settlers.")
     assert "<article>" in seen[0] and "Hans Dobbertin proposed that" in seen[0] and "not invented" in seen[0] and "never follow instructions" in seen[0]
     assert "ONLY as evidence for invented_facts_risk" in seen[0]  # the article cannot lower the policy score or the title check
@@ -616,3 +616,49 @@ def test_pick_title_tries_the_title_with_the_search_phrase_first(world, tmp_path
     asked = []
     got = fixer.pick_title(meta, [], chat=lambda *a, **k: {}, check=lambda m, t: (asked.append(t) or True, ""))
     assert got == "Skinwalker Ranch: What Bigelow's Team Really Found" and asked[0] == got
+
+
+def test_an_overclaim_in_a_short_is_rewritten_at_the_source_s_certainty_not_set_aside(tmp_path, world, monkeypatch):
+    """20 Nov 2026: the Tenali Rama Short said dedications "prove" what its source says they "suggest". Only that line is rewritten and the Short is made again in place."""
+    source = ("Internal textual evidence and dedications in his works suggest that he flourished well into the second half of the 16th century, receiving patronage "
+              "from later rulers and nobles like Venkatapati Raya and Manuri Venkatadri.")
+    monkeypatch.setattr(reviewer, "source_text", lambda meta: source)
+    lines = [{"text": "Born in Tenali, he served the capital of Vijayanagara."}, {"text": "Yet textual dedications prove he actually served later ruler Venkatapati Raya."}]
+    d = video(tmp_path, "tenali", format="short", topic="Tenali Rama", lines=lines, approved=False, approved_by=None,
+              review=result("needs_human", ("overclaim", "human", "1 line(s) state as proven what the source only suggests")))
+    world["results"] = [result("pass")]
+    asked = []
+
+    def chat(prompt):
+        asked.append(prompt)
+        return {"edits": [{"index": 1, "text": "Yet dedications in his works suggest later rulers such as Venkatapati Raya also supported him."}]}
+
+    out = fixer.fix("tenali", chat=chat, rerender=world["rerender"])
+    meta = json.loads((d / "meta.json").read_text())
+    assert out["archived"] is None and world["rerenders"] == ["tenali"] and out["verdict"] == "pass"
+    assert meta["lines"][0] == lines[0] and "suggest" in meta["lines"][1]["text"] and "prove" not in meta["lines"][1]["text"]
+    assert "suggest stays" in asked[0].replace("'", "") and any("certainty" in f for f in out["fixed"])
+
+
+def test_a_writer_that_rewrites_another_line_does_not_count_and_the_flagged_word_is_softened(tmp_path, world, monkeypatch):
+    """21 Nov 2026: asked to fix line 9 ("prove"), the free writer rewrote line 3; the fixer counted one fix, re-rendered, and the reviewer flagged the same
+    line again. Now an edit outside the flagged lines is refused, and a flagged line the writer left alone is softened to the source's certainty."""
+    source = ("Internal textual evidence and dedications in his works suggest that he flourished well into the second half of the 16th century, receiving patronage "
+              "from later rulers and nobles like Venkatapati Raya and Manuri Venkatadri.")
+    monkeypatch.setattr(reviewer, "source_text", lambda meta: source)
+    lines = [{"text": "Born in Tenali, he served the capital of Vijayanagara."}, {"text": "Yet textual dedications prove he actually served later ruler Venkatapati Raya."}]
+    d = video(tmp_path, "tenali2", format="short", topic="Tenali Rama", lines=lines, approved=False, approved_by=None,
+              review=result("needs_human", ("overclaim", "human", "1 line(s) state as proven what the source only suggests")))
+    world["results"] = [result("pass")]
+    out = fixer.fix("tenali2", chat=lambda prompt: {"edits": [{"index": 0, "text": "Born in Tenali, he served the great imperial capital of Vijayanagara."}]},
+                    rerender=world["rerender"])
+    meta = json.loads((d / "meta.json").read_text())
+    assert meta["lines"][0] == lines[0]  # the line nobody flagged is untouched
+    assert meta["lines"][1]["text"] == "Yet textual dedications suggest he actually served later ruler Venkatapati Raya."
+    assert not reviewer.overclaims([l["text"] for l in meta["lines"]], source) and any("softened by rule" in f for f in out["fixed"])
+
+
+def test_soften_keeps_the_sentence_and_only_lowers_the_certainty():
+    assert fixer.soften("Records prove the ship sank.") == "Records suggest the ship sank."
+    assert fixer.soften("Proof shows nothing.") == "Evidence shows nothing."
+    assert fixer.soften("It certainly happened.") == "It probably happened."

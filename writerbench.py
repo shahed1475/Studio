@@ -16,7 +16,7 @@ import compliance
 import config
 import freemodels
 import llm
-import packaging
+import video_packaging_rules as packaging
 import reviewer
 import scriptgen
 

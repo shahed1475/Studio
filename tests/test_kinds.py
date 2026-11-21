@@ -3,7 +3,7 @@ import json
 
 import clipper
 import kinds
-import packaging
+import video_packaging_rules as packaging
 import seo
 import thumbnail
 

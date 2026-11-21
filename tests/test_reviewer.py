@@ -211,7 +211,7 @@ def test_shouting_title_warns():
 
 
 def test_an_unusable_ai_reply_means_unreviewed_not_failed(monkeypatch):
-    monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p: {"policy_risk": 1})  # a free model that forgot a key
+    monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p, **k: {"policy_risk": 1})  # a free model that forgot a key
     checks = reviewer.llm_review({"title": "t", "lines": [{"text": "a line"}]})
     assert checks[0]["name"] == "llm_review" and not checks[0]["ok"]
     assert reviewer.verdict_from(checks, None) == "unreviewed"
@@ -249,7 +249,7 @@ def test_a_misleading_title_verdict_carries_the_reason_what_the_video_covers_and
     reply = {"invented_facts_risk": 1, "policy_risk": 0, "misleading_title": True, "title_reason": "promises a debate it only mentions",
              "covers": "the site, its dig and temples", "better_titles": ["Delphi: Ruins and Dig", "Delphi Explained"], "issues": []}
     seen = []
-    monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p: seen.append(p) or reply)
+    monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p, **k: seen.append(p) or reply)
     checks = reviewer.llm_review({"title": "t", "description": "d", "lines": [{"text": "a line"}]})
     tm = next(c for c in checks if c["name"] == "title_matches")
     assert not tm["ok"] and "promises a debate" in tm["detail"] and tm["covers"] == "the site, its dig and temples" and tm["better_titles"] == ["Delphi: Ruins and Dig", "Delphi Explained"]
@@ -258,7 +258,7 @@ def test_a_misleading_title_verdict_carries_the_reason_what_the_video_covers_and
 
 def test_the_facts_checks_keep_the_issues_the_model_named(monkeypatch):
     reply = {"invented_facts_risk": 5, "policy_risk": 0, "misleading_title": False, "issues": ["the description misdates the evidence", "no trace remains is not in the article"]}
-    monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p: reply)
+    monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p, **k: reply)
     checks = {c["name"]: c for c in reviewer.llm_review({"title": "t", "description": "d", "lines": [{"text": "a line"}]})}
     assert checks["invented_facts"]["issues"] == reply["issues"] and checks["invented_facts_watch"]["issues"] == reply["issues"]
 
@@ -290,7 +290,7 @@ def test_the_ai_review_judges_the_thumbnail_text_against_the_narration(monkeypat
     seen = []
     reply = {"invented_facts_risk": 1, "policy_risk": 0, "misleading_title": False, "misleading_thumbnail": True,
              "thumbnail_reason": "it asks prophecy or performance but the narration never raises that question", "issues": []}
-    monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p: seen.append(p) or reply)
+    monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p, **k: seen.append(p) or reply)
     meta = {"title": "Delphi: Myth and Ruins", "description": "d", "thumb_hook": "PROPHECY OR PERFORMANCE?", "lines": [{"text": "a line"}]}
     checks = {c["name"]: c for c in reviewer.llm_review(meta)}
     assert "PROPHECY OR PERFORMANCE?" in seen[0]
@@ -303,7 +303,7 @@ def test_the_ai_review_judges_the_thumbnail_text_against_the_narration(monkeypat
 
 def test_the_ai_review_sees_the_chapter_titles_that_appear_in_the_public_description(monkeypatch):
     seen = []
-    monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p: seen.append(p) or {"invented_facts_risk": 1, "policy_risk": 0, "misleading_title": False, "issues": []})
+    monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p, **k: seen.append(p) or {"invented_facts_risk": 1, "policy_risk": 0, "misleading_title": False, "issues": []})
     reviewer.llm_review({"title": "t", "description": "d", "chapters": [{"title": "Prophecy or Political Theater?", "start_line": 0}], "lines": [{"text": "a line"}]})
     assert "Prophecy or Political Theater?" in seen[0]
 
@@ -347,7 +347,7 @@ def test_the_review_reads_all_of_a_source_that_fits_so_no_supporting_passage_loo
     source = "\n\n".join(passages)
     assert 12000 < len(source) <= reviewer.REVIEW_SOURCE_CHARS
     seen = []
-    monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p: seen.append(str(p)) or {"invented_facts_risk": 1, "policy_risk": 0, "misleading_title": False, "issues": []})
+    monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p, **k: seen.append(str(p)) or {"invented_facts_risk": 1, "policy_risk": 0, "misleading_title": False, "issues": []})
     reviewer.llm_review({"title": "t", "description": "d", "lines": [{"text": "Thing number 3 and thing number 39 happened."}]}, source)
     assert all(p in seen[0] for p in passages)  # the first and the last, not 12,000 characters of them
 
@@ -357,7 +357,7 @@ def test_a_review_read_by_free_models_says_so(monkeypatch):
 
     reply = {"invented_facts_risk": 1, "policy_risk": 0, "misleading_title": False, "issues": []}
 
-    def chat(p):
+    def chat(p, **k):
         llm.LAST_REVIEW.clear()
         llm.LAST_REVIEW.update({"mode": "free", "models": ["a/x:free", "b/y:free"]})
         return reply
@@ -365,6 +365,6 @@ def test_a_review_read_by_free_models_says_so(monkeypatch):
     monkeypatch.setattr(reviewer.scriptgen, "_review_chat", chat)
     checks = {c["name"]: c for c in reviewer.llm_review({"title": "t", "description": "d", "lines": [{"text": "a line"}]})}
     assert "two free models" in checks["invented_facts"]["detail"] and "a/x:free" in checks["invented_facts"]["detail"]
-    monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p: (llm.LAST_REVIEW.clear(), llm.LAST_REVIEW.update({"mode": "paid"}), reply)[2])
+    monkeypatch.setattr(reviewer.scriptgen, "_review_chat", lambda p, **k: (llm.LAST_REVIEW.clear(), llm.LAST_REVIEW.update({"mode": "paid"}), reply)[2])
     checks = {c["name"]: c for c in reviewer.llm_review({"title": "t", "description": "d", "lines": [{"text": "a line"}]})}
     assert "free" not in checks["invented_facts"]["detail"]

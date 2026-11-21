@@ -13,8 +13,8 @@ import tts
 
 
 def speechlike(path, seconds=8, amp=0.03):
-    """Pink noise with a slow, shallow tremolo: quiet, with the level swings of speech (a 90 percent tremolo has far taller peaks than any voice, which the true-peak limit then caps). Not a voice; enough to measure loudness handling."""
-    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", f"anoisesrc=d={seconds}:c=pink:r=44100:a={amp}", "-af", "tremolo=f=3:d=0.5,lowpass=f=4000",
+    """Pink noise (a fixed seed: the default random seed made 1 run in 7 land 0.6 LU low on 20 Nov 2026, where the true-peak limit starts to bite) with a slow, shallow tremolo: quiet, with the level swings of speech (a 90 percent tremolo has far taller peaks than any voice, which the true-peak limit then caps). Not a voice; enough to measure loudness handling."""
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", f"anoisesrc=d={seconds}:c=pink:r=44100:a={amp}:seed=1", "-af", "tremolo=f=3:d=0.5,lowpass=f=4000",
                     "-c:a", "libmp3lame", "-b:a", "128k", str(path)], check=True)
 
 

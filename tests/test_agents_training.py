@@ -60,6 +60,17 @@ def test_bus_task_lifecycle_and_owner_handoff():
         assert agentbus.summary() == {"open": 0, "working": 0, "done": 1, "failed": 0, "owner": 1}
 
 
+def test_a_closed_bus_task_keeps_its_outcome_when_a_late_retry_moves_it_again():
+    """A retry after a crash (or two workers on one task) once turned a done task into a failed one, which the triage agent would read
+    as a problem that came back (found 19 Nov 2026)."""
+    with agenteval.sandbox():
+        t = agentbus.post("repair_video", "guardian", "autopilot", "s9", reason="r", now=NOW)
+        agentbus.finish(t["id"], "repaired", True, NOW)
+        again = agentbus.finish(t["id"], "a late retry", False, NOW)
+        assert again["state"] == "done" and again["history"][-1].endswith("done: repaired")
+        assert agentbus.summary()["failed"] == 0
+
+
 def test_ladder_solves_by_a_remembered_fix_without_asking_a_model_and_learns_from_a_diagnosis():
     with agenteval.sandbox():
         lessons.record("fixer", "title keeps failing", "new_title", True, NOW)
@@ -1238,3 +1249,90 @@ def test_the_real_photo_case_passes_and_fails_when_any_photo_is_taken_or_the_gat
     monkeypatch.setattr(run, "_real_photos_on", lambda data: True)  # mutation: a case, 3D and draw-all use photos too
     ok, detail = case()
     assert not ok and "gated=False" in detail
+
+
+def test_the_free_mode_paid_check_case_passes_and_fails_when_the_gate_is_removed(monkeypatch):
+    import llm
+
+    case = agenteval.case_free_mode_never_sends_a_request_to_a_paid_model_through_the_video_checks
+    assert case in agenteval.CASES
+    ok, detail = case()
+    assert ok, detail
+    monkeypatch.setattr(llm, "paid_allowed", lambda cfg=None: True)  # mutation: the switch is ignored, as before 20 Nov 2026
+    ok, detail = case()
+    assert not ok and "sent=" in detail
+
+
+def test_the_a2a_case_passes_and_fails_when_a_closed_task_can_be_answered_again(monkeypatch):
+    import a2a
+    import agentbus as bus
+
+    case = agenteval.case_an_a2a_task_is_answered_once_only_by_its_target_and_never_off_the_hand_over_map
+    assert case in agenteval.CASES
+    ok, detail = case()
+    assert ok, detail
+    monkeypatch.setattr(bus, "LIVE", ("open", "working", "done"))  # mutation: a done task still counts as live, so a late answer completes it again
+    ok, detail = case()
+    assert not ok and "twice=True" in detail
+    monkeypatch.undo()
+    monkeypatch.setattr(a2a, "may_message", lambda source, target: True)  # mutation: the hand-over map is ignored
+    ok, detail = case()
+    assert not ok and "off_map=False" in detail
+
+
+def test_the_power_cut_case_catches_a_scan_that_trusts_any_scene_or_sees_no_cut(monkeypatch):
+    """Mutation checks for case_a_render_cut_by_a_power_cut_is_found_kept_and_never_trusted_half_written."""
+    import checkpoint
+
+    assert agenteval.case_a_render_cut_by_a_power_cut_is_found_kept_and_never_trusted_half_written()[0]
+    with monkeypatch.context() as m:
+        m.setattr(checkpoint, "still_valid", lambda path, rec, key: bool(rec) and path.is_file())  # mutation: a recorded scene is trusted without its hash
+        assert not agenteval.case_a_render_cut_by_a_power_cut_is_found_kept_and_never_trusted_half_written()[0]
+    with monkeypatch.context() as m:
+        m.setattr(checkpoint, "was_interrupted", lambda work: False)  # mutation: a run that never ended is not seen as cut
+        assert not agenteval.case_a_render_cut_by_a_power_cut_is_found_kept_and_never_trusted_half_written()[0]
+
+
+def test_the_end_of_production_case_catches_a_duplicate_film_a_reused_pid_and_a_short_without_its_resume_step(monkeypatch):
+    """Mutation checks for case_a_cut_at_the_very_end_never_makes_the_video_twice_and_a_cut_short_resumes_in_its_folder."""
+    import checkpoint
+    import recovery
+    import run
+
+    case = agenteval.case_a_cut_at_the_very_end_never_makes_the_video_twice_and_a_cut_short_resumes_in_its_folder
+    assert case()[0]
+    with monkeypatch.context() as m:
+        m.setattr(run, "_finished_pending", lambda saved, pending: None)  # mutation: the finished folder is not looked for
+        assert not case()[0]
+    with monkeypatch.context() as m:
+        m.setattr(checkpoint, "_run_alive", lambda r: r.get("boot") == checkpoint.boot_id() and checkpoint._alive(int(r.get("pid") or 0)))  # mutation: pid and boot only
+        assert not case()[0]
+    with monkeypatch.context() as m:
+        m.setattr(recovery, "RESUME_SHORT", recovery.RESUME_DOC)  # mutation: a Short is given the film's resume step
+        assert not case()[0]
+
+
+def test_the_guardian_closes_a_set_aside_drafts_task_and_nothing_else(monkeypatch):
+    """Case and mutation checks for case_the_guardian_closes_its_draft_tasks_only_when_the_video_has_left_output (21 Nov 2026: three tasks for videos
+    moved to output_old stayed open for weeks)."""
+    import guardian
+
+    case = agenteval.case_the_guardian_closes_its_draft_tasks_only_when_the_video_has_left_output
+    ok, detail = case()
+    assert ok, detail
+    with monkeypatch.context() as m:
+        m.setattr(guardian, "close_gone", lambda out, now: 0)  # mutation: the run never looks for set-aside drafts
+        assert not case()[0]
+    with monkeypatch.context() as m:
+        m.setattr(guardian, "GONE_KINDS", ("content_problem", "repair_video", "growth_topic"))  # mutation: a task that is not a draft repair is closed too
+        assert not case()[0]
+    with monkeypatch.context() as m:
+        def closes_any_source(out, now):  # mutation: another agent's task with the same kind is closed as well
+            n = 0
+            present = {p.name for p in out.iterdir() if p.is_dir()}
+            for t in agentbus.tasks():
+                if t["state"] in agentbus.LIVE and t["kind"] in guardian.GONE_KINDS and t["slug"] not in present:
+                    n += agentbus.finish(t["id"], "closed", True, now) is not None
+            return n
+        m.setattr(guardian, "close_gone", closes_any_source)
+        assert not case()[0]

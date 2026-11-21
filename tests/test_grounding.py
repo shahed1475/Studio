@@ -93,7 +93,7 @@ def test_doc_script_grounded_keeps_storyteller_style_and_returns_anchors(monkeyp
         if "Plan a" in prompt:
             return {"title": "T", "description": "d", "tags": [], "anchors": ["Hamelin", "Pied Piper", "Koppenberg"],
                     "chapters": [{"title": f"c{i}", "summary": "s"} for i in range(8)]}
-        return {"lines": [{"text": "word " * 20, "visual": "Hamelin"} for _ in range(6)]}
+        return {"lines": [{"text": "word " * 20 + "end.", "visual": "Hamelin"} for _ in range(6)]}
 
     monkeypatch.setattr(scriptgen, "_chat", fake)
     data = scriptgen.doc_script("The Pied Piper", grounded="ARTICLE: the town record says 1284.")
@@ -110,7 +110,7 @@ def test_doc_script_without_source_is_not_grounded(monkeypatch):
     def fake(prompt, *a, **k):
         if "Plan a" in prompt:
             return {"title": "T", "description": "d", "tags": [], "chapters": [{"title": f"c{i}", "summary": "s"} for i in range(8)]}
-        return {"lines": [{"text": "word " * 20, "visual": "x"} for _ in range(6)]}
+        return {"lines": [{"text": "word " * 20 + "end.", "visual": "x"} for _ in range(6)]}
 
     monkeypatch.setattr(scriptgen, "_chat", fake)
     assert scriptgen.doc_script("T")["grounded"] is False

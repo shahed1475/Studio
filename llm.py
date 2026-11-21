@@ -275,14 +275,26 @@ def estimate(prices: dict, docs_per_day: float, shorts_per_day: float, days: int
 
 # ---- calls ----
 def parse_json(text: str) -> dict:
+    """The first complete JSON object in the text (handles models that add reasoning before or after the JSON, or wrap it in a code fence).
+    20 Nov 2026: a brace counter that ignored strings rejected a reply whose text held a lone brace ("a { in text") once anything surrounded the
+    JSON; json's own decoder, tried at each opening brace, reads strings correctly."""
     text = (text or "").strip()
-    for candidate in (text, text[text.find("{"): text.rfind("}") + 1] if "{" in text else ""):
-        try:
-            value = json.loads(candidate)
-        except ValueError:
-            continue
+    try:
+        value = json.loads(text)
         if isinstance(value, dict):
             return value
+    except ValueError:
+        pass
+    decoder = json.JSONDecoder()
+    at = text.find("{")
+    while at != -1:
+        try:
+            value, _end = decoder.raw_decode(text, at)
+            if isinstance(value, dict):
+                return value
+        except ValueError:
+            pass
+        at = text.find("{", at + 1)
     raise ValueError("no JSON object in the reply")
 
 
@@ -339,6 +351,30 @@ def _extra_models_of(raw) -> list[str]:
     return [n for n in names if _MODEL_NAME.match(n)][:6]
 
 
+# A name the provider resolves to a model of its own choosing. Never a judge: on 20 Nov 2026 the proxy's "auto" served the studio's requests with
+# poolside/laguna-xs-2.1, nemotron-3-ultra and once gemini-3.6-flash, which was also on the writer list, so "auto" could have judged its own script.
+ROUTER_NAMES = frozenset({"auto", "fusion", "router", "default"})
+
+
+def model_identity(mid) -> str:
+    """The model behind an id, for the rule that a writer never judges its own script: no `extra:` prefix, no vendor path, no `:free` tag, lower case.
+    extra:gemini-3.6-flash, google/gemini-3.6-flash and gemini-3.6-flash:free are one model."""
+    m = str(mid or "").strip().lower()
+    m = m[len(EXTRA_PREFIX):] if m.startswith(EXTRA_PREFIX) else m
+    return m.rsplit("/", 1)[-1].split(":", 1)[0]
+
+
+def judge_names_problem(script, review) -> str:
+    """Why a judge list breaks the writer-is-never-the-judge rule ("" when it does not): a router name, or a model that is also on the writer list."""
+    writers = {model_identity(n) for n in script}
+    for n in review:
+        if str(n).lower() in ROUTER_NAMES:
+            return f'the judge "{n}" lets the provider choose the model, and it could choose the writer: name a model instead'
+        if model_identity(n) in writers:
+            return f'"{n}" is on both lists: a judge must be a different model from every script model'
+    return ""
+
+
 def extra_cfg() -> dict | None:
     """The provider's settings when it is on, has a key and an address the rules accept; None otherwise. Not in a user studio."""
     try:
@@ -366,11 +402,81 @@ def extra_cfg() -> dict | None:
 
 
 def extra_models(role: str) -> list[str]:
-    """Model ids (prefixed `extra:`) the owner's provider offers for this role; small jobs use the writer list."""
+    """Model ids (prefixed `extra:`) the owner's provider offers for this role; small jobs use the writer list. A judge is never a router name or a
+    model that is also on the writer list: refused when the settings are saved, and dropped here too in case the settings file was edited by hand."""
     cfg = extra_cfg()
     if not cfg:
         return []
-    return [EXTRA_PREFIX + m for m in cfg["review" if role == "review" else "script"]]
+    if role != "review":
+        return [EXTRA_PREFIX + m for m in cfg["script"]]
+    writers = {model_identity(n) for n in cfg["script"]}
+    return [EXTRA_PREFIX + m for m in cfg["review"] if m.lower() not in ROUTER_NAMES and model_identity(m) not in writers]
+
+
+# The provider's own word on its models (GET /models). A FreeLLMAPI proxy marks a model whose free quota is used up "exhausted": on 20 Nov 2026 both
+# Gemini models were exhausted until Google's 08:00 UTC reset (Retry-After 12796 s), yet the studio asked them again every five minutes because a
+# 429 is believed for at most MAX_RETRY_AFTER. Reading the list costs one local request a minute and no model quota.
+CATALOG_TTL = 60
+UNUSABLE = frozenset({"exhausted", "needsKey", "unavailable"})
+_catalog: dict = {}
+
+
+def _catalog_get(url: str, key: str):
+    return requests.get(url + "/models", headers={"Authorization": f"Bearer {key}"}, timeout=5, allow_redirects=False)
+
+
+def extra_catalog() -> dict | None:
+    """{model id: status} from the provider's model list, kept CATALOG_TTL seconds: "ready", "exhausted", "needsKey", "unavailable", or None when the
+    provider gives no status for a model. None for the whole list when it cannot be read: each request then finds out for itself, as before."""
+    cfg = extra_cfg()
+    if not cfg:
+        return None
+    hit = _catalog.get(cfg["url"])
+    if hit and time.monotonic() - hit[0] < CATALOG_TTL:
+        return hit[1]
+    out = None
+    try:
+        r = _catalog_get(cfg["url"], cfg["key"])
+        r.raise_for_status()
+        out = {}
+        for m in (r.json() or {}).get("data") or []:
+            if isinstance(m, dict) and m.get("id"):
+                st = m.get("execution_status")
+                out[str(m["id"])] = "unavailable" if m.get("available") is False and st in (None, "ready") else (str(st) if st else None)
+    except Exception:
+        out = None
+    _catalog[cfg["url"]] = (time.monotonic(), out)
+    return out
+
+
+def extra_status(mid: str) -> str | None:
+    """The provider's status for one of its models (with or without the `extra:` prefix); None when unknown."""
+    cat = extra_catalog() or {}
+    return cat.get(mid[len(EXTRA_PREFIX):] if mid.startswith(EXTRA_PREFIX) else mid)
+
+
+def extra_error(e) -> str:
+    """A provider failure in plain words: the provider's own message, quota used up or only rate limited, and when to try again. The key is scrubbed out."""
+    r = getattr(e, "response", None)
+    code = getattr(r, "status_code", None)
+    msg = ""
+    if r is not None:
+        try:
+            j = r.json()
+            err = j.get("error") if isinstance(j, dict) else None
+            msg = str((err.get("message") if isinstance(err, dict) else err) or j.get("message") or "")
+        except Exception:
+            msg = str(getattr(r, "text", "") or "")[:200]
+    if not code:
+        return scrub(f"{type(e).__name__}: {e}")[:300]
+    text = f"HTTP {code}: {msg or 'no message'}"
+    if code == 429:
+        kind = "quota used up" if re.search(r"exhaust|quota|per day|daily", msg, re.I) else "rate limited"
+        text = f"{kind} (HTTP 429): {msg or 'no message'}"
+        ra = str((getattr(r, "headers", None) or {}).get("Retry-After") or "")
+        if ra.isdigit():
+            text += f" Try again after {(_now() + dt.timedelta(seconds=int(ra))):%H:%M} UTC."
+    return scrub(text)[:300]
 
 
 FREE_WAIT_LIMIT = 150  # seconds a call will wait for a busy model to come back before it gives up
@@ -403,13 +509,34 @@ def scrub(text) -> str:
     return t
 
 
+def _bounded_post(url: str, *, timeout: float, **kw):
+    """requests.post with a TOTAL time limit. requests' own timeout only limits the gap between two received bytes, and OpenRouter keeps a slow request alive by
+    sending whitespace, so a free judge once held a request for 600.8 s against a 120 s limit and a documentary's fact-check stalled (20 Nov 2026). The answer is
+    read in pieces and dropped (requests.Timeout) once the limit has passed. An error answer is read the same way, so its status and text reach the caller."""
+    r = requests.post(url, timeout=timeout, stream=True, **kw)
+    read = getattr(r, "iter_content", None)
+    if read is None:  # a stand-in answer (tests): nothing to stream
+        return r
+    deadline = time.monotonic() + float(timeout)
+    buf = bytearray()
+    try:
+        for chunk in read(16384):
+            buf += chunk
+            if time.monotonic() > deadline:
+                raise requests.Timeout(f"no complete answer within {float(timeout):.0f} s")
+    finally:
+        r.close()
+    r._content, r._content_consumed = bytes(buf), True
+    return r
+
+
 def _post_extra(payload: dict) -> dict:
     cfg = extra_cfg()
     if not cfg:
         raise RuntimeError("the extra model provider is off, has no key, or its address is refused")
     body = {k: v for k, v in payload.items() if k != "usage"}  # `usage` is an OpenRouter field
     body["model"] = payload["model"][len(EXTRA_PREFIX):]
-    r = requests.post(cfg["url"] + "/chat/completions", json=body, timeout=EXTRA_TIMEOUT, allow_redirects=False,
+    r = _bounded_post(cfg["url"] + "/chat/completions", json=body, timeout=EXTRA_TIMEOUT, allow_redirects=False,
                       headers={"Authorization": f"Bearer {cfg['key']}", "Content-Type": "application/json"})
     r.raise_for_status()
     return r.json()
@@ -427,7 +554,7 @@ def _post(payload: dict, key: str) -> dict:
         return _post_extra(payload)
     if is_claude(payload["model"]):
         return _post_anthropic(payload, key)
-    r = requests.post("https://openrouter.ai/api/v1/chat/completions", json=payload, timeout=timeout,
+    r = _bounded_post("https://openrouter.ai/api/v1/chat/completions", json=payload, timeout=timeout,
                       headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json", "X-Title": "Story Studio"})
     r.raise_for_status()
     return r.json()
@@ -477,6 +604,27 @@ def _account(now, role, model, body) -> float:
 
 CHEAP_SHARE = 0.4  # small jobs (titles, tags, picture checks) may use at most this share of the free requests; the rest is for scripts and fact-checks
 _last_free: dict[str, str] = {}  # the free model that last answered each role (the reviewer must differ from the writer)
+_served: dict[str, str] = {}  # the model the owner's provider said answered each of its ids last (the reply's "model" field; "auto" is a different model each time)
+_WRITERS: set = set()  # every model that wrote script text in this process since begin_script(), and what the provider served it as
+
+
+def begin_script() -> None:
+    """A new script starts: forget the writers of the previous one."""
+    _WRITERS.clear()
+
+
+def writers() -> list[str]:
+    """The models that wrote the current script (ids, and the model the provider served them as). The video's record keeps them (`script_writers`)
+    so a judge in a later process avoids them too: `_last_free` lives only as long as the process that wrote the script (20 Nov 2026)."""
+    return sorted(_WRITERS)
+
+
+def _answered(role: str, mid: str) -> None:
+    _last_free[role] = mid
+    if role == "script":
+        _WRITERS.add(mid)
+        if _served.get(mid):
+            _WRITERS.add(_served[mid])
 
 
 REVIEW_RESERVE_USD = 0.50  # the quality gate may spend this much past the daily cap, so a reached cap never leaves videos unreviewed
@@ -486,6 +634,11 @@ ROUNDS = 3  # passes over the free models; a busy provider (429) usually frees u
 FREE_TIMEOUT = 120  # seconds a free model gets to answer (llm.json `free_timeout_s`; the paid models keep 240)
 FREE_MAX_TOKENS = 16000  # the ceiling llm.validate_config sets: a cut-off free reply is asked again once, with up to this much room
 RACE_ROLES = ("script", "review")  # the jobs where a wrong or missing answer costs the most: two models are asked at once
+
+
+REASONING_BUDGET = {"script": 1024, "review": 3000, "cheap": 512}  # thinking tokens a free OpenRouter model may spend before it answers (20 Nov 2026: measured on
+# nvidia/nemotron-3.5-super-vl:free with a 6-line writing job: default and effort "low" both spent all 6,000 output tokens thinking and returned no JSON; a 1,024
+# budget answered with 6 valid lines in 9.7 s, thinking off in 1.6 s. Writers and judges were cut off this way all morning and a documentary could not be written)
 
 
 class _NoAllowance(Exception):
@@ -504,6 +657,7 @@ def _ask_free(mid: str, prompt: str, role: str, cfg: dict, key: str, now: dt.dat
     if not is_extra and role == "cheap" and freemodels.requests_today(now, "cheap") >= int(cfg["free_daily_limit"] * CHEAP_SHARE):
         raise _NoAllowance  # keep the rest of the free requests for scripts and fact-checks
     json_mode, cap, retried = True, int(cfg["max_output_tokens"]), False
+    reasoning = None if is_extra else {"max_tokens": REASONING_BUDGET.get(role, 1024)}  # OpenRouter's free reasoning models: a thinking budget, so the answer gets written
     while True:
         if not is_extra:
             freemodels.count_request(now, role)  # failed requests count against the limit too
@@ -511,13 +665,22 @@ def _ask_free(mid: str, prompt: str, role: str, cfg: dict, key: str, now: dt.dat
             _pace_extra(mid)
         t0 = time.monotonic()
         payload = _payload(mid, prompt, cap, json_mode, role)
+        if reasoning is not None:
+            payload["reasoning"] = reasoning
         payload["_timeout_s"] = cfg.get("free_timeout_s") or FREE_TIMEOUT
         try:
             body = _post(payload, key)
         except Exception as e:
             code = getattr(getattr(e, "response", None), "status_code", None)
+            said = (str(getattr(getattr(e, "response", None), "text", "") or "") + " " + str(e)).lower()
+            if reasoning is not None and isinstance(e, requests.HTTPError) and code == 400 and "reasoning" in said:
+                reasoning = None  # a model that refuses the thinking budget is asked again exactly as before 20 Nov 2026
+                continue
             if json_mode and isinstance(e, requests.HTTPError) and code == 400:
                 json_mode = False  # some free models reject JSON mode: ask the same one again without it
+                continue
+            if reasoning is not None and isinstance(e, requests.HTTPError) and code == 400:
+                reasoning = None  # refused again without JSON mode and the error named nothing: the budget is the last thing to drop
                 continue
             try:
                 ra = int(float((getattr(getattr(e, "response", None), "headers", None) or {}).get("Retry-After")))
@@ -540,13 +703,34 @@ def _ask_free(mid: str, prompt: str, role: str, cfg: dict, key: str, now: dt.dat
             if fin == "length" and not retried and cap < FREE_MAX_TOKENS:
                 retried = True
                 cap = min(FREE_MAX_TOKENS, cap * 2)
-                _note(now, f"{role}: free model {mid} was cut off by the output limit; asked again with {cap} tokens")
+                if not is_extra:  # the thinking ran on: a judge keeps a small budget, a writer or a small job answers without thinking
+                    reasoning = {"max_tokens": 1024} if role == "review" else {"enabled": False}
+                _note(now, f"{role}: free model {mid} was cut off by the output limit; asked again with {cap} tokens" + ("" if is_extra else f" and thinking {'capped at 1024' if role == 'review' else 'off'}"))
                 continue
             _note(now, f"{role}: free model {mid} did not return JSON" + (" (cut off by the output limit)" if fin == "length" else f" (finish: {fin})" if fin else ""))
             return None
         freemodels.record(mid, True, now, role=role, seconds=took)
+        if body.get("model"):  # what really answered: the owner's "auto" and OpenRouter's own router (openrouter/free) pick a different model each time (21 Nov 2026)
+            _served[mid] = str(body["model"])[:80]
         return out  # who answered is recorded by the caller: a raced loser must not claim the role
     return None
+
+
+_RACING: list = []  # race requests still running after their winner was used (see settle)
+
+
+def settle(timeout: float = 30.0) -> int:
+    """Wait up to `timeout` seconds for race requests that lost but are still answering, and return how many were still running at the end.
+    A loser records its outcome in data/free_models.json when it finishes; anything that redirects that file for a while (the daily agent
+    evaluation, tests) calls this before putting the real path back, or the late answer lands in the real file (20 Nov 2026: invented test
+    models a/m1:free, b/m2:free, b/slow:free replaced the learned history of the real free models)."""
+    from concurrent.futures import wait
+
+    live = [f for f in _RACING if not f.done()]
+    if live:
+        wait(live, timeout=timeout)
+    _RACING[:] = [f for f in _RACING if not f.done()]
+    return len(_RACING)
 
 
 def _race(models: list[str], prompt: str, role: str, cfg: dict, key: str, now: dt.datetime) -> dict | None:
@@ -568,21 +752,39 @@ def _race(models: list[str], prompt: str, role: str, cfg: dict, key: str, now: d
                 continue
             got = f.result()
             if got is not None:
-                _last_free[role] = futures[f]  # only the winning model is the one that answered this role
+                _answered(role, futures[f])  # only the winning model is the one that answered this role
                 return got
         return None
     finally:
-        pool.shutdown(wait=False)  # the loser may still be answering: nobody waits for it
+        _RACING.extend(f for f in futures if not f.done())  # settle() can wait for them
+        pool.shutdown(wait=False)  # the loser may still be answering: the call does not wait for it
+
+
+def _served_a_writer(mid, skip_ids: set) -> str:
+    """The writer a router served this judge's request with, or "": a judge asked by a router's name (openrouter/free, the owner's auto) may have been
+    answered by the very model that wrote the script, and that answer is not an independent judgement (21 Nov 2026 audit: openrouter/free answered 73
+    reviews on 20 Nov while the router could pick any free model, the writer included)."""
+    served = _served.get(mid or "")
+    return served if served and model_identity(served) != model_identity(mid) and model_identity(served) in skip_ids else ""
 
 
 def _free_chat(prompt: str, role: str, cfg: dict, key: str, now: dt.datetime, avoid=None) -> dict | None:
     """Try the free models in turn, waiting and trying again when they are all busy. None means: nothing answered. `avoid` (a model or a set of them) is never asked.
     A script or a review starts with the two best models raced (Task 2 of the 17 Nov plan); the rest of the round then walks the remaining ones in order."""
     freemodels.refresh(now)
+    refused: set = set()  # judges whose router served a writer in this call: not asked again by it
     for rnd in range(ROUNDS):
         skip = (set(avoid) if isinstance(avoid, (set, frozenset, list, tuple)) else ({avoid} if avoid else set())) | ({_last_free["script"]} if role == "review" and _last_free.get("script") else set())
-        extras = [m for m in extra_models(role) if m not in skip and freemodels.available(m, now)]  # the owner's own provider is asked first: it needs none of OpenRouter's allowance
-        models = extras + freemodels.choose(role, now, avoid=skip, n=4)
+        skip |= refused
+        if role == "review":
+            skip |= _WRITERS  # every model that wrote this script in this process, including what "auto" was served as
+        skip_ids = {model_identity(m) for m in skip}  # the same model under another provider's name is the same judge
+        # the owner's own provider is asked first (it needs none of OpenRouter's allowance), except models it says it cannot serve now
+        extras = [m for m in extra_models(role) if model_identity(m) not in skip_ids and freemodels.available(m, now) and extra_status(m) not in UNUSABLE]
+        models = extras + [m for m in freemodels.choose(role, now, avoid=skip, n=4) if model_identity(m) not in skip_ids]
+        if role == "script" and _WRITERS:  # a model that already wrote this script writes the next part first: a film written by six rotating free models left no
+            mine = {model_identity(w) for w in _WRITERS}  # model free to judge it (20 Nov 2026, "no free judge could answer" after two hours of writing)
+            models = sorted(models, key=lambda m: model_identity(m) not in mine)  # stable: the usual order otherwise
         if not models:
             wait = freemodels.soonest_free(extra_models(role) + freemodels.roster_ids(), now)  # everyone is only busy (429): wait for the first to come back instead of giving up
             if wait is not None and wait <= FREE_WAIT_LIMIT and rnd < ROUNDS - 1:
@@ -591,13 +793,21 @@ def _free_chat(prompt: str, role: str, cfg: dict, key: str, now: dt.datetime, av
                 continue
             break
         rest = models
-        if role in RACE_ROLES and len(models) >= 2:
+        sticky = role == "script" and bool(_WRITERS) and len(models) >= 2 and model_identity(models[0]) in {model_identity(w) for w in _WRITERS} \
+            and model_identity(models[1]) not in {model_identity(w) for w in _WRITERS}  # the script's own writer is asked alone first: a raced newcomer would join the writers
+        if role in RACE_ROLES and len(models) >= 2 and not sticky:
             try:
                 raced = _race(models[:2], prompt, role, cfg, key, now)
             except _NoAllowance:
                 return None
             if raced is not None:
-                return raced
+                won = _last_free.get(role)
+                writer = _served_a_writer(won, skip_ids) if role == "review" else ""
+                if not writer:
+                    return raced
+                refused.add(won)
+                _last_free.pop(role, None)
+                _note(now, f"review: {won} was answered by {writer}, a writer of this script; that judgement is not used")
             rest = models[2:]
         for mid in rest:
             try:
@@ -605,7 +815,12 @@ def _free_chat(prompt: str, role: str, cfg: dict, key: str, now: dt.datetime, av
             except _NoAllowance:
                 return None
             if got is not None:
-                _last_free[role] = mid
+                writer = _served_a_writer(mid, skip_ids) if role == "review" else ""
+                if writer:
+                    refused.add(mid)
+                    _note(now, f"review: {mid} was answered by {writer}, a writer of this script; that judgement is not used")
+                    continue
+                _answered(role, mid)
                 return got
             break  # a network failure or a reply that is not JSON ends this round: wait, then ask again
         if rnd < ROUNDS - 1:
@@ -669,17 +884,20 @@ def strictest(a, b):
     return a
 
 
-def _free_review(prompt: str, cfg: dict, key: str, now: dt.datetime) -> dict | None:
-    """A review by two different free models (never the writer): None unless both gave a usable answer, so one model's word never passes a video."""
-    first = _free_chat(prompt, "review", cfg, key, now)
+def _free_review(prompt: str, cfg: dict, key: str, now: dt.datetime, avoid=None) -> dict | None:
+    """A review by two different free models (never the writer): None unless both gave a usable answer, so one model's word never passes a video.
+    `avoid` holds the writers recorded with the video (`script_writers`), for a review that runs in another process than the writing did."""
+    base = set(avoid or ())
+    first = _free_chat(prompt, "review", cfg, key, now, **({"avoid": base} if base else {}))
     if not isinstance(first, dict) or not first:
         return None
     one = _last_free.get("review")
-    second = _free_chat(prompt, "review", cfg, key, now, avoid={one} if one else None)
+    second = _free_chat(prompt, "review", cfg, key, now, avoid=(base | ({one} if one else set())) or None)
     if not isinstance(second, dict) or not second:
         return None
+    two = _last_free.get("review")
     LAST_REVIEW.clear()
-    LAST_REVIEW.update({"mode": "free", "models": [one, _last_free.get("review")]})
+    LAST_REVIEW.update({"mode": "free", "models": [one, two], "served": [_served.get(one, one), _served.get(two, two)]})
     try:
         return strictest(first, second)
     except ValueError:  # the two answers disagree in shape: that is no review, never a pass
@@ -688,15 +906,24 @@ def _free_review(prompt: str, cfg: dict, key: str, now: dt.datetime) -> dict | N
         return None
 
 
+def paid_allowed(cfg: dict | None = None) -> bool:
+    """May a paid model be called at all? Only while paid models are switched on (llm.json `enabled`, the Settings switch). Free Mode refuses every paid
+    call whatever the daily cap says. 20 Nov 2026: the thumbnail score, the narration listen before an approval and the video analysis checked only the
+    cap, so in Free Mode they still sent requests to paid models (refused by OpenRouter only because the credit was below zero)."""
+    cfg = cfg or load_config()
+    return bool(cfg.get("enabled"))
+
+
 def free_only() -> bool:
     """Paid models and paid pictures are off and free models do every job, reviews included: nothing is spent, so the credit floors do not apply."""
     cfg = load_config()
     return bool(not cfg["enabled"] and cfg["free"] and cfg.get("free_review") and not cfg.get("ai_art"))
 
 
-def chat(prompt: str, role: str = "cheap", fallback=None, now: dt.datetime | None = None, strict: bool = False) -> dict:
+def chat(prompt: str, role: str = "cheap", fallback=None, now: dt.datetime | None = None, strict: bool = False, avoid=None) -> dict:
     """JSON from the model assigned to this role, or from the local fallback when that is not possible.
-    `strict` marks a judge prompt (risk scores, misleading flags, unsupported lines) that two free models may answer when `free_review` is on; other review-role prompts never go to free models."""
+    `strict` marks a judge prompt (risk scores, misleading flags, unsupported lines) that two free models may answer when `free_review` is on; other review-role prompts never go to free models.
+    `avoid`: models that must not answer (a review passes the video's recorded writers)."""
     import playbook
 
     stable, mark, rest = prompt.partition(CACHE_MARK)
@@ -725,14 +952,18 @@ def chat(prompt: str, role: str = "cheap", fallback=None, now: dt.datetime | Non
                     break
                 _account(now, role, model, body)
                 try:
-                    return parse_json(body["choices"][0]["message"]["content"])
+                    out = parse_json(body["choices"][0]["message"]["content"])
                 except (ValueError, KeyError, IndexError, TypeError):
                     continue
+                if role == "script":
+                    _WRITERS.add(model)
+                return out
             else:
                 _note(now, f"{role}: invalid JSON from {model}, used the local model")
     if cfg["free"] and api_key() and (role != "review" or (strict and cfg.get("free_review"))):  # free models judge a video only when the owner switched free_review on (13 Nov 2026) and the caller is a judge prompt: then two of them must answer
         key = api_key()
-        got = _free_review(plain, cfg, key, now) if role == "review" else _free_chat(plain, role, cfg, key, now)
+        more = {"avoid": {avoid} if isinstance(avoid, str) else set(avoid)} if avoid else {}  # passed only when there is something to avoid
+        got = _free_review(plain, cfg, key, now, **more) if role == "review" else _free_chat(plain, role, cfg, key, now, **more)
         if got is not None:
             return got
     if fallback is None or not cfg.get("local_fallback"):

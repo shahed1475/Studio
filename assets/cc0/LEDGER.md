@@ -17,3 +17,9 @@ Source: Poly Haven (polyhaven.com), licence CC0 (https://polyhaven.com/license, 
 | aerial_sand | texture 1k (diffuse, normal GL, roughness) | tex/aerial_sand/ | CC0 |
 | red_sand | texture 1k (diffuse, normal GL, roughness) | tex/red_sand/ | CC0 |
 | dense_sand | texture 1k (diffuse, normal GL, roughness) | tex/dense_sand/ | CC0 |
+
+## Added 2026-11-20 (Blender globe scene)
+
+| Asset | Kind | File | Licence |
+|---|---|---|---|
+| NASA Blue Marble ("Whole world - land and oceans", 8192x4096) | Earth texture | earth/blue_marble_8k.jpg | Public domain (NASA Earth Observatory; Wikimedia Commons file page https://commons.wikimedia.org/wiki/File:Whole_world_-_land_and_oceans.jpg, SHA-1 2038d723d825d9cc7612d34d42704ad5bcf9219c, checked 2026-11-20). No NASA logo or insignia is in the picture. |

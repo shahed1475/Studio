@@ -1,12 +1,20 @@
 # The studio on the owner's own PC (17 Nov 2026, the VPS was deleted). Used together with docker-compose.yml:
 #   COMPOSE_FILE=docker-compose.yml:deploy/home-compose.yml   (set in ~/studio/.env, so every `docker compose` command and deploy.sh pick it up)
 # The desktop, Blender and other work come first: fewer cores, a low CPU weight (the default is 1024), and the kernel ends a studio job before a desktop app when memory runs out.
+# Blender (20 Nov 2026): the owner's own Blender 5.2 in ~/tools/blender is mounted read-only, so a documentary's 3D scenes (blenderscenes.py) render headless inside
+# the job's own container on the CPU (the image has its two missing libraries, libSM and libICE; no GPU is passed in). Without the folder ccrender says so and the film uses other pictures.
 services:
   worker:
     cpus: 3
     cpu_shares: 256
     oom_score_adj: 500
+    volumes: ["${HOME}/tools/blender:/opt/blender:ro"]
+    environment:
+      BLENDER: /opt/blender/blender
   dashboard:
     cpus: 2
     cpu_shares: 256
     oom_score_adj: 500
+    volumes: ["${HOME}/tools/blender:/opt/blender:ro"]
+    environment:
+      BLENDER: /opt/blender/blender

@@ -195,9 +195,38 @@ def alive() -> bool:
         return False
 
 
+NET_HOSTS = ("oauth2.googleapis.com", "openrouter.ai")  # what the jobs reach first: the YouTube login and the models
+NET_WAIT_S = 180
+
+
+def wait_for_network(hosts=NET_HOSTS, limit: float = NET_WAIT_S, resolve=None, sleep=time.sleep, clock=time.monotonic) -> float | None:
+    """After a power cut the PC and its containers start before the network: on 21 Nov 2026 recheck, titletest, growthdata and the channel scan all
+    failed in their first two seconds with 'Temporary failure in name resolution', and a daily job then waits a whole day. Wait (at most `limit`
+    seconds) until one of `hosts` resolves. Returns the seconds waited, or None when the network never came: the jobs then start anyway, as before."""
+    import socket
+
+    resolve = resolve or socket.getaddrinfo
+    start = clock()
+    while True:
+        for h in hosts:
+            try:
+                resolve(h, 443)
+                return round(clock() - start, 1)
+            except OSError:
+                pass
+        if clock() - start >= limit:
+            return None
+        sleep(3)
+
+
 def main() -> None:
     threading.Thread(target=_beat, daemon=True).start()
     _log("worker started")
+    waited = wait_for_network()
+    if waited is None:
+        _log(f"network not ready after {NET_WAIT_S} s: jobs start anyway")
+    elif waited >= 1:
+        _log(f"network ready after {waited} s")
     while True:
         now = dt.datetime.now(dt.timezone.utc)
         state = load_state()

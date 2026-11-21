@@ -135,6 +135,8 @@ def listen(folder: Path, post=None, extract=None, now: dt.datetime | None = None
         cfg = llm.load_config()
         model = f"faster-whisper {WHISPER_MODEL} (local)" if local else modelcfg.get("audio_listen")
         if not local:
+            if not llm.paid_allowed(cfg):
+                return {"error": "Free Mode: the paid audio model is off (run.py listen <video> --local listens for free on this PC with faster-whisper)"}
             if llm.spent_today(now) >= cfg["daily_budget_usd"]:
                 return {"error": f"the daily spending cap (${cfg['daily_budget_usd']:.2f}) is used up"}
             if "audio" not in videoinspect.model_modalities().get(model, []):

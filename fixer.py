@@ -25,7 +25,7 @@ import config
 import kinds
 import records
 import llm
-import packaging
+import video_packaging_rules as packaging
 import reviewer
 import scriptgen
 import seo
@@ -238,7 +238,22 @@ def clean_tags(meta: dict) -> list[str]:
     return tags
 
 
-def rewrite_lines(meta: dict, source: str, problems: list[str], chat=None) -> int:
+SOFTER = {"prove": "suggest", "proves": "suggests", "proved": "suggested", "proven": "suggested", "confirm": "suggest", "confirms": "suggests",
+          "confirmed": "suggested", "definitely": "probably", "certainly": "probably", "undeniably": "probably", "undeniable": "likely"}
+
+
+def soften(text: str) -> str:
+    """The over-certain word made as certain as the source ('prove' -> 'suggest'): the fixer's own last step when the writer did not fix a flagged line."""
+    def one(m):
+        w = m.group(0)
+        new = SOFTER.get(w.lower())
+        if new is None:  # "proof", "without doubt", "beyond any doubt", "no doubt"
+            new = "evidence" if w.lower() == "proof" else "probably"
+        return new.capitalize() if w[:1].isupper() else new
+    return reviewer.CERTAIN.sub(one, text, count=1)
+
+
+def rewrite_lines(meta: dict, source: str, problems: list[str], chat=None, only: set[int] | None = None) -> int:
     """Ask the writer to rewrite only the narration lines whose names, years or details the source does not support.
     A rewrite may not bring in a number the source lacks. Returns how many lines were changed."""
     chat = chat or scriptgen._script_chat
@@ -261,6 +276,8 @@ def rewrite_lines(meta: dict, source: str, problems: list[str], chat=None) -> in
         except (KeyError, TypeError, ValueError):
             continue
         new_numbers = set(re.findall(r"\d{3,4}", text)) - allowed_numbers - set(re.findall(r"\d{3,4}", lines[i]["text"] if 0 <= i < len(lines) else ""))
+        if only is not None and i not in only:
+            continue  # 21 Nov 2026: asked to fix line 9, the writer rewrote line 3 and the fix was counted; an edit outside the flagged lines is not taken
         if 0 <= i < len(lines) and 6 <= len(text.split()) <= 40 and not new_numbers and text != lines[i]["text"]:
             lines[i]["text"] = text
             changed += 1
@@ -556,6 +573,25 @@ def fix(slug: str, chat=None, rerender=None, now: dt.datetime | None = None) -> 
             rewrite = True
             fixed.append(f"reworded {len(copied)} lines that copied the source article")
 
+    if "overclaim" in failing and meta.get("lines"):  # a line calls proven what its source only suggests (20 Nov 2026): rewrite that line only, at the source's own certainty
+        source = reviewer.source_text(meta)
+        over = reviewer.overclaims([l["text"] for l in meta["lines"]], source) if source else []
+        if over:
+            problems = [f"Line {i} calls proven or certain what the SOURCE only suggests. The SOURCE says: \"{said}\". Rewrite line {i} so it keeps the SOURCE's own level of "
+                        "certainty ('suggest' stays 'suggest', 'may' stays 'may'), with the same facts and no new ones." for i, _, said in over]
+            flagged = {i for i, _, _ in over}
+            if is_doc:
+                rewrite_and_retitle(meta, source, problems, chat)
+            else:
+                rewrite_lines(meta, source, problems, chat, only=flagged)
+            still = {i for i, _, _ in reviewer.overclaims([l["text"] for l in meta["lines"]], source)} & flagged
+            for i in still:  # the writer did not fix it: the fixer makes the word as certain as the source itself
+                meta["lines"][i]["text"] = soften(meta["lines"][i]["text"])
+            left = {i for i, _, _ in reviewer.overclaims([l["text"] for l in meta["lines"]], source)} & flagged
+            n = len(flagged - left)
+            if n:
+                rewrite = True
+                fixed.append(f"rewrote {n} line(s) that claimed more certainty than the source" + (f" ({len(still)} softened by rule)" if still else ""))
     if {"claims", "invented_facts", "policy_risk"} & set(failing):
         source = reviewer.source_text(meta)
         problems = [c["detail"] for n, c in failing.items() if n in ("claims", "invented_facts", "policy_risk")]

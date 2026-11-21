@@ -15,12 +15,12 @@ Builder prompt: a TypeScript, Supabase and n8n service that collects metrics (An
 | Spec item | Already in the studio | Gap |
 |---|---|---|
 | Topic scoring, series | `topicrank` (research and growth signals, source article must exist), `seo.demand`, `duplicates` (one story, one video per format), playlists | No explicit 5-line score; no series as a first-class field |
-| Title and thumbnail rules | `packaging.py` (title best 40-62 characters, first 40 characters decide the click, ranked options), `thumbscore`, 3 thumbnails per video | Curiosity-gap check, searchable name in first 3-4 words, banned encyclopedia patterns only partly covered |
+| Title and thumbnail rules | `video_packaging_rules.py` (title best 40-62 characters, first 40 characters decide the click, ranked options), `thumbscore`, 3 thumbnails per video | Curiosity-gap check, searchable name in first 3-4 words, banned encyclopedia patterns only partly covered |
 | Long-form structure | `scriptgen.doc_script`, `reviewer` (duration 180-900 s, pace 105-175 wpm) | Hook-in-15-s, re-hook gaps of 90 s, three labelled theories, verdict, no outro: not checked. Length range 3-15 min, spec says 8-14. Our last video was 5:40 at 132 wpm |
 | Two non-Wikipedia sources, original element | Wikipedia grounding (up to 2 articles), `webcheck` for claims | **Biggest gap.** Every script is Wikipedia only. No second-source step, no "original element" field |
 | Shorts | `clipper` (3 per documentary), scripts of 110-135 words, 1 Short a day | 35-58 s check, looping last line, 3-5 per long over the week, "related video" link |
 | SEO package | `seo.py`, `packaging.audit`, chapters, tags, CTA, credits | Description order (spec: keyword hook, chapters, links, sources and credits last), pinned comment, translated subtitles, file name |
-| Single rules file | Thresholds spread over `packaging.py`, `reviewer.py`, `compliance.RULES`, `governor`, `autopilot.json` | No `rules.json`, no version, no staleness warning |
+| Single rules file | Thresholds spread over `video_packaging_rules.py`, `reviewer.py`, `compliance.RULES`, `governor`, `autopilot.json` | No `rules.json`, no version, no staleness warning |
 | Collector | `growth.snapshot` (public Data API numbers), `titletest` (views per day), `safety.ANALYTICS_SCOPE` held by the token (24 Oct) | No retention curve, traffic sources or **CTR** |
 | Diagnoser | `titletest.judge`, `recheck` | No per-video diagnosis table, no 48 h and 7 d runs |
 | Fixer | `fixer`, `recheck.push_metadata` (apply mode), `guardian` | No before/after log with rollback for every YouTube write; approval flow is the dashboard owner tasks |

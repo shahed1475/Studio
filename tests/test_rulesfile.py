@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-import packaging
+import video_packaging_rules as packaging
 import reviewer
 import risk
 import rulesfile
@@ -92,7 +92,7 @@ def test_the_modules_read_their_numbers_from_the_rules_file_not_from_literals():
     assert reviewer.PACE_RANGE == tuple(rulesfile.get("benchmarks", "pace_wpm"))
     assert reviewer.LIMITS["doc"]["duration"] == tuple(rulesfile.get("limits", "doc_duration_s")) == (180, 1800)  # raised from 900 on 14 Nov 2026: the owner ordered 20 to 25 minute documentaries
     assert reviewer.LIMITS["short"]["duration"] == (20, 180)
-    for name, banned in (("reviewer.py", ["(180, 900)", "(105, 175)", "(20, 180)"]), ("packaging.py", ["(40, 62)", "n <= 70"])):
+    for name, banned in (("reviewer.py", ["(180, 900)", "(105, 175)", "(20, 180)"]), ("video_packaging_rules.py", ["(40, 62)", "n <= 70"])):
         src = Path(name).read_text()
         assert not any(b in src for b in banned), (name, [b for b in banned if b in src])
 

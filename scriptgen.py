@@ -36,8 +36,8 @@ def _ollama_chat(prompt: str) -> dict:
     return json.loads(text)
 
 
-def _chat(prompt: str, role: str = "cheap", strict: bool = False) -> dict:
-    return llm.chat(prompt, role, fallback=_ollama_chat, strict=strict)
+def _chat(prompt: str, role: str = "cheap", strict: bool = False, avoid=None) -> dict:
+    return llm.chat(prompt, role, fallback=_ollama_chat, strict=strict, **({"avoid": avoid} if avoid else {}))
 
 
 def _script_chat(prompt: str) -> dict:
@@ -45,9 +45,10 @@ def _script_chat(prompt: str) -> dict:
     return _chat(prompt, "script")
 
 
-def _review_chat(prompt: str) -> dict:
-    """Fact-check: a different model from the writer. Every caller is a judge prompt whose larger number, true flag or longer list means a worse video, so two free models may answer it (llm.strictest)."""
-    return _chat(prompt, "review", strict=True)
+def _review_chat(prompt: str, avoid=None) -> dict:
+    """Fact-check: a different model from the writer. Every caller is a judge prompt whose larger number, true flag or longer list means a worse video, so two free models may answer it (llm.strictest).
+    `avoid`: the writers recorded with the video, for a review in another process than the writing (the writers of this process are avoided anyway)."""
+    return _chat(prompt, "review", strict=True, avoid=avoid)
 
 
 def ideas(n: int = 10) -> list[str]:
@@ -113,6 +114,7 @@ def short_prompt(topic: str, grounded: str | None = None) -> str:
 def script(topic: str, grounded: str | None = None, note: str = "") -> dict:
     """`note` is what went wrong with the last try (run._cmd_make): free writers undershoot the word budget by about 15 percent and a retry that repeats the same prompt repeats the mistake."""
     base = short_prompt(topic, grounded) + (f"\n{note}\n" if note else "")
+    llm.begin_script()
     data = _script_chat(base)
     if not case_rules(topic) and case_rules(topic, title=str(data.get("title", "")), anchors=data.get("anchors") or []):
         data = _script_chat(base + "\n" + CASE_RULES)  # the title shows it is a real case: written again once, with the rules
@@ -126,7 +128,7 @@ def script(topic: str, grounded: str | None = None, note: str = "") -> dict:
         raise ValueError(f"script too thin ({len(lines)} lines, {words} words)")
     lines, _ = subscribe_invitation(lines)
     return {
-        "topic": topic, "grounded": bool(grounded), "script_model": _writer_model(),
+        "topic": topic, "grounded": bool(grounded), "script_model": _writer_model(), "script_writers": llm.writers(),
         "anchors": [str(a).strip() for a in data.get("anchors", []) if str(a).strip()][:5],
         "title": str(data["title"]).strip()[:95],
         "description": str(data.get("description", "")).strip(),
@@ -158,24 +160,61 @@ MOST_UNSUPPORTED = 0.4  # a first judgement flagging more of the script than thi
 REVISE_ROUNDS = 2
 
 
+CHECK_CHUNK = 30  # lines per fact-check request (20 Nov 2026: a 90-line film in one request made the free judges' answers run past their output limit again and again)
+
+
 def unsupported(lines: list[dict], sources: str) -> dict[int, str]:
-    """Line number -> why, for every narration line stating something SOURCES do not support. A judge that cannot answer raises: an unchecked script is not passed on."""
-    numbered = "\n".join(f"{i}: {l['text']}" for i, l in enumerate(lines))
-    try:
-        out = _review_chat(llm.cached(
-            "SOURCES:\n" + sources + "\n\n",
-            "You are a strict fact-checker. SOURCES is the only truth. List every narration line that states a fact, date, number, place, quote, "
-            "name, tradition or event that SOURCES do not support, or that contradicts SOURCES or another line. Knowledge from outside SOURCES counts as "
-            "unsupported even when it is true. Atmospheric wording without a factual claim is fine.\n\nLINES:\n" + numbered +
-            '\n\nReturn JSON: {"unsupported": [{"n": line number, "why": "one short sentence"}]}'))
-        found = {}
-        for item in out.get("unsupported", []):
+    """Line number -> why, for every narration line stating something SOURCES do not support. A judge that cannot answer raises: an unchecked script is not passed on.
+    A long script is checked CHECK_CHUNK lines at a time against the same SOURCES (one cached block): each judge's answer stays inside its output limit. Within a part
+    the judge also looks for lines that contradict each other; across parts that is left to the AI review of the finished video."""
+    found: dict[int, str] = {}
+    for start in range(0, len(lines), CHECK_CHUNK):
+        part = lines[start:start + CHECK_CHUNK]
+        numbered = "\n".join(f"{start + i}: {l['text']}" for i, l in enumerate(part))
+        span = f" (lines {start} to {start + len(part) - 1} of a {len(lines)}-line script)" if len(lines) > CHECK_CHUNK else ""
+        try:
+            out = _review_chat(llm.cached(
+                "SOURCES:\n" + sources + "\n\n",
+                "You are a strict fact-checker. SOURCES is the only truth. List every narration line that states a fact, date, number, place, quote, "
+                "name, tradition or event that SOURCES do not support, or that contradicts SOURCES or another line. Knowledge from outside SOURCES counts as "
+                f"unsupported even when it is true. Atmospheric wording without a factual claim is fine.\n\nLINES{span}:\n" + numbered +
+                '\n\nReturn JSON: {"unsupported": [{"n": line number, "why": "one short sentence"}]}'))
+        except Exception as e:
+            raise ValueError(f"the script could not be fact-checked ({type(e).__name__})") from e
+        for item in out.get("unsupported", []) if isinstance(out, dict) else []:
             n = item.get("n") if isinstance(item, dict) else item
-            if str(n).lstrip("-").isdigit() and 0 <= int(n) < len(lines):
+            if str(n).lstrip("-").isdigit() and start <= int(n) < start + len(part):
                 found[int(n)] = str(item.get("why", "")) if isinstance(item, dict) else ""
-        return found
-    except Exception as e:
-        raise ValueError(f"the script could not be fact-checked ({type(e).__name__})") from e
+    return found
+
+
+def rewrite_words(lines: list[dict]) -> tuple[int, int]:
+    """Words for a rewritten line: the script's own typical line length (at least 16 to 24, the Short and 8 to 10 minute size), so a long film's 30 to 39 word lines are
+    not cut to 24 each time a judge flags one (20 Nov 2026)."""
+    counts = sorted(len(str(l.get("text", "")).split()) for l in lines) or [20]
+    mid = counts[len(counts) // 2]
+    return max(16, mid - 4), max(24, mid + 4)
+
+
+JUDGE_WAITS = (120, 300)  # seconds to wait for a free judge before checking the SAME draft again
+
+
+def checked(lines: list[dict], chapters: list[dict], sources: str, sleep=None) -> tuple[list[dict], list[dict]]:
+    """verify_and_revise, patient with judges: when no free judge can answer, wait and check the same draft again instead of throwing it away (20 Nov 2026: a
+    finished 90-line draft, about 40 writing requests, was discarded after 39 minutes because the judges were busy, and the writer started over). The draft is still
+    never passed on unchecked: after the waits the error stands."""
+    import time
+
+    sleep = sleep or time.sleep
+    for wait in (*JUDGE_WAITS, None):
+        try:
+            return verify_and_revise(lines, chapters, sources)
+        except ValueError as e:
+            if "could not be fact-checked" not in str(e) or wait is None:
+                raise
+            print(f"  no free judge could answer ({e}); checking the same draft again in {wait} s")
+            sleep(wait)
+    raise ValueError("the script could not be fact-checked")
 
 
 def verify_and_revise(lines: list[dict], chapters: list[dict], sources: str, rounds: int = REVISE_ROUNDS, patient: bool | None = None) -> tuple[list[dict], list[dict]]:
@@ -195,9 +234,10 @@ def verify_and_revise(lines: list[dict], chapters: list[dict], sources: str, rou
                 raise ValueError(f"the sources do not support {len(bad)} of {len(lines)} lines")
             return _drop_lines(lines, chapters, set(bad))
         listing = "\n".join(f"{n}: {lines[n]['text']}  (problem: {bad[n] or 'not in SOURCES'})" for n in sorted(bad))
+        lo, hi = rewrite_words(lines)
         got = _script_chat(llm.cached(
             "SOURCES:\n" + sources + "\n\n",
-            "Rewrite each flagged narration line so it says only what SOURCES state, in your own words, 16 to 24 words, with a 'visual' (2 to 4 words naming a real "
+            f"Rewrite each flagged narration line so it says only what SOURCES state, in your own words, {lo} to {hi} words, with a 'visual' (2 to 4 words naming a real "
             "place, person or object in the line). If SOURCES hold no fact that fits the place of that line, return an empty text and it is removed. Add nothing "
             "from outside SOURCES.\n\nFLAGGED LINES:\n" + listing +
             '\n\nReturn JSON: {"lines": [{"n": line number, "text": "...", "visual": "..."}]}'))
@@ -271,9 +311,14 @@ def subscribe_invitation(lines: list[dict]) -> tuple[list[dict], int]:
     return [*lines[:-1], {**lines[-1], "text": fixed}], 1
 
 
+# the story-shape words of our own prompts, narrated as a heading: "The payoff: they are twin storm gods..." (21 Nov 2026, Raijin and Fujin Short)
+STRUCTURE_LABEL = re.compile(r"^\s*(?:the\s+)?(?:hook|cold open|setting|rising tension|twist|turning point|payoff|pay-off|climax|resolution|conclusion|"
+                             r"closing value|curiosity|story|outro|intro(?:duction)?)\s*[:\u2013\u2014-]\s+", re.I)
+
+
 def label_of(text: str) -> str | None:
-    """The 'Chapter 5' style label a narration line starts with, or None."""
-    m = LABEL.match(text)
+    """The 'Chapter 5' or 'The payoff:' style label a narration line starts with, or None."""
+    m = LABEL.match(text) or STRUCTURE_LABEL.match(text)
     return m.group(0).strip(" :.)-\u2013\u2014") if m else None
 
 
@@ -282,12 +327,13 @@ def strip_labels(lines: list[dict], chapters: list[dict]) -> tuple[list[dict], l
     sentence is cut off; a line that is only a heading, or that talks about the chapter instead of the story, is dropped. Returns (lines, chapters, lines changed)."""
     out, bad, changed = [], set(), 0
     for i, l in enumerate(lines):
-        m = LABEL.match(l["text"])
+        m = LABEL.match(l["text"]) or STRUCTURE_LABEL.match(l["text"])
         if not m:
             out.append(l)
             continue
         rest = l["text"][m.end():].strip()
-        if m.group(1) and len(rest.split()) >= MIN_STRIPPED_WORDS:
+        separated = m.re is STRUCTURE_LABEL or bool(m.group(1))  # a story-shape label always has its colon or dash
+        if separated and len(rest.split()) >= MIN_STRIPPED_WORDS:
             out.append({**l, "text": rest[:1].upper() + rest[1:]})
         else:
             out.append(l)
@@ -324,32 +370,74 @@ def chapter_title(ch: dict, lines: list[dict]) -> str:
     return " ".join(words[:6]).capitalize() if words else ""
 
 
+# measured on our films: 1,150 words made about 9 minutes (many short lines, a pause after each). A long film joins short lines, so it has fewer pauses:
+# the 81-line Seven Sleepers film (21 Nov 2026) was 2,839 words in 1,148.7 s = 148.3 words a minute, and the old rate (127.8) had let its script pass
+# the 20-minute minimum while the film ran 19.1 minutes. The long films' measured rate is used.
+DOC_WORDS_PER_MINUTE = 2839 / (1148.7 / 60)  # long films (15 minutes and more)
+SHORT_DOC_WORDS_PER_MINUTE = 1150 / 9  # 8 to 10 minute films: many short lines, a pause after each
+
+
+def words_per_minute(minutes: float) -> float:
+    """The measured narration pace for a film of this length (the pace depends on how many lines, so on the length)."""
+    return SHORT_DOC_WORDS_PER_MINUTE if minutes < 15 else DOC_WORDS_PER_MINUTE
+LINE_CAP = 100  # one picture per narration line: about one free Cloudflare day of drawings (58 to 86) plus the real photos found first
+
+
+def doc_budget(lo_min: float, hi_min: float) -> dict:
+    """Lines, words and shape for a documentary of lo_min to hi_min minutes (the owner's rules.json long_min_minutes and long_max_minutes, the same pair
+    the reviewer's doc_length warning reads). Calibrated so 8 to 10 minutes gives exactly the numbers used from 30 Oct to 20 Nov 2026 (42 to 58 lines,
+    1,150 words, 6 to 9 chapters of 5 to 7 lines, lines of at most 30 words). A longer film gets more chapters and longer lines rather than more
+    pictures than a free day can draw: 20 to 26 minutes is 84 to 100 lines of about 30 to 39 words, 10 to 13 chapters, about 2,940 words."""
+    words = round((lo_min + hi_min) / 2 * words_per_minute(lo_min))
+    max_lines = min(LINE_CAP, round(hi_min * 5.8))
+    min_lines = min(round(lo_min * 5.25), max_lines - 16)
+    long_film = max_lines > 64
+    return {"min_lines": min_lines, "max_lines": max_lines, "words": words, "chapters": (10, 13) if long_film else (6, 9),
+            "per": (7, 9) if long_film else (5, 7), "line_words_max": 44 if long_film else 30}
+
+
+def _owner_minutes() -> tuple[float, float]:
+    """The owner's documentary length in minutes (rules.json benchmarks, through rulesfile so an approved change counts). Each job is a new process,
+    so a changed setting reaches the next video without a restart."""
+    try:
+        import rulesfile
+
+        lo, hi = float(rulesfile.get("benchmarks", "long_min_minutes")), float(rulesfile.get("benchmarks", "long_max_minutes"))
+        if 1 <= lo < hi <= 60:
+            return lo, hi
+    except Exception:
+        pass
+    return 8.0, 10.0
+
+
+DOC_MINUTES = _owner_minutes()
+_BUDGET = doc_budget(*DOC_MINUTES)
+MIN_DOC_LINES, MAX_DOC_LINES, DOC_WORDS_TARGET = _BUDGET["min_lines"], _BUDGET["max_lines"], _BUDGET["words"]
+DOC_CHAPTERS, DOC_PER, LINE_WORDS_MAX = _BUDGET["chapters"], _BUDGET["per"], _BUDGET["line_words_max"]
+
+
 def shape_for(topic: str) -> tuple[int, int]:
-    """(chapters, lines per chapter) for this topic: 6 to 9 chapters of 5 to 7 lines, fixed by the topic so a retry keeps it. Videos stop sharing one skeleton,
+    """(chapters, lines per chapter) for this topic, inside DOC_CHAPTERS and DOC_PER, fixed by the topic so a retry keeps it. Videos stop sharing one skeleton,
     which is part of what YouTube's 'repetitive or mass-produced' rule looks at."""
     import hashlib
 
     h = int(hashlib.md5(topic.lower().encode()).hexdigest(), 16)
-    chapters, per = 6 + h % 4, 5 + (h // 7) % 3
-    per = min(7, max(per, -(-MIN_DOC_LINES // chapters)))  # 11 Nov 2026: a 30-line shape made the Antikythera film 7.2 minutes against the owner's 8 to 10
-    while chapters * per > MAX_DOC_LINES and per > 5:  # about 8 minutes at 140 words a minute: longer videos lost viewers and picture quality (La Llorona, 9:44)
+    (c0, c1), (p0, p1) = DOC_CHAPTERS, DOC_PER
+    chapters, per = c0 + h % (c1 - c0 + 1), p0 + (h // 7) % (p1 - p0 + 1)
+    per = min(p1, max(per, -(-MIN_DOC_LINES // chapters)))  # 11 Nov 2026: a 30-line shape made the Antikythera film 7.2 minutes against the owner's 8 to 10
+    while chapters * per > MAX_DOC_LINES and per > p0:
         per -= 1
-    while chapters * per > MAX_DOC_LINES and chapters > 6:
+    while chapters * per > MAX_DOC_LINES and chapters > c0:
         chapters -= 1
     return chapters, per
 
 
-MIN_DOC_LINES = 42  # with MAX_DOC_LINES and line_words() this keeps a film inside the owner's 8 to 10 minutes
-DOC_WORDS_TARGET = 1150  # about 9 minutes at WORDS_PER_SECOND plus the pause after each line
-
-
 def line_words(chapters: int, per: int) -> tuple[int, int]:
-    """(low, high) words for each narration line so the whole film lands near DOC_WORDS_TARGET whatever its shape: a 42-line film gets longer lines than a 58-line one."""
+    """(low, high) words for each narration line so the whole film lands near DOC_WORDS_TARGET whatever its shape: a short shape gets longer lines."""
     mid = DOC_WORDS_TARGET / max(1, chapters * per)
-    return max(16, round(mid - 3)), min(30, round(mid + 4))
+    return max(16, round(mid - 3)), min(LINE_WORDS_MAX, round(mid + 4))
 
 
-MAX_DOC_LINES = 58  # about 9 minutes at 138 words a minute with the pauses (30 Oct 2026: the owner asked for 8 to 10; the old cap of 50 made 7.6)
 # The owner's shape for a documentary (30 Oct 2026): the hook, then curiosity, then the story, and it finishes with value.
 CASE_RULES = ("This is a real case with real victims and possibly living suspects. Use only documented facts and attribute each claim ('police said', 'the court found', 'the report states'). "
               "Never call a named person guilty, the killer or the culprit unless a court did, and then say that a court did; say plainly what is still unproven. No graphic detail of injuries or "
@@ -400,12 +488,185 @@ def remove_lines(lines: list[dict], chapters: list[dict], drop: set[int]) -> tup
     return kept, moved
 
 
+def source_budget() -> tuple[int, int]:
+    """(characters per Wikipedia article, articles) a documentary of the owner's length is written from. 8 to 10 minutes keeps the old 7,000 characters of 2 articles;
+    20 to 26 minutes reads about 18,000 of 3 (20 Nov 2026: "Seven Sleepers" was written from 12,400 characters, about 2,000 words, for 2,600 to 3,300 words of
+    narration; the fact-check then rightly struck what the sources did not say and the film came out at 12.9 minutes, while the articles hold 25,600)."""
+    mid = sum(DOC_MINUTES) / 2
+    return min(24000, max(7000, round(7000 * mid / 9))), (3 if mid > 12 else 2)
+
+
+DRAFT_FILE = config.ROOT / "data" / "pending_draft.json"
+MAX_DRAFT_USES = 3
+
+
+def _draft_key(topic: str, sources: str | None) -> str:
+    import hashlib
+
+    return hashlib.sha1(f"{topic}\n{sources or ''}".encode()).hexdigest()[:16]
+
+
+def _save_draft(topic: str, sources: str | None, outline: dict, lines: list[dict], chapters: list[dict], rules: str) -> None:
+    """The written draft, saved before its fact-check (20 Nov 2026: a draft of two hours' writing was lost twice when no free judge could answer, and the next attempt
+    wrote everything again). Its writers are saved with it, so a later process still never lets them judge it."""
+    import filelock
+
+    try:
+        DRAFT_FILE.parent.mkdir(parents=True, exist_ok=True)
+        filelock.write_atomic(DRAFT_FILE, json.dumps({"key": _draft_key(topic, sources), "topic": topic, "outline": outline, "lines": lines, "chapters": chapters,
+                                                      "rules": rules, "writers": llm.writers(), "uses": 0}))
+    except OSError:
+        pass
+
+
+def _unuse_draft() -> None:
+    import filelock
+
+    try:
+        d = json.loads(DRAFT_FILE.read_text())
+        d["uses"] = max(0, int(d.get("uses", 0)) - 1)
+        filelock.write_atomic(DRAFT_FILE, json.dumps(d))
+    except (OSError, ValueError):
+        pass
+
+
+def _load_draft(topic: str, sources: str | None) -> dict | None:
+    """The saved draft for this topic and these exact sources, counted as one more use; None when there is none, it is for other sources, or it was checked
+    MAX_DRAFT_USES times already (then a new one is written)."""
+    import filelock
+
+    try:
+        d = json.loads(DRAFT_FILE.read_text())
+    except (OSError, ValueError):
+        return None
+    if d.get("key") != _draft_key(topic, sources) or int(d.get("uses", 0)) >= MAX_DRAFT_USES or not d.get("lines"):
+        return None
+    d["uses"] = int(d.get("uses", 0)) + 1
+    try:
+        filelock.write_atomic(DRAFT_FILE, json.dumps(d))
+    except OSError:
+        pass
+    return d
+
+
+MIN_SHARE = 1.1   # before the fact-check a script is grown to 10% above the owner's shortest length: the check rewrites and drops lines (20 Nov 2026: 83 lines,
+                  # 1,973 words, 15.4 minutes after the check against the owner's 20 to 26)
+MAX_EXTENSIONS = 6
+LENGTH_ROUNDS = 3  # after the check: grow and check again at most this many times
+
+
+def min_doc_words() -> int:
+    """Words the owner's shortest documentary length needs (rules.json long_min_minutes), at the measured narration pace."""
+    return round(DOC_MINUTES[0] * words_per_minute(DOC_MINUTES[0]))
+
+
+def drop_retold(lines: list[dict], chapters: list[dict]) -> tuple[list[dict], list[dict]]:
+    """The lines that retell an earlier one removed (video_packaging_rules.script_repeats, the same rule run.py applies), inside the writer so the length loop can make
+    up for them (20 Nov 2026: removed after the line join, six 36-word lines took about 200 words, more than the spare left for it)."""
+    import video_packaging_rules
+
+    pairs = video_packaging_rules.script_repeats([l["text"] for l in lines])
+    return remove_lines(lines, chapters, {j for _, j in pairs}) if pairs else (lines, chapters)
+
+
+_END = re.compile(r"[.!?\u2026][\"'\u201d\u2019)\]]*$")
+_LAST_SENTENCE = re.compile(r"^(.*[.!?\u2026][\"'\u201d\u2019)\]]*)\s+\S.*$", re.S)
+
+
+def finish_lines(lines: list[dict], chapters: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Every narration line ends a sentence. A line that stops mid-sentence is cut back to its last whole sentence; a line with no whole sentence (a run of notes
+    such as "No site empirically proven as original cave Homily draws on earlier lost Greek source") is dropped. Words are only taken away, never added, so the
+    fact-check still stands (20 Nov 2026: the free writer's checked 82-line script for "Seven Sleepers" had 4 such note lines and several lines cut off
+    mid-sentence, and the script reviewer held it for its last line)."""
+    out, drop = [], set()
+    for i, l in enumerate(lines):
+        text = str(l.get("text", "")).strip()
+        if _END.search(text):
+            out.append(l)
+            continue
+        m = _LAST_SENTENCE.match(text)
+        if m and len(m.group(1).split()) >= 6:
+            out.append({**l, "text": m.group(1).strip()})
+        else:
+            drop.add(i)
+            out.append(l)
+    return remove_lines(out, chapters, drop) if drop else (out, chapters)
+
+
+def join_short_lines(lines: list[dict], chapters: list[dict], short: int | None = None, longest: int | None = None) -> tuple[list[dict], list[dict]]:
+    """Adjacent lines of one chapter joined while the line is short, up to LINE_WORDS_MAX words (20 Nov 2026: a free writer gave a 20-26 minute film 119 lines of
+    about 18 words, and every line is one picture: 119 drawings, two days of the free allowance, against the budget's 84 to 100 lines of 30 to 39 words).
+    Only checked sentences are joined, never changed; a joined line keeps its first part's picture words. A film of 8 to 10 minutes (lines up to 30 words) is
+    left alone below 16 words, so its pacing does not change."""
+    short = short if short is not None else (30 if LINE_WORDS_MAX > 30 else 16)  # the long-film budget asks for lines of 30 to 39 words
+    longest = longest or LINE_WORDS_MAX
+    if not chapters:
+        return lines, chapters
+    out, starts = [], []
+    bounds = [(c["start_line"], chapters[n + 1]["start_line"] if n + 1 < len(chapters) else len(lines)) for n, c in enumerate(chapters)]
+    for a, b in bounds:
+        starts.append(len(out))
+        cur = None
+        for l in lines[a:b]:
+            if cur and len(cur["text"].split()) < short and len(cur["text"].split()) + len(l["text"].split()) <= longest:
+                cur = {**cur, "text": cur["text"].rstrip() + " " + l["text"].lstrip()}
+            else:
+                if cur:
+                    out.append(cur)
+                cur = dict(l)
+        if cur:
+            out.append(cur)
+    return out, [{**c, "start_line": starts[n]} for n, c in enumerate(chapters)]
+
+
+def extend_to_length(lines: list[dict], chapters: list[dict], outline: dict, topic: str, rules: str, style: str, chat=None, share: float | None = None) -> tuple[list[dict], list[dict]]:
+    """A script well under the owner's length (20 Nov 2026: 20 to 26 minutes asks for lines of 30 to 39 words, which a free writer may cut short) gets more lines in its
+    shortest chapters: facts from SOURCES the story has not told yet, in the same voice, never a retelling. At most MAX_EXTENSIONS requests; a chapter is extended once.
+    The added lines go through the same fact-check as the rest. A script that is long enough, or a writer that adds nothing, leaves the script as it was."""
+    chat = chat or _script_chat
+    words = lambda ls: sum(len(str(l.get("text", "")).split()) for l in ls)
+    need = round(min_doc_words() * (MIN_SHARE if share is None else share))
+    if not chapters or words(lines) >= need:
+        return lines, chapters
+    lo, hi = line_words(len(chapters), max(1, len(lines) // max(1, len(chapters))))
+    spans = [(n, c["start_line"], chapters[n + 1]["start_line"] if n + 1 < len(chapters) else len(lines)) for n, c in enumerate(chapters)]
+    order = sorted(spans, key=lambda t: words(lines[t[1]:t[2]]))  # the shortest chapters first
+    typical = max(12, sorted(len(str(l.get("text", "")).split()) for l in lines)[len(lines) // 2]) if lines else 20  # what this writer really gives a line
+    reach = min(len(order), max(MAX_EXTENSIONS, -(-(need - words(lines)) // (typical * 5))))  # as many chapters as the gap needs (20 Nov 2026: 6 chapters of 3 to 5 short
+    per = max(3, min(8, -(-(need - words(lines)) // max(1, reach * typical))))                 # lines added about 430 words a round against a gap of 800)
+    added: dict[int, list[dict]] = {}
+    for n, start, end in order[:reach]:
+        if words(lines) + sum(words(v) for v in added.values()) >= need:
+            break
+        told = " ".join(l["text"] for l in lines)
+        try:
+            part = chat(llm.cached(
+                f"You are narrating a documentary titled '{outline.get('title', topic)}' about: {topic}.\nStyle: {style}\n{rules}\n\n",
+                f"The whole narration so far:\n{told[-9000:]}\n\nChapter '{chapters[n].get('title', '')}' is too short. Write {per} to {per + 2} more narration lines of {lo} to {hi} words "
+                "that continue THIS chapter with facts from SOURCES the narration has not told yet. Never repeat a name, date or event already told, never summarise, "
+                "never add a fact SOURCES do not state; if SOURCES have nothing new for this chapter, return an empty list. For every line give 'visual': 2 to 4 words "
+                'naming the place, person, object or artwork to show. Return JSON: {"lines": [{"text": "...", "visual": "..."}]}'))
+        except Exception:
+            continue
+        got = [{"text": str(l["text"]).strip(), "visual": str(l.get("visual", "")).strip()} for l in (part.get("lines") or []) if isinstance(l, dict) and str(l.get("text", "")).strip()]
+        if got:
+            added[n] = got[:per + 2]
+    if not added:
+        return lines, chapters
+    out, starts = [], []
+    for n, start, end in spans:
+        starts.append(len(out))
+        out += lines[start:end] + added.get(n, [])
+    return out, [{**c, "start_line": starts[n]} for n, c in enumerate(chapters)]
+
+
 def doc_script(topic: str, facts: str | None = None, grounded: str | None = None) -> dict:
     """Outline first, then one request per chapter: small local models undershoot a one-shot long script.
 
     With `facts` (news explainers) or `grounded` (a source article for a story) the script may use ONLY those facts."""
     nc = dict(config.niche())
     n_chapters, n_lines = shape_for(topic)
+    llm.begin_script()
     rules = (
         "Retell it in your own original words and never copy sentences from any source. Use only well-documented "
         "facts or public-domain legends; say 'legend says' or 'historians disagree' for anything uncertain. "
@@ -429,52 +690,82 @@ def doc_script(topic: str, facts: str | None = None, grounded: str | None = None
     case = case_rules(topic)
     if case:
         rules += "\n" + case  # an unsolved crime or case: documented facts, attribution, nothing graphic, no accusation (the outline and every chapter share these rules)
-    outline = _script_chat(
-        f"Plan an 8 to 10 minute YouTube documentary for a US audience.\nTopic: {topic}\nChannel: {nc['name']}\n"
-        f"Style: {nc['style']}\n{rules}\n\nGive {n_chapters} chapters in story order. {DOC_STRUCTURE}"
-        "The first sentence is the strangest fact or the central question. Use only what the sources support. "
-        "End on the story: no thanks, no subscribe line. "
-        'Return JSON: {"title": "under 70 chars", "description": "3 sentences", '
-        '"tags": ["..."], "anchors": ["3 to 6 real names of the places, people and things at the heart of this '
-        'story, as they appear in archive image titles"], "chapters": [{"title": "...", "summary": "one sentence of what this chapter covers"}]}'
-    )
-    if not case and case_rules(topic, title=str(outline.get("title", "")), anchors=outline.get("anchors") or [], chapters=outline.get("chapters") or []):
-        rules += "\n" + CASE_RULES  # the outline's own title and chapters show it is a real case: every chapter is written under the rules
-    chapters, lines, told = [], [], ""
-    for n, ch in enumerate(outline["chapters"][:n_chapters], 1):
-        for _ in range(3):
-            part = _script_chat(llm.cached(
-                f"You are narrating a documentary titled '{outline['title']}' about: {topic}.\n"
-                f"Style: {nc['style']}\n{rules}\n\n",  # the same for every chapter, source article included: sent once as a cache block
-                f"Story so far: {told or '(nothing yet, this is the opening)'}\n\n"
-                f"Write chapter {n}: '{ch.get('title', '')}' - {ch.get('summary', '')}\n"
-                f"Write {n_lines} narration lines of {line_words(n_chapters, n_lines)[0]} to {line_words(n_chapters, n_lines)[1]} words each. Do not repeat earlier chapters: a name, date or event already told in the story so far is never told again, "
-                "and an opening only teases its payoff in one line, saving the details for the chapter where they belong. "
-                "Never write chapter numbers, headings or phrases like 'this chapter' in a line: every line is story the listener hears. "
-                "For every line give 'visual': 2 to 4 words to search an archival image for (a real place, person, "
-                "object, map or artwork named in the line; always include the name of the place or subject, for example "
-                "'Hamelin church', never just 'old manuscript'). "
-                'Return JSON: {"lines": [{"text": "...", "visual": "..."}]}'
-            ))
-            got = [
-                {"text": str(l["text"]).strip(), "visual": str(l.get("visual", "")).strip()}
-                for l in part.get("lines", []) if str(l.get("text", "")).strip()
-            ]
-            if sum(len(l["text"].split()) for l in got) >= 70:
-                break
-        else:
-            continue
-        chapters.append({"title": chapter_title(ch, got), "start_line": len(lines)})
-        lines += got
-        told += f" Chapter {n} ({ch.get('title', '')}): {ch.get('summary', '')}"
-    lines, chapters, _ = strip_labels(lines, chapters)  # the writer must not narrate its own outline
+    draft = _load_draft(topic, grounded or facts)
+    if draft:  # a draft written earlier for this topic and these sources waits at its checkpoint: check it, do not write it again
+        outline, lines, chapters, rules = draft["outline"], draft["lines"], draft["chapters"], draft.get("rules", rules)
+        llm._WRITERS.update(draft.get("writers") or [])  # its writers are still never its judges
+        print(f"  resuming the saved draft ({len(lines)} lines, check {draft['uses']} of {MAX_DRAFT_USES})")
+    else:
+        outline = _script_chat(
+            f"Plan a {DOC_MINUTES[0]:g} to {DOC_MINUTES[1]:g} minute YouTube documentary for a US audience.\nTopic: {topic}\nChannel: {nc['name']}\n"
+            f"Style: {nc['style']}\n{rules}\n\nGive {n_chapters} chapters in story order. {DOC_STRUCTURE}"
+            "The first sentence is the strangest fact or the central question. Use only what the sources support. "
+            "End on the story: no thanks, no subscribe line. "
+            'Return JSON: {"title": "under 70 chars", "description": "3 sentences", '
+            '"tags": ["..."], "anchors": ["3 to 6 real names of the places, people and things at the heart of this '
+            'story, as they appear in archive image titles"], "chapters": [{"title": "...", "summary": "one sentence of what this chapter covers"}]}'
+        )
+        if not case and case_rules(topic, title=str(outline.get("title", "")), anchors=outline.get("anchors") or [], chapters=outline.get("chapters") or []):
+            rules += "\n" + CASE_RULES  # the outline's own title and chapters show it is a real case: every chapter is written under the rules
+        chapters, lines, told = [], [], ""
+        for n, ch in enumerate(outline["chapters"][:n_chapters], 1):
+            for _ in range(3):
+                part = _script_chat(llm.cached(
+                    f"You are narrating a documentary titled '{outline['title']}' about: {topic}.\n"
+                    f"Style: {nc['style']}\n{rules}\n\n",  # the same for every chapter, source article included: sent once as a cache block
+                    f"Story so far: {told or '(nothing yet, this is the opening)'}\n\n"
+                    f"Write chapter {n}: '{ch.get('title', '')}' - {ch.get('summary', '')}\n"
+                    f"Write {n_lines} narration lines of {line_words(n_chapters, n_lines)[0]} to {line_words(n_chapters, n_lines)[1]} words each. Do not repeat earlier chapters: a name, date or event already told in the story so far is never told again, "
+                    "and an opening only teases its payoff in one line, saving the details for the chapter where they belong. "
+                    "Never write chapter numbers, headings or phrases like 'this chapter' in a line: every line is story the listener hears. "
+                    "For every line give 'visual': 2 to 4 words to search an archival image for (a real place, person, "
+                    "object, map or artwork named in the line; always include the name of the place or subject, for example "
+                    "'Hamelin church', never just 'old manuscript'). "
+                    'Return JSON: {"lines": [{"text": "...", "visual": "..."}]}'
+                ))
+                got = [
+                    {"text": str(l["text"]).strip(), "visual": str(l.get("visual", "")).strip()}
+                    for l in part.get("lines", []) if str(l.get("text", "")).strip()
+                ]
+                if sum(len(l["text"].split()) for l in got) >= 70:
+                    break
+            else:
+                continue
+            chapters.append({"title": chapter_title(ch, got), "start_line": len(lines)})
+            lines += got
+            told += f" Chapter {n} ({ch.get('title', '')}): {ch.get('summary', '')}"
+        lines, chapters, _ = strip_labels(lines, chapters)  # the writer must not narrate its own outline
+        lines, chapters = extend_to_length(lines, chapters, outline, topic, rules, nc["style"])  # before the fact-check, so every added line is checked too
+        _save_draft(topic, grounded or facts, outline, lines, chapters, rules)
     if grounded:
-        lines, chapters = verify_and_revise(lines, chapters, grounded)
+        before = sum(len(l["text"].split()) for l in lines)
+        try:
+            lines, chapters = checked(lines, chapters, grounded)  # busy judges: the same draft waits and is checked again, it is not written again
+        except ValueError as e:
+            if "could not be fact-checked" not in str(e):
+                DRAFT_FILE.unlink(missing_ok=True)  # the sources do not support this draft: the next attempt writes a new one
+            else:
+                _unuse_draft()  # no judge could answer: not the draft's fault, so this check does not count against its three
+            raise
+        lines, chapters = drop_retold(lines, chapters)  # before the length loop, so the loop makes up for what it removes (run.py's removal then finds none)
+        kept = sum(len(l["text"].split()) for l in lines) / max(1, before)  # the share of words the check left: the next growth aims above the target by that much
+        for _ in range(LENGTH_ROUNDS):  # the check rewrites and drops lines: a checked script under the owner's length grows again, and the new lines are checked too
+            if sum(len(l["text"].split()) for l in lines) >= min_doc_words() * 1.04:  # 4% spare
+                break
+            grown, grown_ch = extend_to_length(lines, chapters, outline, topic, rules, nc["style"], share=min(1.6, 1.06 / max(0.5, kept)))  # 20 Nov 2026: aiming at 1.06 with
+            if len(grown) == len(lines):                                                                                                 # a check that keeps 80% never arrived
+                break  # the writer has nothing more from the sources: the film stays as long as its sources allow
+            before = sum(len(l["text"].split()) for l in grown)
+            lines, chapters = drop_retold(*checked(grown, grown_ch, grounded))
+            kept = sum(len(l["text"].split()) for l in lines) / max(1, before)
+    lines, chapters = join_short_lines(lines, chapters)  # one picture a line: a long film's lines are 30 to 44 words, not 18
+    lines, chapters = finish_lines(lines, chapters)  # no line ends mid-sentence: trimmed to its last whole sentence, or dropped
     words = sum(len(l["text"].split()) for l in lines)
+    DRAFT_FILE.unlink(missing_ok=True)  # checked (or never needed checking): the checkpoint is spent
     if len(chapters) < 5 or words < 400:
         raise ValueError(f"documentary too thin ({len(chapters)} chapters, {words} words)")
     return {
-        "topic": topic, "format": "doc", "grounded": bool(facts or grounded), "script_model": _writer_model(),
+        "topic": topic, "format": "doc", "grounded": bool(facts or grounded), "script_model": _writer_model(), "script_writers": llm.writers(),
         "anchors": [str(a).strip() for a in outline.get("anchors", []) if str(a).strip()][:6],
         "title": str(outline["title"]).strip()[:95],
         "description": str(outline.get("description", "")).strip(),

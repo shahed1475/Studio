@@ -1,7 +1,7 @@
 """The owner (30 Oct 2026): titles should be questions. Autopilot's scorer had no preference, so its Short came out as "The Lost Army of Cambyses: Record, Legend and Dispute". A real question (it opens
 with a question word or auxiliary and ends in a question mark) gets a modest bonus; the search phrase still has to be near the front and a vague question is still penalised. No study of ours or of
 the sources read on 30 Oct shows that question titles get more views: this is the owner's choice, and the studio's Test & Compare (owner's tool) is where it can be measured."""
-import packaging
+import video_packaging_rules as packaging
 
 CORE = "lost army of cambyses"
 

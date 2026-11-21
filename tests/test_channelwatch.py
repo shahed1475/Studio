@@ -178,3 +178,24 @@ def test_breakdown_reports_fresh_hits_without_any_extra_api_call():
     yt = FakeYT(vids)
     out = channelwatch.breakdown(yt, "@LegendLab", now=NOW)
     assert [f["id"] for f in out["fresh"]] == ["n1"] and len(yt.calls) == 1  # the one channels() lookup that was already made
+
+
+def test_latest_reads_the_weekly_digest_and_never_the_craft_advice(tmp_path, monkeypatch):
+    """craft.json (craftlearn's advice) sorts after 2026-W47.json and has no channels or ideas: reading it emptied the research
+    agent's ideas and broke the Autopilot page (a real defect, 19 Nov 2026)."""
+    monkeypatch.setattr(channelwatch, "DATA_DIR", tmp_path)
+    (tmp_path / "2026-W46.json").write_text(json.dumps({"week": "2026-W46", "channels": [], "ideas": ["older"]}))
+    (tmp_path / "2026-W47.json").write_text(json.dumps({"week": "2026-W47", "channels": [{"channel": "Legend Lab"}], "ideas": ["The Bell"]}))
+    (tmp_path / "craft.json").write_text(json.dumps({"bands": {}, "versus_studio": []}))
+    d = channelwatch.latest()
+    assert d["week"] == "2026-W47" and d["ideas"] == ["The Bell"]
+    (tmp_path / "2026-W47.json").unlink()
+    assert channelwatch.latest()["week"] == "2026-W46"
+    (tmp_path / "2026-W46.json").unlink()
+    assert channelwatch.latest() is None  # craft.json alone is not a digest
+
+
+def test_a_test_never_writes_the_owners_craft_file():
+    import craftlearn
+
+    assert craftlearn.FILE != config.ROOT / "data" / "channels" / "craft.json"  # the autouse fixture points it at a temp folder

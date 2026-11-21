@@ -57,7 +57,8 @@ class FakeYT:
 # checks that nothing outside is written, and that every entry is still a real attribute.
 SHARED_FILES = (("actionlog", "ACTIONS"), ("actionlog", "EDITS"), ("policyclass", "CLASS_FILE"), ("policyclass", "HOLD_FILE"), ("rulesfile", "STATE"),
                 ("growthdata", "FILE"), ("growthdata", "DAILY"), ("drift", "FILE"), ("diagnose", "FILE"), ("learner", "WEEKLY"), ("learner", "QUEUED"), ("learner", "REPORTS"),
-                ("trendinbox", "FILE"), ("scriptreview", "FILE"), ("scriptreview", "HELD"), ("agentlog", "FILE"), ("agentbus", "FILE"), ("lessons", "FILE"), ("autopilot", "LOG"))
+                ("trendinbox", "FILE"), ("scriptreview", "FILE"), ("scriptreview", "HELD"), ("agentlog", "FILE"), ("agentbus", "FILE"), ("lessons", "FILE"), ("autopilot", "LOG"),
+                ("freemodels", "FILE"), ("llm", "USAGE_FILE"))  # 20 Nov 2026: the free-model cases wrote invented models and usage into the real files
 
 
 @contextlib.contextmanager
@@ -88,6 +89,12 @@ def isolated():
             rulesfile.FILE = private
             yield root
         finally:
+            try:
+                import llm
+
+                llm.settle(30)  # a race loser still answering would otherwise record into the real file once the paths are back
+            except Exception:
+                pass
             for m, attr, old in reversed(saved):
                 setattr(m, attr, old)
 
@@ -162,6 +169,26 @@ def case_reissue_only_held_unapproved_nonpublic():
         a, b = _meta(mine), _meta(yours)
         ok = "video_id" not in a and a.get("superseded") == ["V3"] and not a.get("hold") and b.get("video_id") == "V4" and not yt.writes()
         return ok, "held video reissued, owner-approved one left alone, nothing deleted" if ok else f"held={a.get('video_id')} yours={b.get('video_id')}"
+
+
+def case_the_guardian_closes_its_draft_tasks_only_when_the_video_has_left_output():
+    """21 Nov 2026: three 'content_problem' tasks for Autopilot stayed open for weeks after their drafts were set aside in output_old (Titanic, two Pied
+    Piper drafts): the guardian closed a task only when it saw the video healthy, and it never sees a folder that is gone."""
+    review = {"verdict": "fail", "checks": [{"name": "facts", "ok": False, "severity": "block"}]}
+    with sandbox() as root:
+        _video(root, "here", review=review, title="Mami Wata: Real Story", description="Mami Wata is a spirit.")  # still in output/ with its problem
+        gone = agentbus.post("content_problem", "guardian", "autopilot", "gone", reason="Content problem on a video not public yet: gone", now=NOW)
+        here = agentbus.post("content_problem", "guardian", "autopilot", "here", reason="Content problem on a video not public yet: here", now=NOW)
+        pub = agentbus.post("public_video_problem", "guardian", "owner", "gone", reason="A public video has a problem: gone", now=NOW)
+        fam = agentbus.post("triage_family", "triage", "trainer", "doctor", reason="a family of failures", now=NOW)
+        other = agentbus.post("content_problem", "fixer", "autopilot", "gone-too", reason="not the guardian's task", now=NOW)  # also gone, but another agent's
+        kind = agentbus.post("growth_topic", "guardian", "autopilot", "gone-three", reason="not a draft repair", now=NOW)  # the guardian's, gone, another kind
+        res = _guard(root, FakeYT())
+        st = {t["id"]: t["state"] for t in agentbus.tasks()}
+        ok = (res.get("closed_gone") == 1 and st[gone["id"]] == "done" and st[here["id"]] == "open" and st[pub["id"]] == "open"
+              and st[fam["id"]] == "open" and st[other["id"]] == "open" and st[kind["id"]] == "open")
+        return ok, ("the set-aside draft's task closed; the draft still in output/, the owner's, the trainer's, another agent's and another kind's tasks stayed open" if ok
+                    else f"closed={res.get('closed_gone')} states gone={st[gone['id']]} here={st[here['id']]} public={st[pub['id']]} family={st[fam['id']]} other={st[other['id']]} kind={st[kind['id']]}")
 
 
 def case_ladder_ends_with_owner_not_a_crash():
@@ -664,13 +691,15 @@ def case_a_documentary_is_written_in_the_owners_shape_and_length_and_warned_abou
     low = scriptgen.DOC_STRUCTURE.lower()
     marks = ["chapter 1 is the hook", "chapter 2 builds curiosity", "middle chapters are the story", "last chapter gives value"]
     shape = all(m in low for m in marks) and [low.index(m) for m in marks] == sorted(low.index(m) for m in marks) and "promise" in low and "weigh" in low
-    room = 56 <= scriptgen.MAX_DOC_LINES <= 64
+    budget = scriptgen.doc_budget(*scriptgen.DOC_MINUTES)  # the owner's rules.json length (20 to 26 minutes since 20 Nov 2026)
+    room = scriptgen.MAX_DOC_LINES == budget["max_lines"] and scriptgen.MAX_DOC_LINES * scriptgen.LINE_WORDS_MAX >= scriptgen.DOC_WORDS_TARGET \
+        and scriptgen.DOC_MINUTES[0] <= scriptgen.DOC_WORDS_TARGET / scriptgen.DOC_WORDS_PER_MINUTE <= scriptgen.DOC_MINUTES[1]
     meta = {"format": "doc", "description": "d", "lines": [{"text": "Where did it go?"}] * 3}
     got = lambda sec: {c["name"]: c for c in reviewer.generator_checks(meta, {"duration": sec})}.get("doc_length")
-    short, right = got(456), got(540)
+    short, right = got(round(scriptgen.DOC_MINUTES[0] * 60) - 60), got(round(sum(scriptgen.DOC_MINUTES) * 30))
     warns = bool(short) and not short["ok"] and short["severity"] == "warn" and bool(right) and right["ok"]
     ok = shape and room and warns
-    return ok, "a documentary is asked for as hook, curiosity, story, then a closing chapter of value, in 8 to 10 minutes, and a length outside that is warned about" if ok else f"shape={shape} room={room} warns={warns}"
+    return ok, "a documentary is asked for as hook, curiosity, story, then a closing chapter of value, in the owner's length (rules.json), and a length outside that is warned about" if ok else f"shape={shape} room={room} warns={warns}"
 
 
 def case_the_ai_review_reads_the_whole_narration_of_a_long_documentary_and_not_only_its_start():
@@ -1421,7 +1450,348 @@ def case_the_owners_own_model_provider_key_never_leaves_the_settings_file_and_it
     return ok, "the provider gets only its own key, errors are scrubbed, private or plain-http addresses are refused" if ok else f"routed={routed} cleaned={cleaned} refused={refused}"
 
 
-CASES = [case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic,
+def case_free_mode_never_sends_a_request_to_a_paid_model_through_the_video_checks():
+    """20 Nov 2026: the thumbnail score, the narration listen before an approval and the video analysis checked only the daily cap, so with paid models off
+    they still asked paid models. Each must refuse in Free Mode before any request (llm.paid_allowed)."""
+    import json
+    import tempfile
+    from pathlib import Path
+
+    import llm
+    import thumbscore
+    import videoinspect
+    import voicecheck
+
+    sent = []
+    saved = (llm.load_config, llm.spent_today, llm._post, videoinspect.model_modalities, config.OUT)
+    free = {"enabled": False, "free": True, "free_review": True, "ai_art": False, "daily_budget_usd": 5.0, "models": {}, "max_output_tokens": 6000}
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            llm.load_config, llm.spent_today = (lambda: dict(free)), (lambda now=None: 0.0)
+            llm._post = lambda *a, **k: sent.append("post") or {}
+            videoinspect.model_modalities = lambda: sent.append("models") or {}
+            config.OUT = Path(tmp)
+            folder = Path(tmp) / "v"
+            folder.mkdir()
+            (folder / "video.mp4").write_bytes(b"0" * 64)
+            records.save(folder, {"title": "T", "lines": [{"text": "A line."}]})
+            thumb = thumbscore.score([folder / "a.jpg"], "T", "h", post=lambda *a, **k: sent.append("thumb") or {}) is None
+            video = "Free Mode" in videoinspect.gemini_analyze(folder, post=lambda *a, **k: sent.append("video") or {}).get("error", "")
+            voice = "Free Mode" in voicecheck.listen(folder).get("error", "")
+    finally:
+        llm.load_config, llm.spent_today, llm._post, videoinspect.model_modalities, config.OUT = saved
+    ok = thumb and video and voice and not sent
+    return ok, "in Free Mode the thumbnail score, the video analysis and the narration listen refuse before any paid request" if ok else f"thumb={thumb} video={video} voice={voice} sent={sent}"
+
+
+def case_an_a2a_task_is_answered_once_only_by_its_target_and_never_off_the_hand_over_map():
+    """a2a.py (20 Nov 2026): agents ask each other over the bus. A message off the hand-over map is refused, only the target answers, an answer
+    must match its contract, and a closed task keeps its outcome (a late answer can never complete it twice)."""
+    import tempfile
+    from pathlib import Path
+
+    import a2a
+
+    saved = agentbus.FILE
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            agentbus.FILE = Path(tmp) / "tasks.json"
+            off_map = False
+            try:
+                a2a.send("seo", "publisher", "upload it now")
+            except a2a.A2AError:
+                off_map = True
+            t = a2a.send("fixer", "reviewer", "Which check fails?", schema="answer")
+            wrong_agent = False
+            try:
+                a2a.deliver(t["id"], "seo", {"answer": "a", "evidence": "b"})
+            except a2a.A2AError:
+                wrong_agent = True
+            done = a2a.deliver(t["id"], "reviewer", {"answer": "title", "evidence": "row title_honest"})["status"]["state"] == "completed"
+            twice = False
+            try:
+                a2a.deliver(t["id"], "reviewer", {"answer": "other", "evidence": "late"})
+                twice = True
+            except a2a.A2AError:
+                pass
+            kept = a2a.get(t["id"])["result"]["answer"] == "title"
+    finally:
+        agentbus.FILE = saved
+    ok = off_map and wrong_agent and done and not twice and kept
+    return ok, "off-map messages are refused, only the target answers, and a closed task keeps its outcome" if ok else f"off_map={off_map} wrong_agent={wrong_agent} done={done} twice={twice} kept={kept}"
+
+
+def case_a_judge_is_never_the_writer_even_through_the_owners_provider():
+    """20 Nov 2026: the owner's provider listed gemini-3.6-flash as a writer AND a judge, and "auto" (which the proxy once served with gemini-3.6-flash)
+    as a judge; the writer was remembered only inside the process that wrote; and models the proxy reported "exhausted" for hours were asked every
+    five minutes. A judge is never a router or a writer (saved or hand-edited settings); the writers recorded with a video are avoided by identity in
+    a later process, also when the writer was "auto" (by what it was served as); a model the provider reports exhausted is not asked."""
+    import datetime as dt
+    import json
+    import tempfile
+    from pathlib import Path
+
+    import freemodels
+    import llm
+
+    asked = []
+    fm = ("refresh", "choose", "remaining", "requests_today", "count_request", "record", "available")
+    saved_fm = {n: getattr(freemodels, n) for n in fm}
+    saved = (llm.SETTINGS_FILE, llm._post, llm._catalog_get, llm.record, llm._note, llm.time.sleep, dict(llm._last_free), set(llm._WRITERS), dict(llm._served))
+    filtered = refused = avoided = discovered = answered = False
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "settings.json"
+            f.write_text(json.dumps({"extra_llm_on": True, "extra_llm_url": "http://127.0.0.1:31415/v1", "extra_llm_local": True, "extra_llm_key": "k-0123456789abcdef",
+                                     "extra_llm_models": {"script": "w1, auto", "review": "w1, auto, j1, j2"}}))  # as if edited by hand: w1 and auto may not judge
+            llm.SETTINGS_FILE = f
+            llm._url_cache.clear()
+            llm._catalog.clear()
+            filtered = llm.extra_models("review") == ["extra:j1", "extra:j2"]
+            refused = bool(llm.judge_names_problem(["w1"], ["auto"])) and bool(llm.judge_names_problem(["vendor/w1:free"], ["w1"])) and not llm.judge_names_problem(["w1"], ["j1"])
+            for n, fake in (("refresh", lambda now, *a, **k: None), ("choose", lambda role, now, avoid=None, n=4: []),  # while writing: only the owner's models, so the writer is fixed
+                            ("remaining", lambda *a, **k: 500), ("requests_today", lambda *a, **k: 0), ("count_request", lambda *a, **k: None),
+                            ("record", lambda *a, **k: None), ("available", lambda mid, now: True)):
+                setattr(freemodels, n, fake)
+            llm.record, llm._note, llm.time.sleep = (lambda *a, **k: None), (lambda *a, **k: None), (lambda s: None)
+
+            class R:
+                def raise_for_status(self):
+                    pass
+
+                def json(self):
+                    return {"data": [{"id": "j1", "available": True, "execution_status": "exhausted"}, {"id": "j2", "available": True, "execution_status": "ready"}]}
+
+            llm._catalog_get = lambda url, key: R()
+
+            def post(payload, key):
+                asked.append(payload["model"])
+                served = {"extra:auto": "j2"}.get(payload["model"], payload["model"].replace("extra:", ""))
+                return {"model": served, "choices": [{"message": {"content": '{"ok": true}'}}], "usage": {}}
+
+            llm._post = post
+            now = dt.datetime(2026, 11, 20, 4, 30, tzinfo=dt.timezone.utc)
+            llm._last_free.clear()
+            llm._WRITERS.clear()
+            llm._served.clear()
+            llm.begin_script()
+            llm._free_chat("write", "script", llm.load_config(), "KEY", now, avoid={"extra:w1"})  # the writer is "auto"; the proxy serves it as j2
+            llm._free_chat("rewrite", "script", llm.load_config(), "KEY", now, avoid={"extra:auto"})  # a line rewritten by w1
+            recorded = llm.writers()
+            llm._last_free.clear()
+            llm._WRITERS.clear()  # a later process: it knows the writers only from the video's record
+            asked.clear()
+            freemodels.choose = lambda role, now, avoid=None, n=4: ["vendor/w1:free", "or/other:free"]  # OpenRouter also offers the writer w1, under its own name
+            got = llm._free_chat("judge", "review", llm.load_config(), "KEY", now, avoid=set(recorded))
+            llm.settle(10)  # a raced loser is still answering when the winner returns: wait for it, or a judge it asked is missed
+            avoided ="extra:j2" not in asked and "vendor/w1:free" not in asked and "extra:w1" not in asked and "extra:auto" not in asked
+            discovered = "extra:j1" not in asked
+            answered = got == {"ok": True} and asked == ["or/other:free"]
+    finally:
+        for n, fn in saved_fm.items():
+            setattr(freemodels, n, fn)
+        llm.SETTINGS_FILE, llm._post, llm._catalog_get, llm.record, llm._note, llm.time.sleep = saved[:6]
+        llm._last_free.clear()
+        llm._last_free.update(saved[6])
+        llm._WRITERS.clear()
+        llm._WRITERS.update(saved[7])
+        llm._served.clear()
+        llm._served.update(saved[8])
+        llm._url_cache.clear()
+        llm._catalog.clear()
+    ok = filtered and refused and avoided and discovered and answered
+    return ok, ("a judge is never a router or a writer, the recorded writers are avoided by identity in a later process, and an exhausted model is not asked" if ok
+                else f"filtered={filtered} refused={refused} avoided={avoided} discovered={discovered} answered={answered} asked={asked}")
+
+
+def case_blender_scenes_are_true_to_the_line_and_never_stop_a_video():
+    """20 Nov 2026 (owner: Blender as a real production component): a Blender scene goes only on a line whose own words name that kind of place, never on the opening
+    lines (the hook) or a line whose picture is a person; the globe comes only from the source article's own coordinates, never a guess; a scene that fails is recorded and
+    its line keeps its usual picture, and a crash in Blender never stops the video."""
+    from pathlib import Path
+
+    import blenderscenes
+    import run
+
+    lines = [("Was the richest city on Earth lost in one battle?", "ruins at dusk"), ("Its caravans crossed the desert for gold.", "desert caravans"),  # 1: the hook names a desert
+             ("Travellers wrote of it.", "old book"), ("In Hampi the markets sold horses.", "Hampi bazaar"), ("Few lines.", "x"),
+             ("The king crossed the desert at dawn.", "king portrait desert"),  # 5: its picture is a person
+             ("x", "x"), ("x", "x"), ("Ships sailed the open sea.", "open sea ships"), ("x", "x"), ("x", "x"), ("x", "x")]
+    data = {"lines": [{"text": t, "visual": v} for t, v in lines], "chapters": [{"title": "a", "start_line": 0}, {"title": "b", "start_line": 5}, {"title": "c", "start_line": 8}],
+            "sources": ["Wikipedia: Hampi (CC BY-SA 4.0), retold in our own words"], "anchors": ["Hampi"]}
+    saved_coords = blenderscenes.coordinates
+    try:
+        blenderscenes.coordinates = lambda title: None  # the case never asks Wikipedia: the coordinates it tests are the ones it passes
+        with_coords = blenderscenes.plan({**data}, "doc", (15.335, 76.462))
+        no_coords = blenderscenes.plan({**data}, "doc", None)
+    finally:
+        blenderscenes.coordinates = saved_coords
+    hook = all(p["line"] >= 2 for p in with_coords)
+    person = 5 not in [p["line"] for p in with_coords]
+    true_words = all(blenderscenes.match(data["lines"][p["line"]]) == p["scene"] for p in with_coords if p["kind"] == "still") and [p["scene"] for p in with_coords] == ["globe", "sea"]
+    globe = [p for p in with_coords if p["kind"] == "globe"] and not [p for p in no_coords if p["kind"] == "globe"]
+
+    class Failing:
+        def version(self):
+            return "Blender test"
+
+        def render(self, spec):
+            raise RuntimeError("Blender failed")
+
+        def render_clip(self, spec, seconds, size):
+            raise RuntimeError("Blender failed")
+
+    got, stats = blenderscenes.render(with_coords, [5.0] * len(lines), renderer=Failing())
+    pictures = [Path(f"p{i}.png") for i in range(len(lines))]
+    kept, _ = blenderscenes.place(pictures, [], got)
+    recorded = not got and len(stats["failed"]) == len(with_coords) and kept == pictures
+    saved = blenderscenes.render
+    try:
+        blenderscenes.coordinates = lambda title: None
+        blenderscenes.render = lambda *a, **k: (_ for _ in ()).throw(MemoryError())
+        d2 = {**data, "lines": [dict(l) for l in data["lines"]]}
+        survived = run._blender_scenes(d2, [5.0] * len(lines), "doc", (1920, 1080)) == {} and d2["blender"].get("failed") is True
+    except Exception:
+        survived = False
+    finally:
+        blenderscenes.render = saved
+        blenderscenes.coordinates = saved_coords
+    ok = bool(hook and person and true_words and globe and recorded and survived)
+    return ok, ("Blender scenes are true to their lines, never on the hook or a person, the globe only from real coordinates, and a failure never stops a video" if ok
+                else f"hook={hook} person={person} true_words={true_words} globe={bool(globe)} recorded={recorded} survived={survived} plan={with_coords}")
+
+
+def case_the_reviewer_flags_a_line_that_calls_proven_what_its_source_only_suggests():
+    """20 Nov 2026: the Tenali Rama Short said dedications "prove" he served Venkatapati Raya; the source says internal evidence and dedications "suggest" it, and two free
+    judges scored the script risk 0. The reviewer's fixed-rule check sends such a line to a person (severity human) and leaves honest lines alone."""
+    import reviewer
+
+    source = ("Internal textual evidence and dedications in his works suggest that he flourished well into the second half of the 16th century, receiving patronage "
+              "from later rulers and nobles like Venkatapati Raya and Manuri Venkatadri. The first confirmed owner was Georg Baresch of Prague, who may have bought it.")
+    bad = reviewer.overclaims(["Yet textual dedications prove he actually served later ruler Venkatapati Raya."], source)
+    honest = reviewer.overclaims(["Dedications suggest Venkatapati Raya was one of his patrons.", "Nobody has proven that Venkatapati Raya paid him.",
+                                  "The first confirmed owner was Georg Baresch of Prague."], source)
+    meta = {"title": "T", "description": "d", "tags": ["a"], "format": "short", "lines": [{"text": "Yet textual dedications prove he actually served later ruler Venkatapati Raya.", "visual": "v"}]}
+    probe = {"duration": 50.0, "width": 1080, "height": 1920, "has_audio": True, "mean_db": -17.0, "black_ratio": 0.0}
+    row = next((r for r in reviewer.rule_checks(meta, probe, [], None, [], source) if r["name"] == "overclaim"), {})
+    ok = bool(bad) and not honest and row.get("ok") is False and row.get("severity") == "human"
+    return ok, ("a line calling proven what its source only suggests goes to a person; honest lines pass" if ok else f"bad={bad} honest={honest} row={row}")
+
+
+def case_busy_judges_never_discard_a_draft_and_never_pass_it_unchecked():
+    """20 Nov 2026: a finished 90-line documentary draft was thrown away after 39 minutes because no free judge could answer, and the writer started over. Now the
+    same draft waits and is checked again; after the waits the error stands (an unchecked script is never passed on); and a long script is judged in parts."""
+    import scriptgen
+
+    saved = (scriptgen.verify_and_revise, scriptgen._review_chat)
+    calls, waits, parts = [], [], []
+    draft = [{"text": f"line {i}"} for i in range(70)]
+    try:
+        def busy_then_ok(lines, chapters, sources):
+            calls.append([dict(l) for l in lines])
+            if len(calls) < 2:
+                raise ValueError("the script could not be fact-checked (ModelUnavailable)")
+            return lines, chapters
+
+        scriptgen.verify_and_revise = busy_then_ok
+        try:
+            kept = scriptgen.checked(draft, [], "SRC", sleep=waits.append) == (draft, []) and len(calls) == 2 and calls[0] == calls[1] == draft
+        except ValueError:
+            kept = False  # the first busy answer ended the draft
+        scriptgen.verify_and_revise = lambda *a: (_ for _ in ()).throw(ValueError("the script could not be fact-checked (ModelUnavailable)"))
+        try:
+            scriptgen.checked(draft, [], "SRC", sleep=waits.append)
+            never_unchecked = False
+        except ValueError:
+            never_unchecked = True
+        scriptgen.verify_and_revise = saved[0]
+        scriptgen._review_chat = lambda prompt, avoid=None: parts.append(str(prompt)) or {"unsupported": []}
+        in_parts = scriptgen.unsupported(draft, "SRC") == {} and len(parts) == -(-len(draft) // scriptgen.CHECK_CHUNK) > 1
+    finally:
+        scriptgen.verify_and_revise, scriptgen._review_chat = saved
+    ok = kept and never_unchecked and in_parts
+    return ok, ("a busy judge keeps the same draft waiting, an unchecked draft is never passed on, a long script is judged in parts" if ok
+                else f"kept={kept} never_unchecked={never_unchecked} in_parts={in_parts} waits={waits}")
+
+
+def case_a_render_cut_by_a_power_cut_is_found_kept_and_never_trusted_half_written():
+    """20 Nov 2026 (load-shedding): a film's render that a power cut stopped is listed as interrupted with the step that continues it; its checked scenes count as
+    kept only while their size and hash match, a damaged one is named for rendering again, a finished video's folder is never listed, and the scan itself
+    changes nothing on disk."""
+    import tempfile
+
+    import checkpoint
+    import recovery
+
+    with tempfile.TemporaryDirectory() as d:
+        base = Path(d)
+        work = base / "output" / "doc-cut" / "work"
+        work.mkdir(parents=True)
+        for i in range(3):
+            (work / f"seg{i:02d}.mp4").write_bytes(bytes([i]) * 4000)
+        segs = {f"seg{i:02d}.mp4": {"key": "k", "bytes": 4000, "sha256": checkpoint.sha256(work / f"seg{i:02d}.mp4")} for i in range(3)}
+        checkpoint.write_json(work / "segments.json", {"segments": segs, "total": 5})
+        checkpoint.write_json(work / checkpoint.MANIFEST, {"job": "doc", "run": {"pid": 1, "boot": "an-earlier-boot", "started": "t"}, "stages": {"voice": {}}})
+        (work / "seg02.mp4").write_bytes(b"x" * 4000)  # same size, other bytes: the cut damaged it
+        (base / "output" / "doc-done" / "work").mkdir(parents=True)
+        (base / "output" / "doc-done" / "meta.json").write_text("{}")
+        pend = base / "pending_doc.json"
+        checkpoint.write_json(pend, {"folder": "doc-cut", "data": {}})
+        before = sorted((str(p), p.stat().st_mtime_ns) for p in base.rglob("*") if p.is_file())
+        items = recovery.scan(base / "output", pend, thorough=True)
+        after = sorted((str(p), p.stat().st_mtime_ns) for p in base.rglob("*") if p.is_file())
+    one = items[0] if len(items) == 1 else {}
+    ok = (one.get("folder") == "doc-cut" and one.get("interrupted") is True and one.get("scenes_kept") == 2 and one.get("scenes_broken") == ["seg02.mp4"]
+          and "autopilot make doc" in one.get("resume", "") and before == after)
+    return ok, ("a cut film is found with what is kept, a damaged scene is not trusted, finished folders are skipped and nothing is touched" if ok
+                else f"items={items} unchanged={before == after}")
+
+
+def case_a_cut_at_the_very_end_never_makes_the_video_twice_and_a_cut_short_resumes_in_its_folder():
+    """21 Nov 2026 (load-shedding review): a cut after a film's record was saved but before its saved script was cleared once made the same film again
+    in a new folder; a cut Short was reported as 'starts a new folder'. Now the finished folder is returned and nothing is produced, the run that
+    restarted in a reused pid is still seen as cut, and the recovery scan gives a Short its own resume step."""
+    import json as _json
+    import os
+    import tempfile
+
+    import checkpoint
+    import recovery
+    import run
+
+    made = []
+    saved = (run.config.OUT, run.PENDING_DOC, run._produce_doc)
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            base = Path(d)
+            out = base / "output"
+            film = out / "doc-x"
+            (film / "work").mkdir(parents=True)
+            (film / "video.mp4").write_bytes(b"finished")
+            import records
+
+            records.save(film, {"title": "Polished later", "topic": "T"})
+            run.config.OUT, run.PENDING_DOC = out, base / "pending_doc.json"
+            run._produce_doc = lambda *a, **k: made.append(a) or film
+            checkpoint.write_json(run.PENDING_DOC, {"data": {"title": "X", "topic": "T", "lines": [{"text": "w " * 3000}]}, "folder": "doc-x", "tries": 0})
+            got = run._cmd_doc()
+            finished_ok = got == film and not made and not run.PENDING_DOC.exists() and not (film / "work").exists()
+            short = out / "short-y" / "work"
+            short.mkdir(parents=True)
+            me = os.getpid()
+            checkpoint.write_json(short / checkpoint.MANIFEST, {"job": "short", "run": {"pid": me, "pstart": "1", "boot": checkpoint.boot_id(), "started": "t"}})
+            checkpoint.write_json(base / "pending_short.json", {"folder": "short-y", "data": {}, "topic": "T"})
+            items = recovery.scan(out, base / "pending_doc.json")
+            one = next((i for i in items if i["folder"] == "short-y"), {})
+            short_ok = one.get("interrupted") is True and "autopilot make short" in one.get("resume", "") and "pending_short.json" in one.get("resume", "")
+    finally:
+        run.config.OUT, run.PENDING_DOC, run._produce_doc = saved
+    ok = finished_ok and short_ok
+    return ok, ("a finished film is not made again, a reused pid does not hide a cut, a cut Short resumes in its own folder" if ok
+                else f"finished_ok={finished_ok} made={len(made)} short={one}")
+
+
+CASES = [case_a_cut_at_the_very_end_never_makes_the_video_twice_and_a_cut_short_resumes_in_its_folder, case_a_render_cut_by_a_power_cut_is_found_kept_and_never_trusted_half_written, case_busy_judges_never_discard_a_draft_and_never_pass_it_unchecked, case_the_reviewer_flags_a_line_that_calls_proven_what_its_source_only_suggests, case_blender_scenes_are_true_to_the_line_and_never_stop_a_video, case_a_judge_is_never_the_writer_even_through_the_owners_provider, case_an_a2a_task_is_answered_once_only_by_its_target_and_never_off_the_hand_over_map,case_free_mode_never_sends_a_request_to_a_paid_model_through_the_video_checks, case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic, case_the_guardian_closes_its_draft_tasks_only_when_the_video_has_left_output,
          case_ladder_ends_with_owner_not_a_crash, case_ladder_respects_budget_and_whitelist_and_lessons, case_outside_text_is_cleaned,
          case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules, case_registry_is_consistent,
          case_playbook_scope_injects_role_and_limits_only_when_acting, case_doctor_finds_stale_and_failing_agents_and_fixes_only_safely,

@@ -17,6 +17,16 @@ CLIP_ESTIMATE = 0.24      # dollars for one 8-second clip on the default model, 
 MAX_FAILS_IN_A_ROW = 2
 
 
+def _is_free_mode() -> bool:
+    """Check if the studio is in free mode (no paid models)."""
+    try:
+        import llm
+        cfg = llm.load_config()
+        return cfg.get("free", False) and not cfg.get("enabled", True)
+    except Exception:
+        return False
+
+
 def _drawn(path) -> bool:
     return bool(path) and (Path(config.CACHE) / "art") in Path(path).parents and Path(path).suffix.lower() in (".jpg", ".jpeg", ".png")
 
@@ -64,12 +74,31 @@ def frame_url(path, size: tuple[int, int] = (1280, 720)) -> str:
     return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
-def animate_scenes(clips: list, lines: list[dict], n: int, budget_usd: float, gen, estimate: float = CLIP_ESTIMATE, size: tuple[int, int] = (1280, 720), scenes: list | None = None) -> tuple[list, dict]:
+def animate_scenes(clips: list, lines: list[dict], n: int, budget_usd: float, gen, estimate: float = CLIP_ESTIMATE, size: tuple[int, int] = (1280, 720), scenes: list | None = None, durations: list[float] | None = None) -> tuple[list, dict]:
     """(new clips list, stats). gen(prompt, first_frame_data_url) -> (mp4 path, dollars spent) or raises. The input list is not changed."""
     out = list(clips)
     stats = {"animated": 0, "cached": 0, "failed": 0, "spent": 0.0, "scenes": []}
     cache = Path(config.CACHE) / "anim"
     fails = 0
+    
+    # In free mode, use parallax instead of paid clips
+    if _is_free_mode():
+        try:
+            import parallax
+            # Determine flat scenes (scenes with people/faces that should not get depth bend)
+            flat_set = parallax.flat_scenes(lines) if lines else set()
+            # Use provided durations, or default
+            durs = durations or [3.5 for _ in clips]
+            out, pstats = parallax.apply(out, durs, size, workers=1, flat=flat_set)
+            stats["animated"] = pstats.get("made", 0)
+            stats["cached"] = pstats.get("cached", 0)
+            stats["failed"] = pstats.get("failed", 0)
+            stats["scenes"] = [i for i in range(len(clips)) if str(clips[i]) != str(out[i])]
+            return out, stats
+        except Exception as e:
+            print(f"Warning: parallax failed ({e}), falling back to static pictures")
+            return out, stats # Return early instead of falling through to paid clip loop
+    
     for i in (pinned_scenes(clips, scenes) if scenes else pick_scenes(clips, n)):  # a video can name its own scenes (wide shots, no close faces)
         prompt = motion_prompt(lines[i].get("text", "") if i < len(lines) else "", lines[i].get("visual", "") if i < len(lines) else "")
         key = hashlib.sha256(Path(clips[i]).read_bytes() + prompt.encode()).hexdigest()[:20]
@@ -116,6 +145,8 @@ def clip_generator(vertical: bool = False):
     cfg = clip_config(clipgen.load_config(config.ROOT / "config" / "footage.json"), vertical)
 
     def gen(prompt: str, first_frame: str):
+        if _is_free_mode():  # free mode never calls a paid model: moving clips are the free parallax in animate_scenes instead
+            raise RuntimeError("free mode: paid moving clips are off")
         run = footagestore.create(cfg["cost_scope"], status="running", model=cfg["model"])
         res = clipgen.generate(cfg, llm.api_key(), prompt, run, first_frame=first_frame)
         return Path(res["clip"]), float(run.read().get("cost_booked") or 0.0)

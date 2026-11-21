@@ -37,7 +37,7 @@ def score(paths, title: str, hook: str, post=None) -> list[dict] | None:
     """[{index, total, parts}] for the candidates the model scored completely, or None when nothing could be scored (no model, no credit, no usable answer)."""
     try:
         cfg = llm.load_config()
-        if llm.spent_today(llm._now()) >= cfg["daily_budget_usd"]:
+        if not llm.paid_allowed(cfg) or llm.spent_today(llm._now()) >= cfg["daily_budget_usd"]:  # Free Mode: no paid vision model, the rules order the thumbnails
             return None
         model = modelcfg.get("thumbnail_score")
         if "image" not in videoinspect.model_modalities().get(model, []):

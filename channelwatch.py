@@ -204,5 +204,7 @@ def run(now: dt.datetime | None = None, yt=None) -> Path:
 
 
 def latest() -> dict | None:
-    files = sorted(DATA_DIR.glob("*.json")) if DATA_DIR.exists() else []
+    # Weekly digests only (2026-W47.json). data/channels also holds craft.json (craftlearn's advice), which sorts last and has no
+    # channels or ideas: reading it as the digest emptied the research agent's ideas and broke the Autopilot page.
+    files = sorted(DATA_DIR.glob("????-W??.json")) if DATA_DIR.exists() else []
     return json.loads(files[-1].read_text()) if files else None

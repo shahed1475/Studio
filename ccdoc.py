@@ -122,7 +122,9 @@ def resolve(pic: str, base: Path, jobs: dict) -> Path:
 
 def source_lines(spec: dict) -> list[str]:
     """One "title: address" line per source PAGE (a page that supplies several passages is listed once: YouTube rejects a description over 5,000 bytes)."""
-    return list(dict.fromkeys(f"{s['title']}: {s['url']}" for s in spec["sources"]))
+    # a hand-written spec lists {title, url}; Autopilot's own films list plain text lines ("Wikipedia: X (CC BY-SA 4.0) ...", then the addresses).
+    # Both are accepted: the dict-only version crashed every Autopilot documentary after its video was finished (21 Nov 2026, Seven Sleepers).
+    return list(dict.fromkeys(f"{s['title']}: {s['url']}" if isinstance(s, dict) else str(s) for s in spec.get("sources") or [] if s))
 
 
 def grade_pictures(pics: list, strength: float = 1.0) -> list:

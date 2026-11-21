@@ -152,9 +152,9 @@ def _upload(folder: Path, privacy: str, publish_at: str | None) -> str:
         raise SystemExit("not sent, YouTube would reject it: " + "; ".join(problems))
     body = {
         "snippet": {
-            "title": meta["title"],
+            "title": str(meta.get("title", "")),
             "description": compliance.final_description(meta),
-            "tags": meta["tags"],
+            "tags": [str(t) for t in meta.get("tags", [])],  # a record without tags was a KeyError here, after the approval checks
             "categoryId": "27",  # Education
             "defaultAudioLanguage": "en",
         },

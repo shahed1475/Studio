@@ -109,3 +109,42 @@ def test_trend_and_reference_channel_jobs_run_daily_before_the_research_agent_so
     assert by["trendwatch"]["at"] < by["agent"]["at"]  # 06:00 before 06:30
     weekly_cmds = [c[0] for c in by["weekly"]["cmds"]]
     assert "trends" not in weekly_cmds and "channels" not in weekly_cmds and "newswatch" in weekly_cmds
+
+
+def test_the_worker_waits_for_the_network_after_a_power_cut_but_never_for_ever():
+    """21 Nov 2026: four jobs failed at boot with 'Temporary failure in name resolution' and the daily ones waited a whole day."""
+    t = [0.0]
+    sleeps = []
+
+    def clock():
+        return t[0]
+
+    def sleep(s):
+        sleeps.append(s)
+        t[0] += s
+
+    calls = []
+
+    def resolve_after(n):
+        def r(host, port):
+            calls.append(host)
+            if t[0] < n:
+                raise OSError("Temporary failure in name resolution")
+            return [("ok",)]
+        return r
+
+    assert worker.wait_for_network(resolve=resolve_after(0), sleep=sleep, clock=clock) == 0.0 and sleeps == []  # a ready network costs nothing
+    assert worker.wait_for_network(resolve=resolve_after(10), sleep=sleep, clock=clock, limit=60) is not None and 10 <= t[0] < 14
+    assert set(calls) == set(worker.NET_HOSTS)
+    t[0], sleeps[:] = 0.0, []
+    assert worker.wait_for_network(resolve=resolve_after(10_000), sleep=sleep, clock=clock, limit=30) is None  # no network: give up, jobs start anyway
+    assert 30 <= t[0] <= 33
+
+
+def test_one_host_that_resolves_is_enough():
+    def r(host, port):
+        if host == worker.NET_HOSTS[0]:
+            raise OSError("one name is down")
+        return [("ok",)]
+
+    assert worker.wait_for_network(resolve=r, sleep=lambda s: None, clock=lambda: 0.0) == 0.0

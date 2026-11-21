@@ -8,7 +8,7 @@ Hourly after the recheck; at once when a rule page changes.
 ## How
 1. Collect signals: changed rule pages, safety check, login and Risks rows, deterministic audits of every waiting or scheduled video.
 2. For each problem choose the smallest safe action: metadata or thumbnail fix (video not public yet), hold, reissue, or tell the owner.
-3. Post a task to Autopilot with the reason and evidence; close it when the video is healthy again.
+3. Post a task to Autopilot with the reason and evidence; close it when the video is healthy again, or when its folder has left output/ (set aside: nothing is left to repair).
 4. For a public video only watch and report. Its title changes only through the title test.
 ## Tools
 controls.hold, recheck.take_back, seo.enforce, agentbus, escalate.

@@ -367,7 +367,7 @@ def test_free_review_asks_two_different_models_and_keeps_the_strictest_answer(mo
     got = llm.chat("check this", "review", now=NOW, strict=True)
     assert got == {"invented_facts_risk": 6, "misleading_title": True, "issues": ["a", "b"]}
     assert len(asked) == 2 and asked[1][1] and "free/model-1" in asked[1][1]  # the second opinion avoids the first model
-    assert llm.LAST_REVIEW == {"mode": "free", "models": ["free/model-1", "free/model-2"]}
+    assert llm.LAST_REVIEW == {"mode": "free", "models": ["free/model-1", "free/model-2"], "served": ["free/model-1", "free/model-2"]}  # served: what the provider says answered
 
 
 def test_free_review_needs_both_models_to_answer(monkeypatch):
@@ -573,3 +573,129 @@ def test_a_rambling_reply_that_was_not_cut_off_is_not_retried(monkeypatch, tmp_p
     monkeypatch.setattr(llm, "_post", post)
     assert llm._ask_free("a/m1:free", "p", "review", cfg, "k", NOW) is None
     assert calls == [6000]                             # a paid request is not spent on a model that simply cannot follow the format
+
+
+# ---- 20 Nov 2026: OpenRouter's free reasoning models thought until the cap (6,000 of 6,000 tokens) even at effort "low"; a thinking budget lets them answer ----
+
+def test_a_free_openrouter_model_gets_a_thinking_budget_by_role_and_the_owners_provider_does_not(monkeypatch, tmp_path):
+    import freemodels
+
+    cfg = _race_setup(monkeypatch, tmp_path, ["a/m1:free"], max_output_tokens=6000)
+    monkeypatch.setattr(freemodels, "count_request", lambda now, role: None)
+    sent = []
+    monkeypatch.setattr(llm, "_post", lambda payload, key: sent.append(dict(payload)) or {"choices": [{"message": {"content": '{"ok": 1}'}}], "usage": {}})
+    for role in ("script", "review", "cheap"):
+        llm._ask_free("a/m1:free", "p", role, cfg, "k", NOW)
+    assert [s_["reasoning"] for s_ in sent] == [{"max_tokens": 1024}, {"max_tokens": 3000}, {"max_tokens": 512}]
+    monkeypatch.setattr(llm, "_pace_extra", lambda mid: None)
+    llm._ask_free("extra:gemini-3.5-flash", "p", "script", cfg, "k", NOW)
+    assert "reasoning" not in sent[-1]  # the owner's provider is sent exactly what it was sent before
+
+
+def test_a_cut_off_writer_is_asked_again_without_thinking_and_a_judge_with_a_small_budget(monkeypatch, tmp_path):
+    import freemodels
+
+    cfg = _race_setup(monkeypatch, tmp_path, ["a/m1:free"], max_output_tokens=6000)
+    monkeypatch.setattr(freemodels, "count_request", lambda now, role: None)
+    for role, second in (("script", {"enabled": False}), ("review", {"max_tokens": 1024})):
+        sent = []
+
+        def post(payload, key):
+            sent.append(dict(payload))
+            if len(sent) == 1:
+                return {"choices": [{"message": {"content": '{"lines": [{"n": 1'}, "finish_reason": "length"}], "usage": {}}
+            return {"choices": [{"message": {"content": '{"ok": 1}'}}], "usage": {}}
+
+        monkeypatch.setattr(llm, "_post", post)
+        assert llm._ask_free("a/m1:free", "p", role, cfg, "k", NOW) == {"ok": 1}
+        assert sent[1]["reasoning"] == second and sent[1]["max_tokens"] == 12000
+
+
+def test_a_model_that_refuses_the_thinking_budget_is_asked_again_as_before(monkeypatch, tmp_path):
+    import freemodels
+    import requests
+
+    cfg = _race_setup(monkeypatch, tmp_path, ["a/m1:free"], max_output_tokens=6000)
+    monkeypatch.setattr(freemodels, "count_request", lambda now, role: None)
+    sent = []
+
+    def post(payload, key):
+        sent.append(dict(payload))
+        if "reasoning" in payload:
+            r = requests.Response()
+            r.status_code = 400
+            raise requests.HTTPError("400: unknown parameter 'reasoning'", response=r)
+        return {"choices": [{"message": {"content": '{"ok": 1}'}}], "usage": {}}
+
+    monkeypatch.setattr(llm, "_post", post)
+    assert llm._ask_free("a/m1:free", "p", "script", cfg, "k", NOW) == {"ok": 1}
+    assert len(sent) == 2 and "reasoning" not in sent[1] and sent[1]["response_format"] == {"type": "json_object"}  # JSON mode kept: only the budget was refused
+
+
+@pytest.mark.parametrize("reply, expected", [
+    ('{"lines": [{"text": "He wrote a closing } by mistake"}]}', {"lines": [{"text": "He wrote a closing } by mistake"}]}),
+    ('{"ok": true} I checked every line.', {"ok": True}),
+    ('Here it is:\n```json\n{"ok": true, "note": "a { in text"}\n```', {"ok": True, "note": "a { in text"}),
+    ('Thinking about {the set} first. {"ok": true}', {"ok": True}),
+    ('{"text": "a } b"} done', {"text": "a } b"}),
+    ('[1, 2] then {"ok": 1}', {"ok": 1}),
+], ids=["brace-in-string", "reasoning-after", "fenced-with-brace", "brace-in-reasoning", "brace-in-string-then-words", "array-first"])
+def test_parse_json_reads_the_first_object_whatever_surrounds_it(reply, expected):
+    """20 Nov 2026: a brace counter that ignored strings rejected fenced replies whose text held a lone brace."""
+    assert llm.parse_json(reply) == expected
+
+
+def test_parse_json_still_refuses_a_reply_with_no_object():
+    with pytest.raises(ValueError):
+        llm.parse_json("no json here {not json}")
+
+
+# ---- 20 Nov 2026: a free judge held a request 600.8 s against a 120 s limit (OpenRouter keeps slow requests alive with whitespace) ----
+
+class _Trickle:
+    """An answer that sends a byte of whitespace every 50 ms and never finishes, like a keep-alive on a slow model."""
+    status_code = 200
+    headers = {}
+
+    def __init__(self, seconds=5.0, end=b""):
+        self.seconds, self.end, self.closed = seconds, end, False
+
+    def iter_content(self, n):
+        import time as _t
+
+        t0 = _t.monotonic()
+        while _t.monotonic() - t0 < self.seconds:
+            _t.sleep(0.05)
+            yield b" "
+        if self.end:
+            yield self.end
+
+    def close(self):
+        self.closed = True
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        import json as _j
+
+        return _j.loads(self._content)
+
+
+def test_a_request_kept_alive_with_whitespace_is_dropped_at_the_total_limit(monkeypatch):
+    import time as _t
+
+    import requests
+
+    reply = _Trickle(seconds=5.0)
+    monkeypatch.setattr(llm.requests, "post", lambda url, **kw: reply)
+    t0 = _t.monotonic()
+    with pytest.raises(requests.Timeout):
+        llm._post({"model": "a/m1:free", "messages": [], "max_tokens": 10, "_timeout_s": 0.3}, "k")
+    assert _t.monotonic() - t0 < 1.5 and reply.closed  # dropped soon after 0.3 s, not after the 5 s the model kept talking
+
+
+def test_an_answer_that_ends_in_time_is_read_whole(monkeypatch):
+    reply = _Trickle(seconds=0.1, end=b'{"choices": [{"message": {"content": "{}"}}]}')
+    monkeypatch.setattr(llm.requests, "post", lambda url, **kw: reply)
+    assert llm._post({"model": "a/m1:free", "messages": [], "max_tokens": 10, "_timeout_s": 5}, "k") == {"choices": [{"message": {"content": "{}"}}]}

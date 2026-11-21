@@ -13,8 +13,8 @@ Every 6 hours.
 5. Read the inbox: problems the script reviewer posted (the same rule holding scripts, or its model silent) get the safe fix of reviewing its saved held scripts again after a fix; if they still hold, write a post-mortem naming the rule that fires and hand the task to the owner.
 6. Learn: every attempt is a lesson.
 ## Tools
-agenthealth via doctor.py, escalate, lessons, agentbus, vetskill, scriptreview.recheck_held.
+agenthealth via doctor.py, escalate, lessons, agentbus, vetskill, scriptreview.recheck_held, recovery.scan (renders a power cut stopped: report what is kept and the resume step).
 ## Never
-Install software. Run a command that is not a registered job. Put a draft skill into service (the owner adds it with extend.py after vetskill). Make anything public or delete anything.
+Install software. Start or resume a render (a cut film is Autopilot's to continue). Run a command that is not a registered job. Put a draft skill into service (the owner adds it with extend.py after vetskill). Make anything public or delete anything.
 ## Escalate
 Everything it cannot fix becomes a task for the owner with the commands to run.

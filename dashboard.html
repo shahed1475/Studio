@@ -343,7 +343,7 @@ button.wd{cursor:pointer}button.wd:hover{transform:translateY(-2px);border-color
 <div class="toast" id="toast" role="status"></div>
 
 <script>
-const NAV=[["home","Home","squares-four"],["live","Live","broadcast"],["videos","Videos","film-strip"],["autopilot","Autopilot","robot"],["desk","Tasks","list-checks"],["create","Create","magic-wand"],["growth","Growth","sparkle"],["activity","Activity","pulse"],["youtube","YouTube","youtube-logo"]]; const TOOLS=[["footage","Footage","film-slate"],["channels","Channels","users-three"],["downloads","Downloads","download-simple"]]; const SET=["settings","Settings","gear-six"];
+const NAV=[["home","Home","squares-four"],["live","Live","broadcast"],["videos","Videos","film-strip"],["autopilot","Autopilot","robot"],["desk","Tasks","list-checks"],["create","Create","magic-wand"],["growth","Growth","sparkle"],["activity","Activity","pulse"],["youtube","YouTube","youtube-logo"]]; const TOOLS=[["footage","Footage","film-slate"],["channels","Channels","users-three"],["downloads","Downloads","download-simple"],["reports","Reports","books"]]; const SET=["settings","Settings","gear-six"];
 let weekDone=false;
 let apSub=(()=>{try{return sessionStorage.getItem('apSub')||'overview'}catch(e){return 'overview'}})();
 let S=null,tab=(location.hash.slice(1)||"home"),openSlug=null,openJob=null,ytInfo=null,editing=false,lastSig="",logTimer=null;
@@ -408,14 +408,14 @@ async function refresh(force){
 }
 function chrome(){
   if(S.tenant&&!NAV.some(n=>n[0]==="niche"))NAV.splice(4,0,["niche","Niche","list-checks"]);
-  if(S.tenant){const d=TOOLS.findIndex(n=>n[0]==="downloads");if(d>=0)TOOLS.splice(d,1)}  // the downloader is the owner's own tool on the owner's own computer: user studios never get it
+  if(S.tenant){for(const k of ["downloads","reports"]){const d=TOOLS.findIndex(n=>n[0]===k);if(d>=0)TOOLS.splice(d,1)}}  // the downloader and the Reports page are the owner's own tools: user studios never get them
   const c=S.counts["needs review"],r=running();
   document.getElementById("navlist").innerHTML=NAV.map(([k,l,i])=>`<button class="${tab===k?"on":""}" onclick="go('${k}',{slug:null})" ${tab===k?'aria-current="page"':""}>${ico(i)}<span class="t">${l}</span>${k==="videos"&&c?`<span class="count">${c}</span>`:""}${k==="autopilot"&&S.autopilot.needs_you?`<span class="count">${S.autopilot.needs_you}</span>`:""}${k==="growth"&&S.agent&&S.agent.unread?`<span class="count">${S.agent.unread}</span>`:""}</button>`).join("");
   document.getElementById("nav3").innerHTML=TOOLS.map(([k,l,i])=>`<button class="${tab===k?"on":""}" onclick="go('${k}',{slug:null})" ${tab===k?'aria-current="page"':""}>${ico(i)}<span class="t">${l}</span></button>`).join("");
   document.getElementById("nav2").innerHTML=(([k,l,i])=>`<button class="${tab===k?"on":""}" onclick="go('${k}',{slug:null})" ${tab===k?'aria-current="page"':""}>${ico(i)}<span class="t">${l}</span></button>`)(SET);
   const au=S.auth&&S.auth.on, bt=(k,l,i,x="")=>`<button class="${tab===k?"on":""}" onclick="go('${k}',{slug:null})">${ico(i)}<span class="t">${l}</span>${x}</button>`;
   document.getElementById("nav2").innerHTML+=au?`<button class="logout" onclick="logout()">${ico("sign-out")}<span class="t">Sign out</span></button>`:"";
-  const nv=S.autopilot.needs_you,gv=S.agent&&S.agent.unread,more=["create","growth","activity","youtube","settings","footage","channels","downloads","niche","desk"].includes(tab);
+  const nv=S.autopilot.needs_you,gv=S.agent&&S.agent.unread,more=["create","growth","activity","youtube","settings","footage","channels","downloads","reports","niche","desk"].includes(tab);
   document.getElementById("tabbar").innerHTML=NAV.slice(0,4).map(([k,l,i])=>bt(k,l,i,k==="videos"&&c?`<span class="count">${c}</span>`:k==="autopilot"&&nv?`<span class="count">${nv}</span>`:"")).join("")+`<button class="${more?"on":""}" onclick="sheet()" aria-haspopup="true">${ico("dots-three")}<span class="t">More</span>${gv?`<span class="count">${gv}</span>`:""}</button>`;
   document.getElementById("sheetcard").innerHTML=`<div class="state"><b>${r||S.autopilot.busy?"Working":"Idle"}</b>${r?esc(r.cmd):S.autopilot.busy?"Autopilot or a repair is running":"Nothing is running"}</div>`+[...NAV.slice(4),...TOOLS,SET].map(([k,l,i])=>bt(k,l,i,k==="growth"&&gv?`<span class="count">${gv}</span>`:"")).join("")+[["/now","Right now","pulse"],["/footage","Footage clips","film-strip"],["/channels","Channels","squares-four"]].map(([h,l,i])=>`<button onclick="location.href='${h}'">${ico(i)}<span class="t">${l}</span></button>`).join("")+(au?`<button onclick="logout()">${ico("sign-out")}<span class="t">Sign out</span></button>`:"");
   document.documentElement.classList.toggle("busy",!!r);
@@ -429,7 +429,7 @@ function chrome(){
 function render(force){
   if(!S)return;chrome();
   const m=document.getElementById("main");
-  ({home,live,videos,create,niche,autopilot,growth,activity,youtube,settings,footage,channels,downloads,desk})[tab]?.(m);
+  ({home,live,videos,create,niche,autopilot,growth,activity,youtube,settings,footage,channels,downloads,reports,desk})[tab]?.(m);
   if(tab==="home"){loadRisk();paintHomeLive()}
   if(tab==="videos"&&!weekDone){weekDone=true;requestAnimationFrame(()=>document.querySelector(".week .wd.today")?.scrollIntoView({inline:"center",block:"nearest"}))}  // the week strip opens on today, once per visit
   if(force===true){[...m.children].forEach((c,i)=>{c.classList.remove("rise");void c.offsetWidth;c.classList.add("rise");c.style.setProperty("--i",Math.min(i,9))});countUp(m)}
@@ -673,6 +673,39 @@ function downloads(m){
   <p>The downloader runs on your own computer, not on this server, so the videos are saved in a folder on your Desktop. It only downloads videos from channels you list there as your own.</p>
   <div><a class="btn" href="${DOWNLOADER}" target="_blank" rel="noopener" style="text-decoration:none">Open the downloader</a></div>
   <p class="help">If the page does not open, the downloader is not running. Start it on your computer with <span class="mono">systemctl --user start studio-mydownloads</span>. This button cannot work from a phone, because the downloader lives on your computer.</p></div></div>`;
+}
+
+/* ---------- Reports (reportsview.py: what the Claude Code sessions checked, built and fixed; read only, the owner's studio only) ---------- */
+let RP={list:null,open:null};
+const mdInline=s=>s.replace(/`([^`]+)`/g,'<span class="mono">$1</span>').replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>");
+function mdLite(t){  // the text is escaped FIRST; only headings, lists, tables, code, bold are turned into tags, never a link or an attribute from the file
+  const L=esc(t).split("\n"),o=[],cells=r=>r.trim().replace(/^\||\|$/g,"").split("|").map(c=>c.trim()),sep=r=>cells(r).every(c=>/^:?-{2,}:?$/.test(c)),item=/^\s*([-*]|\d+\.)\s+/;let i=0;
+  while(i<L.length){const l=L[i];
+    if(/^\s*```/.test(l)){const b=[];i++;while(i<L.length&&!/^\s*```/.test(L[i]))b.push(L[i++]);i++;o.push(`<pre class="mono" style="white-space:pre-wrap;margin:8px 0">${b.join("\n")}</pre>`);continue}
+    const h=l.match(/^(#{1,4})\s+(.*)$/);if(h){const n=Math.min(h[1].length+1,4);o.push(`<h${n} style="margin:16px 0 8px">${mdInline(h[2])}</h${n}>`);i++;continue}
+    if(/^\s*\|/.test(l)){const rows=[];while(i<L.length&&/^\s*\|/.test(L[i]))rows.push(L[i++]);const body=rows.filter(r=>!sep(r));o.push(`<div style="overflow-x:auto;margin:8px 0"><table class="gtab">${body.map((r,k)=>`<tr>${cells(r).map(c=>k===0?`<th>${mdInline(c)}</th>`:`<td>${mdInline(c)}</td>`).join("")}</tr>`).join("")}</table></div>`);continue}
+    if(item.test(l)){const it=[],ol=/^\s*\d+\./.test(l);while(i<L.length&&item.test(L[i]))it.push(L[i++].replace(item,""));o.push(`<${ol?"ol":"ul"} style="margin:6px 0 6px 22px">${it.map(x=>`<li>${mdInline(x)}</li>`).join("")}</${ol?"ol":"ul"}>`);continue}
+    if(!l.trim()){i++;continue}
+    const p=[];while(i<L.length&&L[i].trim()&&!/^(#{1,4}\s|\s*\||\s*```)/.test(L[i])&&!item.test(L[i]))p.push(L[i++]);o.push(`<p style="margin:6px 0">${mdInline(p.join(" "))}</p>`)}
+  return o.join("")}
+async function reports(m){
+  if(document.getElementById("rp_root"))return;  // a state refresh keeps the page and the place you are reading
+  m.innerHTML=`<div id="rp_root"><div class="head"><h1>Reports</h1><p class="sub">What the Claude Code sessions checked, built and fixed, and what waits for your decision. Read only: the files are in the studio's reports folder.</p></div><div id="rp_body"><div class="skel" style="height:120px"></div></div></div>`;
+  try{RP.list=await api("/api/reports")}catch(e){const b=document.getElementById("rp_body");if(b)b.innerHTML=`<div class="panel pad"><p class="err">The reports could not be read: ${esc(e.message||e)}</p></div>`;return}
+  if(!RP.open||!RP.list.reports.some(r=>r.name===RP.open))RP.open=RP.list.start;
+  rpPaint();if(RP.open)await rpOpen(RP.open,false);
+}
+function rpPaint(){
+  const L=RP.list.reports,b=document.getElementById("rp_body");if(!b)return;
+  b.innerHTML=L.length?`<div class="panel pad" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><label for="rp_sel" class="mute">Report (${L.length}, newest first)</label><select id="rp_sel" style="flex:1 1 260px;min-width:0;max-width:100%" onchange="rpOpen(this.value)">${L.map(r=>`<option value="${esc(r.name)}" ${r.name===RP.open?"selected":""}>${esc(r.title)} · ${esc(r.modified)}${r.name===RP.list.start?" · start here":""}</option>`).join("")}</select>${RP.list.start?`<button class="btn quiet sm" type="button" onclick="rpOpen(RP.list.start)">Start here</button>`:""}</div><div class="sec"><div class="panel pad" id="rp_doc"><div class="skel" style="height:200px"></div></div></div>`
+    :`<div class="sec"><div class="panel">${empty("books","No reports yet","A report appears here when a Claude Code session writes one to the reports folder.")}</div></div>`;
+}
+async function rpOpen(name,scroll=true){
+  RP.open=name;const sel=document.getElementById("rp_sel");if(sel)sel.value=name;
+  let d;try{d=await api("/api/reports?name="+encodeURIComponent(name))}catch(e){const b=document.getElementById("rp_doc");if(b)b.innerHTML=`<p class="err">This report could not be read: ${esc(e.message||e)}</p>`;return}
+  const b=document.getElementById("rp_doc");if(!b||RP.open!==name)return;  // another report was chosen while this one loaded
+  b.innerHTML=`<p class="mute" style="margin-bottom:8px">${esc(d.name)} · ${esc(d.modified)} · ${Math.max(1,Math.round(d.bytes/1024))} KB${d.cut?" · shown cut, the file is longer":""}</p><div class="md">${mdLite(d.text)}</div>`;
+  if(scroll)b.scrollIntoView({block:"start",behavior:"smooth"});
 }
 
 /* ---------- Home ---------- */
@@ -972,6 +1005,7 @@ async function autopilot(m){
     <p class="sub" style="margin-bottom:14px">${c.make_videos!==false?"Autopilot writes, draws and renders new videos itself and spends OpenRouter credit (the key is saved in Settings).":"Free: you or a Claude Code session make the videos. Autopilot only repairs, reviews, schedules and uploads what already exists."}</p>
     <label class="tick"><input type="checkbox" id="ap_nv" ${c.news_videos?"checked":""} onchange="editing=true"> Make draft videos from the weekly YouTube news (these always wait for you)</label>
     <div><label>Documentary publish times (US Eastern)</label>${slotEditor("apSlots")}</div>
+    ${(()=>{const L=A.doc_length||{min:20,max:26,lines:[84,100],words:2940,limits:[5,30]};return `<div><label for="ap_dl0">Documentary length (minutes)</label><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input id="ap_dl0" type="number" min="${L.limits[0]}" max="${L.limits[1]-1}" step="1" value="${L.min}" style="width:90px" aria-label="Shortest documentary in minutes"> to <input id="ap_dl1" type="number" min="${L.limits[0]+1}" max="${L.limits[1]}" step="1" value="${L.max}" style="width:90px" aria-label="Longest documentary in minutes"><button type="button" class="btn sm" onclick="apDocLen()">Save length</button></div><div class="help">New documentaries are written for this: about ${L.lines[0]} to ${L.lines[1]} lines and ${Number(L.words).toLocaleString()} words. Shorts keep their own length; videos already made are not changed.</div></div>`})()}
     <hr style="border:0;border-top:1px solid var(--line);margin:4px 0">
     <label class="tick"><input type="checkbox" id="ap_sh" ${c.shorts?"checked":""} onchange="editing=true"> Also make YouTube Shorts (vertical videos under a minute)</label>
     <div class="fld">
@@ -1022,7 +1056,7 @@ async function autopilot(m){
       <div class="pad" style="display:flex;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--line)"><div class="grow"><label for="ch_in" style="position:absolute;left:-9999px">Channel</label><input id="ch_in" placeholder="@channelname or a youtube.com/@name link" onkeydown="if(event.key==='Enter')apChannelAdd()"></div><button class="btn" onclick="apChannelAdd()">${ico("plus")}Add channel</button></div>
       ${A.channels.refs.length?`<div class="rows" style="max-height:620px;overflow:auto">${A.channels.refs.map(r=>{const c=(A.channels.digest?.channels||[]).find(x=>(x.channel_id===r)||(x.ref===r)),mt=A.channels.meta[r]||{},byAgent=mt.source==="agent",name=c?c.channel:(mt.title||r),days=c&&c.latest?Math.max(0,Math.round((Date.now()-Date.parse(c.latest))/864e5)):null;return `<div><div class="grow"><div class="ttl">${esc(name)} ${byAgent?badge("Found by the agent","ok"):badge("Added by you","mute")}${mt.fit===false?" "+badge("May not fit your niche","warn"):""}</div>${byAgent&&mt.why?`<div class="mute">${esc(mt.why)}</div>`:""}${c&&c.top&&c.top.length?`<div class="mute">Top: ${c.top.slice(0,3).map(v=>`<a target="_blank" rel="noopener" href="${esc(url(v.url))}">${esc(v.title)}</a> (${v.views.toLocaleString()})`).join(", ")}${days!==null?`. Last video ${days===0?"today":days+" days ago"}.`:""}</div>`:`<div class="mute">${c&&c.error?esc(c.error):"Not studied yet. Press Study now."}</div>`}</div><button class="btn danger sm" data-r="${esc(r)}" aria-label="Remove channel" onclick="apChannelRemove(this)">${ico("trash")}</button></div>`}).join("")}</div>`:empty("youtube-logo","No reference channels yet","Add channels that make videos like yours, or press Find channels now and the agent will pick some.")}
       ${A.channels.suggestions.length?`<div class="pad" style="border-top:1px solid var(--line)"><b>Channels that keep showing up in your niche</b><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${A.channels.suggestions.slice(0,6).map(c=>`<button class="btn quiet sm" data-r="${esc(c.channel_id)}" onclick="apChannelSuggest(this)">${esc(c.channel)}</button>`).join("")}</div></div>`:""}
-      ${A.channels.digest&&A.channels.digest.ideas.length?`<div class="pad" style="border-top:1px solid var(--line)"><b>Topic ideas to review</b><p class="mute" style="margin:4px 0 8px">Fresh angles on themes that work. The writer model can get facts wrong, so check each one.</p>${A.channels.digest.ideas.map(t=>`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:6px 0"><span class="grow">${esc(t)}</span><button class="btn quiet sm" data-t="${esc(t)}" onclick="apIdea(this)">Add to queue</button></div>`).join("")}</div>`:""}
+      ${A.channels.digest&&(A.channels.digest.ideas||[]).length?`<div class="pad" style="border-top:1px solid var(--line)"><b>Topic ideas to review</b><p class="mute" style="margin:4px 0 8px">Fresh angles on themes that work. The writer model can get facts wrong, so check each one.</p>${(A.channels.digest.ideas||[]).map(t=>`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:6px 0"><span class="grow">${esc(t)}</span><button class="btn quiet sm" data-t="${esc(t)}" onclick="apIdea(this)">Add to queue</button></div>`).join("")}</div>`:""}
       <div class="pad" style="border-top:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn quiet" ${busy||!A.channels.refs.length?"disabled":""} onclick="job('channels')">${ico("pulse")}Study now</button><span class="mute">About 3 YouTube units per channel, so ${A.channels.refs.length*3} units for the whole list.</span></div></div></div>
 
   <div class="sec" data-ap="research"><h2>YouTube watch</h2><p class="sub" style="margin-bottom:12px">Every Monday the agent reads official YouTube and Google security and policy news and writes a plain summary. It only repeats what the sources say.</p>
@@ -1044,6 +1078,7 @@ function slotEditor(name){
   const arr=window[name]||(name==="apSlots"?apSlots:apShort);
   return `<div class="stack" style="gap:8px">${arr.map((sl,i)=>`<div class="slotrow"><select onchange="${name}[${i}].day=this.value;editing=true">${DAYS.map(([k,l])=>`<option value="${k}" ${sl.day===k?"selected":""}>${l}</option>`).join("")}</select><input type="time" value="${esc(sl.time)}" onchange="${name}[${i}].time=this.value;editing=true"><button class="btn danger sm" aria-label="Remove time" onclick="${name}.splice(${i},1);editing=true;autopilot(document.getElementById('main'))">${ico("trash")}</button></div>`).join("")}</div><div style="margin-top:8px"><button class="btn quiet sm" onclick="${name}.push({day:'sat',time:'10:00'});editing=true;autopilot(document.getElementById('main'))">${ico("plus")}Add a time</button></div>`}
 function apSrc(v){document.getElementById("ap_mv").checked=v;apSet({make_videos:v})}
+async function apDocLen(){const lo=Number(document.getElementById("ap_dl0").value),hi=Number(document.getElementById("ap_dl1").value);try{const r=await api("/api/rules/doc-length",{min:lo,max:hi});toast(`Documentaries: ${r.min} to ${r.max} minutes, about ${r.lines[0]} to ${r.lines[1]} lines`);AP=null;refresh(true)}catch(e){toast(e.message||"Could not save the length")}}
 async function apSet(o){await api("/api/autopilot/config",o);editing=false;toast(o.enabled?"Autopilot is on":o.enabled===false?"Autopilot is off":"Saved");await apRefresh();refresh(true)}
 async function apSave(){const n=id=>parseInt(document.getElementById(id).value,10);await apSet({uploads_per_day:n("ap_up"),review_window_hours:n("ap_rw"),min_queue:n("ap_q"),prepare_hours:n("ap_pa"),max_waiting:n("ap_w"),auto_approve:document.getElementById("ap_aa").checked,news_videos:document.getElementById("ap_nv").checked,make_videos:document.getElementById("ap_mv").checked,slots:apSlots,shorts:document.getElementById("ap_sh").checked,shorts_per_day:n("ap_spd"),max_waiting_shorts:n("ap_sw"),short_slots:apShort})}
 async function apIdea(b){await api("/api/queue/add",{topic:b.dataset.t});b.disabled=true;b.textContent="Added";toast("Added to the topic queue")}
@@ -1350,13 +1385,13 @@ function xllmCard(){
     <div style="display:flex;gap:10px;flex-wrap:wrap"><div class="grow"><label for="xlk" style="position:absolute;left:-9999px">Provider key</label><input id="xlk" type="password" autocomplete="new-password" spellcheck="false" placeholder="Paste the provider's API key" oninput="editing=true"></div><button class="btn" onclick="saveKey('extra_llm','xlk')">Save key</button></div>
     <div class="fld"><div><label for="xlu">Base address</label><input id="xlu" value="${esc(x.url||"")}" placeholder="http://127.0.0.1:31415/v1" spellcheck="false" oninput="editing=true"><div class="help">https:// to a public service, or http://127.0.0.1:PORT/v1 for a proxy on this PC (tick the box below).</div></div></div>
     <div class="fld"><div><label for="xls">Models for writing scripts</label><input id="xls" value="${esc(x.script||"")}" placeholder="auto" spellcheck="false" oninput="editing=true"><div class="help">Model names as your provider lists them, separated by commas (at most 6). "auto" lets a proxy choose.</div></div>
-      <div><label for="xlr">Models for fact-checking (judges)</label><input id="xlr" value="${esc(x.review||"")}" placeholder="auto" spellcheck="false" oninput="editing=true"><div class="help">The model that just wrote a script is never its own judge: give a different one here.</div></div></div>
+      <div><label for="xlr">Models for fact-checking (judges)</label><input id="xlr" value="${esc(x.review||"")}" placeholder="a model name" spellcheck="false" oninput="editing=true"><div class="help">The model that wrote a script is never its own judge: name models that are not on the writing list. "auto" is refused here, because the provider could pick the writer.</div></div></div>
     <label class="mute" style="display:flex;gap:8px;align-items:center">${ck("xlo",x.on)} Use this provider</label>
     <label class="mute" style="display:flex;gap:8px;align-items:center">${ck("xll",x.local)} It runs on this PC (allows plain http to 127.0.0.1 or localhost)</label>
     <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn" onclick="saveXllm()">Save provider settings</button><button class="btn quiet" id="xltb" onclick="testXllm()">Test it</button></div>
-    <div id="xlout" class="mute" aria-live="polite"></div></div>`}
+    <div id="xlout" class="mute" aria-live="polite" style="white-space:pre-line"></div></div>`}
 async function saveXllm(){const v=id=>document.getElementById(id);try{await api("/api/extra-llm/save",{url:v("xlu").value,script:v("xls").value,review:v("xlr").value,on:v("xlo").checked,local:v("xll").checked});editing=false;toast("Provider settings saved");render(true)}catch(e){toast(e.message||String(e))}}
-async function testXllm(){const b=document.getElementById("xltb"),o=document.getElementById("xlout");b.disabled=true;o.textContent="Asking the first model one small question...";try{const r=await api("/api/extra-llm/test",{});o.textContent=(r.ok?"\u2713 ":"\u2717 ")+(r.model?r.model+": ":"")+r.detail+(r.seconds!=null?" ("+r.seconds+" s)":"")}catch(e){o.textContent="The test could not run: "+(e.message||e)}b.disabled=false}
+async function testXllm(){const b=document.getElementById("xltb"),o=document.getElementById("xlout");b.disabled=true;o.textContent="Reading the provider's model list, then asking one writer and one judge a small question...";try{const r=await api("/api/extra-llm/test",{}),line=x=>(x.ok?"\u2713 ":"\u2717 ")+(x.role?(x.role==="review"?"judge":"writer")+" \u00b7 ":"")+(x.model?x.model+": ":"")+x.detail+(x.seconds!=null?" ("+x.seconds+" s)":"");o.textContent=r.rows&&r.rows.length?r.rows.map(line).join("\n"):line(r)}catch(e){o.textContent="The test could not run: "+(e.message||e)}b.disabled=false}
 async function saveKey(which,id){const el=document.getElementById(id),v=el.value.trim();if(!v)return toast("Paste a key first");await api("/api/key/save",{which,value:v});el.value="";editing=false;toast("Key saved and hidden");render(true)}
 async function llmClearKey(){if(!confirm("Remove the saved OpenRouter key? OpenRouter will be turned off."))return;await api("/api/llm/config",{enabled:false,clear_key:true});editing=false;toast("Key removed");render(true)}
 async function llmClearAKey(){if(!confirm("Remove the saved Claude key?"))return;await api("/api/llm/config",{clear_anthropic_key:true});editing=false;toast("Key removed");render(true)}

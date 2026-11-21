@@ -11,6 +11,7 @@
   python run.py seo NAME         search-based title options, description and tags
   python run.py review NAME      reviewer agent checks a finished video
   python run.py autopilot tick|status   one automation pass / show state
+  python run.py autopilot make short|doc [--no-review]   one supervised make (+ review) by Autopilot's own steps: never approves, schedules or uploads
   python run.py newswatch        weekly YouTube security/policy news digest
   python run.py policywatch      daily: has YouTube changed its rule pages?
   python run.py titletest        daily: weak title? suggest (or change) one, then check it was better
@@ -250,7 +251,78 @@ def cmd_make(topic: str | None = None, extra: dict | None = None) -> Path:
     return _charged(lambda t: _cmd_make(t, extra), topic)
 
 
+_RUN_WORK: list[Path] = []  # the work folder of the film being made, so a stop is recorded in its checkpoint
+
+
+def _records_stop(fn):
+    """A film's progress is recorded in work/checkpoint.json (checkpoint.py). A run that ends, well or badly, records its end; one that a power cut or a kill stops
+    does not, and the next make of the same film sees that it was interrupted, keeps every finished voice line, scene and picture, and does not count the cut
+    against the film's three tries (_cmd_doc)."""
+    import functools
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        _RUN_WORK.clear()
+        try:
+            return fn(*args, **kwargs)
+        except BaseException as e:
+            if _RUN_WORK:
+                import checkpoint
+
+                checkpoint.end_run(_RUN_WORK[-1], f"stopped: {type(e).__name__}: {e}"[:300])
+            raise
+    return wrapper
+
+
+PENDING_SHORT = config.ROOT / "data" / "pending_short.json"  # a Short whose script passed its gate but whose video is not finished (a cut, a crash)
+
+
+def _pending_short() -> dict | None:
+    import checkpoint
+
+    saved = checkpoint.read_json(PENDING_SHORT)
+    if not isinstance(saved.get("data"), dict) or not saved.get("topic") or saved.get("tries", 0) >= MAX_RESUMES:
+        return None
+    return saved
+
+
+def _finished_pending(saved: dict, pending: Path) -> Path | None:
+    """The saved video's own folder when that video was already finished: its record and video are there, so a cut came after the record was saved and
+    before the saved script was cleared (21 Nov 2026 review: the resume then made the same video again in a new folder, a duplicate). The producer's last
+    two steps are completed (its work folder removed, the saved script cleared) and nothing is made again."""
+    old = config.OUT / saved["folder"] if saved.get("folder") else None
+    if not old or not (old / "meta.json").is_file() or not (old / "video.mp4").is_file():
+        return None
+    try:
+        meta = json.loads((old / "meta.json").read_text())
+    except (OSError, ValueError):
+        return None
+    data = saved.get("data") or {}
+    topic = data.get("topic") or saved.get("topic")
+    if meta.get("title") != data.get("title") and not (topic and meta.get("topic") == topic):  # the title may have been polished since; the topic stays
+        return None
+    shutil.rmtree(old / "work", ignore_errors=True)
+    pending.unlink(missing_ok=True)
+    pending.with_name(pending.name + ".prev").unlink(missing_ok=True)
+    print(f"The saved {'Short' if pending == PENDING_SHORT else 'film'} was already finished in {old.name} (a cut came just after its record was saved): nothing is made again")
+    return old
+
+
 def _cmd_make(topic: str | None = None, extra: dict | None = None) -> Path:
+    saved = _pending_short() if not topic and not extra else None
+    done = _finished_pending(saved, PENDING_SHORT) if saved else None
+    if done:
+        return done
+    if saved:  # 20 Nov 2026 (load-shedding): an unfinished Short continues in its own folder; kept voice lines and checked scenes are not made again
+        import checkpoint
+
+        old = config.OUT / saved["folder"] if saved.get("folder") else None
+        cut = bool(old and checkpoint.was_interrupted(old / "work"))
+        if not cut:
+            saved["tries"] = saved.get("tries", 0) + 1
+        checkpoint.write_json(PENDING_SHORT, saved)
+        print(f"Resuming the saved Short (try {saved['tries']}{', after an interruption' if cut else ''}): {saved['data'].get('title', '')}")
+        return _produce_short(saved["data"], saved["topic"], folder=old if old and old.is_dir() and not (old / "meta.json").exists() else None, pending=True)
     if not topic:
         topic = _best_topic("short")
         if not topic:
@@ -279,13 +351,15 @@ def _cmd_make(topic: str | None = None, extra: dict | None = None) -> Path:
     if not data:
         raise SystemExit("could not generate a script")
     data.update(extra or {})
-    return _produce_short(data, topic)
+    return _produce_short(data, topic, pending=not extra)
 
 
-def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int = 6, min_unique: int = 4, folder: Path | None = None) -> Path:
+@_records_stop
+def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int = 6, min_unique: int = 4, folder: Path | None = None, pending: bool = False) -> Path:
     """Voice, footage, render and metadata for a finished Short script. requeue: put the topic back in the queue if footage is missing.
     folder: re-render inside this existing folder (it is never removed if the footage is missing)."""
     data = _apply_house_style(data, "short", folder)
+    data.setdefault("format", "short")  # 20 Nov 2026: a new Short's record had no format key (records.format_of guessed right, but every reader should not have to guess)
     data["lines"], n = scriptgen.subscribe_invitation(data["lines"])  # every render path (new, redo, repair, clip): the voice and the captions say "subscribe", never "follow"
     if n:
         print("  closing invitation reworded: subscribe, not follow")
@@ -294,12 +368,27 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
     folder = folder or unique_folder(config.OUT / slug)
     work = folder / "work"
     folder.mkdir(parents=True, exist_ok=True)
+    import checkpoint
+
+    _RUN_WORK.append(work)
+    began = checkpoint.start_run(work, "short")
+    if began["interrupted"]:
+        print(f"  this Short was interrupted (last run started {began['previous'].get('started', '?')}): resuming; kept voice lines and checked scenes are not made again")
+    if pending:  # saved with its look applied, so a resume renders the same Short in the same folder
+        old = checkpoint.read_json(PENDING_SHORT)
+        same = old.get("data", {}).get("title") == data.get("title")
+        checkpoint.write_json(PENDING_SHORT, {"data": data, "topic": topic, "folder": folder.name, "tries": old.get("tries", 0) if same else 0})
     if scriptgen.thin_script(data["lines"]):  # refuse before a voice and pictures are paid for
         if requeue:
             topicqueue.requeue_failed(topic)
         if not in_place:
             shutil.rmtree(folder, ignore_errors=True)
+        if pending:
+            PENDING_SHORT.unlink(missing_ok=True)
         raise SystemExit("the Short's script admits its sources say little; not made")
+    import a2a
+
+    a2a.handoff(data, "script", job=folder.name, work=work, min_lines=3)  # 21 Nov 2026: a Short's stages are checked and recorded like a film's (a2a.py)
     print("Voice + captions...")
     prof = editprofile.load()
     voice = {"style": data["voice_style"]} if data.get("voice_style") else {}  # only a video that asks for one gets a styled voice
@@ -307,6 +396,8 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
         voice["tail"] = data["voice_tail"]
     narration, ass, durations = tts.narrate([l["text"] for l in data["lines"]], work, editprofile.short_pause(prof), prof["motion"], prof["caption_pos"], **voice)
     data["voice_used"] = tts.voice_used(data.get("voice_style"))  # saved with the record at the end of this producer (a new video has no record yet)
+    checkpoint.mark_stage(work, "voice", lines=len(durations), seconds=round(sum(durations), 2))
+    a2a.handoff(data, "voice", job=folder.name, work=work, narration=narration, durations=durations)
     print("Footage...")
     if config.PEXELS_KEY:
         clips = [footage.clip_for(l["visual"]) for l in data["lines"]]
@@ -314,7 +405,9 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
     else:  # archive pictures: only ones that name the subject
         import aiart
 
-        art = lambda l: aiart.generate(l["text"], l.get("visual", ""), topic, vertical=True, style=data.get("art_style"), case=_is_case(data))
+        bl_got = _blender_scenes(data, durations, "short", (config.WIDTH, config.HEIGHT))  # a vertical globe at the story's place, a true-to-the-line 3D scene (blenderscenes.py)
+        bl_still = {data["lines"][i]["text"]: (pic, credit) for i, (pic, credit) in bl_got.items() if pic.suffix.lower() == ".png"}
+        art = lambda l: bl_still.get(l["text"]) or aiart.generate(l["text"], l.get("visual", ""), topic, vertical=True, style=data.get("art_style"), case=_is_case(data))
         finder = _real_finder(data, "short")
         clips, credits, stats = footage.scene_images(data["lines"], topic, data.get("anchors") or [], pool_size=pool_size, judge=_image_judge(topic),
                                                      art=art, art_limit=12 if data.get("art_style") == "3d" else aiart.MAX_PER_VIDEO["short"],
@@ -323,20 +416,33 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
         data["footage"] = stats
         if stats["missing"] or stats["unique"] < min_unique:
             clips = [None] * len(clips)
+        else:
+            import blenderscenes
+
+            clips, credits = blenderscenes.place(clips, credits, bl_got)
     if not footage.enough_footage(clips):
         if requeue:
             kept = topicqueue.requeue_failed(topic)  # to the back of the queue, so the next run tries another topic; dropped after two failures
         if not in_place:
             shutil.rmtree(folder, ignore_errors=True)
+        if pending:
+            PENDING_SHORT.unlink(missing_ok=True)  # the same script finds the same footage: a new topic next time
         raise SystemExit("not enough footage found for this Short" + (("; topic moved to the back of the queue" if kept else "; topic dropped after two failed tries") if requeue else ""))
-    clips, credits, anim = _animate(data, clips, credits, vertical=True)  # a 3D Short can have a few moving clips
+    clips, credits, anim = _animate(data, clips, credits, durations, vertical=True)  # a 3D Short can have a few moving clips
     clips = _parallax(data, clips, durations, (config.WIDTH, config.HEIGHT))  # free 2.5D camera motion when the Short asks for it
     if anim:
         data["animation"] = anim
         print(f"  animation: {anim['animated']} new clip(s), {anim['cached']} from the cache, {anim['failed']} failed, ${anim['spent']:.2f} spent")
+    checkpoint.mark_stage(work, "visuals", scenes=len(clips))
+    a2a.handoff(data, "visuals", job=folder.name, work=work, clips=clips, min_share=0.6)  # a Short may show a plain colour on a few scenes (footage.enough_footage)
     print("Rendering...")
-    render.render(clips, durations, narration, ass, work, folder / "video.mp4", loudness=editprofile.lufs_for(data, prof), shots=prof["motion"] >= 1,
+    import musicbed
+
+    music_bed, music_used = musicbed.bed(sum(durations), work, str(data.get("topic") or data.get("title", "")))  # a quiet public-domain bed under the Short too (20 Nov 2026)
+    data["music"] = musicbed.record(music_used)
+    render.render(clips, durations, narration, ass, work, folder / "video.mp4", loudness=editprofile.lufs_for(data, prof), shots=prof["motion"] >= 1, music=music_bed,
                   crossfade=0.3 if prof["motion"] >= 2 and len(clips) <= 20 else 0.0, grain=prof["motion"] >= 2)
+    checkpoint.mark_stage(work, "assembled", seconds=round(checkpoint.media_seconds(folder / "video.mp4"), 2))
     import subscribe
 
     subscribe.add_to(folder / "video.mp4", data, "short", durations, subtitles.load_words(work / "words.json"), (config.WIDTH, config.HEIGHT))  # the pop-up lands on the spoken 'subscribe'
@@ -345,11 +451,15 @@ def _produce_short(data: dict, topic: str, requeue: bool = True, pool_size: int 
     sfx.add_to(folder / "video.mp4", data, "short", durations)  # a riser into the first word and a hit on the second line (audio only, the picture is copied)
     shutil.copy(work / "words.json", folder / "words.json")
     subtitles.write_files(folder, subtitles.with_punctuation(subtitles.load_words(work / "words.json"), [l["text"] for l in data["lines"]]))
-    shutil.rmtree(work)
     data["subtitles"] = "burned"
     data["credits"] = credits
     data["approved"] = False
+    a2a.handoff(data, "render", job=folder.name, work=work, video=folder / "video.mp4", durations=durations)  # the video exists, decodes, and is as long as its narration
     records.save(folder, data)  # the producer owns the record until it is finished: one atomic whole save
+    shutil.rmtree(work)  # only after the record is saved (a cut in between keeps the checked scenes)
+    if pending and checkpoint.read_json(PENDING_SHORT).get("folder") == folder.name:
+        PENDING_SHORT.unlink(missing_ok=True)
+        PENDING_SHORT.with_name(PENDING_SHORT.name + ".prev").unlink(missing_ok=True)
     print(f"\nDone: {folder / 'video.mp4'}\nTitle: {data['title']}\nWatch it, then: python run.py approve {folder.name}")
     return folder
 
@@ -384,25 +494,65 @@ PENDING_DOC = config.ROOT / "data" / "pending_doc.json"  # a paid script whose v
 MAX_RESUMES = 3
 
 
+def _write_pending(saved: dict) -> None:
+    """The saved script is written atomically, with the previous version kept (checkpoint.write_json): a power cut during this write once could have left half a file and
+    lost a paid or hours-long script."""
+    import checkpoint
+
+    checkpoint.write_json(PENDING_DOC, saved)
+
+
 def _pending_doc() -> dict | None:
-    try:
-        saved = json.loads(PENDING_DOC.read_text())
-    except (OSError, ValueError):
+    import checkpoint
+
+    saved = checkpoint.read_json(PENDING_DOC)  # the previous version when the current one is unreadable
+    if not saved:
         return None
     if not isinstance(saved.get("data"), dict) or saved.get("tries", 0) >= MAX_RESUMES:
         return None
+    lines = saved["data"].get("lines")
+    words = sum(len(str(l.get("text", "")).split()) for l in lines) if isinstance(lines, list) else 0
+    need = round(scriptgen.min_doc_words() * 0.9)  # by words, not lines: a long film joins short lines (scriptgen.join_short_lines), so 70 lines can be 22 minutes
+    if isinstance(lines, list) and lines and words < need:
+        _set_aside_pending(saved, f"it has {words} words in {len(lines)} lines and the owner's documentary length ({scriptgen.DOC_MINUTES[0]:g} to {scriptgen.DOC_MINUTES[1]:g} "
+                                  f"minutes) needs about {need}" + ("; it was also written without a source article" if saved["data"].get("grounded") is False else ""))
+        return None
     return saved
+
+
+def _set_aside_pending(saved: dict, why: str) -> None:
+    """A saved script written for an older, shorter length rule is not rendered (20 Nov 2026: the 54-line Pyramids script, written without a source under the 8 to 10 minute
+    rule, would have been Autopilot's next film after the owner chose 20 to 26 minutes). It is kept beside the original name, never deleted, and the owner is told once."""
+    import datetime as dt
+
+    import agentlog
+
+    keep = PENDING_DOC.with_name(f"pending_doc.set-aside-{dt.datetime.now(dt.timezone.utc):%Y%m%d-%H%M%S}.json")
+    try:
+        PENDING_DOC.replace(keep)
+    except OSError:
+        return
+    agentlog.event("info", f"Set aside a saved script: {str(saved['data'].get('title', ''))[:60]}",
+                   f"Not rendered because {why}. It is kept as data/{keep.name}; the next film starts from a new topic.")
+    print(f"  saved script set aside ({why}): {keep.name}")
 
 
 def _cmd_doc(topic: str | None = None, photo: bool = False) -> Path:
     import random
 
     saved = _pending_doc() if not topic else None
+    done = _finished_pending(saved, PENDING_DOC) if saved else None
+    if done:
+        return done
     if saved:
-        saved["tries"] = saved.get("tries", 0) + 1
-        PENDING_DOC.write_text(json.dumps(saved))
+        import checkpoint
+
         old = config.OUT / saved["folder"] if saved.get("folder") else None
-        print(f"Resuming the saved script (try {saved['tries']}): {saved['data']['title']}")
+        cut = bool(old and checkpoint.was_interrupted(old / "work"))  # a power cut or a kill is not a failed try: the film continues where it stopped
+        if not cut:
+            saved["tries"] = saved.get("tries", 0) + 1
+        _write_pending(saved)
+        print(f"Resuming the saved script (try {saved['tries']}{', after an interruption' if cut else ''}): {saved['data']['title']}")
         return _produce_doc(saved["data"], old if old and old.is_dir() and not (old / "meta.json").exists() else None)
     if not topic:
         topic = _best_topic("doc")
@@ -415,10 +565,11 @@ def _cmd_doc(topic: str | None = None, photo: bool = False) -> Path:
     data = None
     import wikipedia
 
-    arts = wikipedia.facts_multi(topic, n=3, chars_each=7000)  # the best articles: a script drawn from more than one source has fewer unsupported details
+    chars_each, keep = scriptgen.source_budget()  # enough source text for the owner's length (7,000 x 2 at 8-10 minutes, about 18,000 x 3 at 20-26)
+    arts = wikipedia.facts_multi(topic, n=keep + 1, chars_each=chars_each)  # the best articles: a script drawn from more than one source has fewer unsupported details
     if arts and not wikipedia.is_media_work(arts[0]["text"]):  # a folklore or history topic is not retold from a film's plot: keep the main article, drop adaptations
         arts = [arts[0]] + [a for a in arts[1:] if not wikipedia.is_media_work(a["text"])]
-    arts = arts[:2]
+    arts = arts[:keep]
     src = (arts[0]["title"], "\n\n".join(f"[{a['title']}]\n{a['text']}" for a in arts)) if arts else None
     print(f"  source articles: {', '.join(a['title'] for a in arts) or 'none found (script will be flagged for a human check)'}")
     attempted, extra = _second_sources(topic, arts) if src else (False, None)
@@ -444,12 +595,14 @@ def _cmd_doc(topic: str | None = None, photo: bool = False) -> Path:
             break
         except Exception as e:
             print(f"  script attempt {attempt + 1} failed: {e}")
+            if "could not be fact-checked" in str(e):  # no free judge (busy, or the day's free requests are used up): asking again at once only burns the saved
+                raise SystemExit("the written draft is saved (data/pending_draft.json) and waits for a free judge: the next make checks it, nothing is written again")  # draft
     if not data:
         raise SystemExit("could not generate a documentary script")
     if photo:  # realistic invented people (owner's request): the video is held and unapproved, nothing about it goes out until the owner says so
         data.update(art_style="photo", art_first=True, hold=True)
     PENDING_DOC.parent.mkdir(parents=True, exist_ok=True)
-    PENDING_DOC.write_text(json.dumps({"data": data, "folder": "", "tries": 0}))
+    _write_pending({"data": data, "folder": "", "tries": 0})
     return _produce_doc(data)
 
 
@@ -483,6 +636,7 @@ def _image_judge(topic: str):
     return footage.cached_judge(topic, ask)
 
 
+@_records_stop
 def _produce_doc(data: dict, folder: Path | None = None) -> Path:
     import random
 
@@ -498,46 +652,85 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
     folder = folder or unique_folder(config.OUT / slug)
     work = folder / "work"
     folder.mkdir(parents=True, exist_ok=True)
+    import checkpoint
+
+    _RUN_WORK.append(work)
+    began = checkpoint.start_run(work, "doc")
+    if began["interrupted"]:
+        import agentlog
+
+        kept = ", ".join(sorted(began["stages"])) or "nothing yet"
+        print(f"  this film was interrupted (its last run started {began['previous'].get('started', '?')} and never finished): resuming; stages already done: {kept}")
+        agentlog.event("info", f"Resuming an interrupted film: {str(data.get('title', ''))[:60]}",
+                       f"The last run started {began['previous'].get('started', '?')} and stopped without finishing (a power cut, a restart or a kill). "
+                       f"Finished voice lines, checked scenes and drawn pictures are kept; only the missing work is done again. Stages done before: {kept}.")
+    pending_mine = False  # a pending doc for ANOTHER video must survive this production (19 Nov 2026: redoing one film deleted the next pending build)
     if PENDING_DOC.exists():
         try:
             saved = json.loads(PENDING_DOC.read_text())
             if saved.get("data", {}).get("title") == data.get("title"):
                 saved["folder"] = folder.name
-                PENDING_DOC.write_text(json.dumps(saved))
+                _write_pending(saved)
+                pending_mine = True
         except (OSError, ValueError):
             pass
+    import a2a
+
+    a2a.handoff(data, "script", job=folder.name, work=work)  # the orchestrator checks each stage's real output before the next starts (a2a.py): lines, chapters
     print("Voice...")
     prof = editprofile.load()
     tail = {"tail": data["voice_tail"]} if data.get("voice_tail") is not None else {}  # a video that asks keeps less of the voice service's silence after each line
     narration, _ass, durations = tts.narrate([l["text"] for l in data["lines"]], work, prof["sentence_pause_ms"] / 1000, **tail)
-    data["voice_used"] = tts.voice_used(None)
+    data["voice_used"] = tts.voice_used(None)  # before the hand-over, so its row names the voice
+    checkpoint.mark_stage(work, "voice", lines=len(durations), seconds=round(sum(durations), 2))
+    a2a.handoff(data, "voice", job=folder.name, work=work, narration=narration, durations=durations)  # a narration file and one timing per line
     if local:  # pictures drawn elsewhere for free (ccdoc.py): no search, no paid drawing, no stock footage, no animation
         clips = [Path(p) for p in local]
         credits = list(data.get("local_credits") or [])
+        finder = None  # no library search: the record lists no library assets (20 Nov 2026: this name was unset and the finished film crashed before its record was saved)
         stats = {"scenes": len(clips), "unique": len({str(c) for c in clips}), "missing": 0, "drawn": 0}
     else:
         print("Archival images (only pictures that name the subject)...")
         anchors = data.get("anchors") or []
         import aiart
 
-        art = lambda l: aiart.generate(l["text"], l.get("visual", ""), data["topic"], style=data.get("art_style"), case=_is_case(data))  # style "3d": a 3D animated-film look
+        bl_got = _blender_scenes(data, durations, "doc", (1920, 1080))  # a globe at the story's place and true-to-the-line 3D scenes, rendered headless (blenderscenes.py)
+        bl_still = {data["lines"][i]["text"]: (pic, credit) for i, (pic, credit) in bl_got.items() if pic.suffix.lower() == ".png"}
+        forced, ran_out = _forced_art(data), []
+
+        def art(l):  # a line Blender drew is not drawn again; style "3d": a 3D animated-film look
+            got = bl_still.get(l["text"]) or aiart.generate(l["text"], l.get("visual", ""), data["topic"], style=data.get("art_style"), case=_is_case(data))
+            if got is None and l["text"] in forced and _free_pictures_spent():
+                ran_out.append(l["text"])  # a scene that must be drawn found today's free allowance spent
+            return got
+
         finder = _real_finder(data, "doc")
         pics = dict(judge=_image_judge(data["topic"]), art=art, art_first=bool(data.get("art_first")), force_art=_forced_art(data), finder=finder, real_when_named=_real_photos_on(data))
         clips, credits, stats = footage.scene_images(data["lines"], data["topic"], anchors, art_limit=aiart.MAX_PER_VIDEO["doc"], **pics)
         if stats["unique"] < MIN_VARIETY * stats["scenes"] and aiart.enabled():  # the same few pictures again and again: draw illustrations for the scenes that would repeat
             print(f"  only {stats['unique']} different pictures for {stats['scenes']} scenes: drawing more")
             clips, credits, stats = footage.scene_images(data["lines"], data["topic"], anchors, art_limit=aiart.MAX_PER_VIDEO["doc"] + aiart.EXTRA_FOR_VARIETY, **pics)
+        if ran_out:
+            _wait_for_pictures(data, folder, len(set(ran_out)), len(data["lines"]))
         if stats["missing"] or stats["unique"] < 6:
             shutil.rmtree(work if in_place else folder, ignore_errors=True)
             raise SystemExit(f"only {stats['unique']} on-topic images found ({stats['missing']} scenes without one); "
                              "not rendering a video of unrelated pictures")
         clips, credits = _real_footage(data, clips, credits)  # real moving footage on the scenes that may carry it (before the animation step: a real clip is not animated)
-        clips, credits, anim = _animate(data, clips, credits)  # some drawn scenes become short moving clips when the video asks for it
+        import blenderscenes
+
+        clips, credits = blenderscenes.place(clips, credits, bl_got)  # the lines Blender was planned for show Blender's scene (its stills then get camera motion from their exact depth)
+        clips, credits, anim = _animate(data, clips, credits, durations)  # some drawn scenes become short moving clips when the video asks for it
         if anim:
             data["animation"] = anim
             print(f"  animation: {anim['animated']} new clip(s), {anim['cached']} from the cache, {anim['failed']} failed, ${anim['spent']:.2f} spent")
     clips = _parallax(data, clips, durations, (1920, 1080))  # free 2.5D camera motion when the video asks for it
-    music = sorted(Path("music").glob("*.mp3")) if Path("music").exists() else []
+    import musicbed
+
+    music_bed, music_used = musicbed.bed(sum(durations), work, str(data.get("topic") or data["title"]))  # different public-domain tracks under the whole film, never one looped (musicbed.py)
+    data["music"] = musicbed.record(music_used)
+    checkpoint.mark_stage(work, "visuals", scenes=len(clips))
+    a2a.handoff(data, "visuals", job=folder.name, work=work, clips=clips)  # a real picture or clip file for every line
     print(f"Rendering ({sum(c is not None for c in clips)}/{len(clips)} scenes have footage)...")
     words = subtitles.with_punctuation(subtitles.load_words(work / "words.json"), [l["text"] for l in data["lines"]])
     doc_ass = None
@@ -557,7 +750,8 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
                 motiongraphics.add_to_ass(doc_ass, events, (1920, 1080))
                 print("  hook question on screen")
     render.render(clips, durations, narration, doc_ass, work, folder / "video.mp4",
-                  size=(1920, 1080), music=random.choice(music) if music else None, loudness=editprofile.lufs_for(data, prof), shots=prof["motion"] >= 1)
+                  size=(1920, 1080), music=music_bed, loudness=editprofile.lufs_for(data, prof), shots=prof["motion"] >= 1)
+    checkpoint.mark_stage(work, "assembled", seconds=round(checkpoint.media_seconds(folder / "video.mp4"), 2))
     import subscribe
 
     subscribe.add_to(folder / "video.mp4", data, "doc", durations, [], (1920, 1080))  # one or two branded pop-ups at high points: the film itself ends on the story
@@ -566,21 +760,25 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
     sfx.add_to(folder / "video.mp4", data, "doc", durations, data.get("chapters"))  # riser, hit on the reveal, whoosh at chapter changes, swell on the payoff
     shutil.copy(work / "words.json", folder / "words.json")
     subtitles.write_files(folder, words)
-    shutil.rmtree(work)
     starts, t = [], 0.0
     for n, ch in enumerate(data["chapters"], 1):
         t = sum(durations[: ch["start_line"]])
         starts.append(f"{int(t // 60)}:{int(t % 60):02d} {ch['title'] or f'Part {n}'}")
     intro = data["description"].split("\n\nChapters:")[0].split("\n\nSources:")[0]
-    src = "".join(f"\n{x}" for x in data.get("sources", []))
+    import ccdoc
+
+    src = "".join(f"\n{x}" for x in ccdoc.source_lines(data))  # sources are dicts of title+url: their repr()s once went into a description verbatim
     data["description"] = intro + (f"\n\nSources:{src}" if src else "") + "\n\nChapters:\n" + "\n".join(starts)
     data["footage"] = stats
     data["credits"] = credits
     data["assets"] = finder.assets if finder else []  # every library picture: address, licence, credit, date, hash
     data["subtitles"] = "burned" if config.DOC_SUBTITLES else "srt"
     data["approved"] = False
+    a2a.handoff(data, "render", job=folder.name, work=work, video=folder / "video.mp4", durations=durations)  # the video exists, decodes, and is as long as its narration
     records.save(folder, data)
-    PENDING_DOC.unlink(missing_ok=True)
+    shutil.rmtree(work)  # only after the record is saved: a cut before this point leaves the checked scenes for the next run, never a folder with neither
+    if pending_mine:
+        PENDING_DOC.unlink(missing_ok=True)  # this production was the pending script's own build: it is spent now
     print(f"\nDone: {folder / 'video.mp4'}\nTitle: {data['title']}\nWatch it, then: python run.py approve {folder.name}")
     return folder
 
@@ -597,6 +795,63 @@ def cmd_redo_short(name: str) -> None:
     _refuse_if_uploaded(name)
     data = reset_for_rerender(json.loads((config.OUT / name / "meta.json").read_text()))
     _produce_short(data, data["topic"], requeue=False, folder=config.OUT / name)
+
+
+def _free_pictures_spent() -> bool:
+    """True when free drawing is set up but today's allowance cannot pay for one more film picture (freeart.py)."""
+    try:
+        import freeart
+
+        return freeart.have_keys() and freeart.quota_left() < freeart.neurons(1024, 576)
+    except Exception:
+        return False
+
+
+def _wait_for_pictures(data: dict, folder: Path, short: int, total: int) -> None:
+    """A film whose every scene is drawn stops when today's free pictures run out, instead of being rendered with the same few pictures again and again (20 Nov 2026:
+    a 20 to 26 minute film needs 84 to 100 pictures, about 9,000 to 15,000 Neurons, against a 9,000 a day allowance). Every picture drawn so far is kept in the cache and
+    costs nothing next time, the script stays in data/pending_doc.json, and this stop does not use up one of its three tries: the next make continues the same film
+    after the allowance resets at 00:00 UTC."""
+    import agentlog
+
+    try:
+        saved = json.loads(PENDING_DOC.read_text())
+        if saved.get("data", {}).get("title") == data.get("title"):
+            saved["tries"] = max(0, int(saved.get("tries", 0)) - 1)
+            saved["folder"] = folder.name
+            saved["waiting_for_pictures"] = {"short": short, "total": total}
+            _write_pending(saved)
+    except (OSError, ValueError):
+        pass
+    msg = (f"{short} of {total} scenes still need a drawn picture and today's free picture allowance is spent; the {total - short} drawn so far are kept. "
+           "The same film continues after the allowance resets at 00:00 UTC (data/pending_doc.json).")
+    agentlog.event("info", f"Waiting for tomorrow's free pictures: {str(data.get('title', ''))[:60]}", msg)
+    raise SystemExit("waiting for pictures: " + msg)
+
+
+def _blender_scenes(data: dict, durations: list, fmt: str, size: tuple[int, int]) -> dict:
+    """Blender's scenes for this video (blenderscenes.py, 20 Nov 2026): {line: (file, credit)}. The plan and what was rendered go into data["blender"]. `blender` false in the
+    record switches it off; any failure gives no Blender scenes and the video is made exactly as before."""
+    if data.get("blender") is False:
+        return {}
+    try:
+        import blenderscenes
+
+        coords = blenderscenes.coordinates(blenderscenes.source_title(data))
+        planned = blenderscenes.plan(data, fmt, coords)
+        if not planned:
+            data["blender"] = {"planned": 0, "why": "no line names a place Blender can show truthfully" + ("" if coords else " and the source article has no coordinates")}
+            print("  Blender: nothing planned (" + data["blender"]["why"] + ")")
+            return {}
+        print(f"  Blender: {len(planned)} scene(s) planned: " + ", ".join(f"{p['scene']} on line {p['line'] + 1}" for p in planned))
+        got, stats = blenderscenes.render(planned, durations, size)
+        data["blender"] = {**stats, "planned": len(planned), "coordinates": list(coords) if coords else None}
+        print(f"  Blender: {len(got)} rendered, {len(stats['failed'])} failed" + (f" ({stats['failed'][0]['reason'][:120]})" if stats["failed"] else ""))
+        return got
+    except Exception as e:
+        data["blender"] = {"failed": True, "reason": f"{type(e).__name__}: {str(e)[:200]}"}
+        print(f"  Blender skipped ({type(e).__name__}): the usual pictures are used")
+        return {}
 
 
 def _parallax(data: dict, clips: list, durations: list, size: tuple[int, int]) -> list:
@@ -677,9 +932,10 @@ def _forced_art(data: dict) -> set[str]:
     return forced
 
 
-def _animate(data: dict, clips: list, credits: list, vertical: bool = False) -> tuple[list, list, dict | None]:
+def _animate(data: dict, clips: list, credits: list, durations: list[float] | None = None, vertical: bool = False) -> tuple[list, list, dict | None]:
     """Animate some drawn scenes when the video asks for it (data["animate"] = how many clips, data["animate_budget"] = dollars, default 3). Returns
-    (clips, credits with the AI-video credit added, stats) or the inputs and None when not asked."""
+    (clips, credits with the AI-video credit added, stats) or the inputs and None when not asked. durations (seconds per scene) let the free-mode
+    motion (animate.animate_scenes -> parallax) fit each clip to its line."""
     n = int(data.get("animate") or 0)
     if n <= 0:
         return clips, credits, None
@@ -688,7 +944,7 @@ def _animate(data: dict, clips: list, credits: list, vertical: bool = False) -> 
 
     pinned = {"scenes": data["animate_scenes"]} if data.get("animate_scenes") else {}  # a video that names its own scenes; otherwise they are spread across it
     new, stats = animate.animate_scenes(clips, data["lines"], n, float(data.get("animate_budget", 3.0)), animate.clip_generator(vertical=vertical),
-                                        size=(720, 1280) if vertical else (1280, 720), **pinned)
+                                        size=(720, 1280) if vertical else (1280, 720), **pinned, **({"durations": durations} if durations else {}))
     if stats["animated"] or stats["cached"]:
         credits = [*credits, animate.credit(modelcfg.get("video_generation"))]
     return new, credits, stats
@@ -872,6 +1128,11 @@ def main() -> None:
         for c in res["checks"]:
             print(f"  {'ok  ' if c['ok'] else c['severity'].upper():5} {c['name']}: {c['detail']}")
         print(f"script review of {a[1]}: {res['verdict']} (model read: {res['model']}); lines to look at: {res['bad_lines'][:20] or 'none'}")
+    elif a[0] == "recover":  # read-only: what a power cut left unfinished and the safe step that continues it (recovery.py)
+        import recovery
+
+        items = recovery.scan(thorough="--thorough" in a)
+        print(json.dumps(items, indent=1) if "--json" in a else recovery.report(items))
     elif a[0] == "doctor":
         import doctor
 
@@ -1190,7 +1451,10 @@ def main() -> None:
     elif a[0] == "autopilot":
         import autopilot
 
-        print(json.dumps(autopilot.tick() if a[1:] == ["tick"] else autopilot.status(), indent=2))
+        if a[1:2] == ["make"] and a[2:3] in (["short"], ["doc"]):  # one supervised make + review by Autopilot's own steps; never approves, schedules or uploads
+            print(json.dumps(autopilot.make_one(a[2], review="--no-review" not in a), indent=2))
+        else:
+            print(json.dumps(autopilot.tick() if a[1:] == ["tick"] else autopilot.status(), indent=2))
     elif a[0] == "specrun":  # free videos from specs written by Claude (specrun.py): tick (default), status, check DIR
         import specrun
 

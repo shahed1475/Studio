@@ -492,6 +492,8 @@ def gemini_analyze(folder: Path, post=None) -> dict:
         if folder.parent != Path(config.OUT).resolve() or not (folder / "video.mp4").is_file():
             return {"error": "only our own videos in the output folder are analysed"}
         cfg = llm.load_config()
+        if not llm.paid_allowed(cfg):
+            return {"error": "Free Mode: the paid video model is off (switch paid models on in Settings to analyse a video)"}
         if llm.spent_today(_now()) >= cfg["daily_budget_usd"]:
             return {"error": f"the daily spending cap (${cfg['daily_budget_usd']:.2f}) is used up"}
         model = modelcfg.get("video_analysis")

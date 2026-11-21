@@ -3,6 +3,7 @@ Cause 1: the depth warp (parallax.py) bends a picture by depth, which stretches 
 gets a smooth sub-pixel zoom with no depth bend, and only a picture whose note says it has no people keeps the depth effect.
 Cause 2: render.py looped (-stream_loop -1) any clip shorter than its scene; seven of eight 8-second animated clips sat under scenes of 8.2 to 10.2 seconds."""
 import pytest
+from pathlib import Path
 from PIL import Image
 
 import parallax
@@ -78,7 +79,8 @@ def test_a_clip_fills_its_scene_once_slowed_a_little_and_held_on_its_last_frame_
 
 def test_generated_animation_is_never_looped_but_other_clips_keep_the_old_behaviour(tmp_path, monkeypatch):
     seen = []
-    monkeypatch.setattr(render, "_ff", lambda *a, cwd=None: seen.append(list(a)))
+    monkeypatch.setattr(render, "_ff", lambda *a, cwd=None: (seen.append(list(a)), (Path(cwd) / a[-1]).write_bytes(b"x")))  # a stand-in scene file
+    monkeypatch.setattr(render.checkpoint, "check_media", lambda *a, **k: None)  # the stand-in passes the scene check, so both scene commands are seen
     monkeypatch.setattr(render, "_clip_seconds", lambda p: 8.0)
     anim = tmp_path / "anim"
     anim.mkdir()

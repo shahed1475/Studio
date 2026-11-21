@@ -1,6 +1,6 @@
 import json
 
-import packaging
+import video_packaging_rules as packaging
 import seo
 
 CORE = "mami wata"

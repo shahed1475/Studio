@@ -3,12 +3,15 @@
 OpenRouter allows 20 requests a minute on free models and 50 a day until $10 of credit has been bought once (then 1,000 a day).
 The list of free models changes often, so nothing here is hard-coded to one model.
 """
+import contextlib
 import datetime as dt
 import json
+import threading
 
 import requests
 
 import config
+import filelock
 
 FILE = config.ROOT / "data" / "free_models.json"
 URL = "https://openrouter.ai/api/v1/models"
@@ -48,9 +51,23 @@ def _load() -> dict:
 def _save(d: dict) -> None:
     try:
         FILE.parent.mkdir(parents=True, exist_ok=True)
-        FILE.write_text(json.dumps(d, indent=1))
+        filelock.write_atomic(FILE, json.dumps(d, indent=1))  # a reader never sees half a file (20 Nov 2026: one did, read it as empty, and the next save wiped every model's history)
     except OSError:
         pass  # a usage and price cache: a lost save costs one more lookup, and a full disk must not make every model call fail
+
+
+_THREAD = threading.Lock()
+
+
+@contextlib.contextmanager
+def _update():
+    """Read, change and write the file as one step: the two raced requests of llm._race, other jobs and the dashboard all record here at once. Without the lock
+    one writer's change was lost, and a reader that caught the file half written started from an empty record (20 Nov 2026: 40-odd models' history and the day's
+    request count went down to three models)."""
+    with _THREAD, filelock.locked(FILE):
+        d = _load()
+        yield d
+        _save(d)
 
 
 def _free(m: dict) -> bool:
@@ -86,8 +103,8 @@ def refresh(now: dt.datetime, get=requests.get, force: bool = False) -> list[dic
             continue
         models.append({"id": m["id"], "context": m["context_length"], "score": round(_score(m), 2)})
     models.sort(key=lambda m: (-m["score"], m["id"]))
-    d.update(fetched_at=_ts(now), models=models)
-    _save(d)
+    with _update() as d:
+        d.update(fetched_at=_ts(now), models=models)
     return models
 
 
@@ -176,36 +193,35 @@ def record(model: str, ok: bool, now: dt.datetime, status: int | None = None, re
            role: str | None = None, seconds: float | None = None, reason: str | None = None, finish: str | None = None) -> None:
     """One answer or failure. `role` and `seconds` feed the per-role ranking; `reason` "json" marks a reply that was not JSON and `finish` is the
     reply's finish_reason ("length" = cut off by the output limit). A 429 only makes the model busy: it is not counted as a failure."""
-    d = _load()
-    h = d.setdefault("health", {}).setdefault(model, {"fails": 0})
-    rs = h.setdefault("roles", {}).setdefault(role, {}) if role else None
-    if rs is not None and seconds is not None and status != 429:
-        rs["secs"] = (rs.get("secs", []) + [round(float(seconds), 1)])[-KEEP_SECONDS:]
-        if seconds > SLOW_SECONDS:
-            rs["slow"] = rs.get("slow", 0) + 1
-    if ok:
-        h["fails"] = 0
-        h["ok"] = h.get("ok", 0) + 1
-        h.pop("busy_until", None)
-        if rs is not None:
-            rs["ok"] = rs.get("ok", 0) + 1
-    elif status == 429:
-        if retry_after:
-            secs = min(max(int(retry_after), 1), MAX_RETRY_AFTER)  # the provider said how long
+    with _update() as d:
+        h = d.setdefault("health", {}).setdefault(model, {"fails": 0})
+        rs = h.setdefault("roles", {}).setdefault(role, {}) if role else None
+        if rs is not None and seconds is not None and status != 429:
+            rs["secs"] = (rs.get("secs", []) + [round(float(seconds), 1)])[-KEEP_SECONDS:]
+            if seconds > SLOW_SECONDS:
+                rs["slow"] = rs.get("slow", 0) + 1
+        if ok:
+            h["fails"] = 0
+            h["ok"] = h.get("ok", 0) + 1
+            h.pop("busy_until", None)
+            if rs is not None:
+                rs["ok"] = rs.get("ok", 0) + 1
+        elif status == 429:
+            if retry_after:
+                secs = min(max(int(retry_after), 1), MAX_RETRY_AFTER)  # the provider said how long
+            else:
+                secs = EXTRA_BUSY_SECONDS if model.startswith("extra:") else int(BUSY_COOLDOWN.total_seconds())  # skip it for ten minutes; no long penalty
+            h["busy_until"] = _ts(now + dt.timedelta(seconds=secs))
         else:
-            secs = EXTRA_BUSY_SECONDS if model.startswith("extra:") else int(BUSY_COOLDOWN.total_seconds())  # skip it for ten minutes; no long penalty
-        h["busy_until"] = _ts(now + dt.timedelta(seconds=secs))
-    else:
-        h["fails"] += 1
-        h["last_fail"] = _ts(now)
-        if rs is not None:
-            rs["bad"] = rs.get("bad", 0) + 1
-            if reason == "json":
-                rs["json_bad"] = rs.get("json_bad", 0) + 1
-            if finish:
-                fin = rs.setdefault("finish", {})
-                fin[finish] = fin.get(finish, 0) + 1
-    _save(d)
+            h["fails"] += 1
+            h["last_fail"] = _ts(now)
+            if rs is not None:
+                rs["bad"] = rs.get("bad", 0) + 1
+                if reason == "json":
+                    rs["json_bad"] = rs.get("json_bad", 0) + 1
+                if finish:
+                    fin = rs.setdefault("finish", {})
+                    fin[finish] = fin.get(finish, 0) + 1
 
 
 _quota_cache: dict = {}
@@ -243,12 +259,11 @@ def requests_today(now: dt.datetime, role: str | None = None) -> int:
 
 
 def count_request(now: dt.datetime, role: str = "") -> None:
-    d = _load()
-    day = now.strftime("%Y-%m-%d")
-    usage = d.setdefault("usage", {})
-    usage[day] = usage.get(day, 0) + 1
-    d["usage"] = dict(sorted(usage.items())[-7:])
-    roles = d.setdefault("roles", {})
-    roles.setdefault(day, {})[role] = roles.get(day, {}).get(role, 0) + 1
-    d["roles"] = dict(sorted(roles.items())[-7:])
-    _save(d)
+    with _update() as d:
+        day = now.strftime("%Y-%m-%d")
+        usage = d.setdefault("usage", {})
+        usage[day] = usage.get(day, 0) + 1
+        d["usage"] = dict(sorted(usage.items())[-7:])
+        roles = d.setdefault("roles", {})
+        roles.setdefault(day, {})[role] = roles.get(day, {}).get(role, 0) + 1
+        d["roles"] = dict(sorted(roles.items())[-7:])

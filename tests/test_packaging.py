@@ -1,4 +1,4 @@
-import packaging
+import video_packaging_rules as packaging
 
 CORE = "pied piper hamelin"
 

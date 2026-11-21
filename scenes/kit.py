@@ -196,8 +196,11 @@ def render_depth(path, near, far):
     w.use_nodes = True
     w.node_tree.nodes["Background"].inputs["Color"].default_value = (0, 0, 0, 1)
     old_world, sc.world = sc.world, w
-    sc.render.engine = "BLENDER_EEVEE"
-    sc.eevee.taa_render_samples = 8
+    # Cycles, not EEVEE: EEVEE needs an OpenGL/EGL context, which a headless worker container has none of (20 Nov 2026: the depth pass aborted with
+    # "Couldn't open libEGL.so.1" and the picture was lost). An emission-only pass needs no bounces and no denoiser, so a few samples are exact and fast.
+    sc.render.engine = "CYCLES"
+    cyc = (sc.cycles.samples, sc.cycles.use_denoising, sc.cycles.max_bounces)
+    sc.cycles.samples, sc.cycles.use_denoising, sc.cycles.max_bounces = 4, False, 0
     sc.view_settings.view_transform, sc.view_settings.exposure = "Standard", 0.0
     bpy.context.view_layer.material_override = m
     cam_data = sc.camera.data
@@ -208,4 +211,5 @@ def render_depth(path, near, far):
     cam_data.dof.use_dof = dof
     bpy.context.view_layer.material_override = None
     sc.world = old_world
+    sc.cycles.samples, sc.cycles.use_denoising, sc.cycles.max_bounces = cyc
     sc.render.engine, sc.view_settings.view_transform, sc.view_settings.exposure = keep

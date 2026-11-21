@@ -19,6 +19,7 @@ def world(tmp_path, monkeypatch):
     def narrate(texts, work, pause, *a, **kw):
         work.mkdir(parents=True, exist_ok=True)
         (work / "words.json").write_text(json.dumps([{"s": i * 2.0, "e": i * 2.0 + 1.0, "w": "word", "i": i} for i in range(len(texts))]))
+        (work / "n.wav").write_bytes(b"RIFF")  # like the real voice step: a narration file (the voice hand-over checks it, a2a.py)
         return work / "n.wav", work / "a.ass", [2.0] * len(texts)
 
     def no_search(*a, **k):
@@ -80,3 +81,21 @@ def test_the_studios_own_free_pictures_get_camera_motion_and_a_picture_from_anyw
     monkeypatch.setattr(parallax, "_job", lambda job: (made.append(job[0]), Path(job[2]).write_bytes(b"clip"))[0] or True)
     clips, stats = parallax.apply([own, other], [4.0, 4.0], (1920, 1080), workers=1)
     assert stats["skipped"] == 1 and len(made) == 1 and made[0] == str(own) and str(clips[0]).endswith(".mp4") and clips[1] == other
+
+
+def test_a_local_picture_film_is_finished_and_registered(world, tmp_path, monkeypatch):
+    """20 Nov 2026 (a real end-to-end run in the worker): the film rendered, then `finder` was unset in this branch and the record was never saved."""
+    import subscribe
+    import sfx
+    import videoinspect
+
+    def render_file(clips, durations, narration, ass, work, out, **kw):
+        out.write_bytes(b"0" * 64)
+
+    monkeypatch.setattr(run.render, "render", render_file)
+    monkeypatch.setattr(subscribe, "add_to", lambda *a, **k: None)
+    monkeypatch.setattr(sfx, "add_to", lambda *a, **k: None)
+    monkeypatch.setattr(videoinspect, "duration_of", lambda p: 16.0)  # 8 lines of 2 s: the render hand-over measures the real file in production
+    folder = run._produce_doc(doc(tmp_path, description="A test film.", sources=[]))  # every real script has a description
+    meta = json.loads((folder / "meta.json").read_text())
+    assert meta["assets"] == [] and meta["approved"] is False and [h["stage"] for h in meta["handoffs"]] == ["script", "voice", "visuals", "render"]

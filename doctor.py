@@ -28,6 +28,7 @@ FAIL_STREAK = 2        # consecutive failed runs that make an agent "failing"
 MAX_PER_RUN = 2        # agents the ladder works on in one run
 DASHBOARD = "http://127.0.0.1:8913/healthz"
 TS = "%Y-%m-%dT%H:%M:%SZ"
+MIN_FREE_GB = 20.0  # below this a long film (renders, motion clips and caches) may not fit: the owner is asked to look; nothing is deleted
 NEVER_RERUN = {"autopilot"}  # the main loop is not restarted from outside; it has its own lock and its own recovery
 
 
@@ -107,9 +108,88 @@ def needs(dashboard: int | None, now: dt.datetime) -> list[dict]:
     if titletest.mode() == "apply" and not titletest.can_write():
         out.append({"need": "youtube edit permission", "why": "the title test is in apply mode but the YouTube login cannot edit videos",
                     "commands": ["Open Settings, reconnect YouTube and allow managing your videos"]})
+    gb = free_gb()
+    if gb is not None and gb < MIN_FREE_GB:
+        out.append({"need": "disk space", "why": f"only {gb:.0f} GB free where the studio keeps its videos; a long render can fail part way",
+                    "commands": ["du -sh ~/studio/output ~/studio/output_old ~/studio/cache ~/studio/backups", "df -h ~/studio",
+                                 "Move old videos you no longer need off this PC yourself: the studio never deletes a video to make room"]})
     if backup.pushed_age_hours(now) is None:
         out.append({"need": "off-server backup", "why": "no backup copy has left the server yet",
                     "commands": ["Create a private GitHub repo for the records", "Set BACKUP_REPO_URL and BACKUP_SSH_KEY_FILE in ~/studio/.env", "Run deploy/backup_push.sh once"]})
+    return out
+
+
+def free_gb(usage=None) -> float | None:
+    """Free space where the studio keeps its videos, in GB (None when it cannot be read)."""
+    import shutil
+
+    try:
+        return (usage or shutil.disk_usage)(config.ROOT).free / 1e9
+    except OSError:
+        return None
+
+
+def provider_status(now: dt.datetime) -> dict:
+    """How many free text models can be asked right now, read from the studio's own records (no network): the owner's provider and OpenRouter's
+    free roster. Free tiers rate-limit and recover on their own, so this is reported in doctor.json, not raised as a task every six hours."""
+    import freemodels
+    import llm
+
+    try:
+        cfg = llm.load_config()
+        extras = sorted({m for r in ("script", "review", "cheap") for m in llm.extra_models(r)})
+        roster = freemodels.roster_ids()
+        ok = lambda ids: sum(1 for m in ids if freemodels.available(m, now))
+        return {"free_mode": bool(llm.free_only()), "paid_allowed": bool(llm.paid_allowed(cfg)), "own_provider": {"models": len(extras), "available": ok(extras)},
+                "openrouter_free": {"models": len(roster), "available": ok(roster)}}
+    except Exception as e:  # a report line, never a reason for the doctor's run to fail
+        return {"error": type(e).__name__}
+
+
+def production_status(now: dt.datetime, pending: Path | None = None) -> dict:
+    """The production parts added on 20 Nov 2026 and the known ways they stop, read from files (no network, no model): Blender for 3D scenes, the music library, a film
+    waiting at its checkpoint for the free pictures, and saved scripts set aside. Each problem carries its plain reason and the exact safe step; the doctor never starts
+    a production itself (a render is long and belongs to Autopilot's lock), it says when and how the waiting film continues."""
+    out = {"blender": None, "music_tracks": 0, "checkpoints": [], "set_aside": [], "problems": []}
+    try:
+        import ccrender
+
+        out["blender"] = ccrender.BLENDER.exists()
+        if not out["blender"]:
+            out["problems"].append({"need": "blender", "why": f"Blender is not at {ccrender.BLENDER}: documentaries get no 3D globe or scenes (they are still made with other pictures)",
+                                    "commands": ["ls ~/tools/blender/blender", "cd ~/studio && docker compose config | grep -A2 opt/blender",
+                                                 "export STUDIO_UID=$(id -u) STUDIO_GID=$(id -g); docker compose up -d worker dashboard   # only when no render is running"]})
+    except Exception as e:
+        out["problems"].append({"need": "blender", "why": f"the Blender check failed ({type(e).__name__})", "commands": []})
+    try:
+        import musicbed
+
+        out["music_tracks"] = len(musicbed.tracks())
+        if not out["music_tracks"]:
+            out["problems"].append({"need": "music", "why": "no usable track in music/ (each needs its LEDGER.json entry, an unchanged file and LICENSE.txt): videos are made without music",
+                                    "commands": ["cat ~/studio/music/LICENSE.txt", "python -c \"import musicbed; print(len(musicbed.tracks()))\""]})
+    except Exception:
+        pass
+    pend = pending or config.ROOT / "data" / "pending_doc.json"
+    try:
+        saved = json.loads(pend.read_text())
+        wait = saved.get("waiting_for_pictures")
+        if wait:
+            import freeart
+
+            back = freeart.quota_left(now=now) >= freeart.MIN_LEFT_TO_START
+            out["checkpoints"].append({"film": str(saved.get("data", {}).get("title", ""))[:80], "folder": saved.get("folder", ""), "waiting_for": "free pictures",
+                                       "scenes_left": wait.get("short"), "ready_to_continue": back,
+                                       "resume": "python run.py autopilot make doc   (continues the same film from data/pending_doc.json; pictures drawn so far cost nothing)"})
+    except (OSError, ValueError):
+        pass
+    out["set_aside"] = sorted(f.name for f in pend.parent.glob("pending_doc.set-aside-*.json"))
+    try:  # what a power cut or a killed render left unfinished (recovery.py): read only, the doctor never starts the render itself
+        import recovery
+
+        out["interrupted"] = [i for i in recovery.scan(pend.parent / "output" if pending else None, pend) if i["interrupted"]]
+    except Exception:
+        out["interrupted"] = []
     return out
 
 
@@ -301,7 +381,19 @@ def run(now: dt.datetime | None = None, chat=None, get=None, state=None, lines=N
             result["owner"].append(r["agent"])
     result["script_review"] = handle_inbox(now, chat, spend, proposals)
     result["dashboard"] = probe_dashboard(get)
-    for n in needs(result["dashboard"], now):
+    result["providers"] = provider_status(now)
+    result["free_gb"] = round(free_gb() or 0, 1)
+    result["production"] = production_status(now)
+    for c in result["production"]["checkpoints"]:
+        if c["ready_to_continue"]:  # today's free pictures are back: one task, not one every six hours
+            agentbus.post_to_owner_once("resume_film", "doctor", c["folder"] or c["film"], f"The film '{c['film']}' waited for free pictures; today's allowance is back, so it can continue.",
+                                        now=now, commands=[c["resume"]])
+    for i in result["production"].get("interrupted", []):  # one task per interrupted film, never a render started from here (renders belong to Autopilot's lock)
+        agentbus.post_to_owner_once("resume_interrupted", "doctor", i["folder"],
+                                    f"A render of {i['folder']} was cut off (power cut, restart or kill). Kept: {i['voice_lines_kept']} voice lines, {i['scenes_kept']} of "
+                                    f"{i['scenes_total'] or '?'} checked scenes. Autopilot continues it from there; nothing finished is made again.", now=now, commands=[i["resume"], "python run.py recover"])
+    extra = result["production"]["problems"]
+    for n in needs(result["dashboard"], now) + extra:
         agentbus.post("setup_request", "doctor", "owner", n["need"], reason=n["why"], now=now, commands=n["commands"])
         result["needs"].append(n["need"])
     for r in agentbus.tasks():  # a setup item that is there again is no longer a request: close what the doctor itself posted

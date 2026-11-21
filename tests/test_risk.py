@@ -114,7 +114,10 @@ def test_skills_fingerprint_detects_a_changed_file(world):
     assert risk.skills()["level"] == "act" and "SKILL.md" in risk.skills()["evidence"]
 
 
-def test_access_flags_group_readable_secrets_and_a_missing_login(world):
+def test_access_flags_group_readable_secrets_and_a_missing_login(world, monkeypatch):
+    import webauth
+
+    monkeypatch.setattr(webauth, "AUTH_FILE", world / "auth.json")  # the machine's real login must not decide a test's result
     (world / "token.json").write_text("{}")
     os.chmod(world / "token.json", 0o644)
     assert risk.access()["level"] == "act" and "token.json" in risk.access()["evidence"]
@@ -152,7 +155,8 @@ def test_the_deploy_script_is_valid_shell_and_protects_running_renders():
 def test_documentary_shape_varies_by_topic_stays_within_limits_and_is_stable():
     import scriptgen
     shapes = {scriptgen.shape_for(t) for t in ["The Pied Piper", "The Oracle of Delphi", "The Bell Witch", "Srivijaya", "The Minotaur", "Roanoke", "Voynich manuscript", "Flying Dutchman"]}
-    assert len(shapes) >= 4 and all(6 <= c <= 9 and 5 <= n <= 7 for c, n in shapes)
+    (c0, c1), (p0, p1) = scriptgen.DOC_CHAPTERS, scriptgen.DOC_PER
+    assert len(shapes) >= 4 and all(c0 <= c <= c1 and p0 <= n <= p1 for c, n in shapes)
     assert scriptgen.shape_for("The Pied Piper") == scriptgen.shape_for("the pied piper")  # a retry keeps the same shape
     assert all(c * n * 16 >= 400 for c, n in shapes)  # the shortest still clears the 400-word documentary minimum
 

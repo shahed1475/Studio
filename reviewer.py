@@ -2,6 +2,7 @@
 import datetime as dt
 import difflib
 import json
+import math
 import records
 import re
 import subprocess
@@ -28,6 +29,48 @@ HEDGES = re.compile(r"\b(legends? says?|it is said|some (say|believe|historians|
 SPECIFICS = [re.compile(r"\b(1[0-9]{3}|20[0-2][0-9])\b"), re.compile(r"\b\d{1,2}(st|nd|rd|th) century\b", re.I),
              re.compile(r"\b(named|called|known as)\s+[A-Z][a-z]+(\s+(von|van|de|of|the)?\s*[A-Z][a-z]+)*"),
              re.compile(r"[\"\u201c][^\"\u201d]{20,}[\"\u201d]")]
+_ORDINALS = ("first second third fourth fifth sixth seventh eighth ninth tenth eleventh twelfth thirteenth fourteenth fifteenth sixteenth seventeenth eighteenth "
+             "nineteenth twentieth twenty-first").split()
+WRITTEN_CENTURY = re.compile(r"\b(" + "|".join(_ORDINALS) + r")[- ]century\b", re.I)
+SPECIFICS.append(WRITTEN_CENTURY)  # 20 Nov 2026: the Tenali Rama Short said "sixteenth century" in words and its claim ledger came out empty
+
+
+CERTAIN = re.compile(r"\b(prove[sd]?|proven|proof|confirm(s|ed)?|definitely|certainly|undeniabl[ey]|without (a )?doubt|beyond (any )?doubt|no doubt)\b", re.I)
+SOURCE_HEDGE = re.compile(r"\b(suggest(s|ed)?|may|might|possibly|probably|likely|believed|thought to|claim(s|ed)?|according to|uncertain|unclear|disputed|"
+                          r"perhaps|appears? to|seems? to|traditionally|legend|reportedly|allegedly)\b", re.I)
+
+
+def overclaims(lines: list[str], source: str) -> list[tuple[int, str, str]]:
+    """(line number, line, source sentence) where the narration calls something proven or certain while the source sentence about the same names only suggests it
+    (20 Nov 2026: the Tenali Rama Short said dedications "prove" he served Venkatapati Raya; its source says internal evidence and dedications "suggest" it, and two free
+    judges scored the script risk 0). Fixed rules, no model: a certainty word in the line, at least two of the line's capitalised names (or its only one) in one source
+    sentence, and a hedge in that sentence."""
+    if not source:
+        return []
+    sentences = re.split(r"(?<=[.!?])\s+", " ".join(source.split()))
+    found = []
+    for i, line in enumerate(lines):
+        m = CERTAIN.search(line)
+        if not m or HEDGES.search(line) or re.search(r"\b(no|not|never|nobody|none|nothing|cannot|can't|without|un\w+)\W+(\w+\W+){0,2}$", line[:m.start()], re.I):
+            continue  # "nobody has proven", "no records confirm": a negated certainty is the honest kind
+        names = set(re.findall(r"\b[A-Z][a-z]{3,}\b", line)) - {line.split()[0].strip(",.?!") if line.split() else ""}
+        if not names:
+            continue
+        best = max(sentences, key=lambda t: sum(n in t for n in names))
+        hits = sum(n in best for n in names)
+        if hits >= min(2, len(names)) and SOURCE_HEDGE.search(best) and m.group(1).lower()[:5] not in best.lower():  # the source's own "confirmed owner" is not an overclaim
+            found.append((i, line, best[:300]))
+    return found
+
+
+def _numeric_century(claim: str) -> list[str]:
+    """'sixteenth century' -> ['16th century', '16th-century'], so a century written in words is found where the article writes it in figures."""
+    m = WRITTEN_CENTURY.fullmatch(claim.strip())
+    if not m:
+        return []
+    n = _ORDINALS.index(m.group(1).lower()) + 1
+    suf = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return [f"{n}{suf} century", f"{n}{suf}-century"]
 
 
 _QUOTE_MARKS = "\"“”"
@@ -49,7 +92,7 @@ def claim_span(source: str, claim: str) -> tuple[int, int] | None:
 
 def _in_source(claim: str, source: str) -> bool:
     """True when the name, year or quotation of a claim appears in the source text the script was built from."""
-    return claim_span(source, claim) is not None
+    return claim_span(source, claim) is not None or any(claim_span(source, alt) is not None for alt in _numeric_century(claim))
 
 
 def claim_lines(lines: list[str], source: str = "", verified=()) -> list[tuple[int, str, str]]:
@@ -126,29 +169,78 @@ def _src_words(text: str) -> list[str]:
 
 
 def relevant_source(source: str, narration: str, limit: int) -> str:
-    """The part of the source article(s) a check or a repair should read: at most `limit` characters, the paragraphs that best match the narration, in their
+    """The part of the source article(s) a check or a repair should read: at most `limit` characters, the passages that best match the narration, in their
     original order. A source shorter than the limit is returned whole. Reading only the first `limit` characters hid the second of two long articles from the
-    reviewer, so every fact taken from it looked invented. Names, years and numbers weigh most (they are what the reviewer checks). A claim whose supporting
-    paragraph is not picked is still flagged: this gives the reviewer evidence, it does not lower the bar."""
+    reviewer, so every fact taken from it looked invented (2 Nov 2026). But scoring by raw word overlap then let page furniture (standings tables, share links)
+    and long career paragraphs crowd out the short biography passages: on a 21-minute film every childhood fact was called invented (19 Nov 2026). So a word
+    the source itself repeats everywhere ("Ronaldo", a table cell) is now weak evidence and a word one passage alone carries is strong evidence, and long
+    blocks are read in sentence-sized windows. A claim whose supporting passage is still not picked is still flagged: this gives the reviewer evidence, it does
+    not lower the bar."""
     if len(source) <= limit:
         return source
     want = {w.lower() for w in _src_words(narration)}
-    names = {w for w in _src_words(narration) if w[:1].isupper() or w.isdigit()}
-    paras = [p for p in re.split(r"\n\s*\n|(?<=[.!?])\n", source) if p.strip()]
+    # numbers in narration that the source should also have (match at least one digit)
+    want_nums = {w for w in _src_words(narration) if w.isdigit() or any(c.isdigit() for c in w)}
+    # patterns that mark page furniture (tables, share links, etc.)
+    furniture = re.compile(r"\b(standings?|share\s+this|list\s+of\s+\d|recommended\s+stories)\b", re.I)
+    paras = [p.strip() for p in re.split(r"\n\s*\n|(?<=[.!?])\n", source) if p.strip()]
+    units: list[str] = []
+    for p in paras:  # an encyclopedia article is often one huge block: sentence windows let a fact deep inside be picked on its own
+        if furniture.search(p):  # skip obvious furniture
+            continue
+        if len(p) <= 1200:
+            units.append(p)
+            continue
+        buf = ""
+        for s in re.split(r"(?<=[.!?])\s+", p):
+            if buf and len(buf) + len(s) + 1 > 900:
+                units.append(buf)
+                buf = s
+            else:
+                buf = f"{buf} {s}".strip()
+        if buf:
+            units.append(buf)
+    n = len(units) or 1
+    df: dict[str, int] = {}
+    unit_words = []
+    for u in units:
+        ws = [w.lower() for w in _src_words(u)]
+        unit_words.append(ws)
+        for w in set(ws):
+            df[w] = df.get(w, 0) + 1
     scored = []
-    for i, p in enumerate(paras):
-        ws = _src_words(p)
+    for i, ws in enumerate(unit_words):
         if not ws:
             continue
-        hit = sum(1 for w in set(ws) if w.lower() in want) + 2 * sum(1 for w in set(ws) if w in names)
-        scored.append((hit / (len(ws) ** 0.5), i))
-    keep, used = set(), 0
-    for _, i in sorted(scored, reverse=True):
-        if used + len(paras[i]) + 2 > limit:
+        common = set(ws) & want
+        if not common:  # need at least one match
             continue
-        keep.add(i)
-        used += len(paras[i]) + 2
-    return "\n\n".join(paras[i] for i in sorted(keep))[:limit]
+        # IDF: rarer words in the source count more
+        idf_sum = sum(1.0 / df[w] for w in common)
+        # bonus for numbers: a fact about 44th minute needs 44th minute in the source
+        num_bonus = 2.0 * len(set(ws) & want_nums)
+        scored.append(((idf_sum + num_bonus) / (len(ws) ** 0.5), i))
+    keep, used = [], 0
+    for _, i in sorted(scored, reverse=True):
+        if used + len(units[i]) + 2 > limit:
+            continue
+        keep.append(i)
+        used += len(units[i]) + 2
+    # always add units containing key terms that might still be missing (family, parents, key facts)
+    # this ensures childhood paragraphs and key biography facts are included even if budget is full
+    key_terms = ["born", "parents", "father", "mother", "sibling", "childhood", "family", "diagnosed", "condition", "hospital", "surgery"]
+    for i in range(len(units)):
+        if i in keep:
+            continue
+        if used + len(units[i]) + 2 > limit:
+            break
+        u = units[i]
+        if any(t in u.lower() for t in key_terms):
+            keep.append(i)
+            used += len(u) + 2
+    if not keep:  # the narration shares no content words with the source: the head at least shows what the article is
+        return source[:limit]
+    return "\n\n".join(units[i] for i in sorted(keep))[:limit]
 
 
 def _chapters(description: str) -> list[tuple[int, str]]:
@@ -311,7 +403,7 @@ def generator_checks(meta: dict, probe: dict, rules: dict | None = None) -> list
         out.append(_c("short_payoff", bool(payoff) and not payoff.endswith("?"), "the story ends on an answer, then the invitation" if payoff and not payoff.endswith("?") else "the line before the invitation asks a new question instead of paying off the hook", "warn"))
         says_follow = scriptgen.follow_invitation(lines[-1])  # YouTube has subscribers, not followers: the closing invitation says subscribe
         out.append(_c("invite_wording", not says_follow, "the closing line asks people to follow; on YouTube they subscribe (say 'subscribe')" if says_follow else "the closing invitation, if any, does not say 'follow'", "warn"))
-    if kind == "doc" and probe.get("duration"):  # the owner's length for a documentary: 8 to 10 minutes (rules.json long_min_minutes, long_max_minutes); a warning, never a block
+    if kind == "doc" and probe.get("duration"):  # the owner's length for a documentary (rules.json long_min_minutes, long_max_minutes); a warning, never a block
         lo, hi = round(b["long_min_minutes"] * 60), round(b["long_max_minutes"] * 60)
         out.append(_c("doc_length", lo <= probe["duration"] <= hi, f"{probe['duration']:.0f} s (target {lo} to {hi} s)", "warn"))
     if kind == "short" and probe.get("duration"):
@@ -386,6 +478,9 @@ def rule_checks(meta: dict, probe: dict, existing_titles: list[str], thumb_bytes
     out += metadata_checks(meta)
     out += compliance.checks(meta, source)  # YouTube's documented limits, copied wording and kid-directed wording
     out += variety_checks(meta, recent or [])
+    over = overclaims([l["text"] for l in meta.get("lines", [])], source)
+    out.append(_c("overclaim", not over, (f"{len(over)} line(s) state as proven what the source only suggests: " + " | ".join(f"line {i + 1}: {t[:90]} (source: {s_[:140]})" for i, t, s_ in over[:2]))
+                  if over else ("no line states as proven what its source only suggests" if source else "no source article to compare"), "human"))
     out.append(_c("claims", len(claims) < 2, f"{len(claims)} specific claims stated as fact{' and not found in the source article' if source else ''}, check them: {'; '.join(claims[:5])}" if claims else ("every specific name and year is in the source article" if source else "no unhedged specifics"), "human"))
     return out
 
@@ -414,7 +509,7 @@ def description_head(meta: dict, limit: int = 600) -> str:
 
 
 REVIEW_SOURCE_CHARS = 16000  # of the source the AI review reads; relevant_source returns a shorter source whole. 12000 hid part of a film's 13,906 characters of checked passages and the review called supported facts invented (2 Nov 2026), at about $0.001 more a call
-REVIEW_TEXT_CHARS = 12000  # of the narration the AI review and the title check read; 7000 cut the closing chapter of an 8 to 10 minute documentary (58 lines are about 9,600 characters), at about $0.004 more a call
+REVIEW_TEXT_CHARS = 32000  # 20 Nov 2026: a 20 to 26 minute film is 84 to 100 lines, up to about 26,000 characters, and the review must read its last chapter; of the narration the AI review and the title check read; 7000 cut the closing chapter of an 8 to 10 minute documentary (58 lines are about 9,600 characters), and 12000 still cut the closing chapters of a 21-minute film whose last lines carry the six-tournaments answer (19 Nov 2026), at about $0.006 more a call in paid mode
 
 
 def llm_review(meta: dict, source: str = "") -> list[dict]:
@@ -437,7 +532,8 @@ def llm_review(meta: dict, source: str = "") -> list[dict]:
             'passing, a legend it says does not exist). When misleading_title is true also give title_reason (the promise and what the narration says instead), '
             'covers (one sentence on what the narration really covers) and better_titles (three honest titles under 65 characters that promise only what it covers). '
             'Return JSON: {"invented_facts_risk": 0, "policy_risk": 0, "misleading_title": false, "title_reason": "", "covers": "", "better_titles": [], "misleading_thumbnail": false, "thumbnail_reason": "", '
-            '"issues": []}. Put a real, specific issue in issues, or leave it empty.'))
+            '"issues": []}. Put a real, specific issue in issues, or leave it empty.'),
+            avoid=[str(m) for m in meta.get("script_writers") or []] or None)  # the models that wrote this script never judge it, even from another process
         facts, policy = int(r["invented_facts_risk"]), int(r["policy_risk"])
         issues = [str(i) for i in r.get("issues", [])[:3]]
         note = "; ".join(issues)

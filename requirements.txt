@@ -5,5 +5,6 @@ edge-tts>=6.1
 requests>=2.31
 Pillow>=10.0
 pytest>=8.0
+PyYAML>=6.0  # tests/test_deploy_local.py reads deploy/home-compose.yml
 numpy>=1.26  # depth maps for camera motion (depth.py); the studio works without them, with approximate depth
 onnxruntime>=1.18

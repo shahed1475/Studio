@@ -83,6 +83,8 @@ def _move_saved(task_id: str, state: str, note: str, now, file: Path | None) -> 
         rows = _load(file)
         for r in rows:
             if r["id"] == task_id:
+                if r["state"] not in LIVE:
+                    return r  # a closed task (done, failed, owner) keeps its outcome: a late retry must not turn a done task into a failed one
                 r["state"] = state
                 r["history"] = (r.get("history") or [])[-20:] + [f"{_stamp(now)} {state}: {_text(note, 200)}"]
                 _save(file, rows)

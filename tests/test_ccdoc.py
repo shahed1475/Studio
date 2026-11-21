@@ -254,3 +254,13 @@ def test_a_respelling_must_stay_one_word_or_the_captions_would_drift(tmp_path):
     spec = {**make(tmp_path), "say": {"Baresch": "Bah resh"}}
     assert any("one word" in e for e in ccdoc.validate(spec, tmp_path)[0])
     assert not any("one word" in e for e in ccdoc.validate({**make(tmp_path), "say": {"Baresch": "Bahresh"}}, tmp_path)[0])
+
+
+def test_source_lines_accept_autopilots_plain_text_sources_as_well_as_spec_dicts():
+    """21 Nov 2026: Autopilot's documentaries keep their sources as text lines; source_lines expected dicts and crashed the Seven Sleepers film after its
+    video was finished."""
+    data = {"sources": ["Wikipedia: Seven Sleepers (CC BY-SA 4.0), retold in our own words", "https://en.wikipedia.org/wiki/Seven_Sleepers",
+                        "https://en.wikipedia.org/wiki/Seven_Sleepers", ""]}
+    assert ccdoc.source_lines(data) == ["Wikipedia: Seven Sleepers (CC BY-SA 4.0), retold in our own words", "https://en.wikipedia.org/wiki/Seven_Sleepers"]
+    assert ccdoc.source_lines({"sources": [{"title": "T", "url": "https://x.org/1"}, "plain line"]}) == ["T: https://x.org/1", "plain line"]
+    assert ccdoc.source_lines({}) == []

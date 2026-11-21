@@ -29,6 +29,7 @@ def world(tmp_path, monkeypatch):
         seen["narrate"].append(kw)
         work.mkdir(parents=True, exist_ok=True)
         (work / "words.json").write_text(json.dumps([{"s": i * 2.0, "e": i * 2.0 + 1.0, "w": "word", "i": i} for i in range(len(texts))]))
+        (work / "n.wav").write_bytes(b"RIFF")  # like the real voice step: a narration file (the voice hand-over checks it, a2a.py)
         return work / "n.wav", work / "a.ass", [2.0] * len(texts)
 
     def pics(lns, *a, **k):
@@ -41,6 +42,8 @@ def world(tmp_path, monkeypatch):
 
     def fake_apply(clips, durations, size, **kw):
         seen["parallax"] = (list(clips), list(durations), size)
+        for p in clips:
+            p.with_suffix(".mp4").write_bytes(b"0")  # like the real motion step: a clip file per scene (the visuals hand-over checks it, a2a.py)
         return [p.with_suffix(".mp4") for p in clips], {"scenes": len(clips), "made": len(clips), "cached": 0, "model": len(clips), "approximate": 0, "skipped": 0, "failed": 0}
 
     def fake_render(clips, durations, narration, ass, work, out, **kw):

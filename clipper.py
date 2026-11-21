@@ -21,9 +21,10 @@ OUTRO = "The full story is on our channel."
 CLOSINGS = ["The full story of {s} is on our channel.", "Want the sources? The whole {s} film is on our channel.",
             "There is much more to {s}, and it is all in our full video.", "Watch the complete {s} documentary on our channel.",
             "We tell the rest of the {s} story in our full documentary.", "The long version of {s} is waiting on our channel."]
-GENERIC_CLOSINGS = ["More quiet stories from history are on our channel.", "If this was new to you, there is a lot more like it on our channel.",
-                    "We tell old stories like {s} every week on this channel.", "That is what the records say about {s}. More on our channel.",
-                    "Stay a while: our channel is full of stories like {s}.", "There are many more stories like {s} on our channel."]
+# a Short's own closing invites a subscribe (the owner's standing rule of 29 Oct 2026); the variety is in the rest of the line
+GENERIC_CLOSINGS = ["Subscribe for more quiet stories from history.", "If this was new to you, subscribe: there is a lot more like it.",
+                    "Subscribe: we tell old stories like {s} every week.", "That is what the records say about {s}. Subscribe for more.",
+                    "Subscribe and stay a while: there are more stories like {s}.", "Subscribe for many more stories like {s}."]
 CONTRAST = re.compile(r"\b(but|however|yet|until|secret|hidden|never|only|nobody|vanished|disappeared|mystery)\b", re.I)
 
 
@@ -31,11 +32,21 @@ def _plain(t: str) -> str:
     return re.sub(r"[^a-z0-9 ]", "", t.lower()).strip()
 
 
+def closing_subject(topic: str, most: int = 6) -> str:
+    """The topic's name for a closing line, never cut inside a name (21 Nov 2026: "Raijin and Fujin, the Storm Gods" became "... the Storm"): the whole topic
+    when it is short, else its part before the first comma, colon or dash when that is short, else "this story"."""
+    t = re.sub(r"^(the )?(legend|mystery|story) of (the )?", "", (topic or "").strip(), flags=re.I).strip(" ?.")
+    if t and len(t.split()) <= most:
+        return t
+    head = re.split(r"\s*[,:;\u2013\u2014]\s*|\s+-\s+", t)[0].strip()
+    return head if head and len(head.split()) <= most else "this story"
+
+
 def outro_for(topic: str, recent: list[str], doc: bool = True) -> str:
     """A closing line that is not like any recent Short's: the template least like the recent endings (a Short that points to a full film, or a generic one)."""
     import difflib
 
-    subject = " ".join(re.sub(r"^(the )?(legend|mystery|story) of (the )?", "", (topic or "").strip(), flags=re.I).strip(" ?.").split()[:5]) or "this story"
+    subject = closing_subject(topic)
     options = [t.format(s=subject) for t in (CLOSINGS if doc else GENERIC_CLOSINGS)]
     worst = lambda t: max((difflib.SequenceMatcher(None, _plain(t), _plain(r)).ratio() for r in recent), default=0.0)
     return min(options, key=worst)

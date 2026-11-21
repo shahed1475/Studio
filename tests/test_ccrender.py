@@ -33,6 +33,9 @@ def test_missing_blender_is_a_clear_error(monkeypatch, tmp_path):
         ccrender.render({"scene": "dunes", "width": 64, "height": 64})
 
 
+REAL_BLENDER = ccrender.BLENDER  # read at import, before any fixture replaces it
+
+
 @pytest.mark.skipif(not ccrender.BLENDER.exists(), reason="Blender is not installed here")
 @pytest.mark.skipif(not any((Path(__file__).resolve().parent.parent / "assets" / "cc0" / "hdri").glob("*")),
                     reason="the CC0 sky files (assets/cc0/hdri) are not in git; a clean checkout has none")
@@ -40,6 +43,7 @@ def test_real_render_writes_picture_and_depth(monkeypatch, tmp_path):
     import config
     import depth
 
+    monkeypatch.setattr(ccrender, "BLENDER", REAL_BLENDER)  # conftest hides Blender from every other test (20 Nov 2026)
     monkeypatch.setattr(config, "CACHE", tmp_path)
     p = ccrender.render({"scene": "dunes", "width": 160, "height": 90, "samples": 4, "engine": "EEVEE"})
     assert p.exists() and Image.open(p).size == (160, 90)

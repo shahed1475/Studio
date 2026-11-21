@@ -192,3 +192,15 @@ def test_the_risks_card_agents_row_shows_the_script_reviewer(tmp_path):
         scriptreview.record(f"h{i}", {"verdict": "hold", "model": "skipped", "checks": [{"name": "speakable", "ok": False, "severity": "block"}]}, now=NOW)
     row = risk.agents_row(NOW, ev, tmp_path / "none.json", doc)
     assert row["level"] == "watch" and "3 held" in row["evidence"] and "the script gate held the last scripts in a row" in row["evidence"]
+
+
+def test_a_narrated_story_shape_word_is_a_label_and_is_cut_mechanically():
+    """21 Nov 2026: the Raijin and Fujin Short narrated "The payoff: they are twin storm gods..." (our prompt's own word for that line)."""
+    import scriptgen
+
+    assert scriptgen.label_of("The payoff: they are twin storm gods enshrined side by side.")
+    assert scriptgen.label_of("Hook - who guards the gate?")
+    assert not scriptgen.label_of("The setting sun lit the temple.") and not scriptgen.label_of("Their story still travels.")
+    lines = [{"text": "Who are the storm brothers?"}, {"text": "The payoff: they are twin storm gods enshrined side by side in Japan."}]
+    out, _, n = scriptreview.safe_fixes(lines, [])
+    assert n == 1 and out[1]["text"] == "They are twin storm gods enshrined side by side in Japan."

@@ -19,6 +19,15 @@ import requests
 import assetledger  # imported up front: a missing module must show before anything is bought, not after the job is sent
 import filelock
 
+# Free mode check: when the studio is in free mode (no paid models), skip balance checks
+def _is_free_mode() -> bool:
+    try:
+        import llm
+        cfg = llm.load_config()
+        return cfg.get("free", False) and not cfg.get("enabled", True)
+    except Exception:
+        return False
+
 CONFIG = Path("config/footage.json")
 ROLE = "footage"
 LICENCE = "ai-generated"
@@ -530,13 +539,21 @@ def _generate(cfg, key, prompt, run, http, sleep, today, state, first_frame=None
         raise Refused("empty prompt")
     auth, base = {"Authorization": f"Bearer {key}"}, cfg["base_url"]
     check_daily_cap(cfg)
-    before = balance(cfg, auth, http, sleep)
-    if before < cfg["min_balance"]:
-        raise Refused(f"balance {before} is under {cfg['min_balance']}, stopping")
+    
+    # In free mode, skip balance checks and use a mock balance
+    if _is_free_mode():
+        before = 999.0  # mock balance for free mode
+        run.log("free mode: skipping OpenRouter balance check")
+    else:
+        before = balance(cfg, auth, http, sleep)
+        if before < cfg["min_balance"]:
+            raise Refused(f"balance {before} is under {cfg['min_balance']}, stopping")
+    
     cfg = _with_live_price(cfg, auth, http, sleep, run)
     check_daily_cap(cfg)  # again, now with the price the provider will charge
     est = estimated_cost(cfg)
-    if round(before - est, 4) < cfg["min_balance"]:  # the floor holds AFTER this clip is paid, not only before
+    
+    if not _is_free_mode() and round(before - est, 4) < cfg["min_balance"]:  # the floor holds AFTER this clip is paid, not only before
         raise Refused(f"balance {before} minus this clip's ${est:.2f} would be under {cfg['min_balance']}; nothing was bought")
     run.update(balance_before=before)
     est = reserve(cfg, state)  # booked before the job is sent: a crash, a timeout or a kill can no longer lose it

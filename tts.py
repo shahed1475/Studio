@@ -1,5 +1,6 @@
 """US-English neural voice (free, edge-tts) plus word-timed captions."""
 import asyncio
+import os
 import time
 import json
 import re
@@ -9,6 +10,7 @@ from pathlib import Path
 import edge_tts
 
 import audiofinish
+import checkpoint
 
 import config
 import keywords
@@ -238,6 +240,27 @@ def _ass_plain(words: list[tuple[float, float, str]]) -> str:
     return head + "\n".join(rows) + "\n"
 
 
+def _kept_line(mp3: Path, key: str) -> list | None:
+    """The word timings of a voice line an earlier run made with the same text and voice, when its file is the very one recorded (size and SHA-256); else None."""
+    rec = checkpoint.read_json(mp3.with_suffix(".json"))
+    if not checkpoint.still_valid(mp3, rec, key) or not isinstance(rec.get("words"), list):
+        return None
+    try:
+        return [(float(s), float(e), str(w)) for s, e, w in rec["words"]]
+    except (TypeError, ValueError):
+        return None
+
+
+def _keep_line(mp3: Path, key: str, words: list) -> None:
+    """Recorded only when the line really is audio of some length: a line the service cut short or sent empty is made again next time, never kept."""
+    if not mp3.is_file() or checkpoint.media_seconds(mp3) <= 0.05:  # nothing to keep (a test's stand-in voice may write no file)
+        return
+    try:
+        checkpoint.write_json(mp3.with_suffix(".json"), {"key": key, "bytes": mp3.stat().st_size, "sha256": checkpoint.sha256(mp3), "words": [list(w) for w in words]})
+    except OSError:
+        pass  # without the record the line is simply made again next time
+
+
 def narrate(lines: list[str], work: Path, pause: float = 0.12, motion: int = 0, pos: str = "bottom", style: str | None = None, tail: float | None = None) -> tuple[Path, Path, list[float]]:
     """Return (narration.mp3, captions.ass, per-line durations in seconds). style: an opt-in delivery from VOICE_STYLES, else the default voice. tail: seconds of the
     service's silence kept after each line's last word (a video's own `voice_tail`); None keeps the style's tail, or the whole file when the voice has no style."""
@@ -250,14 +273,21 @@ def narrate(lines: list[str], work: Path, pause: float = 0.12, motion: int = 0, 
         mp3 = work / f"line{i:02d}.mp3"
         pros = line_prosody(style, text, i, len(lines))
         said = spoken(text)
-        for attempt in range(5):  # the voice service sometimes returns no audio for one line of a long film: wait and ask again instead of losing the whole build
-            try:
-                words = asyncio.run(_synth_line(said, mp3) if pros is None else _synth_line(said, mp3, pros))
-                break
-            except Exception as e:
-                if type(e).__name__ != "NoAudioReceived" or attempt == 4:
-                    raise
-                time.sleep(5 * (attempt + 1))
+        key = checkpoint.key_of("voice", said, pros or [config.VOICE, config.VOICE_RATE, config.VOICE_PITCH])
+        words = _kept_line(mp3, key)  # a line made by an earlier run of this job that was cut off (a power cut): kept, so the film keeps its exact timing
+        if words is None:
+            part = mp3.with_name(mp3.stem + ".part.mp3")  # written aside and renamed only when complete: a cut mid-line never leaves a half line that looks finished
+            for attempt in range(5):  # the voice service sometimes returns no audio for one line of a long film: wait and ask again instead of losing the whole build
+                try:
+                    words = asyncio.run(_synth_line(said, part) if pros is None else _synth_line(said, part, pros))
+                    break
+                except Exception as e:
+                    if type(e).__name__ != "NoAudioReceived" or attempt == 4:
+                        raise
+                    time.sleep(5 * (attempt + 1))
+            if part.exists():  # (a test's stand-in voice may write nothing)
+                os.replace(part, mp3)
+            _keep_line(mp3, key, words)
         d = line_length(_duration(mp3), words, pause, tail)  # small breath between lines
         all_words += [(s + offset, e + offset, unspoken(w), i) for s, e, w in words]
         durations.append(d)

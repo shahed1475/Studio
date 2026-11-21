@@ -419,6 +419,36 @@ def next_slot_view() -> dict | None:
     return _NEXT["data"]
 
 
+DOC_LENGTH_LIMITS = (5, 30)  # minutes the owner may choose; 30 is the reviewer's hard limit (rules.json limits.doc_duration_s, 1,800 s)
+
+
+def doc_length_view() -> dict:
+    """The documentary length new videos are written for (rules.json benchmarks, approved changes included) and what it means in lines and words."""
+    import rulesfile
+    import scriptgen
+
+    lo, hi = float(rulesfile.get("benchmarks", "long_min_minutes")), float(rulesfile.get("benchmarks", "long_max_minutes"))
+    b = scriptgen.doc_budget(lo, hi)
+    return {"min": lo, "max": hi, "lines": [b["min_lines"], b["max_lines"]], "words": b["words"], "chapters": list(b["chapters"]), "limits": list(DOC_LENGTH_LIMITS)}
+
+
+def set_doc_length(b: dict) -> dict:
+    """The owner sets the documentary length on the Autopilot page. One owner action, kept in the rules file's own proposal and approval history
+    (rulesfile.propose then resolve), so it survives a restart and every new job reads it: scriptgen.DOC_MINUTES for the writer, the reviewer's
+    doc_length warning, craftlearn. Shorts keep their own length (shorts_min_seconds, shorts_max_seconds). Videos already made are not touched."""
+    import rulesfile
+
+    lo, hi = b.get("min"), b.get("max")
+    a, z = DOC_LENGTH_LIMITS
+    if not all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in (lo, hi)) or not a <= lo < hi <= z:
+        raise ValueError(f"the length must be two numbers of minutes from {a} to {z}, the shortest below the longest")
+    patch = {"benchmarks": {"long_min_minutes": lo, "long_max_minutes": hi}}
+    pid = rulesfile.propose(patch, f"the owner set the documentary length to {lo:g} to {hi:g} minutes on the Autopilot page", "owner (dashboard)")
+    if not pid:
+        raise ValueError("the rules file refused that length")
+    return {"ok": True, "result": rulesfile.resolve(pid, approve=True), **doc_length_view()}
+
+
 def autopilot_view() -> dict:
     import datetime as dt
 
@@ -761,6 +791,17 @@ class H(BaseHTTPRequestHandler):
             import ownerdesk
 
             self.send_json(ownerdesk.view())
+        elif u.path == "/api/reports":  # the Reports page (reportsview.py): read only, the owner's studio only, a listed name or the list
+            import reportsview
+            import tenantmode
+
+            if tenantmode.is_tenant():
+                return self.send_json({"error": "only in the owner's studio"}, 404)
+            name = parse_qs(u.query).get("name", [""])[0]
+            if not name:
+                return self.send_json(reportsview.listing())
+            r = reportsview.read(name)
+            self.send_json(r) if r else self.send_json({"error": "no such report"}, 404)
         elif u.path == "/api/growth":
             self.send_json(growth_view())
         elif u.path == "/now":
@@ -789,7 +830,7 @@ class H(BaseHTTPRequestHandler):
             import autopilot
             import newswatch
 
-            self.send_json({**autopilot_view(), "config": autopilot.load_config(), "status": autopilot.status(),
+            self.send_json({**autopilot_view(), "config": autopilot.load_config(), "status": autopilot.status(), "doc_length": doc_length_view(),
                             "news": newswatch.latest_digest(), "trends": __import__("trendwatch").latest(), "taking_off": __import__("trendinbox").taking_off(),
                             "growth": __import__("growthview").view(),
                             "agent_config": __import__("agent").load_config(),
@@ -1005,6 +1046,8 @@ class H(BaseHTTPRequestHandler):
 
             topicqueue.remove(b["index"])
             return {"ok": True}
+        if path == "/api/rules/doc-length":
+            return set_doc_length(b)
         if path == "/api/autopilot/config":
             import autopilot
 
@@ -1145,10 +1188,14 @@ class H(BaseHTTPRequestHandler):
                 if len(parts) > 6 or any(not llm._MODEL_NAME.match(x) for x in parts):
                     raise ValueError(f"the {role} model names may hold letters, digits and . _ : / - only, separated by commas (at most 6)")
                 names[role] = ", ".join(parts)
+            why = llm.judge_names_problem(llm._extra_models_of(names["script"]), llm._extra_models_of(names["review"]))
+            if why:  # the model that wrote a script is never its judge
+                raise ValueError(why)
             st = load_settings()
             st.update(extra_llm_on=on, extra_llm_url=url, extra_llm_local=local, extra_llm_models=names)
             save_settings(st)
             llm._url_cache.clear()
+            llm._catalog.clear()
             return {"ok": True, "status": extra_llm_status()}
         if path == "/api/extra-llm/test":  # one tiny question to the first model: reports whether it answered and how fast; never the key
             if __import__("tenantmode").is_tenant():
@@ -1157,15 +1204,38 @@ class H(BaseHTTPRequestHandler):
 
             import llm
 
-            mids = llm.extra_models("script") or llm.extra_models("review")
-            if not mids:
+            if not (llm.extra_models("script") or llm.extra_models("review")):
                 return {"ok": False, "detail": "Switch the provider on, save a key, an address your rules accept, and at least one model name first."}
-            t0 = _t.monotonic()
-            try:
-                text = llm.extra_ping(mids[0])
-                return {"ok": bool(text.strip()), "model": mids[0][len(llm.EXTRA_PREFIX):], "seconds": round(_t.monotonic() - t0, 1), "detail": "answered" if text.strip() else "empty answer"}
-            except Exception as e:
-                return {"ok": False, "model": mids[0][len(llm.EXTRA_PREFIX):], "seconds": round(_t.monotonic() - t0, 1), "detail": llm.scrub(f"{type(e).__name__}: {e}")[:200]}
+            # 20 Nov 2026: the test asked only the first script model, which the proxy had marked "exhausted" for hours, and showed a bare
+            # "429 Too Many Requests". Now: the provider's own status for every saved model (no request), then one small question to the first
+            # usable writer and the first usable judge, with the provider's reason and the time to try again when it refuses.
+            llm._catalog.clear()
+            rows, first = [], None
+            for role in ("script", "review"):
+                mids = llm.extra_models(role)
+                if not mids:
+                    rows.append({"role": role, "model": "", "ok": False, "detail": "no usable model on this list (a judge cannot be a script model or a router such as auto)"})
+                    continue
+                for mid in mids:
+                    name, st = mid[len(llm.EXTRA_PREFIX):], llm.extra_status(mid)
+                    if st in llm.UNUSABLE:
+                        rows.append({"role": role, "model": name, "ok": False, "detail": f"the provider says {st}; not asked"})
+                        continue
+                    t0 = _t.monotonic()
+                    try:
+                        text = llm.extra_ping(mid)
+                        row = {"role": role, "model": name, "ok": bool(text.strip()), "seconds": round(_t.monotonic() - t0, 1), "detail": "answered" if text.strip() else "empty answer"}
+                    except Exception as e:
+                        row = {"role": role, "model": name, "ok": False, "seconds": round(_t.monotonic() - t0, 1), "detail": llm.extra_error(e)[:200]}
+                    rows.append(row)
+                    first = first or row
+                    break
+            top = first or rows[0]
+            out = {"ok": any(r["ok"] for r in rows if r.get("seconds") is not None) and all(r["ok"] for r in rows if r.get("seconds") is not None),
+                   "model": top.get("model", ""), "detail": top["detail"], "rows": rows}
+            if top.get("seconds") is not None:
+                out["seconds"] = top["seconds"]
+            return out
         if path == "/api/key/save":
             which, value = str(b.get("which", "")), str(b.get("value", "")).strip()
             field = {"openrouter": "openrouter_key", "pexels": "pexels_key", "pixabay": "pixabay_key", "smithsonian": "smithsonian_key", "extra_llm": "extra_llm_key"}.get(which)

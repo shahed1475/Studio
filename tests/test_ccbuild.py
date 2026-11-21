@@ -10,59 +10,70 @@ import ccbuild
 
 BASE = Path(__file__).resolve().parent.parent / "docs" / "studio" / "flannan"
 SPEC = json.loads((BASE / "short.json").read_text()) if (BASE / "short.json").exists() else None
-pytestmark = pytest.mark.skipif(SPEC is None, reason="the Flannan spec is not in this checkout")
+# Only the tests that read the real Flannan spec need it. It was never committed (it lives in the workshop folder), so those tests skip here;
+# the same validator rules are also checked below against a small spec written for the tests (FIXTURE), which runs everywhere.
+needs_spec = pytest.mark.skipif(SPEC is None, reason="the Flannan spec is not in this checkout")
 
 
 def errors(spec):
     return ccbuild.validate(spec, BASE)[0]
 
 
+@needs_spec
 def test_the_real_spec_passes():
     assert errors(SPEC) == []
 
 
+@needs_spec
 def test_a_forbidden_footage_key_is_refused():
     s = copy.deepcopy(SPEC)
     s["footage"] = "x"
     assert any("footage" in e for e in errors(s))
 
 
+@needs_spec
 def test_last_line_must_say_subscribe_not_follow():
     s = copy.deepcopy(SPEC)
     s["lines"][-1]["text"] = "Follow for the next true story."
     assert any("subscribe" in e for e in errors(s))
 
 
+@needs_spec
 def test_first_line_must_be_a_short_question():
     s = copy.deepcopy(SPEC)
     s["lines"][0]["text"] = "Three keepers vanished."
     assert any("line 1" in e for e in errors(s))
 
 
+@needs_spec
 def test_a_yes_no_hook_is_only_a_warning():
     s = copy.deepcopy(SPEC)
     s["lines"][0]["text"] = "Did three keepers really vanish?"
     assert errors(s) == [] and any("yes/no" in w for w in ccbuild.validate(s, BASE)[1])
 
 
+@needs_spec
 def test_a_verified_claim_needs_its_passage_in_the_saved_source():
     s = copy.deepcopy(SPEC)
     s["claims"][0]["passage"] = "a sentence the page never contained"
     assert any("not in the saved source text" in e for e in errors(s))
 
 
+@needs_spec
 def test_conflicting_or_unverified_claims_stop_the_build():
     s = copy.deepcopy(SPEC)
     s["claims"][0]["status"] = "UNVERIFIED"
     assert any("UNVERIFIED" in e for e in errors(s))
 
 
+@needs_spec
 def test_two_sources_are_the_minimum():
     s = copy.deepcopy(SPEC)
     s["sources"] = s["sources"][:1]
     assert any("two sources" in e for e in errors(s))
 
 
+@needs_spec
 def test_too_many_words_is_refused():
     s = copy.deepcopy(SPEC)
     s["lines"][3]["text"] = " ".join(["word"] * 80)
@@ -79,6 +90,7 @@ def test_fit_makes_a_9_16_picture_and_flip_mirrors_it(tmp_path):
     assert A.size == (1080, 1920) and A.getpixel((10, 900))[0] > 200 and B.getpixel((10, 900))[0] < 50 and B.getpixel((1070, 900))[0] > 200
 
 
+@needs_spec
 def test_the_ledger_carries_the_passage_and_the_source():
     srcs = {s["id"]: s for s in SPEC["sources"]}
     rows = ccbuild.ledger(SPEC, srcs)
@@ -152,3 +164,65 @@ def test_a_spec_with_photos_lists_each_credit_and_says_the_rest_is_ai_art():
     assert "Golden Kappa statue by A Person, CC BY 2.0" in line
     assert line.startswith("Real photographs (free licence):")
     assert "Other pictures: AI-generated illustrations" in line
+
+
+# ---- the same rules against a spec written for these tests (no workshop file needed) ----
+PASSAGE_A = "The keeper wrote that the lamp was out on the night of the storm."
+PASSAGE_B = "The relief boat found the gate shut and the table set."
+
+
+@pytest.fixture
+def fixture_spec(tmp_path):
+    """A complete, valid Short spec with placeholder text, its two saved source pages beside it."""
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "a.txt").write_text(f"Page A.\n{PASSAGE_A}\nMore text.")
+    (tmp_path / "src" / "b.txt").write_text(f"Page B.\n{PASSAGE_B}")
+    lines = [{"text": "Where did the three keepers go?", "picture": "p1"}] + \
+            [{"text": f"Placeholder story line number {i} for the test.", "picture": f"p{i}"} for i in range(2, 8)] + \
+            [{"text": "Subscribe for the next true story.", "picture": "p8"}]
+    spec = {"title": "A test Short", "lines": lines, "credits": ["Pictures: AI-generated illustrations"],
+            "sources": [{"id": "a", "title": "Page A", "url": "https://example.org/a", "read": "2026-11-20", "file": "src/a.txt"},
+                        {"id": "b", "title": "Page B", "url": "https://example.org/b", "read": "2026-11-20", "file": "src/b.txt"}],
+            "claims": [{"text": "The lamp was out.", "source": "a", "passage": PASSAGE_A, "status": "VERIFIED"},
+                       {"text": "The table was set.", "source": "b", "passage": PASSAGE_B, "status": "VERIFIED"}]}
+    return spec, tmp_path
+
+
+def test_the_fixture_spec_passes(fixture_spec):
+    spec, base = fixture_spec
+    assert ccbuild.validate(spec, base) == ([], [])
+
+
+@pytest.mark.parametrize("change, expected", [
+    (lambda s: s.update(footage="x"), "footage"),
+    (lambda s: s["lines"][-1].update(text="Follow for the next true story."), "subscribe"),
+    (lambda s: s["lines"][0].update(text="Three keepers vanished."), "line 1"),
+    (lambda s: s["claims"][0].update(passage="a sentence the page never contained"), "not in the saved source text"),
+    (lambda s: s["claims"][0].update(status="UNVERIFIED"), "UNVERIFIED"),
+    (lambda s: s["claims"][1].update(status="CONFLICTING"), "CONFLICTING"),
+    (lambda s: s.update(sources=s["sources"][:1]), "two sources"),
+    (lambda s: s["lines"][3].update(text=" ".join(["word"] * 150)), "too long"),
+    (lambda s: s["sources"][1].update(url="http://example.org/b"), "https address"),
+    (lambda s: s["sources"][1].update(file="src/missing.txt"), "no saved text"),
+    (lambda s: s.update(claims=[]), "claim ledger is empty"),
+    (lambda s: s.update(lines=s["lines"][:5]), "6 to 14 lines"),
+], ids=["footage", "follow", "hook", "passage", "unverified", "conflicting", "sources", "words", "http", "no-text", "no-claims", "few-lines"])
+def test_each_rule_refuses_a_broken_fixture_spec(fixture_spec, change, expected):
+    spec, base = fixture_spec
+    s = copy.deepcopy(spec)
+    change(s)
+    assert any(expected in e for e in ccbuild.validate(s, base)[0]), ccbuild.validate(s, base)[0]
+
+
+def test_a_yes_no_hook_in_the_fixture_is_only_a_warning(fixture_spec):
+    spec, base = fixture_spec
+    s = copy.deepcopy(spec)
+    s["lines"][0]["text"] = "Did three keepers really vanish?"
+    errs, warns = ccbuild.validate(s, base)
+    assert errs == [] and any("yes/no" in w for w in warns)
+
+
+def test_the_fixture_ledger_carries_the_passage_and_the_source(fixture_spec):
+    spec, _ = fixture_spec
+    rows = ccbuild.ledger(spec, {s["id"]: s for s in spec["sources"]})
+    assert len(rows) == 2 and all(r["evidence_excerpt"] and r["source_url"].startswith("https://") for r in rows)

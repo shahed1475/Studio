@@ -25,14 +25,21 @@ def _short_run(tmp_path, monkeypatch, data):
 
     def narrate(ls, work, pause=0.12, motion=0, pos="bottom", **kw):
         seen["narrate"] = kw
+        work.mkdir(parents=True, exist_ok=True)
+        (work / "n.mp3").write_bytes(b"ID3")  # like the real voice step: a narration file (the voice hand-over checks it, a2a.py)
         return work / "n.mp3", work / "c.ass", [1.0] * len(ls)
+
+    pics = []
+    for name in "abcd":
+        (tmp_path / f"{name}.jpg").write_bytes(b"x")  # like the real picture step: a file per scene (the visuals hand-over checks it)
+        pics.append(str(tmp_path / f"{name}.jpg"))
 
     def render(*a, **k):
         seen["render"] = k
         raise RuntimeError("reached render")
 
     monkeypatch.setattr(run.tts, "narrate", narrate)
-    monkeypatch.setattr(footage, "scene_images", lambda ls, topic, anchors, pool_size=6, judge=None, **kw: (["a", "b", "c", "d"], [], {"scenes": 4, "unique": 4, "missing": 0}))
+    monkeypatch.setattr(footage, "scene_images", lambda ls, topic, anchors, pool_size=6, judge=None, **kw: (pics, [], {"scenes": 4, "unique": 4, "missing": 0}))
     monkeypatch.setattr(footage, "enough_footage", lambda clips: True)
     monkeypatch.setattr(run.render, "render", render)
     with pytest.raises(RuntimeError, match="reached render"):

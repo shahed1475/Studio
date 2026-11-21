@@ -1,7 +1,7 @@
 import re
 
 import aiart
-import packaging
+import video_packaging_rules as packaging
 import scriptgen
 import tts
 
@@ -9,7 +9,7 @@ import tts
 def test_documentary_length_is_capped_at_about_eight_minutes():
     for t in ("La Llorona", "Pied Piper", "Delphi", "Hong Gildong", "Thunderbird", "Voynich", "x", "y", "z"):
         c, per = scriptgen.shape_for(t)
-        assert c * per <= scriptgen.MAX_DOC_LINES and 6 <= c <= 9 and 5 <= per <= 7
+        assert c * per <= scriptgen.MAX_DOC_LINES and scriptgen.DOC_CHAPTERS[0] <= c <= scriptgen.DOC_CHAPTERS[1] and scriptgen.DOC_PER[0] <= per <= scriptgen.DOC_PER[1]
 
 
 def test_a_script_that_admits_its_sources_say_little_is_thin():

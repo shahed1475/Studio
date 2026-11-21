@@ -7,11 +7,46 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import pytest
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _session_safety_net(tmp_path_factory):
+    """For the whole run, the files a background thread may still write after its test ended point at a session folder, so a late writer
+    can never reach the owner's real data. llm._race leaves the losing request running (an HTTP call cannot be recalled); it recorded its
+    outcome after the test's own redirect was undone and replaced data/free_models.json with invented models (20 Nov 2026). Each test still
+    redirects these to its own folder; on undo they come back here, not to data/."""
+    import freemodels
+    import llm
+
+    net = tmp_path_factory.mktemp("safety_net")
+    saved = [(freemodels, "FILE", freemodels.FILE), (llm, "USAGE_FILE", llm.USAGE_FILE)]
+    freemodels.FILE, llm.USAGE_FILE = net / "free_models.json", net / "llm_usage.json"
+    yield
+    llm.settle(30)
+    for m, attr, old in saved:
+        setattr(m, attr, old)
+
+
 @pytest.fixture(autouse=True)
 def _isolate_autopilot_log(tmp_path, monkeypatch):
     import autopilot
 
     monkeypatch.setattr(autopilot, "LOG", tmp_path / "autopilot.log")
+
+
+@pytest.fixture(autouse=True)
+def _no_real_provider_model_list(monkeypatch):
+    """The owner's model provider (llm.extra_catalog) runs on this PC at the address the tests use: no test reads its real model list.
+    A test of the catalog itself replaces llm._catalog_get with its own fake."""
+    import llm
+
+    def refuse(url, key):
+        raise OSError("tests never read a real provider's model list")
+
+    llm._catalog.clear()
+    monkeypatch.setattr(llm, "_catalog_get", refuse)
+    yield
+    llm._catalog.clear()
+    llm._WRITERS.clear()
+    llm._served.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -34,6 +69,15 @@ def _isolate_agent_files(tmp_path, monkeypatch):
     monkeypatch.setattr(agentlog, "FILE", tmp_path / "events.jsonl")
     monkeypatch.setattr(agentbus, "FILE", tmp_path / "tasks.json")
     monkeypatch.setattr(lessons, "FILE", tmp_path / "lessons.jsonl")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_craft_files(tmp_path, monkeypatch):
+    """No test may write the owner's craft advice (data/channels/craft.json): channelwatch.run() saves it, and a stray craft.json
+    once sorted last in data/channels and was read as the weekly digest."""
+    import craftlearn
+
+    monkeypatch.setattr(craftlearn, "FILE", tmp_path / "craft.json")
 
 
 @pytest.fixture(autouse=True)
@@ -121,6 +165,14 @@ def _isolate_owner_model_settings(tmp_path, monkeypatch):
     monkeypatch.setattr(llm, "USAGE_FILE", iso / "llm_usage.json")
     monkeypatch.setattr(freeart, "USAGE", iso / "cloudflare_usage.json")
     monkeypatch.setattr(llm, "_costs_file", lambda: iso / "video_costs.json")  # tests booked invented spend into the real data/video_costs.json
+    import freemodels
+    import videoinspect
+
+    # 20 Nov 2026: full test runs wrote invented models (a/m1:free, b/m2:free, b/slow:free) into the real data/free_models.json and wiped the
+    # learned reliability and timings of the real free models; the two OpenRouter list caches are the real ones too
+    monkeypatch.setattr(freemodels, "FILE", iso / "free_models.json")
+    monkeypatch.setattr(videoinspect, "MODALITY_CACHE", iso / "or_modalities.json")
+    monkeypatch.setattr(llm, "PRICES_FILE", iso / "or_prices.json")
     import governor
 
     import config
@@ -129,6 +181,9 @@ def _isolate_owner_model_settings(tmp_path, monkeypatch):
     monkeypatch.setattr(governor, "caps_file", lambda: iso / "governor.json" if config.ROOT == real_root else config.ROOT / governor.FILE)
     for key in ("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN"):  # the owner's real free-picture keys; tests of the free account set their own
         monkeypatch.delenv(key, raising=False)
+    yield
+    llm.settle(10)  # a raced request that lost finishes in a thread after its test: it must count in that test's files, not the next test's (20 Nov 2026: a
+    # loser's count reached test_paid_claude_is_used_while_credit_lasts, which then saw 2 free requests instead of 0, about one full run in two)
 
 
 @pytest.fixture(autouse=True)
@@ -137,3 +192,39 @@ def _no_listening_in_tests(monkeypatch):
     import voicecheck
 
     monkeypatch.setattr(voicecheck, "ENABLED", False)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_music(tmp_path, monkeypatch):
+    """No test mixes the owner's real music folder into a video (musicbed.py); a test of the bed itself points DIR at its own tracks."""
+    import musicbed
+
+    monkeypatch.setattr(musicbed, "DIR", tmp_path / "_no_music")
+
+
+@pytest.fixture(autouse=True)
+def _no_real_blender(tmp_path, monkeypatch):
+    """No test starts the owner's real Blender or asks Wikipedia for coordinates through a producer (blenderscenes.py). The smoke test of Blender itself sets its own path."""
+    import blenderscenes
+    import ccrender
+
+    monkeypatch.setattr(ccrender, "BLENDER", tmp_path / "_no_blender" / "blender")
+    monkeypatch.setattr(blenderscenes, "coordinates", lambda title: None)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_draft(tmp_path, monkeypatch):
+    """No test writes or resumes the real saved documentary draft (scriptgen.DRAFT_FILE)."""
+    import scriptgen
+
+    monkeypatch.setattr(scriptgen, "DRAFT_FILE", tmp_path / "_draft" / "pending_draft.json")
+
+
+@pytest.fixture(autouse=True)
+def _no_real_saved_scripts(tmp_path, monkeypatch):
+    """No test may read or write the real data/pending_doc.json or data/pending_short.json (20 Nov 2026: the waiting Seven Sleepers film's script lives there, and a
+    test that made a video without a topic would have resumed it or written over it)."""
+    import run
+
+    monkeypatch.setattr(run, "PENDING_DOC", tmp_path / "_iso_pending_doc.json")
+    monkeypatch.setattr(run, "PENDING_SHORT", tmp_path / "_iso_pending_short.json")

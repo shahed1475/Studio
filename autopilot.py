@@ -646,7 +646,7 @@ def finish_video(folder: Path) -> None:
     others = fixer.other_titles(folder)
     titles = [t for t in (meta.get("seo") or {}).get("titles", []) if not fixer._too_similar(t, others)] or (meta.get("seo") or {}).get("titles") or []
     if titles:
-        import packaging
+        import video_packaging_rules as packaging
         import reviewer
 
         ranked = packaging.rank_titles(titles, (meta.get("seo") or {}).get("core", ""), others, meta.get("kind", ""))
@@ -663,13 +663,17 @@ def finish_video(folder: Path) -> None:
 def do_make(slug, cfg, now):
     import run
 
-    finish_video(run.cmd_doc())
+    folder = run.cmd_doc()
+    finish_video(folder)
+    return folder
 
 
 def do_make_short(slug, cfg, now):
     import run
 
-    finish_video(run.cmd_make())
+    folder = run.cmd_make()
+    finish_video(folder)
+    return folder
 
 
 def do_make_clip(slug, cfg, now):
@@ -699,6 +703,44 @@ def do_cost_stop(slug, cfg, now):
 
 EXECUTORS = {"cost_stop": do_cost_stop, "prelaunch": do_prelaunch, "review": do_review, "approve": do_approve, "fix": do_fix, "polish": do_polish, "schedule": do_schedule, "upload": do_upload,
              "ideas": do_ideas, "make": do_make, "make_short": do_make_short, "make_clip": do_make_clip, "make_news": do_make_news}
+
+
+def make_one(fmt: str, review: bool = True, now: dt.datetime | None = None) -> dict:
+    """One supervised make by Autopilot's own executors (20 Nov 2026, the owner's order: Autopilot makes a new Short and a new documentary while an engineer watches; the
+    planner saw no empty slot, so a tick would not have made them). The same topic choice (topicrank, the weekly programme), house style, weekly caps, pace guard
+    and storage check as a tick's make, then the reviewer's own review. It never approves, schedules or uploads anything, whatever auto_approve says: those stay with
+    the owner. It holds the Autopilot lock, so the worker's tick cannot touch the same files meanwhile; a second copy is refused at once (Busy)."""
+    import agentlog
+
+    now = now or dt.datetime.now(dt.timezone.utc)
+    act = {"short": "make_short", "doc": "make"}[fmt]
+    with exclusive():
+        cfg = governed(load_config(), now)
+        state = build_state(now, cfg)
+        if state.get("storage_full"):
+            raise RuntimeError("storage is full: nothing new is made")
+        cap = (cfg.get("_caps") or {}).get(fmt)
+        if cap is not None and cap <= 0:
+            raise RuntimeError(f"this week's cap for {fmt} videos is 0 ({'; '.join((cfg.get('_caps') or {}).get('why') or [])})")
+        if not pace_filter([{"do": act, "slug": None}], state, cfg):
+            raise RuntimeError(f"the pace guard holds new {fmt} videos: {state.get('platform_why', '')}")
+        _log(f"start {act} (supervised, never approved by this command)")
+        with playbook.acting_as(agents.for_action(act)):
+            folder = EXECUTORS[act](None, cfg, now)
+        _log(f"ok {act} {folder.name} (supervised)")
+        out = {"made": folder.name, "format": fmt}
+        agentlog.event("applied", f"Autopilot made a new {'documentary' if fmt == 'doc' else 'Short'} (supervised): {folder.name}",
+                       "Made by Autopilot's own make step on the owner's order. It is not approved and is not scheduled or uploaded; it waits for the owner.", now=now)
+        if review:
+            import reviewer
+
+            with llm.cost_scope(folder.name), playbook.acting_as(agents.for_action("review")):
+                reviewer.review(config.OUT / folder.name)  # the reviewer itself, not do_review: do_review approves a pass when auto_approve is on, and this command never approves
+            _log(f"ok review {folder.name} (supervised)")
+            _, meta = _meta(folder.name)
+            out["verdict"] = (meta.get("review") or {}).get("verdict")
+            out["approved"] = bool(meta.get("approved"))
+        return out
 
 
 def _log(msg: str) -> None:

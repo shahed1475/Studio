@@ -155,8 +155,16 @@ def test_produce_short_threshold_is_configurable(tmp_path, monkeypatch):
 
     monkeypatch.setattr(run.config, "OUT", tmp_path)
     monkeypatch.setattr(run.config, "PEXELS_KEY", "")
-    monkeypatch.setattr(run.tts, "narrate", lambda lines, work, pause=0.12, motion=0, pos="bottom": (work / "n.mp3", work / "c.ass", [1.0] * len(lines)))
-    monkeypatch.setattr(footage, "scene_images", lambda lines, topic, anchors, pool_size=6, judge=None, **kw: (["a", "b", "c", "a"], [], {"scenes": 4, "unique": 3, "missing": 0, "pool": pool_size}))
+    def narrate(lines, work, pause=0.12, motion=0, pos="bottom"):
+        work.mkdir(parents=True, exist_ok=True)
+        (work / "n.mp3").write_bytes(b"ID3")  # like the real voice step: a narration file (the voice hand-over checks it, a2a.py)
+        return work / "n.mp3", work / "c.ass", [1.0] * len(lines)
+
+    for name in "abc":
+        (tmp_path / f"{name}.jpg").write_bytes(b"x")  # like the real picture step: a file per scene (the visuals hand-over checks it)
+    a, b, c = (str(tmp_path / f"{n}.jpg") for n in "abc")
+    monkeypatch.setattr(run.tts, "narrate", narrate)
+    monkeypatch.setattr(footage, "scene_images", lambda lines, topic, anchors, pool_size=6, judge=None, **kw: ([a, b, c, a], [], {"scenes": 4, "unique": 3, "missing": 0, "pool": pool_size}))
     monkeypatch.setattr(footage, "enough_footage", lambda clips: all(clips))
     monkeypatch.setattr(run.render, "render", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("reached render")))
     data = {"title": "T", "topic": "t", "anchors": [], "lines": [{"text": "x", "visual": "y"}] * 4}
@@ -184,3 +192,16 @@ def test_a_hook_that_states_a_dispute_as_a_flat_fact_is_replaced_by_the_storys_o
         assert got["hook"] == "Why did no trace remain?", bad
     ok = clipper.hook(meta, w, chat=lambda p: {"hook": "Where did 50,000 soldiers go?", "title": "T"})
     assert ok["hook"] == "Where did 50,000 soldiers go?"
+
+
+def test_a_closing_line_never_cuts_a_name_and_a_shorts_own_closing_says_subscribe():
+    """21 Nov 2026: the Raijin and Fujin Short ended "That is what the records say about Raijin and Fujin, the Storm. More on our channel."."""
+    import clipper
+
+    assert clipper.closing_subject("Raijin and Fujin, the Storm Gods") == "Raijin and Fujin, the Storm Gods"
+    assert clipper.closing_subject("The Vanishing of the Roanoke Colony: Was It a Lost Civilization or a Mass Migration") == "this story" or \
+        len(clipper.closing_subject("The Vanishing of the Roanoke Colony: Was It a Lost Civilization or a Mass Migration").split()) <= 6
+    assert clipper.closing_subject("The Legend of the Pied Piper") == "Pied Piper"
+    for recent in ([], ["Subscribe for more quiet stories from history."]):
+        assert "subscribe" in clipper.outro_for("Raijin and Fujin, the Storm Gods", recent, doc=False).lower()
+    assert all("subscribe" in c.lower() for c in clipper.GENERIC_CLOSINGS)

@@ -161,3 +161,23 @@ def test_the_video_list_tells_the_page_which_cover_a_short_has(server):
     _video_with_pictures(tmp, "a-short", format="short", cover="thumbs/cover.jpg")
     status, _, body = get(port, "/api/state")
     assert status == 200 and [v["cover"] for v in json.loads(body)["videos"] if v["slug"] == "a-short"] == ["thumbs/cover.jpg"]
+
+
+def post(port, path, obj):
+    c = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+    c.request("POST", path, body=json.dumps(obj), headers={"Host": f"127.0.0.1:{port}", "Content-Type": "application/json"})
+    r = c.getresponse()
+    return r.status, r.read()
+
+
+def test_an_ordinary_news_proposal_still_queues_with_one_click(server, tmp_path, monkeypatch):
+    """A news proposal is queued with one click."""
+    import newswatch
+
+    port, _ = server
+    monkeypatch.setattr(config, "ROOT", tmp_path)
+    monkeypatch.setattr(newswatch, "TOPICS_FILE", tmp_path / "news_topics.json")
+    monkeypatch.setattr(newswatch, "NEWS_QUEUE", tmp_path / "news_queue.json")
+    (tmp_path / "news_topics.json").write_text(json.dumps([{"topic": "How passkeys work", "status": "proposed", "week": "2026-W47", "sources": []}]))
+    status, body = post(port, "/api/news/queue", {"topic": "How passkeys work", "sources": [], "week": "2026-W47"})
+    assert status == 200 and json.loads(body)["ok"] is True

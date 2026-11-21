@@ -30,7 +30,7 @@ def test_fact_check_and_rewrite_share_one_source_block(monkeypatch):
 
 def test_the_review_sends_the_article_as_the_cached_part_and_the_script_after_it(monkeypatch):
     seen = []
-    monkeypatch.setattr(scriptgen, "_review_chat", lambda p: seen.append(p) or {"invented_facts_risk": 1, "policy_risk": 0, "misleading_title": False})
+    monkeypatch.setattr(scriptgen, "_review_chat", lambda p, **k: seen.append(p) or {"invented_facts_risk": 1, "policy_risk": 0, "misleading_title": False})
     meta = {"title": "T", "description": "d", "lines": [{"text": "The army marched west."}], "topic": "army"}
     reviewer.llm_review(meta, SOURCES)
     before, _, after = seen[0].partition(llm.CACHE_MARK)
@@ -44,7 +44,7 @@ def test_chapter_writing_sends_the_rules_and_sources_before_the_mark(monkeypatch
         seen.append(prompt)
         if "Plan a" in prompt:
             return {"title": "T", "description": "d", "tags": [], "anchors": [], "chapters": [{"title": f"C{i}", "summary": "s"} for i in range(6)]}
-        return {"lines": [{"text": " ".join(["word"] * 20), "visual": "Siwa oasis"} for _ in range(8)]}
+        return {"lines": [{"text": " ".join(["word"] * 20) + ".", "visual": "Siwa oasis"} for _ in range(8)]}
 
     monkeypatch.setattr(scriptgen, "_script_chat", fake)
     monkeypatch.setattr(scriptgen, "verify_and_revise", lambda lines, chapters, sources, **k: (lines, chapters))

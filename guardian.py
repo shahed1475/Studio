@@ -29,7 +29,7 @@ UPLOAD_KEYS = ("video_id", "uploaded_at", "publish_at", "upload_started", "uploa
 def problems(meta: dict) -> list[dict]:
     """Findings for one saved record, from rules only: kind 'metadata' (repairable here) or 'content' (needs a repair of the video)."""
     import compliance
-    import packaging
+    import video_packaging_rules as packaging
     import recheck
 
     out = [{"name": "metadata_limits", "kind": "metadata", "detail": p} for p in compliance.metadata_problems(meta)]
@@ -114,6 +114,26 @@ def reissue(folder: Path, meta: dict, now: dt.datetime) -> bool:
     except OSError:
         return False  # not saved: nothing was changed, the held video stays held
     return True
+
+
+GONE_KINDS = ("content_problem", "repair_video")  # the guardian's own tasks for Autopilot about a draft; nothing else is closed here
+
+
+def close_gone(out: Path, now) -> int:
+    """Close the guardian's draft-repair tasks for Autopilot whose video folder has left output/ (set aside in output_old or removed): nothing is left
+    to repair, and the guardian never sees that video again to close them itself. A task for the owner, a public video, a trainer family or any
+    other kind stays as it is. A folder that is still there, with or without its record, keeps its task. If the video comes back with the same
+    problem, the guardian posts it again on its next run."""
+    try:
+        present = {p.name for p in out.iterdir() if p.is_dir()}
+    except OSError:
+        return 0  # an unreadable videos folder closes nothing
+    n = 0
+    for t in agentbus.tasks():
+        if t["state"] in agentbus.LIVE and t["kind"] in GONE_KINDS and t.get("source") == "guardian" and t.get("target") == "autopilot" \
+                and t.get("slug") and t["slug"] not in present:
+            n += agentbus.finish(t["id"], "the video was set aside: its folder is no longer in output/", True, now) is not None
+    return n
 
 
 def run(now: dt.datetime | None = None, yt=None, may_edit: bool | None = None, out: Path | None = None, lock_file: Path | None = None) -> dict:
@@ -212,6 +232,7 @@ def run(now: dt.datetime | None = None, yt=None, may_edit: bool | None = None, o
                                   evidence="; ".join(f['name'] for f in found if f['kind'] == 'content'), now=now)
             except Exception as e:  # one video (a YouTube refusal, a full disk) must not stop the others
                 agentlog.event("found", f"Guardian could not finish checking {m.parent.name[:40]}", f"{type(e).__name__}: {str(e)[:120]}", now=now)
+        result["closed_gone"] = close_gone(out or config.OUT, now)  # under the same lock: no repair moves a folder while this looks
         return result
     finally:
         lock.close()
