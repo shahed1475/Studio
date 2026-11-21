@@ -161,7 +161,12 @@ def test_a_clip_shorter_than_asked_is_refused(tmp_path, monkeypatch):
         ccrender.render_clip({"scene": "globe", "params": {}}, 2.0, (64, 36))
 
 
+ASSETS = Path(__file__).resolve().parent.parent / "assets" / "cc0"
+NEEDED = (ASSETS / "hdri" / "kloppenheim_06_puresky_2k.hdr", ASSETS / "earth" / "blue_marble_8k.jpg")  # downloaded per machine, not in git (.gitignore)
+
+
 @pytest.mark.skipif(not REAL_BLENDER.exists(), reason="Blender is not installed on this machine")
+@pytest.mark.skipif(not all(f.exists() for f in NEEDED), reason="the CC0 sky and Earth files are not downloaded on this machine (a clean checkout)")
 def test_the_real_blender_renders_a_still_with_its_depth_map_and_a_globe_clip_headless(tmp_path, monkeypatch):
     """The real thing, small: Cycles on the CPU, no GPU, no OpenGL (the depth pass once used EEVEE and aborted in the container)."""
     monkeypatch.setattr(ccrender, "BLENDER", REAL_BLENDER)
