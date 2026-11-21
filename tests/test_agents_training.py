@@ -1339,3 +1339,44 @@ def test_the_guardian_closes_a_set_aside_drafts_task_and_nothing_else(monkeypatc
             return n
         m.setattr(guardian, "close_gone", closes_any_source)
         assert not case()[0]
+
+
+def test_the_search_demand_case_passes_and_fails_when_its_rules_are_broken(monkeypatch):
+    """Case and mutation checks for case_search_demand_is_no_signal_on_failure_spends_youtube_quota_only_within_its_budget_and_cleans_outside_text."""
+    import searchdemand
+
+    case = agenteval.case_search_demand_is_no_signal_on_failure_spends_youtube_quota_only_within_its_budget_and_cleans_outside_text
+    ok, detail = case()
+    assert ok, detail
+    real_demand, real_refresh = searchdemand.demand, searchdemand.refresh
+    with monkeypatch.context() as m:
+        m.setattr(searchdemand, "value", lambda topic, **kw: float(real_demand(topic, with_youtube=True, **kw)["score"] or 0))  # mutation: ranking spends quota
+        assert not case()[0]
+    with monkeypatch.context() as m:
+        m.setattr(searchdemand, "refresh", lambda queue, now, budget=5, **kw: real_refresh(queue, now, budget=99, **kw))  # mutation: the budget is ignored
+        assert not case()[0]
+    with monkeypatch.context() as m:
+        m.setattr(searchdemand, "_clean_phrase", lambda s: str(s))  # mutation: outside text kept as it came
+        assert not case()[0]
+
+
+def test_the_comment_insights_case_passes_and_fails_when_its_rules_are_broken(monkeypatch):
+    """Case and mutation checks for case_comment_insights_keep_no_names_nothing_over_30_days_and_only_cleaned_questions_and_never_write."""
+    import commentinsights
+
+    case = agenteval.case_comment_insights_keep_no_names_nothing_over_30_days_and_only_cleaned_questions_and_never_write
+    ok, detail = case()
+    assert ok, detail
+    real_row = commentinsights._row
+    with monkeypatch.context() as m:
+        def with_author(item, own, titles, now):
+            top = item["snippet"]["topLevelComment"]["snippet"]
+            return [{**r, "author": top.get("authorDisplayName")} for r in real_row(item, own, titles, now)]
+        m.setattr(commentinsights, "_row", with_author)  # mutation: the commenter's name is stored
+        assert not case()[0]
+    with monkeypatch.context() as m:
+        m.setattr(commentinsights, "KEEP_DAYS", 10_000)  # mutation: old rows are kept and shown
+        assert not case()[0]
+    with monkeypatch.context() as m:
+        m.setattr(commentinsights, "_clean", lambda text: str(text).strip() or None)  # mutation: links and instructions kept
+        assert not case()[0]

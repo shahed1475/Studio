@@ -157,7 +157,7 @@ def test_status_is_carried_by_an_icon_and_a_fill_not_by_colour_alone():
 def test_autopilot_is_four_sections_each_with_content_and_the_choice_is_remembered():
     block = HTML[HTML.index("async function autopilot(m){"):HTML.index("function slotEditor(name){")]
     groups = re.findall(r'data-ap="(overview|schedule|rules|research)"', block)
-    assert {g: groups.count(g) for g in ("overview", "schedule", "rules", "research")} == {"overview": 8, "schedule": 1, "rules": 1, "research": 5}
+    assert {g: groups.count(g) for g in ("overview", "schedule", "rules", "research")} == {"overview": 8, "schedule": 1, "rules": 1, "research": 7}  # 21 Nov 2026: + Search demand, What viewers ask
     assert "function apSubSet(" in block and 'role="tablist"' in block and "sessionStorage" in block
     for g in ("overview", "schedule", "rules", "research"):
         assert f'#apwrap[data-sub="{g}"] [data-ap]:not([data-ap="{g}"])' in V4

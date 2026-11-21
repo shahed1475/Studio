@@ -153,6 +153,13 @@ def run(now: dt.datetime | None = None, yt=None) -> Path:
         digest["fresh"] = fresh
     except Exception as e:
         digest["fresh"] = {"docs": [], "shorts": [], "hint": {}, "error": f"{type(e).__name__}: {e}"}
+    try:  # search demand of the queued topics (searchdemand.py): a failure here never loses the digest above
+        import searchdemand
+
+        d = searchdemand.refresh(queue, now)
+        digest["demand"] = {"topics": len(d["rows"]), "youtube_searches": d["youtube_searches"]}
+    except Exception as e:
+        digest["demand"] = {"error": f"{type(e).__name__}: {e}"}
     path.write_text(json.dumps(digest, indent=2))
     return path
 

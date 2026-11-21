@@ -137,9 +137,9 @@ def pop_best(fmt: str = "doc", sig=None, article_of=None, premise_of=None, deman
     if article_of is None and premise_of is None:
         premise_of = premise_check  # the real run asks Claude; a test that passes its own article_of opts out
         if demand_of is None:
-            import seo
+            import searchdemand
 
-            demand_of = seo.demand  # a subject people already search for is worth more than an unknown one
+            demand_of = searchdemand.value  # a subject people already search for is worth more: autocomplete, Wikipedia pageviews, the top YouTube results (cached; never quota here)
         if dup_of is None:
             import duplicates
 

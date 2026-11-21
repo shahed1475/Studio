@@ -20,6 +20,8 @@
   python run.py backup           nightly: copy the records and settings (no secrets, no videos) to backups/, seven kept
   python run.py recheck          hourly: review one uploaded video again; repair its metadata, or take a failing scheduled one back to private
   python run.py remake <name> [--topic "..."]  set a video aside (never deleted) and make it again from the topic, first
+  python run.py demand [topic] [--youtube]   search demand: autocomplete, Wikipedia pageviews, top YouTube results (all queued topics without a topic)
+  python run.py comments [--force]   what viewers ask: questions from public comments (ours and the reference channels'), 30 days at most
   python run.py youtube-login [production|testing]  show the YouTube login's age and mode, or set the mode
   python run.py health           are published videos public and free of claims? (pauses Autopilot if not)
   python run.py safety [--fix]   check that secret files and the login are protected
@@ -1194,6 +1196,34 @@ def main() -> None:
 
         d = json.loads(trendwatch.run().read_text())
         print(d.get("error") or f"{len(d['videos'])} videos read, median views {d['summary']['median_views']}, {len(d['ideas'])} topic ideas to review")
+    elif a[0] == "demand":  # search demand (searchdemand.py): `demand` refreshes every queued topic (YouTube part for the best 5), `demand <topic> [--youtube]` reads one
+        import searchdemand
+
+        def _show(r):
+            p = r["parts"]
+            ac, wp, yt = p.get("autocomplete"), p.get("wikipedia"), p.get("youtube")
+            print(f"{(r['score'] if r['score'] is not None else '-')!s:>5}  {r['subject'][:44]:44}  autocomplete {ac['hits'] if ac else '-'}/10  "
+                  f"wikipedia {wp['avg_30'] if wp else '-'}/day" + (f" (x{wp['trend']})" if wp and wp.get("trend") else "")
+                  + (f"  youtube median {yt['median_views']:,} views, {yt['recent']} recent, {yt['small_channel_wins']} small-channel wins" if yt else ""))
+
+        words = [x for x in a[1:] if not x.startswith("--")]
+        if words:
+            _show(searchdemand.demand(" ".join(words), with_youtube="--youtube" in a))
+        else:
+            d = searchdemand.refresh()
+            print(f"{len(d['rows'])} queued topics read, {d['youtube_searches']} YouTube searches ({d['youtube_searches'] * 100} quota units)")
+            for r in d["rows"][:20]:
+                _show(r)
+    elif a[0] == "comments":  # what viewers ask (commentinsights.py): questions from public comments, read only, nothing kept over 30 days; --force reads again today
+        import commentinsights
+
+        d = commentinsights.run(force="--force" in a)
+        print(f"{len(d['own'])} questions on our videos, {len(d['niche'])} under the reference channels' top videos, {len(d['clusters'])} groups, "
+              f"{len(d['ideas'])} topic ideas, {d['quota_units']} quota units" + (f"; problems: {'; '.join(d['errors'][:3])}" if d["errors"] else ""))
+        for g in d["clusters"][:5]:
+            print(f"  {g['count']:>3} x {g['label']}: {g['examples'][0][:100]}")
+        for t in d["ideas"]:
+            print(f"  idea: {t}")
     elif a[0] == "trend-import":  # trends read from the owner's own Studio Trends tab by a person: a JSON file of rows (title, channel, views, age_days, seconds, url)
         import trendinbox
 

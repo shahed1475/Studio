@@ -34,7 +34,7 @@ JOBS: dict[str, dict] = {}
 JOB_LOCK = threading.Lock()
 YT_STATE = {"connecting": False, "error": ""}
 AI_JOBS = {"make", "doc", "batch", "ideas", "research", "review", "seo", "newsvideo", "agent", "channels", "trends", "redo", "autopilot"}  # jobs that spend the user's AI key
-ALLOWED_JOBS = {"branding", "channels", "trends", "subtitles", "newsvideo", "review", "autopilot", "agent", "newswatch", "seo", "thumbs", "ideas", "research", "make", "doc", "batch", "redo", "approve", "upload"}
+ALLOWED_JOBS = {"branding", "channels", "trends", "demand", "comments", "subtitles", "newsvideo", "review", "autopilot", "agent", "newswatch", "seo", "thumbs", "ideas", "research", "make", "doc", "batch", "redo", "approve", "upload"}
 
 
 # ---------- settings ----------
@@ -236,7 +236,7 @@ def state() -> dict:
         "agent": {"unread": __import__("agentlog").unread()},
         "tenant": __import__("tenantmode").is_tenant(), "niche_confirmed": __import__("niche").current()["brief"] is not None and bool((__import__("niche").current()["brief"] or {}).get("confirmed")),
         "auth": {"on": webauth.enabled(), "email": webauth.owner_email()},
-        "settings": {"pexels_key": "saved" if load_settings().get("pexels_key") else "", "pixabay_key": "saved" if pixabay_key() else "", "smithsonian_key": "saved" if smithsonian_key() else "", "extra_llm": extra_llm_status(), "alerts": None if __import__("tenantmode").is_tenant() else alerts.status()},
+        "settings": {"pexels_key": "saved" if load_settings().get("pexels_key") else "", "pixabay_key": "saved" if pixabay_key() else "", "smithsonian_key": "saved" if smithsonian_key() else "", "youtube_key": "saved" if __import__("commentinsights").api_key() else "", "extra_llm": extra_llm_status(), "alerts": None if __import__("tenantmode").is_tenant() else alerts.status()},
     }
 
 
@@ -347,7 +347,8 @@ def growth_view() -> dict:
         except Exception:
             return default
 
-    return growthpage.build(safe(agent_view, {}), safe(lambda: growth.load_snapshots(60), []), safe(growthview.view, {}), safe(growthdata.load, {}))
+    return growthpage.build(safe(agent_view, {}), safe(lambda: growth.load_snapshots(60), []), safe(growthview.view, {}), safe(growthdata.load, {}),
+                            safe(lambda: __import__("actionlog").actions(500), []))
 
 
 def agent_view() -> dict:
@@ -833,6 +834,8 @@ class H(BaseHTTPRequestHandler):
             self.send_json({**autopilot_view(), "config": autopilot.load_config(), "status": autopilot.status(), "doc_length": doc_length_view(),
                             "news": newswatch.latest_digest(), "trends": __import__("trendwatch").latest(), "taking_off": __import__("trendinbox").taking_off(),
                             "growth": __import__("growthview").view(),
+                            "demand": __import__("searchdemand").latest(),
+                            "comments": __import__("commentinsights").latest(),
                             "agent_config": __import__("agent").load_config(),
                             "channels": {"refs": __import__("channelwatch").load_refs(), "digest": __import__("channelwatch").latest(),
                                          "meta": __import__("channelwatch").load_meta(), "max": __import__("channelwatch").MAX_REFS,
@@ -1238,7 +1241,7 @@ class H(BaseHTTPRequestHandler):
             return out
         if path == "/api/key/save":
             which, value = str(b.get("which", "")), str(b.get("value", "")).strip()
-            field = {"openrouter": "openrouter_key", "pexels": "pexels_key", "pixabay": "pixabay_key", "smithsonian": "smithsonian_key", "extra_llm": "extra_llm_key"}.get(which)
+            field = {"openrouter": "openrouter_key", "pexels": "pexels_key", "pixabay": "pixabay_key", "smithsonian": "smithsonian_key", "extra_llm": "extra_llm_key", "youtube": "youtube_api_key"}.get(which)
             if which == "extra_llm" and __import__("tenantmode").is_tenant():
                 raise ValueError("not available in a user studio")
             if not field:

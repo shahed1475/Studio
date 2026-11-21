@@ -197,6 +197,13 @@ def run(now: dt.datetime | None = None, yt=None) -> Path:
         craftlearn.save(digest["craft"])
     except Exception as e:
         digest["craft_error"] = f"{type(e).__name__}: {e}"
+    try:  # what viewers ask under our videos and the reference channels' top videos (commentinsights.py); a failure here never costs the digest
+        import commentinsights
+
+        got = commentinsights.run(now, yt, digest=digest)
+        digest["comments"] = {"own": len(got["own"]), "niche": len(got["niche"]), "ideas": len(got["ideas"]), "quota_units": got["quota_units"]}
+    except Exception as e:
+        digest["comments_error"] = f"{type(e).__name__}: {e}"
     for c in digest["channels"]:
         c.pop("scan", None)  # the per-video list was only for learning
     path.write_text(json.dumps(digest, indent=2))

@@ -11,10 +11,10 @@ What the code already does, so do not repeat it by hand:
 - `video_packaging_rules.py` scores titles (`title_score`, `rank_titles`): phrase inside the first 40 characters, 40 to 62 characters, search words, a proper name, no vague "what do ... actually ...?" question, no shouting, not a near-copy of another title. `autopilot.finish_video` takes the best score.
 - `reviewer.metadata_checks` adds warnings `seo_title_front`, `seo_description_150`, `seo_thumbnail_text`, `seo_title_length` (warnings never block).
 - `thumbnail.hook_for` prefers text that names the subject and adds a word the title lacks (3 to 5 words, supported by the narration).
-- `topicrank.pop_best` ranks topics with `seo.demand` (YouTube autocomplete); `scriptgen.country_ideas` asks for short subject names.
+- `topicrank.pop_best` ranks topics with `searchdemand.value` (autocomplete, Wikipedia pageviews, the top YouTube results; `run.py demand [topic]`, refreshed daily inside `trendwatch.run`); `scriptgen.country_ideas` asks for short subject names.
 - `compliance.final_description` adds one playlist link from `data/playlists.json` ("cta"); `upload.join_playlists` adds each new upload to the playlists in that file.
 - `kinds.py` (config/kinds.json): the video's kind (legend, mystery, event, person, place) is chosen by free keyword rules and its card line goes into the SEO, thumbnail and Short-hook prompts; `packaging.rank_titles(..., kind)` nudges words people type for that kind. `finish_video` stores `kind`.
 - `titletest.py` (daily 08:00 UTC, mode in `data/titletest.json`): a weak video gets one new title; Analytics watch percentage under 25% means the content, not the title, is the problem.
 
 Rules that stay human decisions: channel About, trailer, banner, name (owner approval), public/private state, deleting anything.
-Limits: impressions and click rate are only in Studio (the Analytics API refuses them); a score is advice, not proof of more views.
+Limits: impressions and click rate come from the Reporting API reach reports (`growthdata`, shown in Growth > Overview "Click rate", `growthpage.ctr_summary`), not from the Analytics API; a score is advice, not proof of more views.

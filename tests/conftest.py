@@ -81,6 +81,17 @@ def _isolate_craft_files(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_research_files(tmp_path, monkeypatch):
+    """No test may write the real search-demand cache (trendwatch.run refreshes it) or the comment insights (channelwatch.run makes them)."""
+    import commentinsights
+    import searchdemand
+
+    monkeypatch.setattr(searchdemand, "DIR", tmp_path / "demand")
+    monkeypatch.setattr(commentinsights, "FILE", tmp_path / "comment_insights.json")
+    monkeypatch.setattr(commentinsights, "api_key", lambda: "")  # a key the owner saved in Settings must never take a test onto the real API
+
+
+@pytest.fixture(autouse=True)
 def _isolate_growth_files(tmp_path, monkeypatch):
     """No test may write the shipped rules file (a fake policy change once left a pending change in config/rules.json) or the growth, policy-hold and action files."""
     import shutil
