@@ -19,6 +19,8 @@ TTL = dt.timedelta(hours=24)
 COOLDOWN = dt.timedelta(hours=6)
 BUSY_COOLDOWN = dt.timedelta(minutes=10)  # a 429 means the provider is busy right now, not that the model is broken
 EXTRA_BUSY_SECONDS = 60  # the owner's own provider pools free tiers whose limits are per minute: a 429 there is short (17 Nov 2026: ten minutes parked every model and a script was lost)
+UNREACHABLE_SECONDS = 60  # no connection at all (the owner's provider app not running after a power cut, no network yet at boot): the model is not at fault, so it is
+# skipped for a minute and never benched for six hours (21 Nov 2026: refused connections while FreeLLMAPI was down benched all five of the owner's models)
 MAX_RETRY_AFTER = 300  # a Retry-After header is believed up to this many seconds
 RESERVE = 5  # of the count OpenRouter reports, always left unused, so a failed attempt cannot push the account over its limit
 QUOTA_TTL = 60  # seconds the daily-quota answer is reused
@@ -192,7 +194,8 @@ def available(model: str, now: dt.datetime) -> bool:
 def record(model: str, ok: bool, now: dt.datetime, status: int | None = None, retry_after: int | None = None,
            role: str | None = None, seconds: float | None = None, reason: str | None = None, finish: str | None = None) -> None:
     """One answer or failure. `role` and `seconds` feed the per-role ranking; `reason` "json" marks a reply that was not JSON and `finish` is the
-    reply's finish_reason ("length" = cut off by the output limit). A 429 only makes the model busy: it is not counted as a failure."""
+    reply's finish_reason ("length" = cut off by the output limit). A 429 only makes the model busy: it is not counted as a failure. Neither is `reason`
+    "unreachable" (no connection could be made): the model is skipped for UNREACHABLE_SECONDS."""
     with _update() as d:
         h = d.setdefault("health", {}).setdefault(model, {"fails": 0})
         rs = h.setdefault("roles", {}).setdefault(role, {}) if role else None
@@ -212,6 +215,8 @@ def record(model: str, ok: bool, now: dt.datetime, status: int | None = None, re
             else:
                 secs = EXTRA_BUSY_SECONDS if model.startswith("extra:") else int(BUSY_COOLDOWN.total_seconds())  # skip it for ten minutes; no long penalty
             h["busy_until"] = _ts(now + dt.timedelta(seconds=secs))
+        elif reason == "unreachable":
+            h["busy_until"] = _ts(now + dt.timedelta(seconds=UNREACHABLE_SECONDS))
         else:
             h["fails"] += 1
             h["last_fail"] = _ts(now)

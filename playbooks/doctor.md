@@ -9,7 +9,7 @@ Every 6 hours.
 1. Compare each agent's last run with its cadence and read the last results in the worker log.
 2. For a stale or failing agent run the escalation ladder with the safe fixes only: run its job again, fix file permissions, create missing folders.
 3. If that fails write a post-mortem proposal for the owner. Draft a new skill (quarantined) for a problem family that keeps coming back.
-4. Check the dashboard answers; list missing setup (key, permission, off-server backup) with the exact commands for the owner.
+4. Check the dashboard answers; list missing setup (key, permission, off-server backup, the provider app on this PC not answering) with the exact commands for the owner.
 5. Read the inbox: problems the script reviewer posted (the same rule holding scripts, or its model silent) get the safe fix of reviewing its saved held scripts again after a fix; if they still hold, write a post-mortem naming the rule that fires and hand the task to the owner.
 6. Learn: every attempt is a lesson.
 ## Tools

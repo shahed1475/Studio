@@ -686,7 +686,9 @@ def _ask_free(mid: str, prompt: str, role: str, cfg: dict, key: str, now: dt.dat
                 ra = int(float((getattr(getattr(e, "response", None), "headers", None) or {}).get("Retry-After")))
             except (TypeError, ValueError):
                 ra = None
-            freemodels.record(mid, False, now, status=code, retry_after=ra, role=role, seconds=(time.monotonic() - t0) if isinstance(e, requests.Timeout) else None)
+            unreachable = isinstance(e, requests.ConnectionError)  # refused, no route, no DNS, connect timeout: nothing answered at all (a ReadTimeout is the model being slow)
+            freemodels.record(mid, False, now, status=code, retry_after=ra, role=role, reason="unreachable" if unreachable else None,
+                              seconds=(time.monotonic() - t0) if isinstance(e, requests.Timeout) and not unreachable else None)
             _note(now, f"{role}: free model {mid}: {type(e).__name__}{f' {code}' if code else ''}")
             return None
         took = time.monotonic() - t0
@@ -822,7 +824,10 @@ def _free_chat(prompt: str, role: str, cfg: dict, key: str, now: dt.datetime, av
                     continue
                 _answered(role, mid)
                 return got
-            break  # a network failure or a reply that is not JSON ends this round: wait, then ask again
+            if mid.startswith(EXTRA_PREFIX):
+                continue  # one of the owner's models failed (app not running, its free tier used up, a bad reply): the next model is asked now. Its models are
+                # separate free tiers; ending the round here let three failing own models use all three rounds and no OpenRouter model was asked (21 Nov 2026)
+            break  # an OpenRouter failure (network, or a reply that is not JSON) ends this round: wait, then ask again
         if rnd < ROUNDS - 1:
             pause = 20 * (rnd + 1)  # everyone was busy: wait, then ask again (only as long as the first model needs, when it said so)
             soon = freemodels.soonest_free(extra_models(role) + freemodels.roster_ids(), now)

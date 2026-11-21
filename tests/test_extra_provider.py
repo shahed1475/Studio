@@ -571,3 +571,42 @@ def test_what_a_router_served_as_a_writer_is_recorded_so_it_never_judges_the_sam
     llm.begin_script()
     llm._free_chat("p", "script", llm.load_config(), "KEY", NOW)
     assert "vendor/writer-x:free" in llm.writers() and "openrouter/free" in llm.writers()
+
+
+def test_refused_connections_to_the_owners_provider_never_bench_its_models_for_six_hours(tmp_path, monkeypatch):
+    """21 Nov 2026: FreeLLMAPI did not start after a power cut; each refused connection counted as a failure and after three all five owner models were
+    benched for six hours, so they stayed unused for hours after the app was back. A refused connection only skips the model for a minute."""
+    monkeypatch.setattr(freemodels, "FILE", tmp_path / "free.json")
+    for _ in range(5):
+        freemodels.record("extra:gemini-3.5-flash", False, NOW, role="script", reason="unreachable")
+    assert not freemodels.available("extra:gemini-3.5-flash", NOW + dt.timedelta(seconds=30))
+    assert freemodels.available("extra:gemini-3.5-flash", NOW + dt.timedelta(seconds=freemodels.UNREACHABLE_SECONDS + 1))
+    assert freemodels._load()["health"]["extra:gemini-3.5-flash"]["fails"] == 0          # not a failure of the model
+    for _ in range(3):
+        freemodels.record("extra:broken", False, NOW, role="script", reason="json")      # a real bad answer still counts
+    assert not freemodels.available("extra:broken", NOW + dt.timedelta(hours=1))
+
+
+def test_when_the_owners_provider_is_down_an_openrouter_free_model_answers_in_the_same_call(tmp_path, monkeypatch):
+    """The live failure of 21 Nov 2026: three own models listed first, each refused, and each ended its round, so all three rounds were used on them and
+    `llm.chat(..., "cheap")` raised ModelUnavailable while an OpenRouter free model would have answered at once."""
+    _settings(tmp_path, monkeypatch, extra_llm_models={"script": "gemini-3.5-flash, gemini-3-flash-preview, minimax-m3", "review": "gemini-3.6-flash"})
+    _fm_quiet(monkeypatch, choose=lambda *a, **k: ["or/free-writer:free"])
+    monkeypatch.setattr(llm, "load_config", lambda: {**llm.DEFAULTS, "enabled": False, "free": True, "models": {"cheap": "anthropic/claude-paid"}})
+    monkeypatch.setattr(llm, "api_key", lambda: "OR-KEY")
+    recorded, sent, slept = [], [], []
+    monkeypatch.setattr(freemodels, "record", lambda mid, ok, now, **k: recorded.append((mid, ok, k.get("reason"))))
+    monkeypatch.setattr(llm.time, "sleep", lambda s: slept.append(s))
+    monkeypatch.setattr(llm, "_extra_last", {})                                        # no pacing left over from another test
+
+    def post(payload, key):
+        sent.append(payload["model"])
+        if payload["model"].startswith("extra:"):
+            raise _rq.ConnectionError("[Errno 111] Connection refused")
+        return {"model": payload["model"], "choices": [{"message": {"content": '{"ok": true}'}}], "usage": {}}
+
+    monkeypatch.setattr(llm, "_post", post)
+    assert llm.chat("x", "cheap") == {"ok": True}
+    assert sent == ["extra:gemini-3.5-flash", "extra:gemini-3-flash-preview", "extra:minimax-m3", "or/free-writer:free"]  # one round, no wait
+    assert slept == [] and "anthropic/claude-paid" not in sent
+    assert [r for r in recorded if r[0].startswith("extra:")] == [(m, False, "unreachable") for m in sent[:3]]  # skipped for a minute, not benched

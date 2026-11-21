@@ -92,7 +92,18 @@ def probe_dashboard(get=None) -> int | None:
         return None
 
 
-def needs(dashboard: int | None, now: dt.datetime) -> list[dict]:
+def provider_answers(url: str, get=None) -> bool:
+    """True when the owner's model provider at `url` answers at all (any HTTP status, a 401 too): one GET of its model list, no key sent, 3 s."""
+    import requests
+
+    try:
+        (get or requests.get)(url.rstrip("/") + "/models", timeout=3, allow_redirects=False)
+        return True
+    except requests.RequestException:
+        return False
+
+
+def needs(dashboard: int | None, now: dt.datetime, reach=None) -> list[dict]:
     """Setup the agents cannot do for themselves: what is missing, why it matters, the exact lines to run."""
     import backup
     import llm
@@ -105,6 +116,12 @@ def needs(dashboard: int | None, now: dt.datetime) -> list[dict]:
     if not llm.api_key():
         out.append({"need": "model key", "why": "no OpenRouter key is saved, so no agent can use a model",
                     "commands": ["Open Settings in the dashboard and save the OpenRouter key (never paste it in chat)"]})
+    own = llm.extra_cfg()
+    if own and re.match(r"https?://(127\.0\.0\.1|localhost)[:/]", own["url"]) and not (reach or provider_answers)(own["url"]):
+        out.append({"need": "own model provider", "why": "the model provider app on this PC (FreeLLMAPI) does not answer, so the owner's free writers and judges are not "
+                    "used; OpenRouter's free models stand in meanwhile. The app does not start by itself after a power cut",
+                    "commands": ["Open the FreeLLMAPI app on the PC (21 Nov 2026: ~/Downloads/FreeLLMAPI-0.16.31.AppImage)",
+                                 f"curl -s -o /dev/null -w '%{{http_code}}\\n' {own['url']}/models   # any number means it is running"]})
     if titletest.mode() == "apply" and not titletest.can_write():
         out.append({"need": "youtube edit permission", "why": "the title test is in apply mode but the YouTube login cannot edit videos",
                     "commands": ["Open Settings, reconnect YouTube and allow managing your videos"]})

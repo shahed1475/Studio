@@ -597,7 +597,7 @@ function feedHTML(){
 }
 function vidsHTML(){
   const rep=L.working_on?`<div><div class="grow"><div class="ttl">Repairing: ${esc(L.working_on.title)}</div><div class="mute">${esc((L.working_on.problems||[]).join("; ")||"")}</div></div>${badge("Repair","warn")}</div>`:"";
-  const rows=L.videos.map(v=>`<div style="cursor:pointer" onclick="go('videos',{slug:'${esc(v.slug)}'})"><div class="grow"><div class="ttl">${esc(v.title)}</div><div class="mute">${esc(v.stage)}</div></div>${badge(v.format==="doc"?"Documentary":"Short","mute")}</div>`).join("");
+  const rows=L.videos.map(v=>`<div style="cursor:pointer" role="link" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click()}" onclick="go('videos',{slug:'${esc(v.slug)}'})"><div class="grow"><div class="ttl">${esc(v.title)}</div><div class="mute">${esc(v.stage)}</div></div>${badge(v.format==="doc"?"Documentary":"Short","mute")}</div>`).join("");
   return rep+rows||empty("film-strip","No videos yet","Videos show here as they are made.");
 }
 function paintLive(){
@@ -646,9 +646,9 @@ async function footage(m){
 /* ---------- Channels ---------- */
 async function desk(m){
   m.innerHTML=`<div class="head"><h1>Tasks</h1><p class="sub">Write what you need done, or how you want it done. A Claude Code session or the doctor reads it. Nothing here runs by itself, and nothing typed here can change a rule, a money limit or a publishing decision.</p></div>
-  <div class="panel pad"><textarea id="dk_t" rows="3" maxlength="600" style="width:100%" placeholder="For example: make a film about the Flannan Isles lighthouse keepers"></textarea><div style="margin-top:10px"><button class="btn" type="button" onclick="deskAdd()">Send task</button></div></div>
+  <div class="panel pad"><textarea id="dk_t" aria-label="New task for a Claude Code session or the doctor" rows="3" maxlength="600" style="width:100%" placeholder="For example: make a film about the Flannan Isles lighthouse keepers"></textarea><div style="margin-top:10px"><button class="btn" type="button" onclick="deskAdd()">Send task</button></div></div>
   <div id="dk_l" style="margin:18px 0"></div>
-  <div class="panel pad"><h2>Standing advice</h2><p class="sub" style="margin-bottom:10px">How you want the studio to work. The writing agents read it as advice (up to 1,500 characters). The reviewers never read it, and it never overrides the rules.</p><textarea id="dk_a" rows="6" maxlength="1500" style="width:100%"></textarea><div style="margin-top:10px"><button class="btn" type="button" onclick="deskAdvice()">Save advice</button></div></div>`;
+  <div class="panel pad"><h2>Standing advice</h2><p class="sub" style="margin-bottom:10px">How you want the studio to work. The writing agents read it as advice (up to 1,500 characters). The reviewers never read it, and it never overrides the rules.</p><textarea id="dk_a" aria-label="Standing advice for the writing agents" rows="6" maxlength="1500" style="width:100%"></textarea><div style="margin-top:10px"><button class="btn" type="button" onclick="deskAdvice()">Save advice</button></div></div>`;
   await deskLoad();
 }
 async function deskLoad(){let d;try{d=await api("/api/desk")}catch(e){return}
@@ -1296,7 +1296,7 @@ async function youtube(m){
           <li>Open <a target="_blank" rel="noopener" href="https://console.cloud.google.com/auth/clients">Clients</a>, create a client of type Desktop app, then download the JSON.</li>
           <li>Drop that file below, or paste its text.</li>
         </ol></details>
-      <div class="drop" id="drop" onclick="document.getElementById('pick').click()">Drop client_secret.json here, or click to choose a file</div>
+      <div class="drop" id="drop" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click()}" onclick="document.getElementById('pick').click()">Drop client_secret.json here, or click to choose a file</div>
       <input type="file" id="pick" accept=".json,application/json" hidden>
       <div><label for="secret">Or paste the file contents</label><textarea class="code" id="secret" placeholder='{"installed":{"client_id":"...","client_secret":"..."}}' oninput="editing=true"></textarea></div>
       <div><button class="btn" onclick="saveSecret()">Save client file</button>${y.secret?` <button class="btn quiet" onclick="editing=false;youtube(document.getElementById('main'))">Cancel</button>`:""}</div>`}

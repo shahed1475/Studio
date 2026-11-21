@@ -188,3 +188,16 @@ def test_the_deploy_script_never_restarts_the_dashboard_under_a_build_the_owner_
     assert 'dashjobs' in guard and 'FORCE:-0' in guard and "docker compose restart dashboard" in guard
     assert guard.index("dashjobs") < guard.index("docker compose restart dashboard")  # checked before the restart
     assert "(dashboard\\.(py|html)" not in sh  # pages and styles are read from disk: they never needed a restart
+
+
+def test_every_clickable_box_can_be_reached_and_used_with_the_keyboard():
+    """21 Nov 2026 design scan: a video row and the client_secret drop box answered only a mouse click. A <div onclick> needs tabindex, a role and an
+    Enter/Space handler; the scrim behind a sheet is exempt (Escape closes the sheet)."""
+    import re
+    html = (Path(__file__).resolve().parent.parent / "dashboard.html").read_text()
+    for tag in re.findall(r"<div[^>]*onclick=[^>]*>", html):
+        if 'class="scrim"' in tag:
+            continue
+        assert 'tabindex="0"' in tag and "role=" in tag and "onkeydown=" in tag, tag[:120]
+    for tid in ("dk_t", "dk_a"):
+        assert re.search(rf'<textarea id="{tid}" aria-label="[^"]+"', html)

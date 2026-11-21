@@ -33,3 +33,28 @@ def test_provider_status_counts_what_can_be_asked_now(monkeypatch):
     got = doctor.provider_status(NOW)
     assert got["own_provider"] == {"models": 2, "available": 1} and got["openrouter_free"] == {"models": 3, "available": 1}
     assert got["paid_allowed"] is False  # the shipped default: paid models off
+
+
+def test_the_doctor_asks_the_owner_to_open_the_provider_app_when_it_does_not_answer(monkeypatch):
+    import llm
+
+    monkeypatch.setattr(llm, "extra_cfg", lambda: {"url": "http://127.0.0.1:31415/v1", "key": "k", "script": [], "review": []})
+    down = {n["need"]: n for n in doctor.needs(200, NOW, reach=lambda url: False)}
+    assert "own model provider" in down and "FreeLLMAPI" in down["own model provider"]["why"]
+    assert any("31415/v1/models" in c for c in down["own model provider"]["commands"])
+    assert "own model provider" not in {n["need"] for n in doctor.needs(200, NOW, reach=lambda url: True)}
+    asked = []
+    monkeypatch.setattr(llm, "extra_cfg", lambda: {"url": "https://api.example.com/v1", "key": "k", "script": [], "review": []})
+    assert "own model provider" not in {n["need"] for n in doctor.needs(200, NOW, reach=lambda url: asked.append(url) or False)}
+    assert asked == []                                                                  # a remote provider is not an app on this PC: never probed here
+    monkeypatch.setattr(llm, "extra_cfg", lambda: None)
+    assert "own model provider" not in {n["need"] for n in doctor.needs(200, NOW, reach=lambda url: False)}
+
+
+def test_provider_answers_counts_any_http_reply_and_not_a_refused_connection():
+    import requests
+
+    assert doctor.provider_answers("http://127.0.0.1:1/v1", get=lambda *a, **k: object()) is True
+    def refused(*a, **k):
+        raise requests.ConnectionError("refused")
+    assert doctor.provider_answers("http://127.0.0.1:1/v1", get=refused) is False

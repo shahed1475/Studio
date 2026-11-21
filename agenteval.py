@@ -1892,6 +1892,41 @@ def case_a_cut_at_the_very_end_never_makes_the_video_twice_and_a_cut_short_resum
                 else f"finished_ok={finished_ok} made={len(made)} short={one}")
 
 
+def case_a_provider_that_does_not_answer_never_benches_its_models_and_a_free_model_answers_in_the_same_call():
+    """21 Nov 2026: FreeLLMAPI did not start after a power cut. Each refused connection counted as a model failure (all five owner models benched for six
+    hours) and each ended its round, so a cheap job used its three rounds on refused own models and failed while an OpenRouter free model was answering."""
+    import datetime as dt
+
+    import freemodels
+    import llm
+
+    now = dt.datetime(2026, 11, 21, 18, tzinfo=dt.timezone.utc)
+    saved = (llm._post, llm.extra_models, llm.extra_status, llm._extra_last, llm.ROUNDS, freemodels.choose, freemodels.refresh, freemodels.remaining, freemodels.requests_today, freemodels.count_request)
+    sent = []
+
+    def post(payload, key):
+        sent.append(payload["model"])
+        if payload["model"].startswith("extra:"):
+            raise llm.requests.ConnectionError("[Errno 111] Connection refused")
+        return {"model": payload["model"], "choices": [{"message": {"content": '{"ok": true}'}}], "usage": {}}
+
+    try:
+        for _ in range(5):
+            freemodels.record("extra:own-a", False, now, role="cheap", reason="unreachable")
+        benched = not freemodels.available("extra:own-a", now + dt.timedelta(seconds=freemodels.UNREACHABLE_SECONDS + 1))
+        llm._post, llm.extra_models, llm.extra_status, llm._extra_last, llm.ROUNDS = post, lambda role: ["extra:own-b", "extra:own-c"], lambda m: "", {}, 1
+        freemodels.choose, freemodels.refresh = (lambda *a, **k: ["or/stand-in:free"]), (lambda now: None)
+        freemodels.remaining, freemodels.requests_today, freemodels.count_request = (lambda *a, **k: 500), (lambda *a, **k: 0), (lambda *a, **k: None)
+        for _ in range(3):  # three refused calls through the real path: the model must still be free a minute later
+            got = llm._free_chat("x", "cheap", {**llm.DEFAULTS, "free_daily_limit": 900}, "k", now)
+        benched = benched or not freemodels.available("extra:own-b", now + dt.timedelta(seconds=freemodels.UNREACHABLE_SECONDS + 1))
+    finally:
+        (llm._post, llm.extra_models, llm.extra_status, llm._extra_last, llm.ROUNDS, freemodels.choose, freemodels.refresh, freemodels.remaining, freemodels.requests_today,
+         freemodels.count_request) = saved
+    ok = not benched and got == {"ok": True} and sent == ["extra:own-b", "extra:own-c"] + ["or/stand-in:free"] * 3  # then skipped for a minute, not asked again
+    return ok, f"benched={benched} answered={got is not None} sent={sent}"
+
+
 CASES = [case_a_cut_at_the_very_end_never_makes_the_video_twice_and_a_cut_short_resumes_in_its_folder, case_a_render_cut_by_a_power_cut_is_found_kept_and_never_trusted_half_written, case_busy_judges_never_discard_a_draft_and_never_pass_it_unchecked, case_the_reviewer_flags_a_line_that_calls_proven_what_its_source_only_suggests, case_blender_scenes_are_true_to_the_line_and_never_stop_a_video, case_a_judge_is_never_the_writer_even_through_the_owners_provider, case_an_a2a_task_is_answered_once_only_by_its_target_and_never_off_the_hand_over_map,case_free_mode_never_sends_a_request_to_a_paid_model_through_the_video_checks, case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic, case_the_guardian_closes_its_draft_tasks_only_when_the_video_has_left_output, case_search_demand_is_no_signal_on_failure_spends_youtube_quota_only_within_its_budget_and_cleans_outside_text, case_comment_insights_keep_no_names_nothing_over_30_days_and_only_cleaned_questions_and_never_write,
          case_ladder_ends_with_owner_not_a_crash, case_ladder_respects_budget_and_whitelist_and_lessons, case_outside_text_is_cleaned,
          case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules, case_registry_is_consistent,
@@ -1929,7 +1964,8 @@ CASES = [case_a_cut_at_the_very_end_never_makes_the_video_twice_and_a_cut_short_
          case_real_footage_from_nasa_and_pixabay_is_relevant_logo_free_downloaded_safely_and_credited,
          case_a_free_review_needs_two_free_models_the_strictest_counts_and_it_is_off_unless_switched_on,
          case_a_drawn_scene_takes_a_real_photo_only_when_the_file_is_named_for_its_subject,
-         case_the_owners_own_model_provider_key_never_leaves_the_settings_file_and_its_address_is_checked]
+         case_the_owners_own_model_provider_key_never_leaves_the_settings_file_and_its_address_is_checked,
+         case_a_provider_that_does_not_answer_never_benches_its_models_and_a_free_model_answers_in_the_same_call]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:
