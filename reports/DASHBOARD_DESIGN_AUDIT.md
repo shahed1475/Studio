@@ -36,3 +36,19 @@ Skills used: redesign-skill (scan, diagnose, fix in the existing stack), taste-s
 - Page-by-page layout changes (spacing, hierarchy of the Home page, Live page motion). The colour system was the agreed first step.
 - 3D or new motion graphics on the dashboard.
 - Screenshots of the live dashboard behind its login (the test dashboard runs the same code and stylesheet).
+
+## Layout pass (v6, 22 Nov 2026, later the same day)
+Skill used: redesign-skill (scan, diagnose, fix in the existing stack). Full-length screenshots of nine pages at 1440 px and 390 px (phone) on the test dashboard; zero script errors.
+
+Found and fixed:
+- **Autopilot plan badges had no style** (a real defect): the plan asked for badge classes `b-w` and `b-`, which do not exist, so "Make now", "Too soon", "Later" and "Paused" showed as bare text. Now `warn` / `mute`.
+- **Live page showed a raw status word** ("empty") as a label: every planner status now has a readable label (Make now, In work, Later).
+- **Sentences started in lower case** ("nothing yet, Autopilot makes it now"): the planner words are sentence case and the Home card ends the sentence.
+- **Next-step card**: the icon floated mid-height apart from its title; it now sits in a small tile beside the title on a desktop and above it on a phone. On a phone the shared `.grow` rule (basis 220 px) turned into a 130 px empty band above the button; fixed for this card.
+- **Live strip on a phone**: three loose lines; now the dot beside two tight lines.
+- **Line length**: page intros and help paragraphs stop at about 80 characters.
+- **Pexels**: Home's setup check asked for a Pexels key and Settings had a key field, although Pexels is not on the owner's licence list. Both now say it is not used; the dead `savePk` code is gone (the server-side key route is unchanged).
+
+Tests: `tests/test_ui_behaviour.py` gains three real-browser tests (every badge uses an existing style and no label starts in lower case, on five pages; no empty band in the phone card; Settings asks for no Pexels key), each mutation-checked (the old code put back made it fail). Stylesheet link `?v=7`.
+
+Not changed: the page structure, navigation, the sidebar, motion.

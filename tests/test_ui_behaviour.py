@@ -290,3 +290,38 @@ def test_the_create_button_is_called_create_video(app):
     labels = b.js("[...document.querySelectorAll('#main .choice .btn')].map(x=>x.textContent.trim())")
     assert labels == ["Create video", "Create Short"], labels
     assert "Make documentary" not in b.js("document.body.innerText")
+
+
+BADGE_LEVELS = {"b-ok", "b-warn", "b-bad", "b-mute"}
+
+
+@pytest.mark.parametrize("page", ["home", "live", "autopilot", "videos", "settings"])
+def test_every_status_badge_uses_a_style_that_exists(app, page):
+    """The Autopilot plan once asked for badge styles 'b-w' and 'b-', which do not exist, so 'Make now' and 'Too soon' showed as bare text."""
+    b, url = app
+    b.open(url + "/#" + page)
+    b.js("new Promise(r=>setTimeout(r,900))")
+    classes = json.loads(b.js("JSON.stringify([...document.querySelectorAll('.badge')].map(e=>[...e.classList].filter(c=>c.startsWith('b-')).join(' ')+'|'+e.textContent))"))
+    bad = [c for c in classes if c.split("|")[0] not in BADGE_LEVELS]
+    assert not bad, bad
+    words = [c.split("|", 1)[1].strip() for c in classes]
+    assert not [w for w in words if w and w[0].islower()], words  # a raw planner status ('empty') is never shown as a label
+
+
+def test_the_next_step_card_on_a_phone_has_no_empty_band_above_its_button(app):
+    b, url = app
+    b.size(390, 900, True)
+    b.open(url + "/#home")
+    b.js("new Promise(r=>setTimeout(r,700))")
+    gap = b.js("(()=>{const c=document.querySelector('.next'),t=c.querySelector('.grow'),btn=c.lastElementChild;"
+               "const p=t.lastElementChild.getBoundingClientRect();return btn.getBoundingClientRect().top-p.bottom})()")
+    assert 0 <= gap <= 24, gap
+
+
+def test_settings_does_not_ask_for_a_pexels_key(app):
+    """Pexels is not on the owner's list of allowed licences: no key field invites one."""
+    b, url = app
+    b.open(url + "/#settings")
+    b.js("new Promise(r=>setTimeout(r,700))")
+    assert b.js("document.getElementById('pk')") is None
+    assert "Not used" in b.js("document.body.innerText")

@@ -510,3 +510,18 @@ svg.chart .ln{stroke:var(--accent)}svg.chart .end{fill:var(--accent)}
 .b-bad{background:var(--bad);color:var(--surface)}
 .err{background:var(--bad-bg);color:var(--ink);border:1.5px solid var(--bad)}
 .ck-ok{color:var(--ok)}.ck-warn{color:var(--warn);opacity:1}.ck-bad{color:var(--bad)}
+
+/* ---- v6 layout polish (22 Nov 2026): next-step card, live strip on phones, readable line length ---- */
+.next{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px 20px}
+.next .nic{display:grid;place-items:center;width:46px;height:46px;border-radius:14px;background:var(--surface);border:1px solid color-mix(in srgb,var(--accent) 28%,var(--line));box-shadow:var(--shadow);align-self:start}
+.next .sub{max-width:76ch;text-wrap:pretty}
+.head .sub,.help{max-width:80ch;text-wrap:pretty}
+@media(max-width:900px){
+  .next{display:flex;flex-direction:column;align-items:flex-start;gap:12px}
+  .next .nic{width:40px;height:40px;border-radius:12px}
+  .next>.grow{flex:none;width:100%}
+  .livestrip{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 12px;padding:14px 18px}
+  .livestrip>:not(.dot-live){grid-column:2}
+  .livestrip .dot-live{grid-row:1;align-self:center}
+  .livestrip .mini{margin-left:0;margin-top:6px}
+}

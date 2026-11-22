@@ -303,7 +303,7 @@ button.wd{cursor:pointer}button.wd:hover{transform:translateY(-2px);border-color
 
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
-<link rel="stylesheet" href="/static/studio.css?v=6">
+<link rel="stylesheet" href="/static/studio.css?v=7">
 </head>
 <body>
 <div class="shell">
@@ -585,7 +585,7 @@ function heroHTML(){
   if(cr)money+=`<div class="money"><span class="mute">OpenRouter credit</span><div class="big mono">$${cr.left.toFixed(2)}</div><span class="mute">${cr.left<1.5?`${badge("Low","warn")} Below the $1.50 needed to start a video. `:""}Read ${secs(cr.age_s)} ago</span></div>`;
   return `<div><div class="livestate"><span class="dot-live ${on?(stale?"bad":"on"):""}"></span>${on?"Working now":"Idle"}${badge(L.autopilot_on?"Autopilot on":"Autopilot off",L.autopilot_on?"ok":"mute")}</div><div class="livetitle">${title}</div>${liveControls()}${railHTML()}${beat}</div><div>${money||'<p class="mute">Spend is not available right now.</p>'}</div>`;
 }
-const SLOT={ready:["Ready","ok"],coming:["Coming","mute"],too_soon:["Too soon","mute"],paused:["Paused","warn"],hold:["On hold","warn"],uploaded:["On YouTube","ok"],scheduled:["Scheduled","ok"]};
+const SLOT={empty:["Make now","warn"],repairing:["In work","ok"],checking:["In work","ok"],later:["Later","mute"],ready:["Ready","ok"],coming:["Coming","mute"],too_soon:["Too soon","mute"],paused:["Paused","warn"],hold:["On hold","warn"],uploaded:["On YouTube","ok"],scheduled:["Scheduled","ok"]};
 function nextHTML(){
   if(!L.next.length)return empty("calendar-check","No posts planned","Turn Autopilot on and it fills the next slots.",`<button class="btn quiet sm" onclick="go('autopilot')">Open Autopilot</button>`);
   return L.next.map(x=>{const b=SLOT[x.status]||[String(x.status).replace(/_/g," "),"mute"];return `<div class="slot"><div><b>${esc(x.us)}</b> <span class="mute">${x.format==="doc"?"Documentary":"Short"}</span></div>${badge(...b)}<div class="mute" style="overflow-wrap:anywhere">${esc(x.title||"Nothing made for it yet")}</div><div class="mute bd">${esc(x.bd)} Bangladesh</div></div>`}).join("");
@@ -715,7 +715,7 @@ function nextStep(){
   if(!r&&S.tenant&&!S.niche_confirmed)return{icon:"list-checks",title:"Choose your niche",text:"Pick what your channel is about. The studio then researches it and writes you a plan to read before anything is made.",btn:`<button class="btn" onclick="go('niche')">Choose your niche</button>`};
   if(r)return{icon:"hourglass-medium",title:"Working on it",text:`Running: ${esc(r.cmd)}. A documentary takes a while, you can leave this page open.`,btn:`<span style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn" onclick="openJob='${r.id}';go('activity')">Watch progress</button>${stopBtn(r.id,"")}</span>`};
   if(S.autopilot.needs_you)return{icon:"hand-palm",title:"A video needs your decision",text:`The reviewer agent flagged ${S.autopilot.needs_you===1?"a video":S.autopilot.needs_you+" videos"}. Nothing goes live until you decide.`,btn:`<button class="btn" onclick="go('autopilot')">See what was flagged</button>`};
-  if(S.autopilot.enabled){const n=S.autopilot.next;return{icon:"robot",title:"Autopilot is running",text:n?`Next post: ${n.format==="doc"?"documentary":"Short"} on ${esc(n.us)} US Eastern (${otherTime(n)})${n.title?", \""+esc(n.title)+"\"":""}. ${n.status==="later"?"Autopilot starts on it "+esc(n.starts_us)+".":(PLAN_WORDS[n.status]||"")}`:"It repairs, checks and schedules videos by itself. Nothing for you to do.",btn:`<button class="btn" onclick="go('autopilot')">See the plan</button>`}}
+  if(S.autopilot.enabled){const n=S.autopilot.next;return{icon:"robot",title:"Autopilot is running",text:n?`Next post: ${n.format==="doc"?"documentary":"Short"} on ${esc(n.us)} US Eastern (${otherTime(n)})${n.title?", \""+esc(n.title)+"\"":""}. ${n.status==="later"?"Autopilot starts on it "+esc(n.starts_us)+".":(PLAN_WORDS[n.status]?PLAN_WORDS[n.status]+".":"")}`:"It repairs, checks and schedules videos by itself. Nothing for you to do.",btn:`<button class="btn" onclick="go('autopilot')">See the plan</button>`}}
   const rev=S.videos.find(v=>v.state==="needs review");
   if(rev)return{icon:"play",title:"Watch your new video",text:`"${esc(rev.title)}" is ready. Watch it, then approve it.`,btn:`<button class="btn" onclick="go('videos',{slug:'${rev.slug}'})">Watch and review</button>`};
   const ap=S.videos.find(v=>v.state==="approved");
@@ -744,7 +744,7 @@ function home(m){
   const n=nextStep(),c=S.counts,h=S.health,y=S.youtube;
   const check=(ok,label,fix,go_)=>`<div><div class="grow"><span class="ttl">${label}</span></div>${ok?badge("Ready","ok"):`<button class="btn quiet sm" onclick="${go_}">${fix}</button>`}</div>`;
   m.innerHTML=`<div class="head"><h1>Home</h1><p class="sub">${esc(S.niche.name)}. Everything the automation did, and what to do next.</p></div>
-  <div class="panel next">${ico(n.icon,"lg")}<div class="grow stack" style="gap:4px"><h2>${n.title}</h2><p class="sub">${n.text}</p></div>${n.btn}</div>
+  <div class="panel next"><span class="nic" aria-hidden="true">${ico(n.icon,"lg")}</span><div class="grow stack" style="gap:4px"><h2>${n.title}</h2><p class="sub">${n.text}</p></div>${n.btn}</div>
   <button type="button" class="panel livestrip" id="homelive" onclick="go('live',{slug:null})" aria-label="Open the live view"></button>
 
   <div class="sec"><h2>Pipeline</h2>
@@ -761,7 +761,6 @@ function home(m){
     <div class="panel rows">
       ${check(h.ollama,`Script writer <span class="mute">(${esc(h.model)})</span>`,"Open Settings","go('settings')")}
       ${check(h.ffmpeg,"Video renderer","Install ffmpeg","go('settings')")}
-      <div><div class="grow"><span class="ttl">Stock video for Shorts <span class="mute">(Pexels key)</span></span><div class="mute">Optional. Without it the studio uses free public-domain pictures and old films.</div></div>${h.pexels?badge("Ready","ok"):badge("Optional","mute")}</div>
       ${check(!!y.token,"YouTube channel","Connect","go('youtube')")}
     </div></div>
 
@@ -957,7 +956,7 @@ async function makeTopic(i,cmd){const t=S.queue[i];await api("/api/queue/remove"
 const DAYS=[["mon","Monday"],["tue","Tuesday"],["wed","Wednesday"],["thu","Thursday"],["fri","Friday"],["sat","Saturday"],["sun","Sunday"]];
 let AP=null,apSlots=null,apShort=null;Object.defineProperty(window,'apSlots',{get:()=>apSlots});Object.defineProperty(window,'apShort',{get:()=>apShort});
 async function apRefresh(){AP=await api("/api/autopilot");apSlots=null;apShort=null}
-const PLAN_WORDS={uploaded:"on YouTube, private until its time",scheduled:"scheduled",ready:"passed every check, its time is set next",repairing:"being repaired by the fixer",checking:"being checked",empty:"nothing yet, Autopilot makes it now",later:"",too_soon:"too close to fill with a new video",paused:"paused by the weekly pace limit (YouTube's repeated-content rule), nothing is made for it"};
+const PLAN_WORDS={uploaded:"On YouTube, private until its time",scheduled:"Scheduled",ready:"Passed every check, its time is set next",repairing:"Being repaired by the fixer",checking:"Being checked",empty:"Nothing made yet, Autopilot makes it now",later:"",too_soon:"Too close to fill with a new video",paused:"Paused by the weekly pace limit (YouTube's repeated-content rule), nothing is made for it"};
 const PROBLEM_WORDS={title_matches:"the title promises too much",duplicate_title:"the title is too like another",visual_review:"some pictures do not fit",variety_script:"the opening or ending is like another video",invented_facts:"facts the source does not support",claims:"claims to check",grounded:"no source article"};
 async function autopilot(m){
   if(!editing||!AP){try{await apRefresh()}catch(e){return}}
@@ -974,7 +973,7 @@ async function autopilot(m){
   ${warn.length?`<div class="err" data-ap="overview" style="margin-top:12px">${warn.map(esc).join("<br>")}</div>`:""}
   <p class="help" data-ap="overview" style="margin-top:10px">${last?`Last pass ${ago(Date.parse(last.at)/1000)}. ${Object.keys(did).length?"Did: "+Object.entries(did).map(([k,n])=>n+" "+k.replace("_"," ")).join(", ")+".":"Nothing to do."}`:"No pass has run yet."}${last&&last.errors.length?` <span style="color:var(--bad)">Problems: ${esc(last.errors.join(" | "))}</span>`:""}${busy?" <b>A pass is running right now.</b> It can take a while when it makes a video, and the button comes back when it ends.":""}</p>
 
-  <div class="sec" data-ap="overview"><h2>Next videos</h2><div class="panel pad stack">${(pl=>{const row=r=>`<div><div class="grow"><div class="ttl">${esc(r.us)} <span class="mute">(${S.tenant?mine(r.at)+" your time":esc(r.bd)})</span> ${r.format==="doc"?"Documentary":"Short"}</div><div class="mute">${esc(r.title||"")}${r.title?". ":""}${r.status==="later"?"Autopilot starts on it "+esc(r.starts_us)+" ("+esc(r.starts_bd)+")":esc(PLAN_WORDS[r.status]||r.status)}</div></div>${badge(r.status==="uploaded"?"On YouTube":r.status==="scheduled"?"Scheduled":r.status==="ready"?"Ready":r.status==="repairing"||r.status==="checking"?"In work":r.status==="too_soon"?"Too soon":r.status==="paused"?"Paused":r.status==="later"?"Later":"Make now",r.status==="empty"?"w":(r.status==="too_soon"||r.status==="later"||r.status==="paused")?"":"ok")}</div>`;const now=pl.rows.filter(r=>r.status!=="later"),later=pl.rows.filter(r=>r.status==="later");return `<p class="help">Each video is finished 24 hours before it posts (${pl.review_hours} h, your time to stop it). Autopilot starts a slot ${pl.prepare_hours} hours before that, never earlier: ${pl.per_day.doc||0} documentary and ${pl.per_day.short||0} Short a day. To make now: ${pl.needs.doc} documentar${pl.needs.doc===1?"y":"ies"}, ${pl.needs.short} Short${pl.needs.short===1?"":"s"}. Times are US Eastern (${S.tenant?"and your own time":"Bangladesh"}).</p>
+  <div class="sec" data-ap="overview"><h2>Next videos</h2><div class="panel pad stack">${(pl=>{const row=r=>`<div><div class="grow"><div class="ttl">${esc(r.us)} <span class="mute">(${S.tenant?mine(r.at)+" your time":esc(r.bd)})</span> ${r.format==="doc"?"Documentary":"Short"}</div><div class="mute">${esc(r.title||"")}${r.title?". ":""}${r.status==="later"?"Autopilot starts on it "+esc(r.starts_us)+" ("+esc(r.starts_bd)+")":esc(PLAN_WORDS[r.status]||r.status)}</div></div>${badge(r.status==="uploaded"?"On YouTube":r.status==="scheduled"?"Scheduled":r.status==="ready"?"Ready":r.status==="repairing"||r.status==="checking"?"In work":r.status==="too_soon"?"Too soon":r.status==="paused"?"Paused":r.status==="later"?"Later":"Make now",r.status==="empty"?"warn":r.status==="paused"?"warn":(r.status==="too_soon"||r.status==="later")?"mute":"ok")}</div>`;const now=pl.rows.filter(r=>r.status!=="later"),later=pl.rows.filter(r=>r.status==="later");return `<p class="help">Each video is finished 24 hours before it posts (${pl.review_hours} h, your time to stop it). Autopilot starts a slot ${pl.prepare_hours} hours before that, never earlier: ${pl.per_day.doc||0} documentary and ${pl.per_day.short||0} Short a day. To make now: ${pl.needs.doc} documentar${pl.needs.doc===1?"y":"ies"}, ${pl.needs.short} Short${pl.needs.short===1?"":"s"}. Times are US Eastern (${S.tenant?"and your own time":"Bangladesh"}).</p>
     <div class="rows">${now.length?now.map(row).join(""):`<div class="mute">No slots to work on now.</div>`}</div>
     ${later.length?`<details><summary class="mute">Later slots (${later.length}), nothing is made for them yet</summary><div class="rows">${later.map(row).join("")}</div></details>`:""}`})(A.status.plan||{rows:[],needs:{doc:0,short:0},per_day:{},prepare_hours:0,review_hours:0})}</div></div>
 
@@ -1371,9 +1370,8 @@ async function settings(m){
     ${L.history.length?`<div class="mute">Last days: ${L.history.map(d=>`${esc(d.day.slice(5))} ${usd(d.usd)}`).join(", ")}</div>`:""}</div>`:"";
   m.innerHTML=`<div class="head"><h1>Settings</h1><p class="sub">Keys are stored in settings.json next to the project, readable only by you.</p></div>
   <div class="panel pad stack"><h2>Appearance</h2><div><button class="btn" id="themebtn" onclick="toggleTheme()"><span id="themelbl">${document.documentElement.dataset.theme==="dark"?"Switch to light":"Switch to dark"}</span></button></div></div>${aiPanel}
-  <div class="panel pad stack"><h2>Pexels API key (optional)</h2>
-    <p class="sub">Shorts use public-domain archive images by default. A Pexels key adds moving stock video, but Pexels has paused new keys. Free at <a target="_blank" rel="noopener" href="https://www.pexels.com/api/">pexels.com/api</a>. ${S.settings.pexels_key?"A key is saved and hidden.":"No key saved yet."}</p>
-    <div style="display:flex;gap:10px;flex-wrap:wrap"><div class="grow"><label for="pk" style="position:absolute;left:-9999px">Pexels key</label><input id="pk" type="password" autocomplete="new-password" spellcheck="false" placeholder="Paste your key" oninput="editing=true"></div><button class="btn" onclick="savePk()">Save key</button></div></div>
+  <div class="panel pad stack"><h2>Pexels</h2>
+    <p class="sub">Not used. The Pexels licence is not on your list of allowed licences (your decision of 10 Nov), so the studio takes no pictures or video from it and needs no key.</p></div>
   <div class="panel pad stack" style="margin-top:16px"><h2>Pixabay API key (optional)</h2>
     <p class="sub">Lets the studio look up Pixabay pictures and videos (it does not put any in a video yet). Free at <a target="_blank" rel="noopener" href="https://pixabay.com/api/docs/">pixabay.com/api/docs</a>. ${S.settings.pixabay_key?"A key is saved and hidden.":"No key saved yet."}</p>
     <div style="display:flex;gap:10px;flex-wrap:wrap"><div class="grow"><label for="pxb" style="position:absolute;left:-9999px">Pixabay key</label><input id="pxb" type="password" autocomplete="new-password" spellcheck="false" placeholder="Paste your key" oninput="editing=true"></div><button class="btn" onclick="savePxb()">Save key</button></div></div>
@@ -1440,7 +1438,6 @@ async function saveKey(which,id){const el=document.getElementById(id),v=el.value
 async function llmClearKey(){if(!confirm("Remove the saved OpenRouter key? OpenRouter will be turned off."))return;await api("/api/llm/config",{enabled:false,clear_key:true});editing=false;toast("Key removed");render(true)}
 async function llmClearAKey(){if(!confirm("Remove the saved Claude key?"))return;await api("/api/llm/config",{clear_anthropic_key:true});editing=false;toast("Key removed");render(true)}
 async function llmTest(role){const el=document.getElementById("t_"+role);el.textContent="Testing...";try{const r=await api("/api/llm/test",{role});el.innerHTML=r.ok?`Works. ${r.seconds} s, cost ${usd(r.usd)}`:`<span style="color:var(--bad)">${esc(r.error)}</span>`}catch(e){el.textContent=""}}
-async function savePk(){const v=document.getElementById("pk").value;if(!v.trim())return toast("Paste a key first");await api("/api/key/save",{which:"pexels",value:v});document.getElementById("pk").value="";editing=false;toast("Key saved and hidden");refresh(true)}
 async function saveYtk(){const v=document.getElementById("ytk").value;if(!v.trim())return toast("Paste a key first");await api("/api/key/save",{which:"youtube",value:v});document.getElementById("ytk").value="";editing=false;toast("Key saved and hidden");refresh(true)}
 async function savePxb(){const v=document.getElementById("pxb").value;if(!v.trim())return toast("Paste a key first");await api("/api/key/save",{which:"pixabay",value:v});document.getElementById("pxb").value="";editing=false;toast("Key saved and hidden");refresh(true)}
 async function saveSmk(){const v=document.getElementById("smk").value;if(!v.trim())return toast("Paste a key first");await api("/api/key/save",{which:"smithsonian",value:v});document.getElementById("smk").value="";editing=false;toast("Key saved and hidden");refresh(true)}

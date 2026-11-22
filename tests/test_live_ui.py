@@ -172,7 +172,7 @@ def test_the_palette_is_navy_with_one_accent_and_every_text_pair_passes_wcag_aa(
         for k in ("bg", "surface", "ink", "accent", "ok", "warn", "bad"):
             assert pl[k] == light[k] and pd[k] == dark[k], (f, k)
     assert "rgba(255,190,0" not in HTML  # the amber policy-hold fill is gone
-    assert "studio.css?v=6" in HTML  # browsers fetch the new stylesheet, not a cached v4 one
+    assert "studio.css?v=7" in HTML  # browsers fetch the new stylesheet, not a cached v4 one
 
 
 def test_status_is_carried_by_an_icon_and_a_fill_not_by_colour_alone():
