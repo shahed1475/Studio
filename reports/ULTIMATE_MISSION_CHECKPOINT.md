@@ -36,5 +36,12 @@ Live proof (this session, before 17:24 UTC): strict review answered by extra:nem
 2. Training: nothing to train on yet; whether to build a pipeline at all.
 3. Rule 11 of the brief (no automatic scheduling) vs the standing auto-approve with a 24 h veto.
 
+## Commit and deploy (17:38-17:41 UTC)
+- Full suite 2964 passed, 11 skipped (17:38). An earlier run showed 5 failures caused by my own mutation edits of run.py during the run (source-reading tests) and 3 from the new length gate meeting one-line fake scripts (fixed with a fixture in those two files); none were product defects.
+- Commit f58e5ff pushed to main; secret scan of the commit: no saved key present.
+- Dashboard container restarted alone (healthy, /login 200 after about 60 s); worker untouched (retry loop alive).
+- Doctor run 17:40:35 UTC: openrouter_key FAILED with OpenRouter's own message; needs: model key refused, off-server backup; own_provider 1/5 proven, openrouter_free 0/12 with note; 16 rows HEALTHY with last_success and source. Before today it said 12/12 and 5/5.
+- Additional fixes in this commit: length gate before voice (90 % of rules.json minimum), judge reply without a verdict is not a pass, saved draft topic picked first. Not changed by design: topicrank.premise_check and reviewer.title_ok fail open (pre-selection only; the final AI review records "unreviewed", never a pass).
+
 ## Next exact action
-Full suite, commit, push, restart the dashboard container only (key checks live), verify /login 200. Watch Maximilian try 5 (about 17:58 UTC, check 3 of 3 of the saved draft). Then: topic requeue on fact-check outage, length gate, judge-failure-as-pass fixes, browser test of every page in the owner's Chrome.
+Watch Maximilian try 5 (about 17:58 UTC, check 3 of 3 of the saved draft). Then: topic requeue on fact-check outage, length gate, judge-failure-as-pass fixes, browser test of every page in the owner's Chrome.
