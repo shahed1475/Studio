@@ -44,6 +44,9 @@ def _isolate_autopilot_log(tmp_path, monkeypatch):
     import autopilot
 
     monkeypatch.setattr(autopilot, "LOG", tmp_path / "autopilot.log")
+    # and its lock (22 Nov 2026): a real Autopilot make holding ~/studio/autopilot.lock disabled the Autopilot page's buttons inside two browser tests,
+    # which then failed; a test must never see, or take, the lock the running studio holds
+    monkeypatch.setattr(autopilot, "LOCK_FILE", tmp_path / "autopilot.lock")
 
 
 @pytest.fixture(autouse=True)
