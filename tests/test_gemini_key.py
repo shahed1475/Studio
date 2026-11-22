@@ -27,8 +27,8 @@ def settings(tmp_path, monkeypatch):
 def test_the_key_is_saved_hidden_and_only_with_googles_shape(settings):
     assert dashboard.H.route(None, "/api/key/save", {"which": "gemini", "value": f"  {KEY}  "}) == {"ok": True}
     assert json.loads(settings.read_text())["gemini_api_key"] == KEY and (settings.stat().st_mode & 0o777) == 0o600
-    for bad in ("not-a-google-key-at-all", "AIzashort", "sk-or-v1-" + "a" * 40, "KGAT_" + "a" * 30):
-        with pytest.raises(ValueError, match="AIza") as e:
+    for bad in ("not-a-google-key-at-all", "AIzashort", "AQ.short", "sk-or-v1-" + "a" * 40, "KGAT_" + "a" * 30, "AQ." + "a" * 20 + " x"):
+        with pytest.raises(ValueError, match="AQ. or AIza") as e:
             dashboard.H.route(None, "/api/key/save", {"which": "gemini", "value": bad})
         assert bad not in str(e.value)  # the refused value is never echoed back
     assert json.loads(settings.read_text())["gemini_api_key"] == KEY
@@ -66,8 +66,10 @@ def test_the_test_is_one_read_only_call_with_the_key_in_a_header(settings):
         seen.append((url, headers, allow_redirects))
         return R()
 
-    got = geminikey.test(KEY, get=get)
-    assert got["ok"] and "2 models" in got["detail"] and KEY not in json.dumps(got)
+    asked = []
+    got = geminikey.test(KEY, get=get, chat=lambda k, m: asked.append(m) or "pong")
+    assert got["ok"] and "answered a test question" in got["detail"] and KEY not in json.dumps(got)
+    assert asked and asked[0] in geminikey.judge_models()  # one tiny question to a judge model, through the judges' own path
     url, headers, redirects = seen[0]
     assert KEY not in url and headers["x-goog-api-key"] == KEY and redirects is False and url.startswith("https://generativelanguage.googleapis.com/")
 
@@ -95,3 +97,58 @@ def test_remove_deletes_only_the_saved_key(settings):
     assert dashboard.H.route(None, "/api/gemini/remove", {})["ok"]
     left = json.loads(settings.read_text())
     assert "gemini_api_key" not in left and left["pixabay_key"] == "keep-me-0123456789"
+
+
+def test_the_newer_aq_format_that_ai_studio_issues_is_accepted(settings):
+    """22 Nov 2026: the owner's new AI Studio key starts with 'AQ.' and the first card refused it (it only knew 'AIza')."""
+    aq = "AQ." + "Ab8RN6fakefakefake_-" + "x" * 30  # a stand-in with the new shape, never a real key
+    assert dashboard.H.route(None, "/api/key/save", {"which": "gemini", "value": aq}) == {"ok": True}
+    assert json.loads(settings.read_text())["gemini_api_key"] == aq and llm.gemini_key() == aq
+
+
+def test_a_key_google_lists_models_for_but_refuses_questions_with_is_not_a_green_tick():
+    """22 Nov 2026: AQ. keys are reported to work on Google's own endpoint but fail with 401 on the OpenAI-style one the judges use."""
+    class R:
+        status_code = 200
+
+        def json(self):
+            return {"models": [{"name": "models/gemini-3.5-flash-lite"}]}
+
+    class Refused(Exception):
+        response = type("Resp", (), {"status_code": 401})()
+
+    def chat(k, m):
+        raise Refused(f"401 for {k}")
+
+    got = geminikey.test(KEY, get=lambda *a, **k: R(), chat=chat)
+    assert not got["ok"] and "HTTP 401" in got["detail"] and "AIza" in got["detail"] and KEY not in got["detail"]
+
+
+def test_the_judges_call_tries_googles_own_header_when_bearer_is_refused(monkeypatch):
+    sent = []
+
+    class Resp:
+        def __init__(self, code):
+            self.status_code = code
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise requests.HTTPError(str(self.status_code))
+
+        def json(self):
+            return {"choices": [{"message": {"content": "pong"}}]}
+
+    def post(url, *, timeout, json=None, headers=None, allow_redirects=True):
+        sent.append(headers)
+        return Resp(401 if "Authorization" in headers else 200)
+
+    monkeypatch.setattr(llm, "_bounded_post", post)
+    monkeypatch.setattr(llm, "_GEMINI_AUTH", {})
+    assert llm.gemini_ping(KEY, "gemini-3.5-flash-lite") == "pong"  # an AIza key: Bearer first, refused, then x-goog-api-key
+    assert "Authorization" in sent[0] and sent[1].get("x-goog-api-key") == KEY and llm._GEMINI_AUTH["aiza"] == "goog"
+    sent.clear()
+    llm.gemini_ping(KEY, "gemini-3.5-flash-lite")
+    assert len(sent) == 1 and "x-goog-api-key" in sent[0]  # the style that worked is remembered
+    monkeypatch.setattr(llm, "_bounded_post", lambda url, **k: sent.append(k["headers"]) or Resp(401))
+    with pytest.raises(requests.HTTPError):
+        llm.gemini_ping("AQ.x" * 10, "gemini-3.5-flash-lite")  # refused both ways: an error, never a silent pass

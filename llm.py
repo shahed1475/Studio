@@ -661,10 +661,37 @@ def _post_gemini(payload: dict, timeout: float) -> dict:
         raise RuntimeError("GEMINI_API_KEY is not set in .env")
     body = {k: v for k, v in payload.items() if k not in ("usage", "reasoning") and not k.startswith("_")}
     body["model"] = payload["model"][len(GEMINI_PREFIX):]
-    r = _bounded_post(GEMINI_URL + "/chat/completions", json=body, timeout=timeout, allow_redirects=False,
-                      headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+    return _gemini_chat(key, body, timeout)
+
+
+_GEMINI_AUTH = {}  # key prefix -> the header style Google accepted ("bearer" or "goog"); remembered for this process only
+
+
+def _gemini_auth(key: str, style: str) -> dict:
+    return {"Authorization": f"Bearer {key}"} if style == "bearer" else {"x-goog-api-key": key}
+
+
+def _gemini_chat(key: str, body: dict, timeout: float) -> dict:
+    """One chat request to Google's OpenAI-compatible endpoint. 22 Nov 2026: AI Studio now issues keys starting 'AQ.' and developers report that some are
+    refused (401) with the OpenAI-style Bearer header; Google's own `x-goog-api-key` header is tried once on a 401 or 403, and the style that worked is kept."""
+    kind = "aq" if key.startswith("AQ.") else "aiza"
+    styles = [_GEMINI_AUTH[kind]] if kind in _GEMINI_AUTH else (["goog", "bearer"] if kind == "aq" else ["bearer", "goog"])
+    r = None
+    for style in styles:
+        r = _bounded_post(GEMINI_URL + "/chat/completions", json=body, timeout=timeout, allow_redirects=False,
+                          headers={**_gemini_auth(key, style), "Content-Type": "application/json"})
+        if getattr(r, "status_code", 0) not in (401, 403):
+            _GEMINI_AUTH[kind] = style
+            break
     r.raise_for_status()
     return r.json()
+
+
+def gemini_ping(key: str, model: str, timeout: float = 30) -> str:
+    """The Settings test: one tiny question through the same path the judges use. Its answer text; raises on failure (callers scrub the message)."""
+    body = {"model": model, "messages": [{"role": "user", "content": "Reply with the single word: pong"}], "max_tokens": 20}
+    out = _gemini_chat(key, body, timeout)
+    return str(((out.get("choices") or [{}])[0].get("message") or {}).get("content", ""))[:40]
 
 
 def extra_ping(model: str) -> str:

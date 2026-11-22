@@ -15,14 +15,14 @@ import llm
 
 FIELD = "gemini_api_key"
 TEST_URL = llm.GEMINI_MODELS_URL  # read-only model list
-KEY = re.compile(r"^AIza[A-Za-z0-9_-]{30,40}$")  # Google API keys start with AIza (39 characters in all)
+KEY = re.compile(r"^(AIza[A-Za-z0-9_-]{30,40}|AQ\.[A-Za-z0-9._-]{20,250})$")  # AIza... (classic Google API key) or AQ.... (the newer format AI Studio issues, seen 22 Nov 2026)
 
 
 def check_format(value: str) -> str:
     """The key, trimmed, or ValueError with a plain reason. The value itself is never put in the message."""
     v = str(value or "").strip()
     if not KEY.match(v):
-        raise ValueError("that is not a Google AI Studio key: it should start with AIza (aistudio.google.com/apikey)")
+        raise ValueError("that is not a Google AI Studio key: it should start with AQ. or AIza (aistudio.google.com/apikey)")
     return v
 
 
@@ -31,7 +31,7 @@ def scrub(text, key: str) -> str:
     return t.replace(key, "***") if key else t
 
 
-def test(key: str, get=requests.get) -> dict:
+def test(key: str, get=requests.get, chat=None) -> dict:
     """{"ok", "detail", "seconds"}: one read-only request with the key in a header. Never returns or logs the key."""
     if not key:
         return {"ok": False, "detail": "No Gemini key is saved yet."}
@@ -44,12 +44,53 @@ def test(key: str, get=requests.get) -> dict:
     code = getattr(r, "status_code", 0)
     if code == 200:
         try:
-            n = len(r.json().get("models") or [])
+            listed = [str(m.get("name", "")).split("/")[-1] for m in (r.json().get("models") or [])]
         except (ValueError, AttributeError):
-            n = None
-        return {"ok": True, "seconds": secs, "detail": f"Google accepted the key ({secs} s)" + (f": it lists {n} models, nothing was changed." if n is not None else ".")}
+            listed = []
+        return _ask(key, listed, secs, chat)
     if code in (400, 401, 403):
         return {"ok": False, "seconds": secs, "detail": "Google refused the key (wrong, deleted, or the Gemini API is not enabled for its project). Make one at aistudio.google.com/apikey."}
     if code == 429:
         return {"ok": False, "seconds": secs, "detail": "Google is limiting requests for this key right now (HTTP 429). The free quota resets daily."}
     return {"ok": False, "seconds": secs, "detail": f"Google answered HTTP {code}; the key was not confirmed."}
+
+
+def judge_models() -> list[str]:
+    """The Gemini models the judge cascade asks directly (config/judges.json, prefix gemini:)."""
+    import json
+
+    try:
+        cfg = json.loads((llm.config.ROOT / "config" / "judges.json").read_text())
+    except (OSError, ValueError):
+        return []
+    found = []
+
+    def walk(v):
+        if isinstance(v, str) and v.startswith(llm.GEMINI_PREFIX):
+            found.append(v[len(llm.GEMINI_PREFIX):])
+        elif isinstance(v, list):
+            for x in v:
+                walk(x)
+        elif isinstance(v, dict):
+            for x in v.values():
+                walk(x)
+    walk(cfg)
+    return list(dict.fromkeys(found))
+
+
+def _ask(key: str, listed: list[str], secs: float, chat=None) -> dict:
+    """The model list answered; now one tiny question through the judges' own path (Google may list models for a key that its chat endpoint then refuses)."""
+    want = judge_models()
+    model = next((m for m in want if m in listed), None) or (want[0] if want else None)
+    if not model:
+        return {"ok": True, "seconds": secs, "detail": f"Google accepted the key ({secs} s); no Gemini judge model is configured to try a question."}
+    t0 = time.monotonic()
+    try:
+        answer = (chat or llm.gemini_ping)(key, model)
+    except Exception as e:  # the message may hold the key: scrubbed, and only its kind and status are kept
+        code = getattr(getattr(e, "response", None), "status_code", None)
+        why = f"HTTP {code}" if code else type(e).__name__
+        hint = " Google lists models for this key but refused a question with it: AQ. keys are reported to fail on Google's OpenAI-style endpoint. Make a classic AIza key in Google Cloud Console > APIs & Services > Credentials (Generative Language API) and save that instead." if code in (401, 403) else ""
+        return {"ok": False, "seconds": secs, "detail": scrub(f"Google lists models for this key, but a test question to {model} failed ({why}).{hint}", key)}
+    took = round(time.monotonic() - t0, 1)
+    return {"ok": True, "seconds": secs, "detail": f"Google accepted the key: the judge model {model} answered a test question in {took} s ({'pong' if 'pong' in answer.lower() else 'an answer came back'}). The fact-checker can use it."}
