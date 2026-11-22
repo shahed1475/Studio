@@ -15,7 +15,7 @@ Resume from the first unticked line. Workshop (`~/Desktop/Youtube-automation`) i
 1. [x] Notification cleanup (22 Nov): code, tests, agenteval case + 5 mutations, NOTIFICATION_AUDIT.md, CLAUDE.md section; review window 24 h. Full suite 2,922 passed + 1 expected failure fixed (test_dashboard_agent, menu count rule), 11 skipped; dashboard restarted, healthz 200; committed and pushed on main.
 2. [~] Dashboard redesign. Step 1 done 22 Nov: v5 navy + one accent colour system (studio.css v5 block, small windows, manifest, ?v=6), WCAG test replaces the grey test, 25 Chrome screenshots, DASHBOARD_DESIGN_AUDIT.md. Open: page-by-page layout polish, motion.
 3. [x] Agent and skill audit (22 Nov): 27 agents healthy, 76/76 checks, 34 skills; run.py help now lists all 67 commands (+test); vendored yt-* lib/url_parser.py gap reported. AGENT_SKILL_AUDIT.md
-4. [ ] Google Trends research package (browser, real data only)
+4. [x] Trend research (22 Nov): Google Trends RSS (no fit), Wikipedia pageviews (Maximilian I of Mexico 7.1x), YouTube API scan, demand check; TRENDS_RESEARCH_2026-11-22.md; raw data in data/research/trends-2026-11-22. Topic for sub-plan 5 waits for the owner.
 5. [ ] 20-25 min documentary: script, judge cascade review incl. a rejection and correction, render, full MP4 validation (multi-day: free models and the daily picture allowance)
 6. [ ] Approval and YouTube scheduling check (private only, no public release)
 7. [ ] Recovery tests (worker kill, network loss, restart)
