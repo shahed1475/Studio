@@ -95,9 +95,14 @@ def verify_upload(yt, video_id: str, expect: dict) -> dict:
     problems = []
     if sn.get("title") != expect["title"]:
         problems.append(f"title is '{sn.get('title')}'")
-    if st.get("privacyStatus") != expect["privacy"]:
+    # 22 Nov 2026: a scheduled video that YouTube made public at its time, and whose schedule YouTube then cleared, is the plan carried out, not two
+    # problems (the Kappa Short read "privacy is public, expected private" five days after it went public as scheduled). Public BEFORE the time stays a problem.
+    went_live = bool(expect.get("publish_at")) and expect["publish_at"][:19] <= now[:19] and st.get("privacyStatus") == "public" and not st.get("publishAt")
+    if went_live:
+        pass
+    elif st.get("privacyStatus") != expect["privacy"]:
         problems.append(f"privacy is {st.get('privacyStatus')}, expected {expect['privacy']}")
-    if expect.get("publish_at") and str(st.get("publishAt", ""))[:19] != expect["publish_at"][:19]:
+    if not went_live and expect.get("publish_at") and str(st.get("publishAt", ""))[:19] != expect["publish_at"][:19]:
         problems.append(f"scheduled time is {st.get('publishAt')}, expected {expect['publish_at']}")
     if st.get("uploadStatus") not in ("uploaded", "processed"):
         problems.append(f"upload status is {st.get('uploadStatus')}")
@@ -109,7 +114,7 @@ def verify_upload(yt, video_id: str, expect: dict) -> dict:
     else:  # YouTube's documentation lists the field as writable on insert and update and says nothing about reading it; no video of ours has ever returned it (30 Oct 2026)
         said = "sent with the upload (containsSyntheticMedia true), but YouTube's API does not return this field, so it cannot be read back: check 'Altered content' in YouTube Studio"
     return {"ok": not problems, "privacyStatus": st.get("privacyStatus"), "publishAt": st.get("publishAt"), "uploadStatus": st.get("uploadStatus"),
-            "problems": problems, "ai_disclosure": said, "checked_at": now}
+            "problems": problems, "ai_disclosure": said, "checked_at": now, **({"published": "public at its scheduled time, as planned"} if went_live else {})}
 
 
 def _set_thumbnail(yt, video_id: str, thumb: Path) -> None:

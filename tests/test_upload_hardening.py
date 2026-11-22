@@ -334,3 +334,15 @@ def test_when_youtube_does_return_the_flag_it_is_checked_and_an_off_flag_is_a_pr
     assert on["ok"] is True and "confirmed" in on["ai_disclosure"]
     off = upload.verify_upload(Reads({**BASE, "containsSyntheticMedia": False}), "X", EXPECT)
     assert off["ok"] is False and any("disclosure" in p for p in off["problems"])
+
+
+def test_a_video_youtube_made_public_at_its_scheduled_time_is_the_plan_carried_out_not_a_problem():
+    """22 Nov 2026: the Kappa Short went public as scheduled on 17 Nov; the check read 'privacy is public, expected private' and 'scheduled time is None'."""
+    past = {"title": "T", "privacy": "private", "publish_at": "2026-10-30T19:00:00Z"}
+    live = upload.verify_upload(Reads({"privacyStatus": "public", "uploadStatus": "processed"}), "X", past)
+    assert live["ok"] is True and live["published"].startswith("public at its scheduled time")
+    future = {"title": "T", "privacy": "private", "publish_at": "2999-01-01T00:00:00Z"}
+    early = upload.verify_upload(Reads({"privacyStatus": "public", "uploadStatus": "processed"}), "X", future)
+    assert early["ok"] is False and any("privacy is public" in p for p in early["problems"])  # public before its time is still a problem
+    pulled = upload.verify_upload(Reads({"privacyStatus": "private", "uploadStatus": "processed"}), "X", past)
+    assert pulled["ok"] is False and any("scheduled time is None" in p for p in pulled["problems"])  # private with its schedule gone: still reported

@@ -16,8 +16,8 @@ Resume from the first unticked line. Workshop (`~/Desktop/Youtube-automation`) i
 2. [~] Dashboard redesign. Step 1 done 22 Nov: v5 navy + one accent colour system (studio.css v5 block, small windows, manifest, ?v=6), WCAG test replaces the grey test, 25 Chrome screenshots, DASHBOARD_DESIGN_AUDIT.md. Open: page-by-page layout polish, motion.
 3. [x] Agent and skill audit (22 Nov): 27 agents healthy, 76/76 checks, 34 skills; run.py help now lists all 67 commands (+test); vendored yt-* lib/url_parser.py gap reported. AGENT_SKILL_AUDIT.md
 4. [x] Trend research (22 Nov): Google Trends RSS (no fit), Wikipedia pageviews (Maximilian I of Mexico 7.1x), YouTube API scan, demand check; TRENDS_RESEARCH_2026-11-22.md; raw data in data/research/trends-2026-11-22. Topic for sub-plan 5 waits for the owner.
-5. [ ] 20-25 min documentary: script, judge cascade review incl. a rejection and correction, render, full MP4 validation (multi-day: free models and the daily picture allowance)
-6. [ ] Approval and YouTube scheduling check (private only, no public release)
+5. [~] Documentary "Maximilian I of Mexico" (owner chose it 22 Nov): pinned (topicqueue.pin doc), started 08:57 UTC in studio-worker with `python run.py autopilot make doc` (never approves), log logs/maximilian-doc.log. If it stopped: read the log; pictures over the daily Cloudflare cap resume after 00:00 UTC with the same command (data/pending_doc.json); then review, render checks (studiochecks video), frames.
+6. [~] YouTube scheduling audit done 22 Nov (YOUTUBE_SCHEDULING_AUDIT.md; verify_upload fixed for videos that went public on schedule). Open: approval and a private upload of the new documentary (owner).
 7. [ ] Recovery tests (worker kill, network loss, restart)
 8. [ ] Reports, master report section, commit and push
 
