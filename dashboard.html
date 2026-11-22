@@ -1387,6 +1387,10 @@ async function settings(m){
     <p class="sub">For your own <code>kaggle</code> command on this PC. Kaggle's terms allow personal, non-commercial use only, so the studio never runs video work on Kaggle. Make a token at <a target="_blank" rel="noopener" href="https://www.kaggle.com/settings/api">kaggle.com &gt; Settings &gt; API Tokens</a>. ${S.settings.kaggle_key?"A token is saved and hidden.":"No token saved yet."}</p>
     <div style="display:flex;gap:10px;flex-wrap:wrap"><div class="grow"><label for="kgt" style="position:absolute;left:-9999px">Kaggle API token</label><input id="kgt" type="password" autocomplete="new-password" spellcheck="false" placeholder="KGAT_…" oninput="editing=true"></div><button class="btn" onclick="saveKgt()">Save token</button><button class="btn" onclick="kaggleAct('test',this)"${S.settings.kaggle_key?"":" disabled"}>Test it</button><button class="btn" onclick="kaggleAct('remove',this)"${S.settings.kaggle_key?"":" disabled"}>Remove</button></div>
     <p class="sub" id="kgres" role="status" aria-live="polite"></p></div>`}
+  <div class="panel pad stack" style="margin-top:16px" id="geminikey"><h2>Gemini API key (Google AI Studio, free)</h2>
+    <p class="sub">Gives the fact-checker and reviewer Google's Gemini models when OpenRouter's free models are busy. Make a free key at <a target="_blank" rel="noopener" href="https://aistudio.google.com/apikey">aistudio.google.com/apikey</a>, in a <b>new</b> Google Cloud project: the free limits are per project, so a key from the project your other Google tools use adds nothing. Only public text (scripts and source articles) is ever sent. ${S.settings.gemini_key==="saved"?"A key is saved and hidden.":S.settings.gemini_key==="env"?"A key is set in the server's .env file (it is used; a key saved here would be used only if that one is removed).":"No key saved yet."}</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><div class="grow"><label for="gmk" style="position:absolute;left:-9999px">Gemini API key</label><input id="gmk" type="password" autocomplete="new-password" spellcheck="false" placeholder="AIza…" oninput="editing=true"></div><button class="btn" onclick="saveGmk()">Save key</button><button class="btn" onclick="geminiAct('test',this)"${S.settings.gemini_key==="saved"?"":" disabled"}>Test it</button><button class="btn" onclick="geminiAct('remove',this)"${S.settings.gemini_key==="saved"?"":" disabled"}>Remove</button></div>
+    <p class="sub" id="gmres" role="status" aria-live="polite"></p></div>
   ${xllmCard()}
   ${alertsCard()}
   <div class="panel pad stack" style="margin-top:16px"><h2>Picture and footage libraries</h2>
@@ -1441,6 +1445,14 @@ async function saveYtk(){const v=document.getElementById("ytk").value;if(!v.trim
 async function savePxb(){const v=document.getElementById("pxb").value;if(!v.trim())return toast("Paste a key first");await api("/api/key/save",{which:"pixabay",value:v});document.getElementById("pxb").value="";editing=false;toast("Key saved and hidden");refresh(true)}
 async function saveSmk(){const v=document.getElementById("smk").value;if(!v.trim())return toast("Paste a key first");await api("/api/key/save",{which:"smithsonian",value:v});document.getElementById("smk").value="";editing=false;toast("Key saved and hidden");refresh(true)}
 async function saveKgt(){const el=document.getElementById("kgt"),v=el.value.trim();if(!v)return toast("Paste a token first");try{await api("/api/key/save",{which:"kaggle",value:v})}catch(e){return}el.value="";editing=false;toast("Token saved and hidden");refresh(true)}
+async function saveGmk(){const el=document.getElementById("gmk"),v=el.value.trim();if(!v)return toast("Paste a key first");try{await api("/api/key/save",{which:"gemini",value:v})}catch(e){return}el.value="";editing=false;toast("Key saved and hidden");refresh(true)}
+let gmArmed=0;
+async function geminiAct(act,btn){/* Gemini key: a read-only test, or removal after a second click within 4 s (no browser dialog) */
+  const out=document.getElementById("gmres");
+  if(act==="remove"&&Date.now()-gmArmed>4000){gmArmed=Date.now();btn.textContent="Click again to remove";setTimeout(()=>{if(btn.isConnected)btn.textContent="Remove"},4000);return}
+  btn.disabled=true;out.textContent=act==="test"?"Asking Google (read only)…":"Removing…";
+  try{const r=await api("/api/gemini/"+act,{});out.textContent=(r.ok?"✓ ":"✗ ")+(r.detail||"")}catch(e){out.textContent="✗ "+(e.message||e)}
+  btn.disabled=false;if(act==="remove"){gmArmed=0;refresh(true)}}
 let kgArmed=0;
 async function kaggleAct(act,btn){/* Kaggle token: a read-only test, or removal after a second click within 4 s (no browser dialog) */
   const out=document.getElementById("kgres");

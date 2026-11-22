@@ -236,7 +236,7 @@ def state() -> dict:
         "agent": {"unread": __import__("agentlog").unread(attention_only=True)},  # the menu's Growth count: errors and alerts only, like the bell
         "tenant": __import__("tenantmode").is_tenant(), "niche_confirmed": __import__("niche").current()["brief"] is not None and bool((__import__("niche").current()["brief"] or {}).get("confirmed")),
         "auth": {"on": webauth.enabled(), "email": webauth.owner_email()},
-        "settings": {"pexels_key": "saved" if load_settings().get("pexels_key") else "", "pixabay_key": "saved" if pixabay_key() else "", "smithsonian_key": "saved" if smithsonian_key() else "", "youtube_key": "saved" if __import__("commentinsights").api_key() else "", "kaggle_key": None if __import__("tenantmode").is_tenant() else ("saved" if __import__("kagglekey").saved(load_settings()) else ""), "extra_llm": extra_llm_status(), "alerts": None if __import__("tenantmode").is_tenant() else alerts.status()},
+        "settings": {"pexels_key": "saved" if load_settings().get("pexels_key") else "", "pixabay_key": "saved" if pixabay_key() else "", "smithsonian_key": "saved" if smithsonian_key() else "", "youtube_key": "saved" if __import__("commentinsights").api_key() else "", "kaggle_key": None if __import__("tenantmode").is_tenant() else ("saved" if __import__("kagglekey").saved(load_settings()) else ""), "gemini_key": "saved" if load_settings().get("gemini_api_key") else ("env" if os.getenv("GEMINI_API_KEY") else ""), "extra_llm": extra_llm_status(), "alerts": None if __import__("tenantmode").is_tenant() else alerts.status()},
     }
 
 
@@ -1243,13 +1243,15 @@ class H(BaseHTTPRequestHandler):
         if path == "/api/key/save":
             which, value = str(b.get("which", "")), str(b.get("value", "")).strip()
             field = {"openrouter": "openrouter_key", "pexels": "pexels_key", "pixabay": "pixabay_key", "smithsonian": "smithsonian_key", "extra_llm": "extra_llm_key", "youtube": "youtube_api_key",
-                     "kaggle": "kaggle_api_token"}.get(which)
+                     "kaggle": "kaggle_api_token", "gemini": "gemini_api_key"}.get(which)
             if which == "extra_llm" and __import__("tenantmode").is_tenant():
                 raise ValueError("not available in a user studio")
             if not field:
                 raise ValueError("unknown key")
             if which == "kaggle":
                 value = __import__("kagglekey").check_format(value)  # KGAT_ tokens only; refused in a user studio (kagglekey.py)
+            if which == "gemini":
+                value = __import__("geminikey").check_format(value)  # Google AI Studio keys only (AIza...), geminikey.py
             if not 10 <= len(value) <= 300 or re.search(r"\s", value):
                 raise ValueError("that does not look like an API key")
             st = load_settings()
@@ -1258,6 +1260,15 @@ class H(BaseHTTPRequestHandler):
             if which == "openrouter" and __import__("tenantmode").is_tenant():
                 __import__("tenantmode").on_key_saved()
             return {"ok": True}
+        if path in ("/api/gemini/test", "/api/gemini/remove"):  # the owner's Gemini key (geminikey.py): read-only test or removal; the key is never returned
+            import geminikey
+
+            st = load_settings()
+            if path == "/api/gemini/remove":
+                st.pop(geminikey.FIELD, None)
+                save_settings(st)
+                return {"ok": True, "detail": "The Gemini key was removed from Settings (a GEMINI_API_KEY in .env, if any, still applies)."}
+            return geminikey.test(st.get(geminikey.FIELD, ""))
         if path in ("/api/kaggle/test", "/api/kaggle/remove"):  # the owner's Kaggle token (kagglekey.py): read-only test or removal; the token is never returned
             import kagglekey
 

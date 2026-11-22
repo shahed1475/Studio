@@ -344,12 +344,20 @@ EXTRA_TIMEOUT = 120
 # project, not per key, so a key from the project FreeLLMAPI already uses adds no capacity. Only public text (script, source article) is ever sent.
 GEMINI_PREFIX = "gemini:"
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
+GEMINI_MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/models"  # read-only model list: the Settings key test (geminikey.py) asks only this
 
 
 def gemini_key() -> str:
+    """GEMINI_API_KEY from .env, else the key the owner saved in Settings (settings.json `gemini_api_key`, 22 Nov 2026). Never logged or returned."""
     import os
 
-    return os.getenv("GEMINI_API_KEY", "").strip()
+    env = os.getenv("GEMINI_API_KEY", "").strip()
+    if env:
+        return env
+    try:
+        return str(json.loads(SETTINGS_FILE.read_text()).get("gemini_api_key", "")).strip() if SETTINGS_FILE.exists() else ""
+    except (OSError, ValueError):
+        return ""
 _MODEL_NAME = re.compile(r"^[A-Za-z0-9._:/-]{1,80}$")
 _url_cache: dict = {}
 
