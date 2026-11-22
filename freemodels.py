@@ -19,6 +19,7 @@ TTL = dt.timedelta(hours=24)
 COOLDOWN = dt.timedelta(hours=6)
 BUSY_COOLDOWN = dt.timedelta(minutes=10)  # a 429 means the provider is busy right now, not that the model is broken
 EXTRA_BUSY_SECONDS = 60  # the owner's own provider pools free tiers whose limits are per minute: a 429 there is short (17 Nov 2026: ten minutes parked every model and a script was lost)
+EXTRA_DOWN_SECONDS = 300  # a 502/503/504 from the owner's own proxy: its upstream had a moment, the model is tried again in five minutes
 UNREACHABLE_SECONDS = 60  # no connection at all (the owner's provider app not running after a power cut, no network yet at boot): the model is not at fault, so it is
 # skipped for a minute and never benched for six hours (21 Nov 2026: refused connections while FreeLLMAPI was down benched all five of the owner's models)
 MAX_RETRY_AFTER = 300  # a Retry-After header is believed up to this many seconds
@@ -207,6 +208,7 @@ def record(model: str, ok: bool, now: dt.datetime, status: int | None = None, re
         if ok:
             h["fails"] = 0
             h["ok"] = h.get("ok", 0) + 1
+            h["last_ok"] = _ts(now)  # the doctor counts a model as working only when its newest success is newer than its newest failure
             h.pop("busy_until", None)
             if rs is not None:
                 rs["ok"] = rs.get("ok", 0) + 1
@@ -218,6 +220,10 @@ def record(model: str, ok: bool, now: dt.datetime, status: int | None = None, re
             h["busy_until"] = _ts(now + dt.timedelta(seconds=secs))
         elif reason == "unreachable":
             h["busy_until"] = _ts(now + dt.timedelta(seconds=UNREACHABLE_SECONDS))
+        elif model.startswith("extra:") and status in (502, 503, 504):  # the owner's proxy answered, its upstream did not: a short pause, never a six-hour bench
+            h["busy_until"] = _ts(now + dt.timedelta(seconds=EXTRA_DOWN_SECONDS))  # (22 Nov 2026: three 502s benched the proxy's Nemotron judge until 23:00
+            if rs is not None:                                                    # while it answered in 4 s, and the fact-check had one judge left)
+                rs["bad"] = rs.get("bad", 0) + 1
         elif reason == "deadline":  # the judge cascade's own short limit (25 s) ended the request: a miss for this role's ranking only. The same
             if rs is not None:      # model may need 60 s for a script, so it is never benched for the other jobs (22 Nov 2026)
                 rs["bad"] = rs.get("bad", 0) + 1

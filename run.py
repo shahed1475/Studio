@@ -217,6 +217,21 @@ def _weekly_kind(fmt: str) -> str | None:
     return None
 
 
+def _draft_topic(fmt: str) -> str | None:
+    """The topic of the saved documentary draft (scriptgen.DRAFT_FILE) while it still has fact-check uses left and its story is not already made, else None."""
+    if fmt != "doc":
+        return None
+    try:
+        d = json.loads(scriptgen.DRAFT_FILE.read_text())
+    except (OSError, ValueError):
+        return None
+    if not d.get("topic") or not d.get("lines") or int(d.get("uses", 0)) >= scriptgen.MAX_DRAFT_USES:
+        return None
+    import duplicates
+
+    return None if duplicates.topic_conflict(d["topic"], "doc") else d["topic"]
+
+
 def _best_topic(fmt: str) -> str | None:
     """The queued topic the research and growth data like best that can be made well; the first in the queue if that ranking cannot run."""
     import topicrank
@@ -224,6 +239,10 @@ def _best_topic(fmt: str) -> str | None:
     pinned = topicqueue.pop_pinned(fmt)  # a video set aside to be made again comes first
     if pinned:
         return pinned
+    waiting = _draft_topic(fmt)  # then a written documentary draft that waits for its fact-check: its topic left the queue when it was picked, so without
+    if waiting:                  # this the draft was orphaned by a judge outage and only a hand-made pin brought it back (22 Nov 2026 audit)
+        print(f"  a saved draft waits for its fact-check: {waiting}")
+        return waiting
     try:
         return topicrank.pop_best(fmt, want_kind=_weekly_kind(fmt))
     except Exception as e:
@@ -626,6 +645,9 @@ def _cmd_doc(topic: str | None = None, photo: bool = False) -> Path:
                 data["lines"], data["chapters"] = scriptgen.remove_lines(data["lines"], data["chapters"], {j for _, j in pairs})
                 print(f"  removed {len(pairs)} retold line(s)")
             data = _script_gate(data, gtext or "", topic)
+            words, need = sum(len(str(l.get("text", "")).split()) for l in data["lines"]), round(0.9 * scriptgen.min_doc_words())
+            if words < need:  # the owner's length (rules.json long_min_minutes) is a gate before any voice is made, the same 90 % _pending_doc keeps on a resume
+                raise ValueError(f"the script is {words} words; the owner's shortest documentary needs about {need}")  # (22 Nov 2026 audit: a 1,500-word script rendered)
             if src:
                 data["sources"] = [f"Wikipedia: {a['title']} (CC BY-SA 4.0), retold in our own words" for a in arts] + [a["url"] for a in arts]
             if attempted:
@@ -639,6 +661,8 @@ def _cmd_doc(topic: str | None = None, photo: bool = False) -> Path:
             print(f"  script attempt {attempt + 1} failed: {e}")
             if "could not be fact-checked" in str(e):  # no free judge (busy, or the day's free requests are used up): asking again at once only burns the saved
                 raise SystemExit("the written draft is saved (data/pending_draft.json) and waits for a free judge: the next make checks it, nothing is written again")  # draft
+    else:  # no attempt reached `break`: whatever `data` holds was refused (22 Nov 2026 audit: a thin script refused in attempt 1 stayed in `data` when the
+        raise SystemExit("could not generate a documentary script that passed its checks")  # later attempts failed, and was voiced and rendered ungated)
     if not data:
         raise SystemExit("could not generate a documentary script")
     if photo:  # realistic invented people (owner's request): the video is held and unapproved, nothing about it goes out until the owner says so

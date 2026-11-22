@@ -332,3 +332,10 @@ def test_an_address_the_search_did_not_cite_still_counts_when_its_page_holds_the
     assert rec and rec["cited_by_search"] is False and "well-known" in rec["passage"]
     assert ss.verify_candidate(cand(), {URL1}, lambda u: page(), NOW)["cited_by_search"] is True
     assert ss.verify_candidate(cand(passage="a made up sentence that appears nowhere on that page at all, honestly"), set(), lambda u: page(), NOW) is None  # no quote on the page: no source
+
+
+@pytest.fixture(autouse=True)
+def _tiny_scripts_pass_the_length_gate(monkeypatch):
+    """These tests use one-line fake scripts; the owner's length gate (run._cmd_doc, 22 Nov 2026) is tested in tests/test_doc_attempts.py."""
+    import scriptgen
+    monkeypatch.setattr(scriptgen, "min_doc_words", lambda: 1)

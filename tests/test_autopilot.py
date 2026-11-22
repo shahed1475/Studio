@@ -618,3 +618,11 @@ def test_a_free_only_studio_starts_videos_with_no_credit():
     assert ("make", None) not in plan(state([], credit_left=0.2))
     assert ("make", None) in plan(state([], credit_left=0.2, free_only=True))
     assert ("make_short", None) in plan(state([], credit_left=0.2, free_only=True))
+
+
+def test_low_memory_starts_no_new_video_and_no_re_render_but_still_plans_light_work():
+    """22 Nov 2026: the PC ran out of memory at 16:07 UTC. With little memory free, nothing heavy starts; the reason is the state's low_memory."""
+    roomy = [a["do"] for a in _plan_with("ok")]
+    tight = [a["do"] for a in _plan_with("ok", low_memory="only 1.5 GB of memory is available")]
+    assert any(d.startswith("make") for d in roomy)                                     # the positive control: with room a new video is planned
+    assert not [d for d in tight if d.startswith("make") or d == "fix"]

@@ -242,11 +242,11 @@ def plan_actions(state: dict, cfg: dict, now: dt.datetime, skip=()) -> list[dict
     targets = planner.repair_targets(cfg, state["videos"], now)  # only drafts that take a slot which is due are worked on; the rest stay parked
     fixable = [v for v in fixable if v["slug"] in targets]
     todo = [v for v in fixable if v["slug"] not in skip]
-    if todo and state.get("spend_ok", True):  # the fixer agent repairs what it can, then the reviewer decides again: one video at a time. Not when the day's cap is spent: a video's two tries are not used on weak free models
+    if todo and state.get("spend_ok", True) and not state.get("low_memory"):  # the fixer agent repairs what it can, then the reviewer decides again: one video at a time. Not when the day's cap is spent: a video's two tries are not used on weak free models
         acts.append({"do": "fix", "slug": min(todo, key=focus_rank)["slug"]})
     credit = state.get("credit_left")
     floor = MIN_CREDIT_FREE_ART if freeart.usable() else MIN_CREDIT_TO_MAKE
-    can_pay = (credit is None or credit >= floor or bool(state.get("free_only"))) and not state.get("storage_full")  # a free-only studio (llm.free_only) spends nothing, so no floor  # a balance that cannot be read does not block work; a known low one does
+    can_pay = (credit is None or credit >= floor or bool(state.get("free_only"))) and not state.get("storage_full") and not state.get("low_memory")  # low memory: nothing heavy starts (22 Nov 2026 OOM)  # a free-only studio (llm.free_only) spends nothing, so no floor  # a balance that cannot be read does not block work; a known low one does
     if can_pay and not state["busy"] and cfg["make_videos"] and not fixable:
         need = planner.needs(cfg, state["videos"], now)  # only the slots no video covers need a new one
         if state["queue_len"] < cfg["min_queue"]:
@@ -360,7 +360,7 @@ def build_state(now: dt.datetime, cfg: dict) -> dict:
         "queue_len": len(queue), "connected": upload.SECRET.exists() and upload.TOKEN.exists(), "busy": dashboard_busy(),
         "uploads_today": upload.uploads_today(config.OUT, now), "uploads_by_format": by_fmt,
         "news_pending": sum(1 for n in news if n.get("status") == "queued"), "videos": videos,
-        "clippable": __import__("clipper").clippable(), "winner_due": _winner_due(cfg, now), "spend_ok": spend_ok, "cap_left": cap_left, "credit_left": credit_left, "free_only": llm.free_only(), "storage_full": _storage_full(),
+        "clippable": __import__("clipper").clippable(), "winner_due": _winner_due(cfg, now), "spend_ok": spend_ok, "cap_left": cap_left, "credit_left": credit_left, "free_only": llm.free_only(), "storage_full": _storage_full(), "low_memory": __import__("checkpoint").memory_short(),
     }
 
 
@@ -719,6 +719,8 @@ def make_one(fmt: str, review: bool = True, now: dt.datetime | None = None) -> d
         state = build_state(now, cfg)
         if state.get("storage_full"):
             raise RuntimeError("storage is full: nothing new is made")
+        if state.get("low_memory"):
+            raise RuntimeError(f"not started: {state['low_memory']}")
         cap = (cfg.get("_caps") or {}).get(fmt)
         if cap is not None and cap <= 0:
             raise RuntimeError(f"this week's cap for {fmt} videos is 0 ({'; '.join((cfg.get('_caps') or {}).get('why') or [])})")
@@ -761,6 +763,9 @@ def tick(now: dt.datetime | None = None) -> dict:
     try:
         cfg = governed(load_config(), now)
         actions, errors, seen, worked = [], [], set(), set()
+        short = __import__("checkpoint").memory_short()
+        if short:  # nothing heavy starts this tick (plan_actions sees low_memory); the reason is in the log and on the Live page's log (22 Nov 2026)
+            _log(f"waiting: {short}")
         for _ in range(MAX_ROUNDS):  # a quick repair (a new title, a set-aside) lets the next video start in the same tick; a re-render ends the tick
             stop, progressed = False, False
             for a in plan_actions(build_state(now, cfg), cfg, now, skip=worked):

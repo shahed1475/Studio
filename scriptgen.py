@@ -172,6 +172,7 @@ def unsupported(lines: list[dict], sources: str) -> dict[int, str]:
         part = lines[start:start + CHECK_CHUNK]
         numbered = "\n".join(f"{start + i}: {l['text']}" for i, l in enumerate(part))
         span = f" (lines {start} to {start + len(part) - 1} of a {len(lines)}-line script)" if len(lines) > CHECK_CHUNK else ""
+        asked_at = __import__("time").time()
         try:
             out = _review_chat(llm.cached(
                 "SOURCES:\n" + sources + "\n\n",
@@ -180,8 +181,11 @@ def unsupported(lines: list[dict], sources: str) -> dict[int, str]:
                 f"unsupported even when it is true. Atmospheric wording without a factual claim is fine.\n\nLINES{span}:\n" + numbered +
                 '\n\nReturn JSON: {"unsupported": [{"n": line number, "why": "one short sentence"}]}'))
         except Exception as e:
-            raise ValueError(f"the script could not be fact-checked ({type(e).__name__})") from e
-        for item in out.get("unsupported", []) if isinstance(out, dict) else []:
+            tried = llm.attempts_since(asked_at)  # which judges were asked and how each failed, so the log says why (22 Nov 2026: it said only ModelUnavailable)
+            raise ValueError(f"the script could not be fact-checked ({type(e).__name__}{'; judges: ' + tried if tried else ''})") from e
+        if not isinstance(out, dict) or not isinstance(out.get("unsupported"), list):  # a reply without the verdict is no verdict: it never passes as "nothing
+            raise ValueError("the script could not be fact-checked (the judges' reply had no 'unsupported' list)")  # unsupported" (22 Nov 2026 audit)
+        for item in out["unsupported"]:
             n = item.get("n") if isinstance(item, dict) else item
             if str(n).lstrip("-").isdigit() and start <= int(n) < start + len(part):
                 found[int(n)] = str(item.get("why", "")) if isinstance(item, dict) else ""

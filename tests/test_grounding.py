@@ -93,6 +93,8 @@ def test_doc_script_grounded_keeps_storyteller_style_and_returns_anchors(monkeyp
         if "Plan a" in prompt:
             return {"title": "T", "description": "d", "tags": [], "anchors": ["Hamelin", "Pied Piper", "Koppenberg"],
                     "chapters": [{"title": f"c{i}", "summary": "s"} for i in range(8)]}
+        if "strict fact-checker" in prompt:  # the judge's real answer shape: a reply without this list is no verdict (22 Nov 2026)
+            return {"unsupported": []}
         return {"lines": [{"text": "word " * 20 + "end.", "visual": "Hamelin"} for _ in range(6)]}
 
     monkeypatch.setattr(scriptgen, "_chat", fake)

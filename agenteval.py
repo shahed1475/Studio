@@ -2090,7 +2090,96 @@ def case_an_unchanged_routine_report_is_logged_once_and_the_bell_counts_only_pro
                 f"listed={listed}")
 
 
-CASES = [case_an_unchanged_routine_report_is_logged_once_and_the_bell_counts_only_problems_alerts_and_decisions, case_a_cut_at_the_very_end_never_makes_the_video_twice_and_a_cut_short_resumes_in_its_folder, case_a_render_cut_by_a_power_cut_is_found_kept_and_never_trusted_half_written, case_busy_judges_never_discard_a_draft_and_never_pass_it_unchecked, case_the_reviewer_flags_a_line_that_calls_proven_what_its_source_only_suggests, case_blender_scenes_are_true_to_the_line_and_never_stop_a_video, case_a_judge_is_never_the_writer_even_through_the_owners_provider, case_an_a2a_task_is_answered_once_only_by_its_target_and_never_off_the_hand_over_map,case_free_mode_never_sends_a_request_to_a_paid_model_through_the_video_checks, case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic, case_the_guardian_closes_its_draft_tasks_only_when_the_video_has_left_output, case_search_demand_is_no_signal_on_failure_spends_youtube_quota_only_within_its_budget_and_cleans_outside_text, case_comment_insights_keep_no_names_nothing_over_30_days_and_only_cleaned_questions_and_never_write,
+def case_an_openrouter_401_is_one_refused_key_not_a_failure_of_every_model():
+    """22 Nov 2026: the FreeLLMAPI key was saved as the OpenRouter key; every OpenRouter model answered 401, each 401 was counted against that model,
+    and the fact-check was retried hourly with nobody told. A 401 now marks the provider refused (no mark against the model), the next OpenRouter
+    model is not asked, the owner's own models still are, the owner gets one alert, and the OpenRouter field refuses a key that is not sk-or-."""
+    import requests as rq
+
+    import dashboard
+    import freemodels
+    import llm
+
+    now = dt.datetime(2026, 11, 22, 17, 0, tzinfo=dt.timezone.utc)
+    saved = [(llm, "USAGE_FILE"), (llm, "_post"), (llm, "gemini_key"), (llm, "extra_models"), (llm, "extra_status"), (freemodels, "record"),
+             (freemodels, "count_request"), (freemodels, "remaining"), (freemodels, "requests_today"), (freemodels, "choose"), (freemodels, "refresh"),
+             (freemodels, "available"), (agentlog, "event")]
+    old = [(m, n, getattr(m, n)) for m, n in saved]
+    marks, alerts, calls = [], [], []
+
+    def post(payload, key):
+        calls.append(payload["model"])
+        if payload["model"].startswith("extra:"):
+            return {"choices": [{"message": {"content": '{"ok": true}'}}], "usage": {}}
+        r = rq.Response()
+        r.status_code, r._content = 401, b'{"error":{"message":"User not found."}}'
+        raise rq.HTTPError("401", response=r)
+
+    with tempfile.TemporaryDirectory() as d:
+        try:
+            llm.USAGE_FILE = Path(d) / "llm_usage.json"
+            llm._post, llm.gemini_key = post, (lambda: "")
+            llm.extra_models, llm.extra_status = (lambda role: ["extra:own-judge"]), (lambda m: "")
+            freemodels.record = lambda mid, ok, *a, **k: marks.append((mid, ok))
+            freemodels.count_request = lambda *a, **k: None
+            freemodels.remaining, freemodels.requests_today = (lambda *a, **k: 500), (lambda *a, **k: 0)
+            freemodels.choose = lambda role, now, avoid=None, n=4: ["or/a:free", "or/b:free"]
+            freemodels.refresh, freemodels.available = (lambda now: None), (lambda mid, now: True)
+            agentlog.event = lambda kind, title, detail="", **k: alerts.append(title)
+            cfg = llm.load_config()
+            first = llm._ask_free("or/a:free", "p", "review", cfg, "sk-or-dead", now)
+            second = llm._ask_free("or/b:free", "p", "review", cfg, "sk-or-dead", now)
+            out = llm._free_chat("p", "review", cfg, "sk-or-dead", now)
+        finally:
+            for m, n, v in old:
+                setattr(m, n, v)
+    one_record = first is None and second is None and calls.count("or/a:free") == 1 and "or/b:free" not in calls
+    no_model_mark = not [x for x in marks if x[0].startswith("or/") and x[1] is False]
+    own_asked = out == {"ok": True}
+    one_alert = alerts.count("OpenRouter refused the studio's key") == 1
+    try:
+        dashboard._check_key_field({}, "openrouter_key", "fl-0123456789abcdef")
+        field_checked = False
+    except ValueError:
+        field_checked = True
+    ok = one_record and no_model_mark and own_asked and one_alert and field_checked
+    return ok, f"one_record={one_record} no_model_mark={no_model_mark} own_asked={own_asked} one_alert={one_alert} field_checked={field_checked} calls={calls}"
+
+
+def case_the_doctor_checks_the_model_key_for_real_and_never_calls_old_or_unproven_health_healthy():
+    """22 Nov 2026: the doctor said 12/12 free models and 'all agents healthy' while OpenRouter refused the key, because it only checked that a key
+    existed, counted a model whose cool-down ran out as working, and the Risks card never looked at the report's age. Now a 401 from the key check is
+    FAILED with its source and time, a check that cannot run is UNKNOWN, and a report older than 13 hours is STALE on the Risks card."""
+    import doctor
+    import llm
+    import risk
+
+    now = dt.datetime(2026, 11, 22, 17, 0, tzinfo=dt.timezone.utc)
+    old = [(llm, "USAGE_FILE", llm.USAGE_FILE), (llm, "api_key", llm.api_key), (agentlog, "event", agentlog.event)]
+    with tempfile.TemporaryDirectory() as d:
+        try:
+            llm.USAGE_FILE, llm.api_key, agentlog.event = Path(d) / "llm_usage.json", (lambda: "sk-or-dead"), (lambda *a, **k: None)
+            refused = doctor.probe_openrouter_key(now, get=lambda url: 401)
+            routed_off = llm.openrouter_refused(now, "sk-or-dead") is not None
+
+            def boom(url):
+                raise OSError("offline")
+
+            unknown = doctor.probe_openrouter_key(now, get=boom)["state"] == "UNKNOWN"
+            ev, rep = Path(d) / "eval.json", Path(d) / "doctor.json"
+            ev.write_text(json.dumps({"at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "passed": 1, "failed": 0, "cases": []}))
+            rep.write_text(json.dumps({"at": (now - dt.timedelta(hours=20)).strftime("%Y-%m-%dT%H:%M:%SZ"), "agents": [], "needs": []}))
+            row = risk.agents_row(now, result=ev, bus=Path(d) / "bus.json", doctor_report=rep)
+        finally:
+            for m, n, v in old:
+                setattr(m, n, v)
+    failed = refused["state"] == "FAILED" and refused["source"] and refused["checked_at"]
+    stale = row["level"] == "watch" and "STALE" in row["evidence"]
+    ok = bool(failed) and routed_off and unknown and stale
+    return ok, f"failed={bool(failed)} routed_off={routed_off} unknown={unknown} stale={stale}"
+
+
+CASES = [case_the_doctor_checks_the_model_key_for_real_and_never_calls_old_or_unproven_health_healthy, case_an_openrouter_401_is_one_refused_key_not_a_failure_of_every_model, case_an_unchanged_routine_report_is_logged_once_and_the_bell_counts_only_problems_alerts_and_decisions, case_a_cut_at_the_very_end_never_makes_the_video_twice_and_a_cut_short_resumes_in_its_folder, case_a_render_cut_by_a_power_cut_is_found_kept_and_never_trusted_half_written, case_busy_judges_never_discard_a_draft_and_never_pass_it_unchecked, case_the_reviewer_flags_a_line_that_calls_proven_what_its_source_only_suggests, case_blender_scenes_are_true_to_the_line_and_never_stop_a_video, case_a_judge_is_never_the_writer_even_through_the_owners_provider, case_an_a2a_task_is_answered_once_only_by_its_target_and_never_off_the_hand_over_map,case_free_mode_never_sends_a_request_to_a_paid_model_through_the_video_checks, case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic, case_the_guardian_closes_its_draft_tasks_only_when_the_video_has_left_output, case_search_demand_is_no_signal_on_failure_spends_youtube_quota_only_within_its_budget_and_cleans_outside_text, case_comment_insights_keep_no_names_nothing_over_30_days_and_only_cleaned_questions_and_never_write,
          case_ladder_ends_with_owner_not_a_crash, case_ladder_respects_budget_and_whitelist_and_lessons, case_outside_text_is_cleaned,
          case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules, case_registry_is_consistent,
          case_playbook_scope_injects_role_and_limits_only_when_acting, case_doctor_finds_stale_and_failing_agents_and_fixes_only_safely,

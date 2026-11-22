@@ -664,6 +664,20 @@ def _tenant_unclaimed() -> bool:
     return tenantmode.is_tenant() and not webauth.enabled()
 
 
+KEY_FIELDS = {"openrouter_key": "OpenRouter", "extra_llm_key": "extra model provider", "gemini_api_key": "Gemini", "pexels_key": "Pexels",
+              "pixabay_key": "Pixabay", "smithsonian_key": "Smithsonian", "youtube_api_key": "YouTube", "kaggle_api_token": "Kaggle", "anthropic_key": "Anthropic"}
+
+
+def _check_key_field(st: dict, field: str, value: str) -> None:
+    """A key goes only into its own service's field (22 Nov 2026: the FreeLLMAPI key was saved as the OpenRouter key; a saved key wins over .env,
+    so every OpenRouter model answered 401 for a day). OpenRouter keys start with sk-or-; the same key is never saved under two services."""
+    if field == "openrouter_key" and not value.startswith("sk-or-"):
+        raise ValueError("that is not an OpenRouter key: OpenRouter keys start with sk-or- (a key from another service belongs in its own card)")
+    for other, name in KEY_FIELDS.items():
+        if other != field and st.get(other) and st.get(other) == value:
+            raise ValueError(f"this key is already saved as the {name} key; each service needs its own key")
+
+
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -1112,6 +1126,7 @@ class H(BaseHTTPRequestHandler):
                 key = key.strip()
                 if not 10 <= len(key) <= 300 or re.search(r"\s", key):
                     raise ValueError("that does not look like an API key")
+                _check_key_field(st, "openrouter_key", key)
                 st["openrouter_key"] = key
                 save_settings(st)
             return {"ok": True}
@@ -1255,6 +1270,7 @@ class H(BaseHTTPRequestHandler):
             if not 10 <= len(value) <= 300 or re.search(r"\s", value):
                 raise ValueError("that does not look like an API key")
             st = load_settings()
+            _check_key_field(st, field, value)
             st[field] = value
             save_settings(st)  # owner-only file; the key is never sent back to a browser
             if which == "openrouter" and __import__("tenantmode").is_tenant():

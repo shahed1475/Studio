@@ -46,6 +46,81 @@ def _now() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
 
 
+# ---- OpenRouter key refused (22 Nov 2026) ----
+# A 401 from OpenRouter means the key itself is refused, not the model: on 22 Nov 2026 the FreeLLMAPI key had been saved into the OpenRouter field
+# (and the .env key's account no longer existed), every one of 26 OpenRouter models answered 401, each 401 was counted against that model's own
+# health, the fact-check was retried hourly for a day, and nobody was told the key was the problem. Now one 401 marks the provider refused for
+# OR_REFUSED_HOLD seconds (per key, by a short fingerprint, so saving a new key clears it), the OpenRouter models are skipped meanwhile, model health
+# is left alone, and the owner gets one alert a day.
+OR_REFUSED_HOLD = 1800
+_ATTEMPTS: list = []  # (unix time, model, outcome) of the newest free requests, newest last: what a "no judge answered" message names
+
+
+def _key_fp(key: str) -> str:
+    import hashlib
+
+    return hashlib.sha256((key or "").encode()).hexdigest()[:12]
+
+
+def _or_auth_file():
+    return USAGE_FILE.parent / "openrouter_auth.json"  # beside the usage file, so a test that moves one moves both
+
+
+def openrouter_refused(now: dt.datetime | None = None, key: str | None = None) -> dict | None:
+    """The standing refusal of this OpenRouter key ({"at", "until", "status", "said"}), or None when the key is not known to be refused."""
+    now = now or _now()
+    try:
+        rec = json.loads(_or_auth_file().read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(rec, dict) or rec.get("key_fp") != _key_fp(api_key() if key is None else key):
+        return None
+    try:
+        until = dt.datetime.fromisoformat(str(rec.get("until")).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return rec if until > now else None
+
+
+def _openrouter_refused_now(now: dt.datetime, key: str, status, said: str) -> None:
+    path = _or_auth_file()
+    try:
+        old = json.loads(path.read_text())
+    except (OSError, ValueError):
+        old = {}
+    fp, day = _key_fp(key), now.strftime("%Y-%m-%d")
+    told = isinstance(old, dict) and old.get("key_fp") == fp and old.get("alerted_day") == day
+    rec = {"key_fp": fp, "at": now.isoformat(timespec="seconds"), "until": (now + dt.timedelta(seconds=OR_REFUSED_HOLD)).isoformat(timespec="seconds"),
+           "status": status, "said": re.sub(r"\s+", " ", scrub(said).replace(key or "\0", "***"))[:160], "alerted_day": day}
+    try:
+        filelock.write_atomic(path, json.dumps(rec))
+    except OSError:
+        pass
+    if not told:
+        try:
+            import agentlog
+
+            agentlog.event("error", "OpenRouter refused the studio's key",
+                           f"HTTP {status}: {rec['said'][:100]}. Every OpenRouter model is skipped until a working key is saved in Settings; "
+                           "Google (Gemini key) and your own provider are still asked.", notify=True)
+        except Exception:
+            pass
+
+
+def _attempt(mid: str, outcome: str) -> None:
+    _ATTEMPTS.append((time.time(), mid, outcome))
+    del _ATTEMPTS[:-60]
+
+
+def attempts_since(t0: float) -> str:
+    """'model: outcome; ...' for every free model asked since t0 (its newest outcome), for a plain failure message."""
+    last: dict = {}
+    for t, mid, outcome in _ATTEMPTS:
+        if t >= t0:
+            last[mid] = outcome
+    return "; ".join(f"{m}: {o}" for m, o in last.items())
+
+
 def load_config() -> dict:
     cfg = copy.deepcopy(DEFAULTS)
     if CONFIG_FILE.exists():
@@ -868,6 +943,11 @@ def _ask_free(mid: str, prompt: str, role: str, cfg: dict, key: str, now: dt.dat
         raise _NoAllowance
     if via_or and role == "cheap" and freemodels.requests_today(now, "cheap") >= int(cfg["free_daily_limit"] * CHEAP_SHARE):
         raise _NoAllowance  # keep the rest of the free requests for scripts and fact-checks
+    if via_or and openrouter_refused(now, key):
+        if why is not None:
+            why.update(kind="refused", status=401)
+        _attempt(mid, "skipped, OpenRouter key refused")
+        return None
     json_mode, cap, retried = True, int(cap or cfg["max_output_tokens"]), False
     reasoning = {"max_tokens": think if think is not None else REASONING_BUDGET.get(role, 1024)} if via_or else None  # OpenRouter's free reasoning models: a thinking budget, so the answer gets written
     limit = float(cfg.get("free_timeout_s") or FREE_TIMEOUT)
@@ -905,6 +985,13 @@ def _ask_free(mid: str, prompt: str, role: str, cfg: dict, key: str, now: dt.dat
                 ra = int(float((getattr(getattr(e, "response", None), "headers", None) or {}).get("Retry-After")))
             except (TypeError, ValueError):
                 ra = None
+            if via_or and code == 401:  # the key is refused, not this model: no mark against the model, one provider-wide record and alert
+                _openrouter_refused_now(now, key, code, str(getattr(getattr(e, "response", None), "text", "") or e))
+                if why is not None:
+                    why.update(kind="refused", status=code)
+                _attempt(mid, "OpenRouter key refused (401)")
+                _note(now, f"{role}: OpenRouter refused the key (401); OpenRouter models are skipped for {OR_REFUSED_HOLD // 60} min")
+                return None
             unreachable = isinstance(e, requests.ConnectionError)  # refused, no route, no DNS, connect timeout: nothing answered at all (a ReadTimeout is the model being slow)
             short = deadline is not None and isinstance(e, requests.Timeout) and not unreachable and sent_limit < limit - 1  # the cascade's own short limit ended it
             freemodels.record(mid, False, now, status=code, retry_after=ra, role=role, reason="unreachable" if unreachable else "deadline" if short else None,
@@ -912,6 +999,7 @@ def _ask_free(mid: str, prompt: str, role: str, cfg: dict, key: str, now: dt.dat
             if why is not None:
                 why.update(kind=_fail_kind(e, code, said), status=code, reset_s=_reset_after(e) if code == 429 else None)
             _note(now, f"{role}: free model {mid}: {type(e).__name__}{f' {code}' if code else ''}")
+            _attempt(mid, f"{_fail_kind(e, code, said)}{f' ({code})' if code else ''}")
             return None
         took = time.monotonic() - t0
         u = body.get("usage") or {}
@@ -933,9 +1021,11 @@ def _ask_free(mid: str, prompt: str, role: str, cfg: dict, key: str, now: dt.dat
                 continue
             if why is not None:
                 why.update(kind="json", status=None, finish=fin)
+            _attempt(mid, "no JSON")
             _note(now, f"{role}: free model {mid} did not return JSON" + (" (cut off by the output limit)" if fin == "length" else f" (finish: {fin})" if fin else ""))
             return None
         freemodels.record(mid, True, now, role=role, seconds=took)
+        _attempt(mid, "answered")
         if body.get("model"):  # what really answered: the owner's "auto" and OpenRouter's own router (openrouter/free) pick a different model each time (21 Nov 2026)
             _served[mid] = str(body["model"])[:80]
         return out  # who answered is recorded by the caller: a raced loser must not claim the role
@@ -1010,7 +1100,8 @@ def _free_chat(prompt: str, role: str, cfg: dict, key: str, now: dt.datetime, av
         # Google directly, for judging only, when the owner saved a Gemini key (22 Nov 2026: the script fact-check never reached the judge cascade's Gemini
         # models, so a saved key changed nothing while every OpenRouter and FreeLLMAPI judge was failing). Same rules: never a writer, two must answer.
         gem = [m for m in gemini_models() if role == "review" and model_identity(m) not in skip_ids and freemodels.available(m, now)] if gemini_key() else []
-        models = gem + extras + [m for m in freemodels.choose(role, now, avoid=skip, n=4) if model_identity(m) not in skip_ids]
+        routed = [] if openrouter_refused(now, key) else [m for m in freemodels.choose(role, now, avoid=skip, n=4) if model_identity(m) not in skip_ids]
+        models = gem + extras + routed
         if role == "script" and _WRITERS:  # a model that already wrote this script writes the next part first: a film written by six rotating free models left no
             mine = {model_identity(w) for w in _WRITERS}  # model free to judge it (20 Nov 2026, "no free judge could answer" after two hours of writing)
             models = sorted(models, key=lambda m: model_identity(m) not in mine)  # stable: the usual order otherwise

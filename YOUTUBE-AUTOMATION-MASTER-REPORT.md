@@ -266,3 +266,21 @@ Nothing committed, pushed, approved, scheduled or uploaded. Autopilot stayed off
 - **Permanent fixes found in production**: final parts and pixel-format changes, the description crash in every Autopilot film, the word rate (19.1-minute film passed the 20-minute minimum), the fixer editing the wrong line, narrated "The payoff:" labels, closings that cut names and dropped "subscribe". Plus the router judge that could be the writer. Each has a regression test and mutation checks (PERMANENT_FAILURE_FIXES.md).
 - **Tests**: full suite 2,774 passed, 1 failed, 11 skipped (the 10 Flannan-spec tests and the mcp test, as before). The one failure was a dashboard test expecting the old word count; it was updated to the measured rate and its file passes (9/9). The full suite was not rerun after that last one-line change.
 - **Owner decisions**: Seven Sleepers (`run.py repair`), Raijin and Fujin (`repair --extra` or set aside), `auto_approve`/`pause_scheduling` before switching Autopilot on, committing the uncommitted work, the dashboard UI check (needs your login).
+
+## 22 Nov 2026 (evening): recovery, Doctor truthfulness, model key, memory gate (Claude Code session)
+Checkpoint with evidence: reports/ULTIMATE_MISSION_CHECKPOINT.md.
+
+**Root cause of a day of failed fact-checks.** `settings.json` held the FreeLLMAPI key in the OpenRouter field (identical values; a saved key wins over `.env`), so every OpenRouter model answered 401; the `.env` key is dead too (OpenRouter: 401 "User not found"). The studio counted each 401 against each model, benched them for six hours, retried hourly, and the Doctor kept reporting 12/12 free models and "all agents healthy".
+
+**Fixed (each with tests; agent changes with an agenteval case and mutation checks):**
+- `llm.py`: a 401 from OpenRouter marks the provider refused for 30 minutes per key fingerprint (`openrouter_refused`), skips every OpenRouter model meanwhile, leaves model health alone, and raises one owner alert a day; a failed fact-check names each judge asked and how it failed (`attempts_since`).
+- `dashboard.py`: the OpenRouter field accepts only `sk-or-` keys and no key is saved under two services (`_check_key_field`).
+- `doctor.py`: every agent row carries `health` (HEALTHY, STALE, FAILED, NOT_TESTED), `checked_at`, `source`, `last_success`, `failure_reason`; a real free key check (`GET /api/v1/key`: HEALTHY, FAILED, UNKNOWN, NOT_CONFIGURED) and a `model key refused` setup request; a model counts as available only when its newest success is newer than its newest failure. `risk.py`: a doctor report older than 13 hours is shown as STALE.
+- `freemodels.py`: a 502/503/504 from the owner's proxy pauses that model five minutes instead of benching it six hours.
+- `run.py`: a documentary whose every script attempt failed stops (a thin script refused in attempt 1 was voiced and rendered when the later attempts failed).
+- `checkpoint.memory_short` + `autopilot`: no new video and no re-render starts with under 3 GB of memory available; a running render is never stopped.
+- Launcher: one Desktop launcher and one menu entry open `http://127.0.0.1:8913` (was the Tailscale address); duplicates and the dead VPS client launchers moved to `~/.local/share/story-studio-launchers-retired-2026-11-22/`.
+
+**Verified live (worker, before 17:24 UTC):** two independent judges answered the real strict review path: `extra:nemotron-3-ultra-550b` (FreeLLMAPI, served by `nvidia/nemotron-3-ultra-550b-a55b`) and `gemini:gemini-3.5-flash-lite` (owner's Gemini key).
+
+**Audit findings not yet fixed (owner decisions or later work):** no working OpenRouter key (owner: new key or stay free); the studio has a training-set builder but no training pipeline, no Hugging Face link and 8 eligible examples (300 needed per task); "A2A" is an in-process shape with no network protocol and no live callers; tasks to autopilot and trainer have no reader; topic popped before a script exists (draft orphaned on an outage); documentary length is a warning only; full list in the checkpoint.

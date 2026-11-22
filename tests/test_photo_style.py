@@ -82,3 +82,10 @@ def test_a_realistic_scene_gets_a_camera_shot_chosen_from_its_line_and_other_sty
     a = aiart.prompt_for("Same line.", "a room", "T", False, style="photo")
     assert a == aiart.prompt_for("Same line.", "a room", "T", False, style="photo") and "Shot:" in a  # deterministic: a repeat is a cache hit
     assert "Shot:" not in aiart.prompt_for("Same line.", "a room", "T", False) and "Shot:" not in aiart.prompt_for("Same line.", "a room", "T", False, style="3d")
+
+
+@pytest.fixture(autouse=True)
+def _tiny_scripts_pass_the_length_gate(monkeypatch):
+    """These tests use one-line fake scripts; the owner's length gate (run._cmd_doc, 22 Nov 2026) is tested in tests/test_doc_attempts.py."""
+    import scriptgen
+    monkeypatch.setattr(scriptgen, "min_doc_words", lambda: 1)

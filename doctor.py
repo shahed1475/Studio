@@ -48,6 +48,44 @@ def log_results(job: str, lines: list[str]) -> list[bool]:
     return out
 
 
+HEALTH = {"ok": "HEALTHY", "stale": "STALE", "failing": "FAILED", "not_yet": "NOT_TESTED"}  # evidence-based names shown with every row (22 Nov 2026)
+KEY_URL = "https://openrouter.ai/api/v1/key"  # OpenRouter's key check: free, no model, no tokens
+
+
+def _last_success(job: str, lines: list[str]) -> str | None:
+    """When the job last ended with exit 0 in logs/worker.log (its first field), or None when no successful run is in the lines read."""
+    ok = [l.split(" ", 1)[0] for l in lines if re.match(rf"^\S+ {re.escape(job)} .*? -> exit 0$", l)]
+    return ok[-1] if ok else None
+
+
+def probe_openrouter_key(now: dt.datetime, get=None) -> dict:
+    """A real check of the saved OpenRouter key (22 Nov 2026: the doctor reported 12/12 free models while every one answered 401, because it only
+    checked that a key existed). HEALTHY on 200, FAILED on 401 (and the router is told, so it stops asking OpenRouter), UNKNOWN when the check itself
+    cannot run, NOT_CONFIGURED without a key. `get(url)` returns a status code in tests."""
+    import llm
+
+    out = {"checked_at": now.strftime(TS), "source": "GET " + KEY_URL}
+    key = llm.api_key()
+    if not key:
+        return {**out, "state": "NOT_CONFIGURED", "evidence": "no OpenRouter key is saved"}
+    try:
+        if get:
+            code, text = get(KEY_URL), ""
+        else:
+            import requests
+
+            r = requests.get(KEY_URL, headers={"Authorization": f"Bearer {key}"}, timeout=10)
+            code, text = r.status_code, llm.scrub(r.text)[:160]
+    except Exception as e:
+        return {**out, "state": "UNKNOWN", "evidence": f"the check could not run ({type(e).__name__})"}
+    if code == 200:
+        return {**out, "state": "HEALTHY", "evidence": "OpenRouter accepted the key"}
+    if code == 401:
+        llm._openrouter_refused_now(now, key, 401, text or "401")
+        return {**out, "state": "FAILED", "evidence": f"OpenRouter refused the key (401) {text}".strip()}
+    return {**out, "state": "UNKNOWN", "evidence": f"OpenRouter answered {code}"}
+
+
 def scan(now: dt.datetime, state: dict | None = None, lines: list[str] | None = None, jobs=None) -> list[dict]:
     """One row per agent that has a worker job: status ok, stale, failing, or not_yet (no run recorded: a new install is not a fault)."""
     import worker
@@ -65,7 +103,8 @@ def scan(now: dt.datetime, state: dict | None = None, lines: list[str] | None = 
         if not job or job not in jd:
             continue
         last, res = state.get(job), log_results(job, lines)
-        row = {"agent": name, "job": job, "last": last, "status": "ok", "evidence": ""}
+        row = {"agent": name, "job": job, "last": last, "status": "ok", "evidence": "", "checked_at": now.strftime(TS),
+               "source": "worker state (last start) and logs/worker.log (exit codes)", "last_success": _last_success(job, lines)}
         try:
             age = None if last is None else (now - _parse(last)).total_seconds()
         except (ValueError, TypeError):
@@ -77,6 +116,8 @@ def scan(now: dt.datetime, state: dict | None = None, lines: list[str] | None = 
         if len(res) >= FAIL_STREAK and not any(res[-FAIL_STREAK:]):
             row["status"] = "failing"
             row["evidence"] = "; ".join(l[:160] for l in lines if re.match(rf"^\S+ {re.escape(job)} ", l))[-400:]
+        row["health"] = HEALTH[row["status"]]
+        row["failure_reason"] = row["evidence"] if row["status"] != "ok" else ""
         rows.append(row)
     return rows
 
@@ -116,6 +157,11 @@ def needs(dashboard: int | None, now: dt.datetime, reach=None) -> list[dict]:
     if not llm.api_key():
         out.append({"need": "model key", "why": "no OpenRouter key is saved, so no agent can use a model",
                     "commands": ["Open Settings in the dashboard and save the OpenRouter key (never paste it in chat)"]})
+    elif llm.openrouter_refused(now):
+        out.append({"need": "model key refused", "why": "OpenRouter refuses the saved key (HTTP 401), so every OpenRouter model is skipped; only Google (the Gemini key) and the "
+                    "owner's own provider can write and judge, and a fact-check needs two judges that answer",
+                    "commands": ["Create a new key at https://openrouter.ai/keys and save it in Settings, OpenRouter card (only sk-or- keys are accepted; never paste it in chat)",
+                                 "A key from another service (FreeLLMAPI, Gemini) goes into its own card"]})
     own = llm.extra_cfg()
     if own and re.match(r"https?://(127\.0\.0\.1|localhost)[:/]", own["url"]) and not (reach or provider_answers)(own["url"]):
         out.append({"need": "own model provider", "why": "the model provider app on this PC (FreeLLMAPI) does not answer, so the owner's free writers and judges are not "
@@ -156,9 +202,23 @@ def provider_status(now: dt.datetime) -> dict:
         cfg = llm.load_config()
         extras = sorted({m for r in ("script", "review", "cheap") for m in llm.extra_models(r)})
         roster = freemodels.roster_ids()
-        ok = lambda ids: sum(1 for m in ids if freemodels.available(m, now))
+        try:
+            health = json.loads(freemodels.FILE.read_text()).get("health", {})
+        except (OSError, ValueError):
+            health = {}
+
+        def proven(m):  # available now AND its newest success is newer than its newest failure: a cool-down that ran out proves nothing (22 Nov 2026)
+            h = health.get(m) or {}
+            if not freemodels.available(m, now) or not h.get("ok"):
+                return False
+            lo, lf = h.get("last_ok"), h.get("last_fail")
+            return not lf or bool(lo and lo > lf)
+
+        refused = llm.openrouter_refused(now) is not None
+        ok = lambda ids: sum(1 for m in ids if proven(m))
         return {"free_mode": bool(llm.free_only()), "paid_allowed": bool(llm.paid_allowed(cfg)), "own_provider": {"models": len(extras), "available": ok(extras)},
-                "openrouter_free": {"models": len(roster), "available": ok(roster)}}
+                "openrouter_free": {"models": len(roster), "available": 0 if refused else ok(roster), **({"note": "the OpenRouter key is refused (401)"} if refused else {})},
+                "checked_at": now.strftime(TS), "source": "data/free_models.json (newest success after newest failure) and the OpenRouter key check"}
     except Exception as e:  # a report line, never a reason for the doctor's run to fail
         return {"error": type(e).__name__}
 
@@ -398,6 +458,7 @@ def run(now: dt.datetime | None = None, chat=None, get=None, state=None, lines=N
             result["owner"].append(r["agent"])
     result["script_review"] = handle_inbox(now, chat, spend, proposals)
     result["dashboard"] = probe_dashboard(get)
+    result["openrouter_key"] = probe_openrouter_key(now, get)
     result["providers"] = provider_status(now)
     result["free_gb"] = round(free_gb() or 0, 1)
     result["production"] = production_status(now)

@@ -280,6 +280,23 @@ def room(path: Path, need_bytes: int) -> str | None:
     return None
 
 
+MIN_START_GB = 3.0  # memory a new video or a re-render needs before it starts (ffmpeg, Pillow frames, Blender); the PC's own apps come first
+
+
+def memory_short(min_gb: float = MIN_START_GB, meminfo: str | None = None) -> str | None:
+    """The reason not to START heavy work now (22 Nov 2026: the PC ran out of memory at 16:07 UTC and the kernel killed the studio's retry loop and a
+    Chrome tab), or None when there is room. Only new work waits: a running render is never stopped, and nothing is killed or deleted."""
+    try:
+        text = meminfo if meminfo is not None else Path("/proc/meminfo").read_text()
+        info = dict(l.split(":", 1) for l in text.splitlines() if ":" in l)
+        avail = int(info["MemAvailable"].split()[0]) * 1024
+    except (OSError, KeyError, ValueError):
+        return None  # unreadable: never a reason to stop
+    if avail < min_gb * 1e9:
+        return f"only {avail / 1e9:.1f} GB of memory is available (a new video waits for {min_gb:.0f} GB); close some apps or wait"
+    return None
+
+
 def memory_note() -> str | None:
     """A plain warning when available memory is low (renders are one ffmpeg at a time; this only explains a slow or killed render)."""
     try:

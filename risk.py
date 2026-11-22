@@ -469,6 +469,9 @@ def backups(now: dt.datetime | None = None, dest: Path | None = None) -> dict:
     return ind("backup", "Losing the records", level, ev, controls, owner if level != "ok" else "")
 
 
+DOCTOR_STALE_HOURS = 13  # two missed doctor runs (every 6 hours) and an hour's grace
+
+
 def agents_row(now: dt.datetime | None = None, result: Path | None = None, bus: Path | None = None, doctor_report: Path | None = None) -> dict:
     """The agents' own health: the daily evaluation (rules that must never break) and the tasks that waited for the owner."""
     import agentbus
@@ -492,6 +495,14 @@ def agents_row(now: dt.datetime | None = None, result: Path | None = None, bus: 
         import doctor
 
         d = json.loads((doctor_report or doctor.REPORT).read_text())
+        try:
+            doc_age = (now - dt.datetime.strptime(str(d.get("at")), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)).total_seconds() / 3600
+        except ValueError:
+            doc_age = None  # an unreadable time is reported as unknown age, never as fresh
+            ev_txt += "; the doctor's report has no readable time"
+        if doc_age is not None and doc_age > DOCTOR_STALE_HOURS:  # the doctor runs every 6 hours in the worker: an old report means the worker or the doctor stopped, not "healthy" (22 Nov 2026)
+            ev_txt += f"; the doctor's report is {doc_age:.0f} hours old, so its findings are STALE (is the worker running?)"
+            level = "watch"
         sick = [x["agent"] for x in d["agents"] if x["status"] in ("stale", "failing")]
         ev_txt += f"; doctor: {', '.join(sick) + ' unhealthy' if sick else 'all agents with a job healthy'}" + (f", missing setup: {', '.join(d['needs'])}" if d["needs"] else "")
         if sick or d["needs"]:

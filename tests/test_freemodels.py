@@ -360,3 +360,16 @@ def test_each_free_call_is_timed_and_a_cut_off_reply_is_recorded(router, monkeyp
     rep = freemodels.failure_report()["a/m1:free"]["script"]
     assert rep["finish"] == {"length": 1} and rep["json_bad"] == 1 and rep["ok"] == 1
     assert freemodels._load()["health"]["a/m1:free"]["roles"]["script"]["secs"] == [42.0, 7.0]
+
+
+def test_a_gateway_error_from_the_owners_proxy_pauses_the_model_briefly_and_never_benches_it(tmp_path, monkeypatch):
+    import datetime as dt
+    monkeypatch.setattr(freemodels, "FILE", tmp_path / "fm.json")
+    now = dt.datetime(2026, 11, 22, 17, 0, tzinfo=dt.timezone.utc)
+    for _ in range(5):
+        freemodels.record("extra:nemotron", False, now, status=502, role="review")
+    assert not freemodels.available("extra:nemotron", now + dt.timedelta(seconds=60))      # paused for a moment
+    assert freemodels.available("extra:nemotron", now + dt.timedelta(seconds=freemodels.EXTRA_DOWN_SECONDS + 1))  # back after five minutes, not six hours
+    for _ in range(5):
+        freemodels.record("or/m:free", False, now, status=502, role="review")
+    assert not freemodels.available("or/m:free", now + dt.timedelta(minutes=30))            # an OpenRouter model's repeated failures still bench it
