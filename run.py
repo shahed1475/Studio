@@ -34,6 +34,46 @@
   python run.py approve NAME     mark a reviewed video as ready to upload
   python run.py upload NAME [--public] [--at 2026-10-20T14:00:00Z]
   python run.py list             show videos and their status
+
+Agents and checks:
+  python run.py agents           every agent's health, playbook and last behaviour check
+  python run.py agent-review     daily: behaviour checks (agenteval), trace triage, lessons prune
+  python run.py doctor           every 6 h: stale or failing agents, safe fixes only, post-mortems
+  python run.py guardian         hourly: hold, repair and reissue videos that are not public (never makes one public)
+  python run.py unstick          move stuck drafts up the escalation ladder
+  python run.py agent [force]    the growth agent's daily research
+  python run.py script-review NAME [--llm]   check a script before voice and pictures
+  python run.py judges NAME      who would judge this video's AI review now, and why (asks no model)
+  python run.py listen NAME [--local]   compare the narration with the script (a warning only)
+  python run.py inspect ...      measure and sample a video, save its sources (videoinspect.py)
+  python run.py analyze-video NAME   one of OUR videos, shrunk, read by a vision model
+  python run.py score-thumbnails NAME   score the thumbnail candidates (reads, changes nothing)
+  python run.py recover [--thorough]   read-only: what a power cut left unfinished and the safe next step
+Repairs and owner commands:
+  python run.py repair NAME [--extra]   repair a broken draft (holds the Autopilot lock)
+  python run.py remake-short NAME [--animate N]   make a Short again from its documentary
+  python run.py reschedule NAME  owner only: a new future time for an approved video left private with no schedule
+  python run.py edits [list|approve ID|reject ID]   changes to videos on YouTube; public ones wait for the owner
+  python run.py rollback ID      put back what a logged change replaced
+  python run.py rules [show|approve ID|reject ID]   the growth rules file; only the owner approves
+  python run.py policy [release] YouTube rule-page changes and the scheduling hold
+  python run.py seo-fix NAME     repair a video's search packaging
+Growth and research:
+  python run.py growthdata       our own numbers from the Analytics and Reporting APIs (read-only)
+  python run.py diagnose         one main problem per video, owner tasks only
+  python run.py learn            the weekly report from our own numbers
+  python run.py audit-queue      rank and check the topic queue
+  python run.py tidy-strategies  tidy the growth agent's strategy list
+  python run.py channel-sync [--apply]   read the channel and write its real video ids into local records
+  python run.py writer-bench     free models write Short scripts, scored by free rules (nothing trained)
+  python run.py writer-bench-judge   a few cents: Claude judges one bench model's scripts (a report, never training data)
+  python run.py trainset         build and check the private training set (no Claude output)
+  python run.py specrun [tick|status|check DIR]   free videos from specs written by Claude
+Setup and self-tests:
+  python run.py depth-setup      fetch the depth model once (hash-checked) for camera motion
+  python run.py sources-test [WORDS]   one live search in every picture and footage library
+  python run.py pixabay-test [WORDS]   one live look-up with the saved Pixabay key
+  python run.py tenant-quota     enforce user-studio storage limits
 """
 import json
 import os
