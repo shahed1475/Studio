@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#f3f3f3">
+<meta name="theme-color" content="#eef2f8">
 <meta name="color-scheme" content="light dark">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -303,7 +303,7 @@ button.wd{cursor:pointer}button.wd:hover{transform:translateY(-2px);border-color
 
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
-<link rel="stylesheet" href="/static/studio.css?v=5">
+<link rel="stylesheet" href="/static/studio.css?v=6">
 </head>
 <body>
 <div class="shell">
@@ -378,7 +378,7 @@ async function stopJob(id,btn){
 const empty=(icon,title,text,btn="")=>`<div class="empty">${ico(icon)}<b>${title}</b><span>${text}</span>${btn}</div>`;
 
 function setTheme(t){safe(()=>localStorage.setItem("theme",t));document.documentElement.dataset.theme=t;const l=document.getElementById("themelbl");if(l)l.textContent=t==="dark"?"Switch to light":"Switch to dark";
-  const sw=document.getElementById("tswitch");if(sw)sw.setAttribute("aria-checked",t==="dark");const mc=document.querySelector('meta[name="theme-color"]');if(mc)mc.content=t==="dark"?"#050505":"#f3f3f3"}
+  const sw=document.getElementById("tswitch");if(sw)sw.setAttribute("aria-checked",t==="dark");const mc=document.querySelector('meta[name="theme-color"]');if(mc)mc.content=t==="dark"?"#0a1220":"#eef2f8"}
 function sheet(o){const e=document.getElementById("sheet");o=o===undefined?!e.classList.contains("open"):o;e.classList.toggle("open",o);e.setAttribute("aria-hidden",!o)}
 async function logout(){await fetch("/logout",{method:"POST"});location.href="/login"}
 const reduced=()=>matchMedia("(prefers-reduced-motion: reduce)").matches;

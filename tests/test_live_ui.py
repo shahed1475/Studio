@@ -125,26 +125,54 @@ def test_the_notification_routes_answer_and_read_marks_the_feed(tmp_path, monkey
 V4 = CSS[CSS.index("v4 (29 Oct 2026)"):]
 
 
-def _greys(block: str) -> dict:
-    out = {}
-    for name, val in re.findall(r"--(bg|surface|surface2|sunken|ink|ink2|line|accent|accent-ink|accent-soft|accent-text|ok|ok-bg|warn|warn-bg|bad|bad-bg|pop):(#[0-9a-fA-F]{6}|#[0-9a-fA-F]{3})\b", block):
-        out.setdefault(name, []).append(val)
-    return out
+V5 = CSS[CSS.index("v5 (22 Nov 2026"):]
 
 
-def test_the_palette_is_black_and_white_only_in_both_themes_and_on_every_page():
-    def grey(h):
-        h = h.lstrip("#")
-        h = "".join(c * 2 for c in h) if len(h) == 3 else h
-        return len({h[0:2].lower(), h[2:4].lower(), h[4:6].lower()}) == 1
-    toks = _greys(V4)
-    assert len(toks) >= 15
-    assert all(grey(v) for vals in toks.values() for v in vals), {k: v for k, v in toks.items() if not all(grey(x) for x in v)}
+def _rgb(h):
+    h = h.lstrip("#")
+    h = "".join(c * 2 for c in h) if len(h) == 3 else h
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _contrast(a, b):
+    def lum(h):
+        f = [c / 255 for c in _rgb(h)]
+        f = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in f]
+        return 0.2126 * f[0] + 0.7152 * f[1] + 0.0722 * f[2]
+    hi, lo = sorted((lum(a), lum(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def _themes(block: str) -> tuple[dict, dict]:
+    light = block[block.index(":root{"):]
+    dark = block[block.index(':root[data-theme="dark"]{'):]
+    one = lambda s: dict(re.findall(r"--([a-z0-9-]+):(#[0-9a-fA-F]{3,6})\b", s[:s.index("}")]))
+    return one(light), one(dark)
+
+
+def test_the_palette_is_navy_with_one_accent_and_every_text_pair_passes_wcag_aa():
+    """22 Nov 2026, owner's choice: navy surfaces and one accent replace the v4 black and white (whose test this was). Neutrals are one cool navy
+    family (blue above red: never a warm grey), the accent is the only saturated blue, status colours keep their icons (next test) and every text
+    pair reads at 4.5:1 or more in both themes."""
+    light, dark = _themes(V5)
+    for t in (light, dark):
+        assert {"bg", "surface", "sunken", "ink", "ink2", "line", "accent", "accent-ink", "ok", "ok-bg", "warn", "warn-bg", "bad", "bad-bg"} <= set(t)
+        for k in ("bg", "surface", "sunken", "ink", "ink2", "line"):
+            r, g, b = _rgb(t[k])
+            assert b >= r and max(r, g, b) - min(r, g, b) <= 48, (k, t[k])  # cool, low-saturation: the navy family
+        for fg, bg in (("ink", "bg"), ("ink", "surface"), ("ink2", "surface"), ("ink2", "bg"), ("accent-ink", "accent"), ("ok", "ok-bg"),
+                       ("warn", "warn-bg"), ("bad", "bad-bg"), ("ok", "surface"), ("warn", "surface"), ("bad", "surface")):
+            assert _contrast(t[fg], t[bg]) >= 4.5, (fg, bg, t[fg], t[bg], round(_contrast(t[fg], t[bg]), 2))
+        assert _contrast(t["surface"], t["bad"]) >= 4.5  # the failed badge's label
+    r, g, b = _rgb(dark["bg"])
+    assert b > r + 12 and b > g  # navy, not black
     for f in ("monitor.html", "notifications.html"):
         page = (ROOT / f).read_text()
-        for v in re.findall(r"--(?:bg|surface|ink|ink2|line|accent|ok|warn|bad)[a-z-]*:(#[0-9a-fA-F]{3,6})", page):
-            assert grey(v), (f, v)
+        pl, pd = _themes(page)
+        for k in ("bg", "surface", "ink", "accent", "ok", "warn", "bad"):
+            assert pl[k] == light[k] and pd[k] == dark[k], (f, k)
     assert "rgba(255,190,0" not in HTML  # the amber policy-hold fill is gone
+    assert "studio.css?v=6" in HTML  # browsers fetch the new stylesheet, not a cached v4 one
 
 
 def test_status_is_carried_by_an_icon_and_a_fill_not_by_colour_alone():
