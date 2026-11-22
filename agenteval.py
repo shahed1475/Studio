@@ -6,6 +6,7 @@ Nothing here calls YouTube or a paid model. `run` writes `data/agent/eval.json`;
 import contextlib
 import datetime as dt
 import json
+import os
 import tempfile
 from pathlib import Path
 
@@ -1927,6 +1928,132 @@ def case_a_provider_that_does_not_answer_never_benches_its_models_and_a_free_mod
     return ok, f"benched={benched} answered={got is not None} sent={sent}"
 
 
+def _cascade_world(d: Path, roster: list, replies: dict, sent: list):
+    """Stand-ins for the judge cascade's providers (no network): returns (restore, run). `replies[model]` is a reply dict or an HTTP status to fail with."""
+    import datetime as dt
+
+    import freemodels
+    import judges
+    import llm
+    import requests
+
+    now = dt.datetime(2026, 11, 22, 3, tzinfo=dt.timezone.utc)
+    (d / "settings.json").write_text(json.dumps({"extra_llm_on": True, "extra_llm_url": "http://127.0.0.1:31415/v1", "extra_llm_local": True, "extra_llm_gap_s": 0,
+                                                "extra_llm_key": "k-0123456789abcdef", "extra_llm_models": {"script": "gemini-3.5-flash, minimaxaiminimax-m3.1-flash",
+                                                                                                             "review": "nemotron-3-ultra-550b"}}))
+    (d / "judges.json").write_text(json.dumps(judges.DEFAULTS))
+    saved = dict(settings=llm.SETTINGS_FILE, usage=llm.USAGE_FILE, fm=freemodels.FILE, cfgf=judges.CONFIG_FILE, post=llm._post, status=llm.extra_status,
+                 key=llm.api_key, load=llm.load_config, now=llm._now, refresh=freemodels.refresh, quota=freemodels.quota, gem=os.environ.pop("GEMINI_API_KEY", None),
+                 last=dict(llm._last_free), writers=set(llm._WRITERS), served=dict(llm._served))
+    llm.SETTINGS_FILE, llm.USAGE_FILE, freemodels.FILE, judges.CONFIG_FILE = d / "settings.json", d / "usage.json", d / "free_models.json", d / "judges.json"
+    llm._url_cache.clear()
+    models = [{"id": m, "context": 262144, "score": 9 - i} for i, m in enumerate(roster)]
+    freemodels.refresh, freemodels.quota = (lambda now, *a, **k: models), (lambda *a, **k: None)
+    with freemodels._update() as fm:
+        fm.update(fetched_at=now.strftime(freemodels.TS), models=models)
+    cfg = {**llm.DEFAULTS, "free": True, "free_review": True}
+    llm.extra_status, llm.api_key, llm.load_config, llm._now = (lambda mid: "ready"), (lambda: "or-k"), (lambda: dict(cfg)), (lambda: now)
+
+    def post(payload, key):
+        mid = payload["model"]
+        sent.append(mid)
+        r = replies.get(mid, 404)
+        if isinstance(r, int):
+            resp = requests.Response()
+            resp.status_code, resp._content = r, b'{"error": {"message": "stand-in"}}'
+            raise requests.HTTPError(str(r), response=resp)
+        return {"model": mid.split(":", 1)[1] if mid.startswith("extra:") else mid, "choices": [{"message": {"content": r if isinstance(r, str) else json.dumps(r)}}], "usage": {}}
+
+    llm._post = post
+    for s in (llm._last_free, llm._served):
+        s.clear()
+    llm._WRITERS.clear()
+
+    def restore():
+        llm.SETTINGS_FILE, llm.USAGE_FILE, freemodels.FILE, judges.CONFIG_FILE = saved["settings"], saved["usage"], saved["fm"], saved["cfgf"]
+        llm._post, llm.extra_status, llm.api_key, llm.load_config, llm._now = saved["post"], saved["status"], saved["key"], saved["load"], saved["now"]
+        freemodels.refresh, freemodels.quota = saved["refresh"], saved["quota"]
+        if saved["gem"] is not None:
+            os.environ["GEMINI_API_KEY"] = saved["gem"]
+        llm._url_cache.clear()
+        for live, old in ((llm._last_free, saved["last"]), (llm._served, saved["served"])):
+            live.clear()
+            live.update(old)
+        llm._WRITERS.clear()
+        llm._WRITERS.update(saved["writers"])
+
+    return restore, now
+
+
+def case_two_judges_of_different_families_never_the_writer_and_a_busy_openrouter_is_tried_once_then_skipped():
+    """22 Nov 2026 (owner's order): every video is judged by two models of DIFFERENT families, never by a model that wrote it under any provider's name
+    (the proxy calls one model nvidianemotron-3-ultra-550b-a55b, OpenRouter nvidia/nemotron-3-ultra-550b-a55b:free); OpenRouter gets one try in 25 s with no
+    retry, a 429 makes the cascade skip it for an hour and the next judge (FreeLLMAPI) answers in the same review; a failure is never a judge; no two
+    answers is "unreviewed", never pass and never fail."""
+    import llm
+    import reviewer
+
+    full = {"invented_facts_risk": 1, "policy_risk": 0, "misleading_title": False, "issues": []}
+    compact = {"invented_facts": 1, "policy": 0, "title_accurate": True, "strict_note": ""}
+    roster = ["nvidia/nemotron-3-ultra-550b-a55b:free", "google/gemma-4-31b-it:free", "openrouter/free", "nvidia/nemotron-3.5-lightning:free",
+              "particle-ai/particle-1:free"]  # particle would be next: the hour-long skip of OpenRouter, not the one model's 429, must keep it unasked
+    meta = {"title": "The Lost Army", "description": "What Herodotus wrote.", "lines": [{"text": "Herodotus says Cambyses sent an army to Siwa in 524 BC."}],
+            "script_writers": ["extra:nvidianemotron-3-ultra-550b-a55b"]}
+    sent: list = []
+    replies = {"extra:gemini-2.5-flash": full, "nvidia/nemotron-3.5-lightning:free": 429, "extra:qwen-3.8-27b": compact}
+    with tempfile.TemporaryDirectory() as tmp:
+        restore, now = _cascade_world(Path(tmp), roster, replies, sent)
+        try:
+            v1 = reviewer.verdict_from(reviewer.llm_review(dict(meta), "Herodotus wrote that Cambyses sent an army to Siwa in 524 BC."), "wikipedia")
+            first, judged = list(sent), list(llm.LAST_REVIEW.get("models") or [])
+            import freemodels
+
+            cooled = bool(freemodels.provider_cooling("openrouter", now))
+            sent.clear()
+            v2 = reviewer.verdict_from(reviewer.llm_review(dict(meta), "Herodotus wrote that Cambyses sent an army to Siwa in 524 BC."), "wikipedia")
+            second = list(sent)
+            replies.clear()  # every judge fails now
+            v3 = reviewer.verdict_from(reviewer.llm_review(dict(meta), "Herodotus wrote that Cambyses sent an army to Siwa in 524 BC."), "wikipedia")
+        finally:
+            restore()
+    writer_avoided = not any("nemotron-3-ultra" in m for m in first + second)
+    families = not any(("gemma" in m or "gemini" in m) for m in first[1:])  # after a Gemini judged, slot B never asks Google's family
+    once = first.count("nvidia/nemotron-3.5-lightning:free") == 1 and not any(m in roster for m in first[2:] + second)  # one try, none in the next review
+    failover = v1 == "pass" and judged == ["extra:gemini-2.5-flash", "extra:qwen-3.8-27b"] and first[-1] == "extra:qwen-3.8-27b"
+    unreviewed = v3 == "unreviewed" and v2 == "pass"
+    ok = writer_avoided and families and once and cooled and failover and unreviewed
+    return ok, (f"writer_avoided={writer_avoided} families={families} once={once} cooled={cooled} failover={failover} unreviewed={unreviewed} "
+                f"first={first} second={second}")
+
+
+def case_a_judges_reasoning_is_never_its_verdict_and_excerpts_keep_every_checkable_fact():
+    """22 Nov 2026: a reasoning model may write a draft verdict inside <think> before its real one, and parse_json takes the first JSON it finds; a compact
+    answer that is not a clean score is no judge; and the source excerpts sent to OpenRouter keep the passage of every name, date and number the
+    narration uses (a plain cut of the first 9,000 characters would hide a fact deep in the article and the judge would call it invented)."""
+    import judges
+    import llm
+    import sourceslice
+
+    got = None
+    try:
+        got = llm.parse_json('<think>{"invented_facts": 0} looks fine... no.</think>{"invented_facts": 8}')
+    except ValueError:
+        pass
+    reasoning_skipped = got == {"invented_facts": 8}
+    malformed_refused = judges.parse_compact({"invented_facts": "low", "policy": 0, "title_accurate": True, "strict_note": ""}, thumb=False) is None \
+        and judges.parse_compact({"invented_facts": 2, "policy": 0, "title_accurate": True, "strict_note": ""}, thumb=False) is not None
+    filler = "The valley was farmed for many generations and its fields were watered by small canals kept clean each spring. " * 6
+    deep = "Herodotus wrote that Cambyses sent fifty thousand soldiers from Thebes in 524 BC toward the oasis of Siwa."
+    source = "\n\n".join(["The Lost Army of Cambyses is told by Herodotus."] + [filler] * 30 + [deep] + [filler] * 30)
+    narration = "In 524 BC Cambyses sent soldiers from Thebes toward Siwa, Herodotus says."
+    cut = sourceslice.slice_source(source, narration)
+    excerpts_ok = cut["chars"] <= sourceslice.CAP < len(source) and cut["lossless"] and deep in cut["text"]
+    tight = sourceslice.slice_source(source + "\n\n" + filler + "\n\nMemphis and Darius.", narration + " Darius ruled from Memphis.", cap=60, max_cap=60, lead=0, fill=0)
+    lossy_reported = not tight["lossless"]
+    ok = reasoning_skipped and malformed_refused and excerpts_ok and lossy_reported
+    return ok, f"reasoning_skipped={reasoning_skipped} malformed_refused={malformed_refused} excerpts_ok={excerpts_ok} lossy_reported={lossy_reported}"
+
+
 CASES = [case_a_cut_at_the_very_end_never_makes_the_video_twice_and_a_cut_short_resumes_in_its_folder, case_a_render_cut_by_a_power_cut_is_found_kept_and_never_trusted_half_written, case_busy_judges_never_discard_a_draft_and_never_pass_it_unchecked, case_the_reviewer_flags_a_line_that_calls_proven_what_its_source_only_suggests, case_blender_scenes_are_true_to_the_line_and_never_stop_a_video, case_a_judge_is_never_the_writer_even_through_the_owners_provider, case_an_a2a_task_is_answered_once_only_by_its_target_and_never_off_the_hand_over_map,case_free_mode_never_sends_a_request_to_a_paid_model_through_the_video_checks, case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic, case_the_guardian_closes_its_draft_tasks_only_when_the_video_has_left_output, case_search_demand_is_no_signal_on_failure_spends_youtube_quota_only_within_its_budget_and_cleans_outside_text, case_comment_insights_keep_no_names_nothing_over_30_days_and_only_cleaned_questions_and_never_write,
          case_ladder_ends_with_owner_not_a_crash, case_ladder_respects_budget_and_whitelist_and_lessons, case_outside_text_is_cleaned,
          case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules, case_registry_is_consistent,
@@ -1965,7 +2092,9 @@ CASES = [case_a_cut_at_the_very_end_never_makes_the_video_twice_and_a_cut_short_
          case_a_free_review_needs_two_free_models_the_strictest_counts_and_it_is_off_unless_switched_on,
          case_a_drawn_scene_takes_a_real_photo_only_when_the_file_is_named_for_its_subject,
          case_the_owners_own_model_provider_key_never_leaves_the_settings_file_and_its_address_is_checked,
-         case_a_provider_that_does_not_answer_never_benches_its_models_and_a_free_model_answers_in_the_same_call]
+         case_a_provider_that_does_not_answer_never_benches_its_models_and_a_free_model_answers_in_the_same_call,
+         case_two_judges_of_different_families_never_the_writer_and_a_busy_openrouter_is_tried_once_then_skipped,
+         case_a_judges_reasoning_is_never_its_verdict_and_excerpts_keep_every_checkable_fact]
 
 
 def run(write: bool = True, result: Path | None = None) -> dict:

@@ -195,7 +195,8 @@ def record(model: str, ok: bool, now: dt.datetime, status: int | None = None, re
            role: str | None = None, seconds: float | None = None, reason: str | None = None, finish: str | None = None) -> None:
     """One answer or failure. `role` and `seconds` feed the per-role ranking; `reason` "json" marks a reply that was not JSON and `finish` is the
     reply's finish_reason ("length" = cut off by the output limit). A 429 only makes the model busy: it is not counted as a failure. Neither is `reason`
-    "unreachable" (no connection could be made): the model is skipped for UNREACHABLE_SECONDS."""
+    "unreachable" (no connection could be made): the model is skipped for UNREACHABLE_SECONDS. `reason` "deadline" (the judge cascade's own short limit
+    ended the request) is a miss for this role's ranking only, never a failure that benches the model for the other jobs."""
     with _update() as d:
         h = d.setdefault("health", {}).setdefault(model, {"fails": 0})
         rs = h.setdefault("roles", {}).setdefault(role, {}) if role else None
@@ -217,6 +218,10 @@ def record(model: str, ok: bool, now: dt.datetime, status: int | None = None, re
             h["busy_until"] = _ts(now + dt.timedelta(seconds=secs))
         elif reason == "unreachable":
             h["busy_until"] = _ts(now + dt.timedelta(seconds=UNREACHABLE_SECONDS))
+        elif reason == "deadline":  # the judge cascade's own short limit (25 s) ended the request: a miss for this role's ranking only. The same
+            if rs is not None:      # model may need 60 s for a script, so it is never benched for the other jobs (22 Nov 2026)
+                rs["bad"] = rs.get("bad", 0) + 1
+                rs["late"] = rs.get("late", 0) + 1
         else:
             h["fails"] += 1
             h["last_fail"] = _ts(now)
@@ -227,6 +232,21 @@ def record(model: str, ok: bool, now: dt.datetime, status: int | None = None, re
                 if finish:
                     fin = rs.setdefault("finish", {})
                     fin[finish] = fin.get(finish, 0) + 1
+
+
+def cool_provider(name: str, now: dt.datetime, seconds: int, why: str = "") -> None:
+    """A whole provider is skipped for a while (the judge cascade: OpenRouter busy, down or out of free requests is not asked again for an hour)."""
+    with _update() as d:
+        d.setdefault("providers", {})[name] = {"until": _ts(now + dt.timedelta(seconds=max(1, int(seconds)))), "why": str(why)[:200], "since": _ts(now)}
+
+
+def provider_cooling(name: str, now: dt.datetime) -> dict | None:
+    """{"until", "why", "since"} while the provider is being skipped, None otherwise."""
+    p = (_load().get("providers") or {}).get(name)
+    try:
+        return dict(p) if p and now < _parse(p["until"]) else None
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 _quota_cache: dict = {}

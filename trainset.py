@@ -49,6 +49,9 @@ def provenance(meta: dict, allow: tuple = ()) -> tuple[bool, str]:
         return True, ""
     if ANTHROPIC.search(model):
         return False, f"written by {model}: Anthropic's terms forbid training competing models on its outputs unless it approves"
+    for w in [str(x) for x in meta.get("script_writers") or []]:  # the models that really wrote it (22 Nov 2026: in free mode `script_model` names the
+        if ANTHROPIC.search(w):                                     # assigned model, while a free model or the owner's provider wrote, and that provider lists Claude models)
+            return False, f"written by {w}: Anthropic's terms forbid training competing models on its outputs unless it approves"
     return True, ""
 
 

@@ -236,7 +236,7 @@ def state() -> dict:
         "agent": {"unread": __import__("agentlog").unread()},
         "tenant": __import__("tenantmode").is_tenant(), "niche_confirmed": __import__("niche").current()["brief"] is not None and bool((__import__("niche").current()["brief"] or {}).get("confirmed")),
         "auth": {"on": webauth.enabled(), "email": webauth.owner_email()},
-        "settings": {"pexels_key": "saved" if load_settings().get("pexels_key") else "", "pixabay_key": "saved" if pixabay_key() else "", "smithsonian_key": "saved" if smithsonian_key() else "", "youtube_key": "saved" if __import__("commentinsights").api_key() else "", "extra_llm": extra_llm_status(), "alerts": None if __import__("tenantmode").is_tenant() else alerts.status()},
+        "settings": {"pexels_key": "saved" if load_settings().get("pexels_key") else "", "pixabay_key": "saved" if pixabay_key() else "", "smithsonian_key": "saved" if smithsonian_key() else "", "youtube_key": "saved" if __import__("commentinsights").api_key() else "", "kaggle_key": None if __import__("tenantmode").is_tenant() else ("saved" if __import__("kagglekey").saved(load_settings()) else ""), "extra_llm": extra_llm_status(), "alerts": None if __import__("tenantmode").is_tenant() else alerts.status()},
     }
 
 
@@ -840,6 +840,7 @@ class H(BaseHTTPRequestHandler):
                             "channels": {"refs": __import__("channelwatch").load_refs(), "digest": __import__("channelwatch").latest(),
                                          "meta": __import__("channelwatch").load_meta(), "max": __import__("channelwatch").MAX_REFS,
                                          "suggestions": __import__("channelwatch").suggest(__import__("trendwatch").latest())},
+                            "free_only": __import__("llm").free_only(),  # paid models off: Autopilot makes videos with free models and free pictures
                             "timer_installed": timer_installed("story-autopilot.timer"),
                             "proposals": [t for t in (json.loads(newswatch.TOPICS_FILE.read_text()) if newswatch.TOPICS_FILE.exists() else []) if t["status"] == "proposed"],
                             "news_queue": [t for t in (json.loads(newswatch.NEWS_QUEUE.read_text()) if newswatch.NEWS_QUEUE.exists() else []) if t["status"] == "queued"]})
@@ -1241,11 +1242,14 @@ class H(BaseHTTPRequestHandler):
             return out
         if path == "/api/key/save":
             which, value = str(b.get("which", "")), str(b.get("value", "")).strip()
-            field = {"openrouter": "openrouter_key", "pexels": "pexels_key", "pixabay": "pixabay_key", "smithsonian": "smithsonian_key", "extra_llm": "extra_llm_key", "youtube": "youtube_api_key"}.get(which)
+            field = {"openrouter": "openrouter_key", "pexels": "pexels_key", "pixabay": "pixabay_key", "smithsonian": "smithsonian_key", "extra_llm": "extra_llm_key", "youtube": "youtube_api_key",
+                     "kaggle": "kaggle_api_token"}.get(which)
             if which == "extra_llm" and __import__("tenantmode").is_tenant():
                 raise ValueError("not available in a user studio")
             if not field:
                 raise ValueError("unknown key")
+            if which == "kaggle":
+                value = __import__("kagglekey").check_format(value)  # KGAT_ tokens only; refused in a user studio (kagglekey.py)
             if not 10 <= len(value) <= 300 or re.search(r"\s", value):
                 raise ValueError("that does not look like an API key")
             st = load_settings()
@@ -1254,6 +1258,17 @@ class H(BaseHTTPRequestHandler):
             if which == "openrouter" and __import__("tenantmode").is_tenant():
                 __import__("tenantmode").on_key_saved()
             return {"ok": True}
+        if path in ("/api/kaggle/test", "/api/kaggle/remove"):  # the owner's Kaggle token (kagglekey.py): read-only test or removal; the token is never returned
+            import kagglekey
+
+            if __import__("tenantmode").is_tenant():
+                raise ValueError("not available in a user studio")
+            st = load_settings()
+            if path == "/api/kaggle/remove":
+                st.pop(kagglekey.FIELD, None)
+                save_settings(st)
+                return {"ok": True, "detail": "The Kaggle token was removed from this studio."}
+            return kagglekey.test(st.get(kagglekey.FIELD, ""))
         if path == "/api/alerts":  # (the owner's studio only) Gmail for the hub's sign-in codes, Telegram for studio alerts: secrets in, never out (alerts.py)
             if __import__("tenantmode").is_tenant():
                 raise ValueError("not available in a user studio")

@@ -113,3 +113,11 @@ def test_build_writes_the_files_and_an_honest_report_and_says_how_far_from_train
     assert {p.name for p in folder.iterdir()} == {"train.jsonl", "valid.jsonl", "rejected.jsonl", "report.json"}
     rows = [json.loads(l) for f in ("train.jsonl", "valid.jsonl") for l in (folder / f).read_text().splitlines()]
     assert len(rows) == 2 and all("sk-" not in json.dumps(r) for r in rows)
+
+
+def test_a_script_a_claude_model_really_wrote_is_excluded_even_when_script_model_names_another():
+    """22 Nov 2026: in free mode `script_model` is the assigned model (gemma), while the real writers are in `script_writers`; the owner's provider lists Claude models."""
+    import trainset
+    ok, why = trainset.provenance({"script_model": "google/gemma-4-26b-a4b-it:free", "script_writers": ["extra:auto", "claude-sonnet-4-5"]})
+    assert not ok and "claude-sonnet-4-5" in why
+    assert trainset.provenance({"script_model": "google/gemma-4-26b-a4b-it:free", "script_writers": ["extra:gemini-3.5-flash"]})[0]

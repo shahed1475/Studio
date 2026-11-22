@@ -201,3 +201,18 @@ def test_every_clickable_box_can_be_reached_and_used_with_the_keyboard():
         assert 'tabindex="0"' in tag and "role=" in tag and "onkeydown=" in tag, tag[:120]
     for tid in ("dk_t", "dk_a"):
         assert re.search(rf'<textarea id="{tid}" aria-label="[^"]+"', html)
+
+
+def test_switching_an_autopilot_section_does_not_clear_the_who_makes_videos_choice():
+    """22 Nov 2026: apSubSet reset aria-selected on every .seg button of the page, so Autopilot > Rules showed neither 'Autopilot makes videos'
+    nor 'Claude Code makes videos' as chosen. Only the section tabs (ids aps-*) may be changed by it."""
+    html = (Path(__file__).resolve().parent.parent / "dashboard.html").read_text()
+    body = html[html.index("function apSubSet(k){"):]
+    body = body[:body.index("\n}")]
+    assert 'querySelectorAll(".seg button")' not in body and "aps-" in body
+
+
+def test_the_who_makes_videos_text_says_free_when_the_studio_is_in_free_mode():
+    html = (Path(__file__).resolve().parent.parent / "dashboard.html").read_text()
+    assert "A.free_only?" in html and "no money is spent" in html
+    assert '"free_only": __import__("llm").free_only()' in (Path(__file__).resolve().parent.parent / "dashboard.py").read_text()

@@ -1,0 +1,16 @@
+{
+ "source": "https://github.com/ericporres/voice-as-a-skill.git",
+ "commit": "8dbd7cb",
+ "files": {
+  ".gitignore": "a9a07afdc361f23240a65d0379f5b9c473ec6864600c496561880d97db682782",
+  "LICENSE": "ce9cc7012a57f4015b160b72d2675febb7aed96a673011354292a8993b88e876",
+  "README.md": "6c1970112cbd1cd4546a2f78455452784c0b356d025bca678f470756d093322d",
+  "SESSION.md": "034c317d60e839e9474c3c97079ae86b47fa7f8b1101bd634f165925a81325ea",
+  "SKILL.md": "0504e9cad84e5e429a4b5d281fffbdcdc911019ba514695d6fee7f62a4501421",
+  "references/eric-porres-voice-as-worked-example.md": "23ab25868a6dacf81588b366c9b84d1317ba16088f977854f51b04b36d24a64e",
+  "references/harvest-cycle-template.md": "2636ac07f5a74923aeed79a7156737294e8348d21fdc6c6b9b5958137b362792",
+  "references/install-instructions-template.md": "3c5886f4497f4d4ec53bbd68b16821224357736d0066b4a3727277b52d9aefe5",
+  "references/tropes-skill-template.md": "ce2a77a9a2aa0b8fd15c534da04dfbe668e0830444dff19a4aed580a1e3814a0",
+  "references/voice-skill-template.md": "498b3cb6842fa361308cd36325203fde65bbb7eede6db17fc8c8591595fdc180"
+ }
+}

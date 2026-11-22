@@ -1002,7 +1002,7 @@ async function autopilot(m){
     <label class="tick"><input type="checkbox" id="ap_aa" ${c.auto_approve?"checked":""} onchange="editing=true"> Approve videos that pass every check</label>
     <div style="margin:6px 0 4px"><b>Who makes new videos</b></div><input type="checkbox" id="ap_mv" hidden ${c.make_videos!==false?"checked":""}>
     <div class="seg" role="group" aria-label="Who makes new videos" style="margin-bottom:6px"><button type="button" aria-selected="${c.make_videos!==false}" onclick="apSrc(true)">Autopilot makes videos</button><button type="button" aria-selected="${c.make_videos===false}" onclick="apSrc(false)">Claude Code makes videos</button></div>
-    <p class="sub" style="margin-bottom:14px">${c.make_videos!==false?"Autopilot writes, draws and renders new videos itself and spends OpenRouter credit (the key is saved in Settings).":"Free: you or a Claude Code session make the videos. Autopilot only repairs, reviews, schedules and uploads what already exists."}</p>
+    <p class="sub" style="margin-bottom:14px">${c.make_videos!==false?(A.free_only?"Autopilot writes, draws and renders new videos itself with free models (your own provider first, then OpenRouter's free ones) and free Cloudflare pictures: no money is spent.":"Autopilot writes, draws and renders new videos itself and spends OpenRouter credit (the key is saved in Settings)."):"Free: you or a Claude Code session make the videos. Autopilot only repairs, reviews, schedules and uploads what already exists."}</p>
     <label class="tick"><input type="checkbox" id="ap_nv" ${c.news_videos?"checked":""} onchange="editing=true"> Make draft videos from the weekly YouTube news (these always wait for you)</label>
     <div><label>Documentary publish times (US Eastern)</label>${slotEditor("apSlots")}</div>
     ${(()=>{const L=A.doc_length||{min:20,max:26,lines:[84,100],words:2940,limits:[5,30]};return `<div><label for="ap_dl0">Documentary length (minutes)</label><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input id="ap_dl0" type="number" min="${L.limits[0]}" max="${L.limits[1]-1}" step="1" value="${L.min}" style="width:90px" aria-label="Shortest documentary in minutes"> to <input id="ap_dl1" type="number" min="${L.limits[0]+1}" max="${L.limits[1]}" step="1" value="${L.max}" style="width:90px" aria-label="Longest documentary in minutes"><button type="button" class="btn sm" onclick="apDocLen()">Save length</button></div><div class="help">New documentaries are written for this: about ${L.lines[0]} to ${L.lines[1]} lines and ${Number(L.words).toLocaleString()} words. Shorts keep their own length; videos already made are not changed.</div></div>`})()}
@@ -1086,7 +1086,7 @@ function apSubSet(k){
   apSub=k;safe(()=>sessionStorage.setItem("apSub",k));
   const w=document.getElementById("apwrap");if(!w)return;
   w.dataset.sub=k;w.setAttribute("aria-labelledby","aps-"+k);
-  document.querySelectorAll(".seg button").forEach(b=>b.setAttribute("aria-selected",b.id==="aps-"+k));
+  document.querySelectorAll("button[id^=aps-]").forEach(b=>b.setAttribute("aria-selected",b.id==="aps-"+k));
   w.classList.remove("swap");void w.offsetWidth;w.classList.add("swap");
   document.querySelector(".seg")?.scrollIntoView({block:"nearest"});
 }
@@ -1382,6 +1382,10 @@ async function settings(m){
   <div class="panel pad stack" style="margin-top:16px"><h2>Smithsonian API key (optional)</h2>
     <p class="sub">Unlocks the Smithsonian Open Access library (only the items it marks CC0 are returned). Free, only an email: <a target="_blank" rel="noopener" href="https://api.data.gov/signup/">api.data.gov/signup</a>. ${S.settings.smithsonian_key?"A key is saved and hidden.":"No key saved yet."}</p>
     <div style="display:flex;gap:10px;flex-wrap:wrap"><div class="grow"><label for="smk" style="position:absolute;left:-9999px">Smithsonian key</label><input id="smk" type="password" autocomplete="new-password" spellcheck="false" placeholder="Paste your key" oninput="editing=true"></div><button class="btn" onclick="saveSmk()">Save key</button></div></div>
+  ${S.settings.kaggle_key===null||S.settings.kaggle_key===undefined?"":`<div class="panel pad stack" style="margin-top:16px" id="kagglekey"><h2>Kaggle API token (personal use only)</h2>
+    <p class="sub">For your own <code>kaggle</code> command on this PC. Kaggle's terms allow personal, non-commercial use only, so the studio never runs video work on Kaggle. Make a token at <a target="_blank" rel="noopener" href="https://www.kaggle.com/settings/api">kaggle.com &gt; Settings &gt; API Tokens</a>. ${S.settings.kaggle_key?"A token is saved and hidden.":"No token saved yet."}</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><div class="grow"><label for="kgt" style="position:absolute;left:-9999px">Kaggle API token</label><input id="kgt" type="password" autocomplete="new-password" spellcheck="false" placeholder="KGAT_…" oninput="editing=true"></div><button class="btn" onclick="saveKgt()">Save token</button><button class="btn" onclick="kaggleAct('test',this)"${S.settings.kaggle_key?"":" disabled"}>Test it</button><button class="btn" onclick="kaggleAct('remove',this)"${S.settings.kaggle_key?"":" disabled"}>Remove</button></div>
+    <p class="sub" id="kgres" role="status" aria-live="polite"></p></div>`}
   ${xllmCard()}
   ${alertsCard()}
   <div class="panel pad stack" style="margin-top:16px"><h2>Picture and footage libraries</h2>
@@ -1435,6 +1439,14 @@ async function savePk(){const v=document.getElementById("pk").value;if(!v.trim()
 async function saveYtk(){const v=document.getElementById("ytk").value;if(!v.trim())return toast("Paste a key first");await api("/api/key/save",{which:"youtube",value:v});document.getElementById("ytk").value="";editing=false;toast("Key saved and hidden");refresh(true)}
 async function savePxb(){const v=document.getElementById("pxb").value;if(!v.trim())return toast("Paste a key first");await api("/api/key/save",{which:"pixabay",value:v});document.getElementById("pxb").value="";editing=false;toast("Key saved and hidden");refresh(true)}
 async function saveSmk(){const v=document.getElementById("smk").value;if(!v.trim())return toast("Paste a key first");await api("/api/key/save",{which:"smithsonian",value:v});document.getElementById("smk").value="";editing=false;toast("Key saved and hidden");refresh(true)}
+async function saveKgt(){const el=document.getElementById("kgt"),v=el.value.trim();if(!v)return toast("Paste a token first");try{await api("/api/key/save",{which:"kaggle",value:v})}catch(e){return}el.value="";editing=false;toast("Token saved and hidden");refresh(true)}
+let kgArmed=0;
+async function kaggleAct(act,btn){/* Kaggle token: a read-only test, or removal after a second click within 4 s (no browser dialog) */
+  const out=document.getElementById("kgres");
+  if(act==="remove"&&Date.now()-kgArmed>4000){kgArmed=Date.now();btn.textContent="Click again to remove";setTimeout(()=>{if(btn.isConnected)btn.textContent="Remove"},4000);return}
+  btn.disabled=true;out.textContent=act==="test"?"Asking Kaggle (read only)…":"Removing…";
+  try{const r=await api("/api/kaggle/"+act,{});out.textContent=(r.ok?"✓ ":"✗ ")+(r.detail||"")}catch(e){out.textContent="✗ "+(e.message||e)}
+  btn.disabled=false;if(act==="remove"){kgArmed=0;refresh(true)}}
 async function testSources(){const b=document.getElementById("srcbtn"),o=document.getElementById("srcout");b.disabled=true;o.textContent="Searching every library (this can take up to a minute)...";try{const r=await api("/api/sources/test",{query:document.getElementById("srcq").value});const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));o.innerHTML=r.rows.map(x=>`<div>${x.state==="ok"?"&#10003;":x.state==="needs key"?"&#9675;":"&#10007;"} <b>${esc(x.label)}</b> (${esc(x.kind)}): ${esc(x.state)}. ${esc(x.detail)}${x.first?` <a target="_blank" rel="noopener" href="${esc(x.first)}">first result</a>`:""}</div>`).join("")}catch(e){o.textContent="The test could not run: "+(e.message||e)}b.disabled=false}
 
 window.addEventListener("hashchange",()=>{const t=location.hash.slice(1);if(t&&t!==tab&&[...NAV,...TOOLS,SET].some(n=>n[0]===t)){tab=t;render(true)}});

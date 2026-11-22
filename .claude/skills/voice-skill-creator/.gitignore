@@ -1,0 +1,13 @@
+.DS_Store
+*.icloud
+*.bak-*
+.bak-*
+
+# Internal scoring artifacts — not for public repo
+voice-check-*.md
+tropes-scan-*.md
+
+# OS / editor noise
+*.swp
+.vscode/
+.idea/

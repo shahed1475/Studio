@@ -274,10 +274,29 @@ def estimate(prices: dict, docs_per_day: float, shorts_per_day: float, days: int
 
 
 # ---- calls ----
+_THINK_BLOCK = re.compile(r"<(think|thinking|reasoning)\b[^>]*>.*?</\1\s*>", re.S | re.I)
+_THINK_OPEN = re.compile(r"<(think|thinking|reasoning)\b[^>]*>", re.I)
+_THINK_CLOSE = re.compile(r"</(think|thinking|reasoning)\s*>", re.I)
+
+
+def strip_think(text: str) -> str:
+    """A reply with the model's reasoning taken out: every <think>...</think> block (also <thinking> and <reasoning>), everything before a closing tag
+    whose opening tag the model left out (DeepSeek R1 style templates open it in the prompt), and everything after an opening tag that is never
+    closed (all reasoning, no answer). 22 Nov 2026: parse_json reads the first complete JSON object, so a JSON draft inside a reasoning block
+    ("I could answer {"invented_facts": 0} ... no, 8") would have been read as the judge's verdict."""
+    t = _THINK_BLOCK.sub(" ", str(text or ""))
+    closes = list(_THINK_CLOSE.finditer(t))
+    if closes:
+        t = t[closes[-1].end():]
+    opened = _THINK_OPEN.search(t)
+    return t[:opened.start()] if opened else t
+
+
 def parse_json(text: str) -> dict:
     """The first complete JSON object in the text (handles models that add reasoning before or after the JSON, or wrap it in a code fence).
     20 Nov 2026: a brace counter that ignored strings rejected a reply whose text held a lone brace ("a { in text") once anything surrounded the
-    JSON; json's own decoder, tried at each opening brace, reads strings correctly."""
+    JSON; json's own decoder, tried at each opening brace, reads strings correctly. A reply that is not plain JSON has its reasoning blocks
+    removed first (strip_think), so JSON written while thinking is never taken for the answer."""
     text = (text or "").strip()
     try:
         value = json.loads(text)
@@ -285,6 +304,7 @@ def parse_json(text: str) -> dict:
             return value
     except ValueError:
         pass
+    text = strip_think(text).strip()
     decoder = json.JSONDecoder()
     at = text.find("{")
     while at != -1:
@@ -319,6 +339,17 @@ def _post_anthropic(payload: dict, key: str) -> dict:
 # Its models are asked before the OpenRouter free ones and cost nothing here (calls and tokens are still counted); only public text is ever sent to it.
 EXTRA_PREFIX = "extra:"
 EXTRA_TIMEOUT = 120
+# Google AI Studio directly (22 Nov 2026, the judge cascade's first choice for slot A): only when the owner puts GEMINI_API_KEY in .env. Google's own
+# OpenAI-compatible endpoint, read at ai.google.dev/gemini-api/docs/openai on 22 Nov 2026 (Bearer key, /chat/completions). Free-tier limits are per Google
+# project, not per key, so a key from the project FreeLLMAPI already uses adds no capacity. Only public text (script, source article) is ever sent.
+GEMINI_PREFIX = "gemini:"
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
+
+
+def gemini_key() -> str:
+    import os
+
+    return os.getenv("GEMINI_API_KEY", "").strip()
 _MODEL_NAME = re.compile(r"^[A-Za-z0-9._:/-]{1,80}$")
 _url_cache: dict = {}
 
@@ -356,12 +387,84 @@ def _extra_models_of(raw) -> list[str]:
 ROUTER_NAMES = frozenset({"auto", "fusion", "router", "default"})
 
 
-def model_identity(mid) -> str:
-    """The model behind an id, for the rule that a writer never judges its own script: no `extra:` prefix, no vendor path, no `:free` tag, lower case.
-    extra:gemini-3.6-flash, google/gemini-3.6-flash and gemini-3.6-flash:free are one model."""
+# Model lines and the maker each belongs to (22 Nov 2026), for two rules: a writer never judges its own script under ANY provider's name for it, and the
+# two judges of a video come from different families. A name carries a family when one of its parts is a line below ("deepseek-r1-distill-qwen-32b" is both
+# DeepSeek and Qwen: it then shares a family with either). A line not listed is its own family.
+FAMILY_OF = {"gemini": "google", "gemma": "google", "nemotron": "nvidia", "nemoguard": "nvidia", "cosmos": "nvidia", "llama": "meta", "muse": "meta",
+             "qwen": "qwen", "qwq": "qwen", "deepseek": "deepseek", "glm": "zhipu", "mistral": "mistral", "ministral": "mistral", "devstral": "mistral",
+             "codestral": "mistral", "magistral": "mistral", "pixtral": "mistral", "voxtral": "mistral", "gpt": "openai", "claude": "anthropic", "kimi": "moonshot",
+             "minimax": "minimax", "grok": "xai", "ernie": "baidu", "ling": "inclusionai", "ring": "inclusionai", "lfm": "liquid", "step": "stepfun",
+             "phi": "microsoft", "granite": "ibm", "command": "cohere", "aya": "cohere", "hermes": "nous", "laguna": "poolside", "dots": "rednote",
+             "hunyuan": "tencent", "mimo": "xiaomi"}
+# The owner's FreeLLMAPI glues the maker onto the name ("nvidianemotron-3-ultra-550b-a55b", "minimaxaiminimax-m3.1-flash", "deepseek-aideepseek-v4.1-flash")
+# or joins it with a hyphen ("google-gemma-3-27b"); OpenRouter puts it in front of a slash. Seen in the proxy's own model list on 22 Nov 2026.
+VENDORS = {"deepseek-ai": "deepseek", "minimaxai": "minimax", "moonshotai": "moonshot", "mistralai": "mistral", "meta-llama": "meta", "stepfun-ai": "stepfun",
+           "inclusionai": "inclusionai", "zhipuai": "zhipu", "z-ai": "zhipu", "nvidia": "nvidia", "google": "google", "openai": "openai", "meta": "meta",
+           "poolside": "poolside", "xiaomi": "xiaomi", "tencent": "tencent", "baidu": "baidu", "microsoft": "microsoft", "ibm": "ibm", "qwen": "qwen",
+           "mistral": "mistral", "anthropic": "anthropic", "x-ai": "xai", "liquid": "liquid", "minimax": "minimax", "deepseek": "deepseek"}
+_LINES = sorted(FAMILY_OF, key=len, reverse=True)
+_QUALIFIER = re.compile(r"-(?:it|instruct|preview|exp|experimental|latest|fp8|fp4|fast|a\d+(?:\.\d+)?b|\d{4})$")
+
+
+def _bare(mid) -> str:
+    """The id without the studio's provider prefixes (extra:, gemini:), the OpenRouter alias mark (~), the vendor path and the :free style tag, lower case."""
     m = str(mid or "").strip().lower()
-    m = m[len(EXTRA_PREFIX):] if m.startswith(EXTRA_PREFIX) else m
-    return m.rsplit("/", 1)[-1].split(":", 1)[0]
+    for p in (EXTRA_PREFIX, GEMINI_PREFIX):
+        if m.startswith(p):
+            m = m[len(p):]
+    return m.lstrip("~").rsplit("/", 1)[-1].split(":", 1)[0]
+
+
+def _unglue(name: str) -> tuple[str, str]:
+    """(maker, name) when a maker's name is glued or hyphenated onto a model line ("nvidianemotron-..." -> ("nvidia", "nemotron-...")); ("", name) otherwise."""
+    for v in sorted(VENDORS, key=len, reverse=True):
+        if not name.startswith(v):
+            continue
+        rest = name[len(v):]
+        rest = rest[1:] if rest.startswith("-") else rest
+        if rest and any(rest.startswith(k) for k in _LINES):
+            return v, rest
+    return "", name
+
+
+def model_identity(mid) -> str:
+    """The model behind an id, for the rule that a writer never judges its own script: no `extra:`/`gemini:` prefix, no vendor path, no `:free` tag, no
+    maker glued on by the owner's proxy, no packaging words (-it, -instruct, -preview, -fp8, the MoE "-a55b", a "-2506" date), lower case.
+    extra:gemini-3.6-flash, google/gemini-3.6-flash and gemini-3.6-flash:free are one model; so are nvidia/nemotron-3-ultra-550b-a55b:free,
+    extra:nvidianemotron-3-ultra-550b-a55b and extra:nemotron-3-ultra-550b (22 Nov 2026: compared as typed, they looked like three models).
+    Calling two names one model when they are not only removes a judge; the opposite would let a writer judge itself, so the rule leans this way."""
+    m = _unglue(_bare(mid))[1]
+    m = re.sub(r"^(" + "|".join(map(re.escape, _LINES)) + r")(?=\d)", r"\1-", m)  # qwen3.8-27b and qwen-3.8-27b
+    while _QUALIFIER.search(m):
+        m = _QUALIFIER.sub("", m)
+    return m
+
+
+def model_family(mid) -> frozenset:
+    """The makers whose model line this id belongs to (see FAMILY_OF): {"google"} for any Gemini or Gemma, {"deepseek", "qwen"} for a DeepSeek distil of Qwen.
+    A line the table does not know is its own family (its first word), so two unknown models of different names count as different families."""
+    raw = str(mid or "").strip().lower()
+    for p in (EXTRA_PREFIX, GEMINI_PREFIX):
+        if raw.startswith(p):
+            raw = raw[len(p):]
+    out = set()
+    if "/" in raw:
+        out.add(VENDORS.get(raw.lstrip("~").rsplit("/", 1)[0].rsplit("/", 1)[-1], ""))
+    vendor, name = _unglue(_bare(mid))
+    out.add(VENDORS.get(vendor, ""))
+    for part in re.split(r"[^a-z0-9]+", name):
+        word = re.match(r"[a-z]+", part)
+        if word and word.group() in FAMILY_OF:
+            out.add(FAMILY_OF[word.group()])
+    out.discard("")
+    if not out:
+        first = re.match(r"[a-z]+", name)
+        out.add(first.group() if first else name)
+    return frozenset(out)
+
+
+def same_family(a, b) -> bool:
+    return bool(model_family(a) & model_family(b))
 
 
 def judge_names_problem(script, review) -> str:
@@ -503,7 +606,7 @@ def scrub(text) -> str:
         s = json.loads(SETTINGS_FILE.read_text()) if SETTINGS_FILE.exists() else {}
     except (OSError, ValueError):
         s = {}
-    for secret in (s.get("extra_llm_key"), s.get("openrouter_key")):
+    for secret in (s.get("extra_llm_key"), s.get("openrouter_key"), gemini_key()):
         if secret:
             t = t.replace(secret, "***")
     return t
@@ -534,10 +637,24 @@ def _post_extra(payload: dict) -> dict:
     cfg = extra_cfg()
     if not cfg:
         raise RuntimeError("the extra model provider is off, has no key, or its address is refused")
-    body = {k: v for k, v in payload.items() if k != "usage"}  # `usage` is an OpenRouter field
+    timeout = min(EXTRA_TIMEOUT, float(payload.get("_extra_timeout_s") or EXTRA_TIMEOUT))  # a judge with a deadline asks for less (judges.py)
+    body = {k: v for k, v in payload.items() if k != "usage" and not k.startswith("_")}  # `usage` is an OpenRouter field; _names are the studio's own
     body["model"] = payload["model"][len(EXTRA_PREFIX):]
-    r = _bounded_post(cfg["url"] + "/chat/completions", json=body, timeout=EXTRA_TIMEOUT, allow_redirects=False,
+    r = _bounded_post(cfg["url"] + "/chat/completions", json=body, timeout=timeout, allow_redirects=False,
                       headers={"Authorization": f"Bearer {cfg['key']}", "Content-Type": "application/json"})
+    r.raise_for_status()
+    return r.json()
+
+
+def _post_gemini(payload: dict, timeout: float) -> dict:
+    """Google AI Studio's OpenAI-compatible chat endpoint with GEMINI_API_KEY. No OpenRouter fields (usage, reasoning), no redirects."""
+    key = gemini_key()
+    if not key:
+        raise RuntimeError("GEMINI_API_KEY is not set in .env")
+    body = {k: v for k, v in payload.items() if k not in ("usage", "reasoning") and not k.startswith("_")}
+    body["model"] = payload["model"][len(GEMINI_PREFIX):]
+    r = _bounded_post(GEMINI_URL + "/chat/completions", json=body, timeout=timeout, allow_redirects=False,
+                      headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
     r.raise_for_status()
     return r.json()
 
@@ -551,7 +668,11 @@ def extra_ping(model: str) -> str:
 def _post(payload: dict, key: str) -> dict:
     timeout = payload.pop("_timeout_s", None) or 240  # the free path puts a free model's limit here (`free_timeout_s`); it is never sent to the provider
     if payload["model"].startswith(EXTRA_PREFIX):
+        if timeout < EXTRA_TIMEOUT:
+            payload["_extra_timeout_s"] = timeout
         return _post_extra(payload)
+    if payload["model"].startswith(GEMINI_PREFIX):
+        return _post_gemini(payload, timeout)
     if is_claude(payload["model"]):
         return _post_anthropic(payload, key)
     r = _bounded_post("https://openrouter.ai/api/v1/chat/completions", json=payload, timeout=timeout,
@@ -645,29 +766,67 @@ class _NoAllowance(Exception):
     """Today's free requests (or the cheap share of them) are used up: no round of waiting will help."""
 
 
-def _ask_free(mid: str, prompt: str, role: str, cfg: dict, key: str, now: dt.datetime) -> dict | None:
+def _fail_kind(e, code, said: str) -> str:
+    """What a failed request means for the judge cascade: busy (429), quota (429 saying the day's or the account's free requests are used up),
+    down (502/503/504), timeout, unreachable (no connection at all), refused (other 4xx), error."""
+    if code == 429:
+        return "quota" if re.search(r"per.?day|daily|quota|exhaust|free-models-per-day|credits", said) else "busy"
+    if code in (502, 503, 504):
+        return "down"
+    if isinstance(e, requests.ConnectionError) and not isinstance(e, requests.Timeout):
+        return "unreachable"
+    if isinstance(e, requests.Timeout):
+        return "timeout"
+    return "refused" if code and 400 <= code < 500 else "error"
+
+
+def _reset_after(e) -> int | None:
+    """Seconds until the provider says its limit resets (OpenRouter's X-RateLimit-Reset, epoch milliseconds), capped at a day; None when it does not say."""
+    try:
+        ms = int(float(((getattr(getattr(e, "response", None), "headers", None) or {}).get("X-RateLimit-Reset"))))
+    except (TypeError, ValueError):
+        return None
+    left = ms / 1000 - time.time()
+    return int(min(left, 86400)) if left > 0 else None
+
+
+def _ask_free(mid: str, prompt: str, role: str, cfg: dict, key: str, now: dt.datetime, *, deadline: float | None = None, once: bool = False,
+              why: dict | None = None, cap: int | None = None, think: int | None = None) -> dict | None:
     """One free model asked once (JSON mode, then plain when the provider refuses JSON). Counts the request and records the outcome;
     None means it failed, so the caller moves on. Raises `_NoAllowance` before asking when the day's requests are used up.
     A reply the output limit cut off (`finish_reason: length`) is asked once more with twice the room, because a reasoning model can spend the
-    whole cap on thinking and never reach its JSON (three of six failing review models on 17 Nov 2026)."""
+    whole cap on thinking and never reach its JSON (three of six failing review models on 17 Nov 2026).
+    The judge cascade (judges.py, 22 Nov 2026) may add: `deadline` (time.monotonic) bounds the whole call, re-asks included; `once` sends no second
+    request after a cut-off reply; `why` (a dict) is filled with the failure kind (see _fail_kind), the status and any reset time; `cap` the output
+    tokens; `think` the thinking budget of an OpenRouter model. A request ended by a short deadline is not held against the model (reason "deadline")."""
     is_extra = mid.startswith(EXTRA_PREFIX)
-    if not is_extra and freemodels.remaining(now, key, cfg["free_daily_limit"]) <= 0:
+    via_or = not (is_extra or mid.startswith(GEMINI_PREFIX))  # the owner's provider and Google directly need none of OpenRouter's allowance
+    if via_or and freemodels.remaining(now, key, cfg["free_daily_limit"]) <= 0:
         _note(now, f"{role}: today's free request allowance is used up")
+        if why is not None:
+            why.update(kind="quota", status=None)
         raise _NoAllowance
-    if not is_extra and role == "cheap" and freemodels.requests_today(now, "cheap") >= int(cfg["free_daily_limit"] * CHEAP_SHARE):
+    if via_or and role == "cheap" and freemodels.requests_today(now, "cheap") >= int(cfg["free_daily_limit"] * CHEAP_SHARE):
         raise _NoAllowance  # keep the rest of the free requests for scripts and fact-checks
-    json_mode, cap, retried = True, int(cfg["max_output_tokens"]), False
-    reasoning = None if is_extra else {"max_tokens": REASONING_BUDGET.get(role, 1024)}  # OpenRouter's free reasoning models: a thinking budget, so the answer gets written
+    json_mode, cap, retried = True, int(cap or cfg["max_output_tokens"]), False
+    reasoning = {"max_tokens": think if think is not None else REASONING_BUDGET.get(role, 1024)} if via_or else None  # OpenRouter's free reasoning models: a thinking budget, so the answer gets written
+    limit = float(cfg.get("free_timeout_s") or FREE_TIMEOUT)
     while True:
-        if not is_extra:
+        if deadline is not None and deadline - time.monotonic() < 2:
+            if why is not None:
+                why.update(kind="timeout", status=None)
+            _note(now, f"{role}: free model {mid}: the judge's time ran out before it was asked again")
+            return None
+        if via_or:
             freemodels.count_request(now, role)  # failed requests count against the limit too
-        else:
+        elif is_extra:
             _pace_extra(mid)
         t0 = time.monotonic()
         payload = _payload(mid, prompt, cap, json_mode, role)
         if reasoning is not None:
             payload["reasoning"] = reasoning
-        payload["_timeout_s"] = cfg.get("free_timeout_s") or FREE_TIMEOUT
+        sent_limit = min(limit, deadline - time.monotonic()) if deadline is not None else limit
+        payload["_timeout_s"] = sent_limit
         try:
             body = _post(payload, key)
         except Exception as e:
@@ -687,8 +846,11 @@ def _ask_free(mid: str, prompt: str, role: str, cfg: dict, key: str, now: dt.dat
             except (TypeError, ValueError):
                 ra = None
             unreachable = isinstance(e, requests.ConnectionError)  # refused, no route, no DNS, connect timeout: nothing answered at all (a ReadTimeout is the model being slow)
-            freemodels.record(mid, False, now, status=code, retry_after=ra, role=role, reason="unreachable" if unreachable else None,
+            short = deadline is not None and isinstance(e, requests.Timeout) and not unreachable and sent_limit < limit - 1  # the cascade's own short limit ended it
+            freemodels.record(mid, False, now, status=code, retry_after=ra, role=role, reason="unreachable" if unreachable else "deadline" if short else None,
                               seconds=(time.monotonic() - t0) if isinstance(e, requests.Timeout) and not unreachable else None)
+            if why is not None:
+                why.update(kind=_fail_kind(e, code, said), status=code, reset_s=_reset_after(e) if code == 429 else None)
             _note(now, f"{role}: free model {mid}: {type(e).__name__}{f' {code}' if code else ''}")
             return None
         took = time.monotonic() - t0
@@ -702,13 +864,15 @@ def _ask_free(mid: str, prompt: str, role: str, cfg: dict, key: str, now: dt.dat
             except (KeyError, IndexError, TypeError, AttributeError):
                 fin = None
             freemodels.record(mid, False, now, role=role, seconds=took, reason="json", finish=fin)
-            if fin == "length" and not retried and cap < FREE_MAX_TOKENS:
+            if fin == "length" and not retried and not once and cap < FREE_MAX_TOKENS:
                 retried = True
                 cap = min(FREE_MAX_TOKENS, cap * 2)
-                if not is_extra:  # the thinking ran on: a judge keeps a small budget, a writer or a small job answers without thinking
+                if via_or:  # the thinking ran on: a judge keeps a small budget, a writer or a small job answers without thinking
                     reasoning = {"max_tokens": 1024} if role == "review" else {"enabled": False}
-                _note(now, f"{role}: free model {mid} was cut off by the output limit; asked again with {cap} tokens" + ("" if is_extra else f" and thinking {'capped at 1024' if role == 'review' else 'off'}"))
+                _note(now, f"{role}: free model {mid} was cut off by the output limit; asked again with {cap} tokens" + (f" and thinking {'capped at 1024' if role == 'review' else 'off'}" if via_or else ""))
                 continue
+            if why is not None:
+                why.update(kind="json", status=None, finish=fin)
             _note(now, f"{role}: free model {mid} did not return JSON" + (" (cut off by the output limit)" if fin == "length" else f" (finish: {fin})" if fin else ""))
             return None
         freemodels.record(mid, True, now, role=role, seconds=took)
@@ -965,7 +1129,16 @@ def chat(prompt: str, role: str = "cheap", fallback=None, now: dt.datetime | Non
                 return out
             else:
                 _note(now, f"{role}: invalid JSON from {model}, used the local model")
-    if cfg["free"] and api_key() and (role != "review" or (strict and cfg.get("free_review"))):  # free models judge a video only when the owner switched free_review on (13 Nov 2026) and the caller is a judge prompt: then two of them must answer
+    cascade = None
+    if role == "review" and strict and cfg["free"] and cfg.get("free_review"):
+        import judges  # the judge cascade (22 Nov 2026): only for the AI review of a video, which reviewer.llm_review marks with judges.for_video
+
+        cascade = judges.current() if judges.active(cfg) else None
+    if cascade is not None:
+        got = judges.review(plain, cascade, cfg, api_key(), now, avoid=avoid)  # two judges of different families, never a writer; None when two did not answer
+        if got is not None:
+            return got
+    elif cfg["free"] and api_key() and (role != "review" or (strict and cfg.get("free_review"))):  # free models judge a video only when the owner switched free_review on (13 Nov 2026) and the caller is a judge prompt: then two of them must answer
         key = api_key()
         more = {"avoid": {avoid} if isinstance(avoid, str) else set(avoid)} if avoid else {}  # passed only when there is something to avoid
         got = _free_review(plain, cfg, key, now, **more) if role == "review" else _free_chat(plain, role, cfg, key, now, **more)

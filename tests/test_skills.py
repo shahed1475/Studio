@@ -10,11 +10,18 @@ SKILLS = sorted((ROOT / ".claude" / "skills").glob("*/SKILL.md"))
 def frontmatter(path: Path) -> dict:
     m = re.match(r"^---\n(.*?)\n---\n", path.read_text(), re.S)
     assert m, f"{path} has no frontmatter"
-    out = {}
+    out, block = {}, None
     for line in m.group(1).splitlines():
+        if block and line.startswith((" ", "\t")):  # a YAML block value ("description: |" then indented lines): valid YAML, used by vendored skills (22 Nov 2026)
+            out[block] = (out[block] + " " + line.strip()).strip()
+            continue
+        block = None
         k, _, v = line.partition(":")
         if _ and not line.startswith((" ", "\t", "-")):
-            out[k.strip()] = v.strip().strip('"')
+            v = v.strip()
+            if v in ("|", ">", "|-", ">-"):
+                block, v = k.strip(), ""
+            out[k.strip()] = v.strip('"')
     return out
 
 

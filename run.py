@@ -1471,6 +1471,11 @@ def main() -> None:
         import newswatch
 
         print(newswatch.make_next_news_video(" ".join(a[1:]) or None))
+    elif a[0] == "judges":  # who would judge this video's AI review now, and why each model is or is not eligible; asks no model (judges.py)
+        import judges
+
+        meta = json.loads((config.OUT / a[1] / "meta.json").read_text()) if len(a) > 1 else {}
+        print(json.dumps(judges.plan(meta), indent=1, default=str))
     elif a[0] == "review":
         import reviewer
 

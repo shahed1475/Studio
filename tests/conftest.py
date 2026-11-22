@@ -26,6 +26,20 @@ def _session_safety_net(tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def _judge_cascade_off_unless_a_test_turns_it_on(tmp_path_factory, monkeypatch):
+    """The judge cascade (judges.py) asks real providers. Every test sees it switched off (a copy of config/judges.json with enabled false), so a test that
+    fakes only part of llm can never fall through to a real request; tests of the cascade write their own config."""
+    import judges
+
+    d = tmp_path_factory.getbasetemp() / "judge-cascade-off"  # a folder of its own: tests that list their tmp_path or its parent must not see the file
+    d.mkdir(exist_ok=True)
+    f = d / "judges.json"
+    if not f.exists():
+        f.write_text('{"enabled": false}')
+    monkeypatch.setattr(judges, "CONFIG_FILE", f)
+
+
+@pytest.fixture(autouse=True)
 def _isolate_autopilot_log(tmp_path, monkeypatch):
     import autopilot
 
