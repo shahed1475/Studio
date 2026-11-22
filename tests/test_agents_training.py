@@ -1380,3 +1380,28 @@ def test_the_comment_insights_case_passes_and_fails_when_its_rules_are_broken(mo
     with monkeypatch.context() as m:
         m.setattr(commentinsights, "_clean", lambda text: str(text).strip() or None)  # mutation: links and instructions kept
         assert not case()[0]
+
+
+def test_the_quiet_notifications_case_passes_and_fails_when_its_rules_are_broken(monkeypatch):
+    """Case and mutation checks for case_an_unchanged_routine_report_is_logged_once_and_the_bell_counts_only_problems_alerts_and_decisions (22 Nov 2026)."""
+    import notifyview
+
+    case = agenteval.case_an_unchanged_routine_report_is_logged_once_and_the_bell_counts_only_problems_alerts_and_decisions
+    ok, detail = case()
+    assert ok, detail
+    with monkeypatch.context() as m:
+        m.setattr(agentlog, "_repeat_of", lambda e, now: None)  # mutation: every repeat is logged again
+        assert not case()[0]
+    with monkeypatch.context() as m:
+        m.setattr(agentlog, "ROUTINE", ("info", "found", "applied"))  # mutation: a repeated action is swallowed as if it were routine
+        assert not case()[0]
+    with monkeypatch.context() as m:
+        m.setattr(notifyview, "needs_attention", lambda i: True)  # mutation: the badge counts every unread report again
+        assert not case()[0]
+    with monkeypatch.context() as m:
+        m.setattr(notifyview, "needs_attention", lambda i: i.get("level") in ("bad", "warn"))  # mutation: an important event that is not an error is not counted
+        assert not case()[0]
+    with monkeypatch.context() as m:
+        real = agentlog.record
+        m.setattr(agentlog, "record", lambda *a, **k: {x: y for x, y in real(*a, **k).items() if x != "alert"})  # mutation: notify leaves no mark
+        assert not case()[0]

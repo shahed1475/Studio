@@ -477,7 +477,8 @@ async function pollNotes(){
   let r;try{r=await fetch("/api/notifications")}catch(e){return}
   if(r.status===401){location.href="/login";return}
   let d;try{d=await r.json()}catch(e){return}
-  const fresh=ntSeen?d.items.filter(i=>!i.pinned&&i.unread&&!ntSeen.has(i.id)):[];
+  // only a warning or an alert pops up; a routine report waits in the list with its unread mark (22 Nov 2026: every report was a toast)
+  const fresh=ntSeen?d.items.filter(i=>!i.pinned&&i.unread&&!ntSeen.has(i.id)&&(i.level==="bad"||i.level==="warn"||i.alert)):[];
   ntSeen=new Set(d.items.map(i=>i.id));NT=d;paintBell();
   if(ntOpen&&notesSig()!==ntSig)paintNotes();  // only when something changed: a rebuild replays every row's entrance and loses the reader's place
   if(!ntOpen)fresh.slice(0,3).forEach(toastNote);  // an open panel lists them itself, and a toast over its chips takes the click meant for a chip

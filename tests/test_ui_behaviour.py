@@ -169,9 +169,31 @@ def test_a_new_event_still_pops_a_toast_while_the_panel_is_closed(app):
     b, url = app
     b.open(url + "/#home")
     b.until("typeof ntSeen!=='undefined' && ntSeen !== null")  # the first poll has run: later items count as new
-    agentlog.event("applied", "Arrived while closed", "this one is a toast")
+    # an error (22 Nov 2026: was a routine "applied" report, which no longer pops up; see the next test)
+    agentlog.event("error", "Arrived while closed", "this one is a toast")
     b.js("pollNotes()")
     b.until("document.querySelectorAll('#toasts .nt').length === 1")
+
+
+def test_a_routine_report_waits_in_the_list_while_a_warning_and_an_alert_pop_up(app, monkeypatch):
+    """22 Nov 2026: every new report was a toast and counted in the bell (it showed 24 to 25). Now only a warning or an event the code marked important does."""
+    real_run = agentlog.subprocess.run
+    monkeypatch.setattr(agentlog.subprocess, "run", lambda cmd, *a, **k: None if cmd and cmd[0] == "notify-send" else real_run(cmd, *a, **k))  # no desktop notice
+    b, url = app
+    b.open(url + "/#home")
+    b.until("typeof ntSeen!=='undefined' && ntSeen !== null")
+    badge0 = b.js("NT.counts.badge")
+    agentlog.event("applied", "A routine report", "listed, not a toast")
+    agentlog.event("info", "Daily research finished", "listed, not a toast")
+    agentlog.event("error", "A real problem", "a toast")
+    agentlog.event("found", "Possible algorithm change", "a toast too", notify=True)
+    b.js("pollNotes()")
+    b.until("document.querySelectorAll('#toasts .nt').length === 2")
+    toasts = b.js("[...document.querySelectorAll('#toasts .nt')].map(t=>t.textContent).join('|')")
+    assert "A real problem" in toasts and "Possible algorithm change" in toasts and "routine" not in toasts and "Daily research" not in toasts
+    assert b.js("NT.counts.badge") == badge0 + 2
+    open_panel(b)
+    b.until("[...document.querySelectorAll('#nlist .nrow.unread')].some(r=>r.textContent.includes('A routine report'))")
 
 
 # ---- the Growth page on the data the studio really has (29 Oct 2026) ----

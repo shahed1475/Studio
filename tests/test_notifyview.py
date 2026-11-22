@@ -27,7 +27,9 @@ def test_the_badge_counts_what_needs_a_person_not_every_risk_at_watch():
     n = build(risks=RISKS, needs_you=2, growth={"rules": {"pending": 1}, "edits_pending": 0, "hold": None, "diagnoses": [1, 2], "drift": {"events": []}})
     c = n["counts"]
     assert c["unread"] == 2 and c["waiting"] == 3  # the act risk, the videos to decide on, the rule change; not the watch risk, not the diagnoses
-    assert c["badge"] == 5 and c["warnings"] >= 4
+    # 22 Nov 2026: was 5. The unread routine report ("Repaired a title") is listed with its unread mark but no longer counted: the badge showed 24 to 25,
+    # almost all routine reports. The unread error and the three decisions are.
+    assert c["attention"] == 1 and c["badge"] == 4 and c["warnings"] >= 4
     titles = [i["title"] for i in n["items"]]
     assert "Agents" in titles and "Backups" not in titles  # watch is listed, ok is not
     assert n["items"][0]["pinned"] and n["items"][0]["level"] == "bad"  # the most serious standing item first

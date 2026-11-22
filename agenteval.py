@@ -2054,7 +2054,43 @@ def case_a_judges_reasoning_is_never_its_verdict_and_excerpts_keep_every_checkab
     return ok, f"reasoning_skipped={reasoning_skipped} malformed_refused={malformed_refused} excerpts_ok={excerpts_ok} lossy_reported={lossy_reported}"
 
 
-CASES = [case_a_cut_at_the_very_end_never_makes_the_video_twice_and_a_cut_short_resumes_in_its_folder, case_a_render_cut_by_a_power_cut_is_found_kept_and_never_trusted_half_written, case_busy_judges_never_discard_a_draft_and_never_pass_it_unchecked, case_the_reviewer_flags_a_line_that_calls_proven_what_its_source_only_suggests, case_blender_scenes_are_true_to_the_line_and_never_stop_a_video, case_a_judge_is_never_the_writer_even_through_the_owners_provider, case_an_a2a_task_is_answered_once_only_by_its_target_and_never_off_the_hand_over_map,case_free_mode_never_sends_a_request_to_a_paid_model_through_the_video_checks, case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic, case_the_guardian_closes_its_draft_tasks_only_when_the_video_has_left_output, case_search_demand_is_no_signal_on_failure_spends_youtube_quota_only_within_its_budget_and_cleans_outside_text, case_comment_insights_keep_no_names_nothing_over_30_days_and_only_cleaned_questions_and_never_write,
+def case_an_unchanged_routine_report_is_logged_once_and_the_bell_counts_only_problems_alerts_and_decisions():
+    """22 Nov 2026: the bell showed 24 to 25 because every routine report counted and popped up, and the doctor logged the same "0 agent(s) unhealthy"
+    25 times in a week. An exact repeat of a routine report within a day is not logged again; an action is always logged; an important (notify) event
+    carries an alert; the badge counts unread problems and alerts plus decisions, and a routine report is still listed as unread. Uses no error and no
+    notify event through agentlog.event: those reach the owner's Telegram."""
+    import notifyview
+
+    now = dt.datetime(2026, 11, 22, 6, 0, tzinfo=dt.timezone.utc)
+    title = "Doctor: 0 agent(s) unhealthy, 1 setup item(s) missing"
+    old = agentlog.FILE
+    with tempfile.TemporaryDirectory() as d:
+        agentlog.FILE = Path(d) / "events.jsonl"
+        try:
+            for h in (0, 6):
+                agentlog.event("info", title, "nothing changed", now=now + dt.timedelta(hours=h))
+            agentlog.event("info", title, "1 agent stale", now=now + dt.timedelta(hours=7))
+            for _ in range(2):
+                agentlog.event("applied", "Repaired a title", "x", now=now + dt.timedelta(hours=8))
+            feed = [(e["title"], e["detail"]) for e in agentlog.recent(50)]
+        finally:
+            agentlog.FILE = old
+    repeat_skipped = feed.count((title, "nothing changed")) == 1
+    change_kept = (title, "1 agent stale") in feed
+    actions_kept = feed.count(("Repaired a title", "x")) == 2
+    alert = agentlog.record("found", "Possible algorithm change", "x", notify=True, now=now)
+    flagged = alert.get("alert") is True and "alert" not in agentlog.record("found", "Checked", now=now)
+    events = [{"at": "2026-11-22T09:00:00Z", "kind": "info", "title": "Daily research finished", "read": False},
+              {"at": "2026-11-22T08:00:00Z", "kind": "error", "title": "A render failed", "read": False}, alert]
+    n = notifyview.build(now, events=events, needs_you=1)
+    badge_ok = n["counts"]["badge"] == 3 and n["counts"]["unread"] == 3  # the error, the alert and the video to decide on; not the routine report
+    listed = any(i["title"] == "Daily research finished" and i["unread"] for i in n["items"])
+    ok = repeat_skipped and change_kept and actions_kept and flagged and badge_ok and listed
+    return ok, (f"repeat_skipped={repeat_skipped} change_kept={change_kept} actions_kept={actions_kept} flagged={flagged} badge={n['counts']['badge']} "
+                f"listed={listed}")
+
+
+CASES = [case_an_unchanged_routine_report_is_logged_once_and_the_bell_counts_only_problems_alerts_and_decisions, case_a_cut_at_the_very_end_never_makes_the_video_twice_and_a_cut_short_resumes_in_its_folder, case_a_render_cut_by_a_power_cut_is_found_kept_and_never_trusted_half_written, case_busy_judges_never_discard_a_draft_and_never_pass_it_unchecked, case_the_reviewer_flags_a_line_that_calls_proven_what_its_source_only_suggests, case_blender_scenes_are_true_to_the_line_and_never_stop_a_video, case_a_judge_is_never_the_writer_even_through_the_owners_provider, case_an_a2a_task_is_answered_once_only_by_its_target_and_never_off_the_hand_over_map,case_free_mode_never_sends_a_request_to_a_paid_model_through_the_video_checks, case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic, case_the_guardian_closes_its_draft_tasks_only_when_the_video_has_left_output, case_search_demand_is_no_signal_on_failure_spends_youtube_quota_only_within_its_budget_and_cleans_outside_text, case_comment_insights_keep_no_names_nothing_over_30_days_and_only_cleaned_questions_and_never_write,
          case_ladder_ends_with_owner_not_a_crash, case_ladder_respects_budget_and_whitelist_and_lessons, case_outside_text_is_cleaned,
          case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules, case_registry_is_consistent,
          case_playbook_scope_injects_role_and_limits_only_when_acting, case_doctor_finds_stale_and_failing_agents_and_fixes_only_safely,

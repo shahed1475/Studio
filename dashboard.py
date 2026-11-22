@@ -233,7 +233,7 @@ def state() -> dict:
         "youtube": {"secret": SECRET.exists(), "token": TOKEN.exists(), "connecting": YT_STATE["connecting"], "error": YT_STATE["error"], "web": __import__("ytweb").available()},
         "jobs": state_jobs(),
         "autopilot": {"enabled": autopilot_cfg().get("enabled", False), "needs_you": len(autopilot_view()["needs_you"]), "next": next_slot_view(), "busy": __import__("autopilot").is_running()},
-        "agent": {"unread": __import__("agentlog").unread()},
+        "agent": {"unread": __import__("agentlog").unread(attention_only=True)},  # the menu's Growth count: errors and alerts only, like the bell
         "tenant": __import__("tenantmode").is_tenant(), "niche_confirmed": __import__("niche").current()["brief"] is not None and bool((__import__("niche").current()["brief"] or {}).get("confirmed")),
         "auth": {"on": webauth.enabled(), "email": webauth.owner_email()},
         "settings": {"pexels_key": "saved" if load_settings().get("pexels_key") else "", "pixabay_key": "saved" if pixabay_key() else "", "smithsonian_key": "saved" if smithsonian_key() else "", "youtube_key": "saved" if __import__("commentinsights").api_key() else "", "kaggle_key": None if __import__("tenantmode").is_tenant() else ("saved" if __import__("kagglekey").saved(load_settings()) else ""), "extra_llm": extra_llm_status(), "alerts": None if __import__("tenantmode").is_tenant() else alerts.status()},

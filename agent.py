@@ -175,7 +175,7 @@ def run(now: dt.datetime | None = None, yt=None, chat=None, force: bool = False)
             errors.append(f"{step}: {type(e).__name__}: {e}")
             agentlog.event("error", f"Problem while I was working: {step}", f"{type(e).__name__}: {e}", notify=True, now=now)
 
-        agentlog.event("info", "Daily research started", f"Mode: {cfg['mode']}", now=now)
+        # no "Daily research started" event (22 Nov 2026): "finished" follows minutes later, and the doctor reports a research job that fails or stops
         if yt is None:
             try:
                 import trendwatch

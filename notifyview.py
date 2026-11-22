@@ -8,8 +8,10 @@ Two kinds of item:
   Events are unread until the owner marks them read.
 - a STANDING item is something that is true now and waits for the owner (a video to decide on, rule changes to approve, a policy hold, a risk to watch). It has
   no read state: it goes away when the thing is dealt with.
-The badge counts what needs a person: unread events plus standing items that wait for a decision. Risks at "watch" are listed but not counted (six of them can
-stay at watch for weeks), risks at "act" are counted."""
+The badge counts what needs a person: unread warnings and alerts (an event the code marked important, agentlog.record) plus standing items that wait for a
+decision. Risks at "watch" are listed but not counted (six of them can stay at watch for weeks), risks at "act" are counted. A routine report (what an agent
+did or checked) is listed with its unread mark but neither counted nor shown as a toast, and an unchanged repeat of one within a day is not even logged
+(agentlog._repeat_of). 22 Nov 2026: the badge showed 24 to 25, almost all routine reports."""
 import datetime as dt
 import hashlib
 
@@ -29,7 +31,12 @@ def event_item(e: dict) -> dict:
     source, level = {"error": ("Warnings", "bad"), "applied": ("Activity", "ok"), "found": ("Growth", "info"), "strategy": ("Growth", "info")}.get(kind, ("Activity", "info"))
     tab = {"Growth": "growth", "Warnings": "activity"}.get(source, "activity")
     return {"id": f"e:{e.get('at', '')}:{hashlib.md5(str(e.get('title', '')).encode()).hexdigest()[:8]}", "at": e.get("at", ""), "level": level, "source": source, "title": str(e.get("title", ""))[:160],
-            "detail": str(e.get("detail", ""))[:240], "tab": tab, "unread": not e.get("read", True), "pinned": False}
+            "detail": str(e.get("detail", ""))[:240], "tab": tab, "unread": not e.get("read", True), "pinned": False, "alert": bool(e.get("alert"))}
+
+
+def needs_attention(i: dict) -> bool:
+    """An event the owner should see now: a warning or an alert. Everything else is a routine report: listed, not counted, no toast."""
+    return i.get("level") in ("bad", "warn") or bool(i.get("alert"))
 
 
 def standing(now: dt.datetime, risks: list | None, needs_you: int, growth: dict | None, failed_jobs: list | None) -> list[dict]:
@@ -67,7 +74,8 @@ def standing(now: dt.datetime, risks: list | None, needs_you: int, growth: dict 
 
 def build(now: dt.datetime | None = None, risks: list | None = None, needs_you: int = 0, growth: dict | None = None, failed_jobs: list | None = None,
           events: list | None = None) -> dict:
-    """{"at", "items": [pinned first, then events newest first], "counts": {"badge", "unread", "waiting", "warnings"}, "sources": {source: n}}. Every source may be missing."""
+    """{"at", "items": [pinned first, then events newest first], "counts": {"badge", "unread", "attention", "waiting", "warnings"}, "sources": {source: n}}.
+    Every source may be missing."""
     now = now or dt.datetime.now(dt.timezone.utc)
     if events is None:
         import agentlog
@@ -78,8 +86,10 @@ def build(now: dt.datetime | None = None, risks: list | None = None, needs_you: 
     order = {"bad": 0, "warn": 1, "info": 2, "ok": 3}
     pinned.sort(key=lambda i: order.get(i["level"], 2))
     unread = sum(1 for i in recent if i["unread"])
+    attention = sum(1 for i in recent if i["unread"] and needs_attention(i))
     waiting = sum(1 for i in pinned if i.get("counted"))
     items = pinned + recent
     sources = {s: sum(1 for i in items if i["source"] == s) for s in SOURCES}
     return {"at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "items": items, "sources": sources,
-            "counts": {"badge": unread + waiting, "unread": unread, "waiting": waiting, "warnings": sum(1 for i in items if i["level"] in ("bad", "warn"))}}
+            "counts": {"badge": attention + waiting, "unread": unread, "attention": attention, "waiting": waiting,
+                       "warnings": sum(1 for i in items if i["level"] in ("bad", "warn"))}}
