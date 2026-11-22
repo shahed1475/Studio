@@ -79,18 +79,25 @@ def judge_models() -> list[str]:
 
 
 def _ask(key: str, listed: list[str], secs: float, chat=None) -> dict:
-    """The model list answered; now one tiny question through the judges' own path (Google may list models for a key that its chat endpoint then refuses)."""
+    """The model list answered; now one tiny question through the judges' own path (Google may list models for a key that its chat endpoint then refuses).
+    Each Gemini judge model is tried in turn (listed ones first) until one answers: 22 Nov 2026, gemini-2.5-flash answered 404 for the owner's key while
+    gemini-3.5-flash-lite answered."""
     want = judge_models()
-    model = next((m for m in want if m in listed), None) or (want[0] if want else None)
-    if not model:
+    order = [m for m in want if m in listed] + [m for m in want if m not in listed]
+    if not order:
         return {"ok": True, "seconds": secs, "detail": f"Google accepted the key ({secs} s); no Gemini judge model is configured to try a question."}
-    t0 = time.monotonic()
-    try:
-        answer = (chat or llm.gemini_ping)(key, model)
-    except Exception as e:  # the message may hold the key: scrubbed, and only its kind and status are kept
-        code = getattr(getattr(e, "response", None), "status_code", None)
-        why = f"HTTP {code}" if code else type(e).__name__
-        hint = " Google lists models for this key but refused a question with it: AQ. keys are reported to fail on Google's OpenAI-style endpoint. Make a classic AIza key in Google Cloud Console > APIs & Services > Credentials (Generative Language API) and save that instead." if code in (401, 403) else ""
-        return {"ok": False, "seconds": secs, "detail": scrub(f"Google lists models for this key, but a test question to {model} failed ({why}).{hint}", key)}
-    took = round(time.monotonic() - t0, 1)
-    return {"ok": True, "seconds": secs, "detail": f"Google accepted the key: the judge model {model} answered a test question in {took} s ({'pong' if 'pong' in answer.lower() else 'an answer came back'}). The fact-checker can use it."}
+    failed = []
+    for model in order[:3]:
+        t0 = time.monotonic()
+        try:
+            answer = (chat or llm.gemini_ping)(key, model)
+        except Exception as e:  # the message may hold the key: only its kind and status are kept
+            code = getattr(getattr(e, "response", None), "status_code", None)
+            failed.append((model, code, type(e).__name__))
+            continue
+        took = round(time.monotonic() - t0, 1)
+        skipped = f" ({', '.join(f'{m}: HTTP {c}' if c else f'{m}: {n}' for m, c, n in failed)} did not answer)" if failed else ""
+        return {"ok": True, "seconds": secs, "detail": f"Google accepted the key: the judge model {model} answered a test question in {took} s{skipped}. The fact-checker can use it."}
+    codes = {c for _, c, _ in failed}
+    hint = " Google lists models for this key but refused every question with it: make a classic AIza key in Google Cloud Console > APIs & Services > Credentials (Generative Language API) and save that instead." if codes & {400, 401, 403} else ""
+    return {"ok": False, "seconds": secs, "detail": scrub("Google lists models for this key, but no Gemini judge model answered a test question (" + ", ".join(f"{m}: HTTP {c}" if c else f"{m}: {n}" for m, c, n in failed) + ")." + hint, key)}

@@ -152,3 +152,65 @@ def test_the_judges_call_tries_googles_own_header_when_bearer_is_refused(monkeyp
     monkeypatch.setattr(llm, "_bounded_post", lambda url, **k: sent.append(k["headers"]) or Resp(401))
     with pytest.raises(requests.HTTPError):
         llm.gemini_ping("AQ.x" * 10, "gemini-3.5-flash-lite")  # refused both ways: an error, never a silent pass
+
+
+def test_a_400_naming_the_authorization_header_counts_as_a_refusal_and_bearer_comes_first(monkeypatch):
+    """22 Nov 2026, measured with the owner's AQ. key: x-goog-api-key got HTTP 400 'Missing or invalid Authorization header', Bearer answered."""
+    sent = []
+
+    class Resp:
+        def __init__(self, code, text=""):
+            self.status_code, self.text = code, text
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise requests.HTTPError(str(self.status_code))
+
+        def json(self):
+            return {"choices": [{"message": {"content": "pong"}}]}
+
+    def post(url, *, timeout, json=None, headers=None, allow_redirects=True):
+        sent.append(headers)
+        return Resp(200) if "Authorization" in headers else Resp(400, '{"error": {"message": "Missing or invalid Authorization header."}}')
+
+    monkeypatch.setattr(llm, "_bounded_post", post)
+    monkeypatch.setattr(llm, "_GEMINI_AUTH", {})
+    aq = "AQ." + "x" * 40
+    assert llm.gemini_ping(aq, "gemini-3.5-flash-lite") == "pong" and "Authorization" in sent[0] and len(sent) == 1
+    monkeypatch.setattr(llm, "_GEMINI_AUTH", {"aq": "goog"})  # a remembered wrong style
+    sent.clear()
+    monkeypatch.setattr(llm, "_GEMINI_AUTH", {})
+    monkeypatch.setattr(llm, "_bounded_post", lambda url, **k: sent.append(k["headers"]) or (Resp(400, "Missing or invalid Authorization header") if "x-goog-api-key" in k["headers"] else Resp(401)))
+    with pytest.raises(requests.HTTPError):
+        llm.gemini_ping(aq, "gemini-3.5-flash-lite")
+    assert len(sent) == 2  # both styles were tried before the error
+
+
+def test_the_script_fact_check_asks_gemini_first_when_a_key_is_saved_and_never_the_writer(settings, monkeypatch):
+    """22 Nov 2026: the fact-check (llm._free_chat, role review) never asked the Gemini judges, so a saved key changed nothing while every other judge failed."""
+    import freemodels
+
+    asked = []
+    monkeypatch.setattr(freemodels, "refresh", lambda now: None)
+    monkeypatch.setattr(freemodels, "available", lambda m, now: True)
+    monkeypatch.setattr(freemodels, "choose", lambda role, now, avoid=None, n=4: ["openrouter-model:free"])
+    monkeypatch.setattr(llm, "extra_models", lambda role: [])
+    monkeypatch.setattr(llm, "_race", lambda models, *a, **k: asked.append(list(models)) or None)
+    monkeypatch.setattr(llm, "_ask_free", lambda mid, *a, **k: asked.append(mid) or None)
+    monkeypatch.setattr(llm, "ROUNDS", 1)
+    monkeypatch.setattr(llm, "_WRITERS", set())
+    monkeypatch.setattr(llm, "_last_free", {})
+    now = llm._now()
+    llm._free_chat("p", "review", {}, "k", now)
+    assert not any(str(m).startswith("gemini:") for m in str(asked)) or "gemini:" not in str(asked)  # no key: Gemini is not asked
+    asked.clear()
+    dashboard.H.route(None, "/api/key/save", {"which": "gemini", "value": KEY})
+    llm._free_chat("p", "review", {}, "k", now)
+    first = asked[0] if isinstance(asked[0], list) else [asked[0]]
+    assert first[0].startswith("gemini:") and "openrouter-model:free" in str(asked)  # Gemini first, the others still after it
+    asked.clear()
+    llm._free_chat("p", "review", {}, "k", now, avoid={"gemini:gemini-3.5-flash-lite"})
+    assert "gemini-3.5-flash-lite" not in str(asked)  # a writer (by identity) is never asked to judge
+    asked.clear()
+    llm._free_chat("p", "script", {}, "k", now)
+    assert "gemini:" not in str(asked)  # writing never goes to the judges' Gemini models

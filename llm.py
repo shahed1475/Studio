@@ -664,6 +664,27 @@ def _post_gemini(payload: dict, timeout: float) -> dict:
     return _gemini_chat(key, body, timeout)
 
 
+def gemini_models() -> list[str]:
+    """The Gemini models the judges may ask directly (config/judges.json, ids with the gemini: prefix), in the configured order."""
+    try:
+        cfg = json.loads((config.ROOT / "config" / "judges.json").read_text())
+    except (OSError, ValueError):
+        return []
+    found: list[str] = []
+
+    def walk(v):
+        if isinstance(v, str) and v.startswith(GEMINI_PREFIX):
+            found.append(v)
+        elif isinstance(v, (list, tuple)):
+            for x in v:
+                walk(x)
+        elif isinstance(v, dict):
+            for x in v.values():
+                walk(x)
+    walk(cfg)
+    return list(dict.fromkeys(found))
+
+
 _GEMINI_AUTH = {}  # key prefix -> the header style Google accepted ("bearer" or "goog"); remembered for this process only
 
 
@@ -675,12 +696,16 @@ def _gemini_chat(key: str, body: dict, timeout: float) -> dict:
     """One chat request to Google's OpenAI-compatible endpoint. 22 Nov 2026: AI Studio now issues keys starting 'AQ.' and developers report that some are
     refused (401) with the OpenAI-style Bearer header; Google's own `x-goog-api-key` header is tried once on a 401 or 403, and the style that worked is kept."""
     kind = "aq" if key.startswith("AQ.") else "aiza"
-    styles = [_GEMINI_AUTH[kind]] if kind in _GEMINI_AUTH else (["goog", "bearer"] if kind == "aq" else ["bearer", "goog"])
+    # Bearer first for both kinds: the owner's AQ. key answered with Bearer and was refused with x-goog-api-key ("Missing or invalid Authorization
+    # header", HTTP 400, measured 22 Nov 2026), so a 400 that names the Authorization header counts as an auth refusal like 401 and 403
+    styles = [_GEMINI_AUTH[kind]] if kind in _GEMINI_AUTH else ["bearer", "goog"]
     r = None
     for style in styles:
         r = _bounded_post(GEMINI_URL + "/chat/completions", json=body, timeout=timeout, allow_redirects=False,
                           headers={**_gemini_auth(key, style), "Content-Type": "application/json"})
-        if getattr(r, "status_code", 0) not in (401, 403):
+        code = getattr(r, "status_code", 0)
+        auth_refused = code in (401, 403) or (code == 400 and "authorization" in str(getattr(r, "text", "")).lower())
+        if not auth_refused:
             _GEMINI_AUTH[kind] = style
             break
     r.raise_for_status()
@@ -982,7 +1007,10 @@ def _free_chat(prompt: str, role: str, cfg: dict, key: str, now: dt.datetime, av
         skip_ids = {model_identity(m) for m in skip}  # the same model under another provider's name is the same judge
         # the owner's own provider is asked first (it needs none of OpenRouter's allowance), except models it says it cannot serve now
         extras = [m for m in extra_models(role) if model_identity(m) not in skip_ids and freemodels.available(m, now) and extra_status(m) not in UNUSABLE]
-        models = extras + [m for m in freemodels.choose(role, now, avoid=skip, n=4) if model_identity(m) not in skip_ids]
+        # Google directly, for judging only, when the owner saved a Gemini key (22 Nov 2026: the script fact-check never reached the judge cascade's Gemini
+        # models, so a saved key changed nothing while every OpenRouter and FreeLLMAPI judge was failing). Same rules: never a writer, two must answer.
+        gem = [m for m in gemini_models() if role == "review" and model_identity(m) not in skip_ids and freemodels.available(m, now)] if gemini_key() else []
+        models = gem + extras + [m for m in freemodels.choose(role, now, avoid=skip, n=4) if model_identity(m) not in skip_ids]
         if role == "script" and _WRITERS:  # a model that already wrote this script writes the next part first: a film written by six rotating free models left no
             mine = {model_identity(w) for w in _WRITERS}  # model free to judge it (20 Nov 2026, "no free judge could answer" after two hours of writing)
             models = sorted(models, key=lambda m: model_identity(m) not in mine)  # stable: the usual order otherwise
@@ -1023,7 +1051,7 @@ def _free_chat(prompt: str, role: str, cfg: dict, key: str, now: dt.datetime, av
                     continue
                 _answered(role, mid)
                 return got
-            if mid.startswith(EXTRA_PREFIX):
+            if mid.startswith((EXTRA_PREFIX, GEMINI_PREFIX)):  # Google directly is a separate free tier too (22 Nov 2026: gemini-2.5-flash answered 404)
                 continue  # one of the owner's models failed (app not running, its free tier used up, a bad reply): the next model is asked now. Its models are
                 # separate free tiers; ending the round here let three failing own models use all three rounds and no OpenRouter model was asked (21 Nov 2026)
             break  # an OpenRouter failure (network, or a reply that is not JSON) ends this round: wait, then ask again
