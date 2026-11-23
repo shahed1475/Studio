@@ -1425,3 +1425,24 @@ def test_the_recovery_case_catches_a_file_written_in_place_and_an_outage_called_
     with monkeypatch.context() as m:
         m.setattr(ytlogin, "offline", lambda e: False)  # mutation: no network is taken for a failed login
         assert not case()[0]
+
+
+def test_the_padding_case_catches_an_extended_ending_and_an_uncut_long_line(monkeypatch):
+    """Case and mutation checks for case_the_opening_and_ending_are_never_padded_and_no_film_line_runs_past_its_limit (23 Nov 2026, recovery mission)."""
+    import scriptgen
+
+    case = agenteval.case_the_opening_and_ending_are_never_padded_and_no_film_line_runs_past_its_limit
+    ok, detail = case()
+    assert ok, detail
+    with monkeypatch.context() as m:
+        m.setattr(scriptgen, "growable", lambda spans, count: spans)  # mutation: every chapter may grow again, the closing chapter included
+        assert not case()[0]
+    with monkeypatch.context() as m:
+        m.setattr(scriptgen, "growable", lambda spans, count: spans[1:])  # mutation: the ending may grow (only the opening kept)
+        assert not case()[0]
+    with monkeypatch.context() as m:
+        m.setattr(scriptgen, "split_long_lines", lambda lines, chapters, longest=None: (lines, chapters))  # mutation: long lines kept whole
+        assert not case()[0]
+    with monkeypatch.context() as m:
+        m.setattr(scriptgen, "sentences", lambda text: text.split())  # mutation: lines cut between words, not at sentences
+        assert not case()[0]

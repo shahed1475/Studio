@@ -12,8 +12,10 @@ def script(per_chapter_words):
 
 
 def test_a_short_script_gets_lines_in_its_shortest_chapters_and_chapter_starts_move(monkeypatch):
+    # 23 Nov 2026: this test used three chapters and expected all three to grow; the closing chapter growing is what ended the Mary Celeste film on a stray
+    # background fact, so the hook and closing chapters are now never extended and the test uses five chapters (three of them in the middle).
     monkeypatch.setattr(scriptgen, "min_doc_words", lambda: 1000)
-    lines, chapters = script([40, 10, 60])  # 330 words against 900 needed
+    lines, chapters = script([40, 10, 60, 5, 20])  # 405 words against 900 needed
     asked = []
 
     def chat(prompt):
@@ -21,9 +23,63 @@ def test_a_short_script_gets_lines_in_its_shortest_chapters_and_chapter_starts_m
         return {"lines": [{"text": " ".join(["new"] * 35), "visual": "x"} for _ in range(4)]}
 
     out, ch = scriptgen.extend_to_length(lines, chapters, {"title": "T"}, "topic", "rules", "calm", chat=chat)
-    assert len(asked) == 3 and "Chapter 'C1' is too short" in str(asked[0])  # the shortest chapter first, then the next shortest
-    assert [c["start_line"] for c in ch] == [0, 7, 14] and len(out) == 21
-    assert out[3]["text"].startswith("new") and out[0] == lines[0]  # added at the end of their own chapter, nothing rewritten
+    assert [str(p).split("Chapter '")[1][:2] for p in asked] == ["C3", "C1", "C2"]  # the shortest middle chapter first, then the next shortest
+    assert [c["start_line"] for c in ch] == [0, 3, 10, 17, 24] and len(out) == 27
+    assert out[6]["text"].startswith("new") and out[3] == lines[3]  # added at the end of their own chapter, nothing rewritten
+    assert out[:3] == lines[:3] and out[-3:] == lines[-3:]  # the opening and the ending exactly as written
+
+
+def test_the_hook_and_closing_chapters_are_never_extended_but_a_two_chapter_script_may_grow(monkeypatch):
+    monkeypatch.setattr(scriptgen, "min_doc_words", lambda: 1000)
+    asked = []
+
+    def chat(prompt):
+        asked.append(str(prompt).split("Chapter '")[1][:2])
+        return {"lines": [{"text": " ".join(["new"] * 35), "visual": "x"} for _ in range(4)]}
+
+    lines, chapters = script([5, 40, 5])  # the first and last are the shortest: still only the middle grows
+    out, _ = scriptgen.extend_to_length(lines, chapters, {"title": "T"}, "topic", "rules", "calm", chat=chat)
+    assert asked == ["C1"] and out[-1] == lines[-1] and out[:3] == lines[:3]
+    asked.clear()
+    lines, chapters = script([5, 40])  # no middle: the shorter chapter may grow, as before
+    scriptgen.extend_to_length(lines, chapters, {"title": "T"}, "topic", "rules", "calm", chat=chat)
+    assert asked[0] == "C0"
+
+
+def test_a_long_line_is_split_at_whole_sentences_and_never_inside_one(monkeypatch):
+    monkeypatch.setattr(scriptgen, "LINE_WORDS_MAX", 44)
+    a = "Captain James H. Winchester bought the ship from the creditors of Richard W. Haines in New York that autumn."  # 19 words, initials inside
+    b = " ".join(["Word"] + ["word"] * 23) + "."  # a sentence of 24 words
+    c = "Doyle named the captain J. W. Tibbs and set the voyage from Boston to Lisbon in his story."  # 18 words
+    long_one = " ".join(["long"] * 50) + "."
+    lines = [{"text": "Short opening line here.", "visual": "v0"}, {"text": f"{a} {b} {c}", "visual": "ship"}, {"text": long_one, "visual": "sea"}]
+    out, ch = scriptgen.split_long_lines(lines, [{"title": "A", "start_line": 0}, {"title": "B", "start_line": 2}])
+    assert [l["text"] for l in out] == ["Short opening line here.", f"{a} {b}", c, long_one]  # 19 + 24 = 43 | 18; the 50-word sentence stays whole
+    assert [l["visual"] for l in out] == ["v0", "ship", "ship", "sea"] and ch == [{"title": "A", "start_line": 0}, {"title": "B", "start_line": 3}]
+    assert " ".join(l["text"] for l in out) == " ".join(l["text"] for l in lines)  # not a word changed or lost
+    assert scriptgen.sentences("He met St. John and Mr. Lee. Then he left!") == ["He met St. John and Mr. Lee.", "Then he left!"]
+
+
+def test_the_writer_never_returns_a_line_over_the_long_film_limit(monkeypatch):
+    monkeypatch.setattr(scriptgen, "LINE_WORDS_MAX", 44)
+    monkeypatch.setattr(scriptgen, "min_doc_words", lambda: 10)
+    import itertools
+
+    count = itertools.count()
+
+    def two_sentences():
+        k = next(count)
+        return " ".join(f"a{k}x{j}" for j in range(30)) + ". " + " ".join(f"B{k}y{j}" for j in range(30)) + "."
+
+    def chat(prompt):
+        if "Plan a" in str(prompt):
+            return {"title": "T", "description": "d", "tags": [], "anchors": [], "chapters": [{"title": f"C{n}", "summary": "s"} for n in range(6)]}
+        return {"lines": [{"text": two_sentences(), "visual": "v"} for _ in range(4)]}
+
+    monkeypatch.setattr(scriptgen, "_script_chat", chat)
+    monkeypatch.setattr(scriptgen, "checked", lambda lines, chapters, sources, sleep=None: (lines, chapters))
+    out = scriptgen.doc_script("Topic", grounded="SRC")
+    assert max(len(l["text"].split()) for l in out["lines"]) <= 44 and len(out["lines"]) == 48  # 24 lines of 60 words, each cut into two whole sentences
 
 
 def test_a_script_long_enough_or_a_writer_with_nothing_new_leaves_the_script_as_it_was(monkeypatch):

@@ -597,6 +597,49 @@ def finish_lines(lines: list[dict], chapters: list[dict]) -> tuple[list[dict], l
     return remove_lines(out, chapters, drop) if drop else (out, chapters)
 
 
+_ABBREV = {"mr", "mrs", "ms", "dr", "st", "mt", "capt", "lt", "gen", "col", "sgt", "jr", "sr", "no", "vs", "rev", "prof", "co", "inc", "u.s", "u.k"}
+
+
+def sentences(text: str) -> list[str]:
+    """The whole sentences of a narration line. A full stop after an initial ("James H. Winchester", "J. W. Tibbs") or a short title ("Capt.", "St.") ends nothing."""
+    out, start = [], 0
+    for m in re.finditer(r"[.!?][\"'”’)]*\s+(?=[\"'“‘(]?[A-Z0-9])", text):
+        word = re.findall(r"[A-Za-z.]+$", text[start:m.start()])
+        last = word[0].lower().rstrip(".") if word else ""
+        if text[m.start()] == "." and (len(last) == 1 or last in _ABBREV):
+            continue
+        out.append(text[start:m.end()].strip())
+        start = m.end()
+    tail = text[start:].strip()
+    return out + [tail] if tail else out
+
+
+def split_long_lines(lines: list[dict], chapters: list[dict], longest: int | None = None) -> tuple[list[dict], list[dict]]:
+    """A line longer than LINE_WORDS_MAX is cut at whole sentences into lines of at most that many words, each keeping the line's picture words (23 Nov 2026: the
+    Mary Celeste script had seven lines of 59 to 86 words, about 35 seconds on one picture, because the limit was only asked for in the prompt and used by
+    join_short_lines). A single sentence longer than the limit stays whole: a sentence is never cut. Only the writer calls this: a saved script keeps its lines,
+    so pictures already drawn for it stay valid."""
+    longest = longest or LINE_WORDS_MAX
+    out, starts = [], []
+    bounds = [(c["start_line"], chapters[n + 1]["start_line"] if n + 1 < len(chapters) else len(lines)) for n, c in enumerate(chapters)] or [(0, len(lines))]
+    for a, b in bounds:
+        starts.append(len(out))
+        for l in lines[a:b]:
+            if len(str(l.get("text", "")).split()) <= longest:
+                out.append(l)
+                continue
+            cur = ""
+            for s in sentences(str(l["text"])):
+                if cur and len(cur.split()) + len(s.split()) > longest:
+                    out.append({**l, "text": cur})
+                    cur = s
+                else:
+                    cur = f"{cur} {s}".strip()
+            if cur:
+                out.append({**l, "text": cur})
+    return out, ([{**c, "start_line": starts[n]} for n, c in enumerate(chapters)] if chapters else chapters)
+
+
 def join_short_lines(lines: list[dict], chapters: list[dict], short: int | None = None, longest: int | None = None) -> tuple[list[dict], list[dict]]:
     """Adjacent lines of one chapter joined while the line is short, up to LINE_WORDS_MAX words (20 Nov 2026: a free writer gave a 20-26 minute film 119 lines of
     about 18 words, and every line is one picture: 119 drawings, two days of the free allowance, against the budget's 84 to 100 lines of 30 to 39 words).
@@ -623,10 +666,18 @@ def join_short_lines(lines: list[dict], chapters: list[dict], short: int | None 
     return out, [{**c, "start_line": starts[n]} for n, c in enumerate(chapters)]
 
 
+def growable(spans: list[tuple], count: int) -> list[tuple]:
+    """The chapter spans (n, start, end) extend_to_length may add lines to: never the hook chapter (first) or the closing chapter (last) of a script with three or
+    more chapters (23 Nov 2026); a script with no middle keeps every chapter."""
+    return [t for t in spans if 0 < t[0] < count - 1] if count >= 3 else spans
+
+
 def extend_to_length(lines: list[dict], chapters: list[dict], outline: dict, topic: str, rules: str, style: str, chat=None, share: float | None = None) -> tuple[list[dict], list[dict]]:
     """A script well under the owner's length (20 Nov 2026: 20 to 26 minutes asks for lines of 30 to 39 words, which a free writer may cut short) gets more lines in its
     shortest chapters: facts from SOURCES the story has not told yet, in the same voice, never a retelling. At most MAX_EXTENSIONS requests; a chapter is extended once.
-    The added lines go through the same fact-check as the rest. A script that is long enough, or a writer that adds nothing, leaves the script as it was."""
+    The added lines go through the same fact-check as the rest. A script that is long enough, or a writer that adds nothing, leaves the script as it was.
+    The hook chapter and the closing chapter are never extended (23 Nov 2026: the Mary Celeste film ended on a background fact the extension had appended
+    after its closing chapter, whose rule is "never a new fact"); a script of one or two chapters has no middle, so any chapter may grow."""
     chat = chat or _script_chat
     words = lambda ls: sum(len(str(l.get("text", "")).split()) for l in ls)
     need = round(min_doc_words() * (MIN_SHARE if share is None else share))
@@ -634,7 +685,7 @@ def extend_to_length(lines: list[dict], chapters: list[dict], outline: dict, top
         return lines, chapters
     lo, hi = line_words(len(chapters), max(1, len(lines) // max(1, len(chapters))))
     spans = [(n, c["start_line"], chapters[n + 1]["start_line"] if n + 1 < len(chapters) else len(lines)) for n, c in enumerate(chapters)]
-    order = sorted(spans, key=lambda t: words(lines[t[1]:t[2]]))  # the shortest chapters first
+    order = sorted(growable(spans, len(chapters)), key=lambda t: words(lines[t[1]:t[2]]))  # the shortest chapters first; the opening and the ending stay as written
     typical = max(12, sorted(len(str(l.get("text", "")).split()) for l in lines)[len(lines) // 2]) if lines else 20  # what this writer really gives a line
     reach = min(len(order), max(MAX_EXTENSIONS, -(-(need - words(lines)) // (typical * 5))))  # as many chapters as the gap needs (20 Nov 2026: 6 chapters of 3 to 5 short
     per = max(3, min(8, -(-(need - words(lines)) // max(1, reach * typical))))                 # lines added about 430 words a round against a gap of 800)
@@ -796,6 +847,7 @@ def doc_script(topic: str, facts: str | None = None, grounded: str | None = None
             kept = sum(len(l["text"].split()) for l in lines) / max(1, before)
     lines, chapters = join_short_lines(lines, chapters)  # one picture a line: a long film's lines are 30 to 44 words, not 18
     lines, chapters = finish_lines(lines, chapters)  # no line ends mid-sentence: trimmed to its last whole sentence, or dropped
+    lines, chapters = split_long_lines(lines, chapters)  # and none runs past LINE_WORDS_MAX on one picture: cut at whole sentences
     words = sum(len(l["text"].split()) for l in lines)
     DRAFT_FILE.unlink(missing_ok=True)  # checked (or never needed checking): the checkpoint is spent
     if len(chapters) < 5 or words < 400:

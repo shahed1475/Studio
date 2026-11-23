@@ -2246,7 +2246,40 @@ def case_a_cut_or_a_lost_network_never_breaks_a_saved_file_or_asks_the_owner_to_
                 else f"files_ok={files_ok} net_ok={net_ok}")
 
 
-CASES = [case_a_cut_or_a_lost_network_never_breaks_a_saved_file_or_asks_the_owner_to_reconnect, case_the_doctor_checks_the_model_key_for_real_and_never_calls_old_or_unproven_health_healthy,case_an_openrouter_401_is_one_refused_key_not_a_failure_of_every_model, case_an_unchanged_routine_report_is_logged_once_and_the_bell_counts_only_problems_alerts_and_decisions, case_a_cut_at_the_very_end_never_makes_the_video_twice_and_a_cut_short_resumes_in_its_folder, case_a_render_cut_by_a_power_cut_is_found_kept_and_never_trusted_half_written, case_busy_judges_never_discard_a_draft_and_never_pass_it_unchecked, case_the_reviewer_flags_a_line_that_calls_proven_what_its_source_only_suggests, case_blender_scenes_are_true_to_the_line_and_never_stop_a_video, case_a_judge_is_never_the_writer_even_through_the_owners_provider, case_an_a2a_task_is_answered_once_only_by_its_target_and_never_off_the_hand_over_map,case_free_mode_never_sends_a_request_to_a_paid_model_through_the_video_checks, case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic, case_the_guardian_closes_its_draft_tasks_only_when_the_video_has_left_output, case_search_demand_is_no_signal_on_failure_spends_youtube_quota_only_within_its_budget_and_cleans_outside_text, case_comment_insights_keep_no_names_nothing_over_30_days_and_only_cleaned_questions_and_never_write,
+def case_the_opening_and_ending_are_never_padded_and_no_film_line_runs_past_its_limit():
+    """23 Nov 2026 (recovery mission): the Mary Celeste script ended on a background fact that extend_to_length had appended after its closing chapter
+    (whose rule is "never a new fact"), and seven of its lines ran 59 to 86 words because LINE_WORDS_MAX was only asked for in the prompt. Now the hook and
+    closing chapters are never extended, and the writer cuts any longer line at whole sentences (never inside one)."""
+    import scriptgen
+
+    saved = (scriptgen.min_doc_words, scriptgen.LINE_WORDS_MAX)
+    asked: list = []
+    try:
+        scriptgen.min_doc_words = lambda: 1000
+        scriptgen.LINE_WORDS_MAX = 44
+        lines, chapters = [], []
+        for n in range(5):
+            chapters.append({"title": f"C{n}", "start_line": len(lines)})
+            lines += [{"text": " ".join([f"c{n}w{i}" for i in range(10)]) + ".", "visual": "v"} for _ in range(3)]
+
+        def chat(prompt):
+            asked.append(str(prompt).split("Chapter '")[1][:2])
+            return {"lines": [{"text": " ".join(["new"] * 30) + ".", "visual": "x"}]}
+
+        out, _ = scriptgen.extend_to_length(lines, chapters, {"title": "T"}, "t", "r", "s", chat=chat)
+        ends_kept = bool(asked) and "C0" not in asked and "C4" not in asked and out[:3] == lines[:3] and out[-3:] == lines[-3:]
+        two = [{"text": "One " + " ".join(["word"] * 30) + ". Two " + " ".join(["word"] * 30) + ".", "visual": "v"}]
+        split, _ = scriptgen.split_long_lines(two, [{"title": "A", "start_line": 0}])
+        whole = ["One " + " ".join(["word"] * 30) + ".", "Two " + " ".join(["word"] * 30) + "."]
+        cut = [l["text"] for l in split] == whole  # two whole sentences: nothing cut inside one, nothing lost
+    finally:
+        scriptgen.min_doc_words, scriptgen.LINE_WORDS_MAX = saved
+    ok = ends_kept and cut
+    return ok, ("the opening and the ending stay as written; a 62-word line becomes two whole sentences" if ok
+                else f"ends kept: {ends_kept} (chapters extended: {asked}); long line cut at a sentence: {cut}")
+
+
+CASES = [case_the_opening_and_ending_are_never_padded_and_no_film_line_runs_past_its_limit, case_a_cut_or_a_lost_network_never_breaks_a_saved_file_or_asks_the_owner_to_reconnect, case_the_doctor_checks_the_model_key_for_real_and_never_calls_old_or_unproven_health_healthy,case_an_openrouter_401_is_one_refused_key_not_a_failure_of_every_model, case_an_unchanged_routine_report_is_logged_once_and_the_bell_counts_only_problems_alerts_and_decisions, case_a_cut_at_the_very_end_never_makes_the_video_twice_and_a_cut_short_resumes_in_its_folder, case_a_render_cut_by_a_power_cut_is_found_kept_and_never_trusted_half_written, case_busy_judges_never_discard_a_draft_and_never_pass_it_unchecked, case_the_reviewer_flags_a_line_that_calls_proven_what_its_source_only_suggests, case_blender_scenes_are_true_to_the_line_and_never_stop_a_video, case_a_judge_is_never_the_writer_even_through_the_owners_provider, case_an_a2a_task_is_answered_once_only_by_its_target_and_never_off_the_hand_over_map,case_free_mode_never_sends_a_request_to_a_paid_model_through_the_video_checks, case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic, case_the_guardian_closes_its_draft_tasks_only_when_the_video_has_left_output, case_search_demand_is_no_signal_on_failure_spends_youtube_quota_only_within_its_budget_and_cleans_outside_text, case_comment_insights_keep_no_names_nothing_over_30_days_and_only_cleaned_questions_and_never_write,
          case_ladder_ends_with_owner_not_a_crash, case_ladder_respects_budget_and_whitelist_and_lessons, case_outside_text_is_cleaned,
          case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules, case_registry_is_consistent,
          case_playbook_scope_injects_role_and_limits_only_when_acting, case_doctor_finds_stale_and_failing_agents_and_fixes_only_safely,
