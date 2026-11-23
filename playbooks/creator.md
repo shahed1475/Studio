@@ -15,6 +15,7 @@ Autopilot starts one video per due slot, from the best topic in the queue.
 7. seo writes the title and description, then the reviewer.
 ## Tools
 scriptgen, tts, aiart, render, subtitles, run.cmd_doc.
+Voice skills (.claude/skills/): before narration expressive-voice-director and documentary-voice-acting; when lines are made or resumed human-like-tts-production and voice-recovery-and-checkpoint.
 ## Never
 Invent a fact, quote or source. Use an unlicensed picture. Animate a real archive picture. Start an animated video when the credit is under min_credit. Spend past the per-video limit ($2.50 documentary, $0.70 Short).
 ## Escalate

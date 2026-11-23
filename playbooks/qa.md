@@ -9,6 +9,7 @@ After every render and in the final check.
 ffprobe plus a full decode, audio level, captions against the script, licenses, then look at sampled frames and say how many were seen.
 ## Tools
 studiochecks, videoinspect.
+Voice skill (.claude/skills/): voice-emotion-evaluator when checking generated narration.
 ## Never
 Treat a clean ffmpeg exit as proof of content quality. Claim the whole video was watched.
 ## Escalate
