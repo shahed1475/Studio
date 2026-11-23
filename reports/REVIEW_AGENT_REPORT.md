@@ -1,12 +1,14 @@
-# The review agent: full report (22 Nov 2026)
+# The review agent: full report (22 Nov 2026, brought up to date 23 Nov 2026)
 
-Written from the code in `~/studio` (`reviewer.py`, `autopilot.py`, `fixer.py`, `ledger.py`, `compliance.py`, `llm.py`), its playbook (`playbooks/reviewer.md`), the project rules (`CLAUDE.md`) and the records of the real videos in `output/`. Everything under "Evidence" was run today; nothing here is estimated unless it says so.
+Written from the code in `~/studio` (`reviewer.py`, `judges.py`, `sourceslice.py`, `autopilot.py`, `fixer.py`, `ledger.py`, `compliance.py`, `llm.py`), its playbook (`playbooks/reviewer.md`), `config/judges.json`, the project rules (`CLAUDE.md`) and the records of the real videos in `output/`. Nothing here is estimated unless it says so.
+
+**23 Nov update.** The first version of this report (22 Nov morning) described the older way of judging: your own provider's models first, then OpenRouter's free models, any two different models. Since 22 Nov evening the **judge cascade** reads every video in free mode: two judges from two **different model families**, Gemini first. Sections 1, 2, 6, 9, 11 and 12 now describe what runs today; section 13 keeps how the cascade was built.
 
 ---
 
 ## 1. In one paragraph
 
-The review agent is the studio's gate between "a video was made" and "a video may be approved". It runs about fifty checks on every finished video. Most of them are fixed rules with no AI: the file, the title, the description, the thumbnail, the pictures, every name, year and quotation in the script compared with the source article. Then it asks AI judges to read the whole script next to its source and score the risk of invented facts, policy problems and a misleading title or thumbnail. In free mode two different free models judge, the stricter answer counts, and the model that wrote the script is never allowed to judge it. The result is one of four verdicts: **pass**, **fail**, **needs_human** (you decide) or **unreviewed** (no AI answer, ask again later). A model error is never a pass and never a fail.
+The review agent is the studio's gate between "a video was made" and "a video may be approved". It runs about fifty checks on every finished video. Most of them are fixed rules with no AI: the file, the title, the description, the thumbnail, the pictures, every name, year and quotation in the script compared with the source article. Then it asks AI judges to read the whole script next to its source and score the risk of invented facts, policy problems and a misleading title or thumbnail. In free mode two judges from two different model families read it (the judge cascade: Gemini first, then a second family such as GLM, Qwen or an OpenRouter model on a short rubric), the stricter answer counts, and the model that wrote the script is never allowed to judge it. The result is one of four verdicts: **pass**, **fail**, **needs_human** (you decide) or **unreviewed** (no AI answer, ask again later). A model error is never a pass and never a fail.
 
 ---
 
@@ -17,7 +19,7 @@ The review agent is the studio's gate between "a video was made" and "a video ma
 - **Role**: Gate before any upload: file checks, claim checks against the source, and an AI reading of the script.
 - **Goal**: No video with an invented fact, a copyright or policy risk or a broken file goes out.
 - **When**: Every new or edited video; again before the slot and after publishing (recheck).
-- **How**: Fixed checks first, then the model with the source article. A model failure is "unreviewed", never fail and never pass. In free mode two different free models read it and the stricter answer counts; one silent model is "unreviewed". Before an approval the pictures are read and the narration is listened to.
+- **How**: Fixed checks first, then the model with the source article. A model failure is "unreviewed", never fail and never pass. In free mode the judge cascade reads it: slot A Gemini with the full source, slot B a different model family with a compact rubric; the stricter answer counts; fewer than two answers is "unreviewed". Before an approval the pictures are read and the narration is listened to.
 - **Never**: Pass because a model agrees. Fail because a model errored.
 - **Escalate**: Two reviewers that disagree: needs_human.
 
@@ -26,7 +28,7 @@ The review agent is the studio's gate between "a video was made" and "a video ma
 1. A claim is VERIFIED only with a source passage or a web page to show. An AI model agreeing is never verification.
 2. The model that wrote a script never judges it, even from another process: the writers are recorded with the video (`script_writers`) and avoided.
 3. Nothing with an open invented-facts warning is approved, scheduled or uploaded (`facts_open`).
-4. Reviews in free mode: two different free models, never the writer, the worse answer counts. Answers that cannot be compared, or one silent model, give no review.
+4. Reviews in free mode: two judges of different model families (`llm.model_family`), never the writer under any provider's name, the worse answer counts. Answers that cannot be compared, or one silent judge, give no review.
 5. Your standing advice on the Tasks page goes only to the writing agents. The reviewers never read it, so it cannot soften a check.
 6. Every video goes through the reviewer and a review window before it is public. Uploads are private with a scheduled time.
 
@@ -139,15 +141,18 @@ Rules that keep this honest:
 - If a title misleads, explain why and offer three honest titles.
 - List real, specific issues.
 
-**Who judges (free mode, today)**
-1. Your own provider first: `gemini-3.6-flash` and `nemotron-3-ultra-550b` (Settings > Extra model provider > fact-checking).
-2. Then OpenRouter's free models, ranked by how reliable and fast each has been for reviews.
+**Who judges (free mode, today: the judge cascade, `judges.py`, `config/judges.json`)**
+1. **Slot A, the full prompt and the full source.** Gemini through Google AI Studio with the key you saved in Settings (`gemini:gemini-2.5-flash`, `gemini-3.8-flash`, `gemini-3.5-flash-lite`), then the same Gemini models through FreeLLMAPI, then Qwen 3.8 27B and GLM 4.7 Flash, then your Settings judges, then one OpenRouter model as a last resort. The first that answers is judge A.
+2. **Slot B, a different model family from judge A, the compact rubric.** One OpenRouter free model (25 s, one try) on source excerpts that keep every name, date and number of the narration (up to 9,000 characters, once 12,000). If OpenRouter is busy, down or used up it is skipped for 60 minutes and FreeLLMAPI Qwen, then GLM, answers in the same review. A source the excerpts would cut too much never goes to OpenRouter; it goes to FreeLLMAPI whole.
 
-Two different models must both answer. The stricter answer counts: the higher score, any "yes, misleading", the longer issue list.
+Both judges must answer. The stricter answer counts: the higher score, any "yes, misleading", the longer issue list. The video's page shows who judged, under **Reviewer report > Passed checks**, on the `invented_facts` and `policy_risk` lines, for example (Maximilian I of Mexico, 23 Nov): "read by two judges of different families, the stricter answer counts: gemini:gemini-3.5-flash-lite [google], extra:glm-4.7-flash [zhipu, compact rubric, full source]".
 
 **Who can never judge**
-- Any model that wrote the script. Within one process the studio remembers who wrote it. Across processes the record's `script_writers` list is used.
+- Any model that wrote the script, under any provider's name: `llm.model_identity` matches `nvidianemotron-3-ultra-550b-a55b` (FreeLLMAPI), `nemotron-3-ultra-550b` and `nvidia/nemotron-3-ultra-550b-a55b:free` as one model. Within one process the studio remembers who wrote it; across processes the record's `script_writers` list is used.
 - A "router" name (like `openrouter/free`) that turns out to have been answered by the writer. That judgement is thrown away and another judge is asked.
+- Two models of the same family (two Gemini models, for example) never count as the two judges.
+
+**Not part of the cascade:** the title check and the script fact-check before voice keep the older two-free-models rule (`llm._free_review`); only the video's AI review uses the cascade.
 
 **What it costs:** $0 in free mode. In paid mode a documentary's reviews were about $0.20 (`CLAUDE.md`).
 
@@ -195,6 +200,15 @@ Two different models must both answer. The stricter answer counts: the higher sc
 | Live review of "The Lost Name of Teotihuacan" (read-only, nothing saved) | **pass in 96 s**. Judges: gemini-3.6-flash and nemotron-3-ultra-550b (your provider). Invented facts 0/10, policy 0/10, title matches |
 | Full studio test suite (earlier today) | 2,820 passed, 0 failed, 11 skipped |
 
+The Teotihuacan run above was made **before** the cascade (22 Nov morning, the older rule). Real reviews made **by the cascade** since then, read from the video records on 23 Nov:
+
+| Video | Reviewed (UTC) | Verdict | Judge A | Judge B |
+|---|---|---|---|---|
+| The Beale Ciphers (Short) | 22 Nov 08:40 | fail | extra:gemini-3.5-flash-lite [google] | particle-ai/particle-1:free [particle], compact rubric, excerpts 6,179 of 22,789 characters |
+| Maximilian I of Mexico (film, 20.4 min) | 23 Nov 04:53 | pass | gemini:gemini-3.5-flash-lite [google] (your Gemini key) | extra:glm-4.7-flash [zhipu], compact rubric, full source |
+
+Latest full suite (23 Nov, after the recovery work): 2,956 passed, 0 failed, 11 skipped.
+
 **Real verdicts on the 58 videos not yet public:** 31 pass, 4 fail, 23 never reviewed (older or unfinished drafts).
 
 The newest failures, with the reviewer's own words:
@@ -216,34 +230,34 @@ The newest failures, with the reviewer's own words:
 
 ## 11. Weaknesses and limits (honest)
 
-1. **The free judges disagree with each other.** On 21 Nov two OpenRouter models failed the Teotihuacan Short's title; today two of your own models passed the same title. Free models are weaker judges than the paid Claude review. The stricter-of-two rule reduces this but does not remove it.
+1. **The free judges disagree with each other.** On 21 Nov two OpenRouter models failed the Teotihuacan Short's title; on 22 Nov two of your own models passed the same title. Free models are weaker judges than the paid Claude review. The cascade's two different families and the stricter-of-two rule reduce this but do not remove it; only two real videos have been judged by the cascade so far.
 2. **The ledger only sees marked claims** (years, centuries, names after "called", quotations). Unmarked factual sentences depend on the AI judges.
 3. **It checks against the source, not against the truth.** The source is usually Wikipedia, a secondary source. A mistake copied faithfully from the article passes.
 4. **The picture check is a sample.** The vision model reads one frame every 25 seconds (10 to 24 frames). The narration check is a warning only, and a name heard differently is a lead, not proof.
 5. **The writer label is wrong in free mode.** `script_model` always names the configured model (gemma). Today `trainset.py` was fixed to look at the real writers (`script_writers`), so Claude-written text cannot slip into training data. The label itself still says gemma (not changed yet).
 6. **23 drafts have never been reviewed.** They are older or unfinished; Autopilot reviews a draft when it works on it.
-7. **Your review window is 2 hours, not the 24 hours `CLAUDE.md` describes.** It matters only once scheduling is switched back on; uploads are paused now.
-8. **The Settings "Test it" buttons do not test the judges that actually run.** They test the configured role model (gemma-4 :free), which is rate-limited (429). The judges that review in free mode are the provider and router models above.
+7. ~~Your review window is 2 hours~~ **Fixed 22 Nov:** the review window is 24 hours (`autopilot.json`, checked 23 Nov).
+8. **The Settings "Test it" buttons do not test every judge that runs.** The Gemini key's Test asks one real question; the role-model test still asks the configured role model (gemma-4 :free), not the cascade's slot list.
 
 ---
 
 ## 12. Decisions for you
 
 1. **Codex Gigas and Teotihuacan:** keep them failed for the fixer, give them new titles yourself, or set them aside.
-2. **More judges:** add `qwen-3.8-27b` and `glm-4.7-flash` to the fact-checking list. Both answered correctly in today's test, so fewer reviews would wait. This does not make the judges agree more.
-3. **Before scheduling is switched back on,** consider setting the review window back to 24 hours.
-4. **Commit and push** today's uncommitted fixes: the training-set writer check and the two dashboard fixes.
+2. ~~More judges~~ **Done 22 Nov:** Qwen 3.8 27B and GLM 4.7 Flash are in both cascade slots (GLM judged the Maximilian film).
+3. ~~Review window~~ **Done 22 Nov:** 24 hours.
+4. ~~Commit and push~~ **Done 22 Nov** (eae8bac and later).
 
 *A pass is evidence about what was measured. It is not a promise that a video is free of errors, and it never replaces your right to stop a video during the review window.*
 
 ---
 
-## 13. Update (22 Nov 2026, later): the judge cascade
+## 13. How the judge cascade was built (22 Nov 2026, evening)
 
-Your order: two judges of different model families, the stricter answer wins, never the writer, fast failover, fewer tokens. What was built, and where your instructions had to be adapted to what is real today:
+Your order: two judges of different model families, the stricter answer wins, never the writer, fast failover, fewer tokens. What was built, and where your instructions had to be adapted to what was real that day (section 6 describes it as it runs now):
 
-**Who judges now (free mode, the video's AI review only)**
-- **Slot A**, the full prompt and full source: Gemini through Google AI Studio when `GEMINI_API_KEY` is in `.env` (there is none yet, so it is skipped), then Gemini 2.5 Flash, 3.8 Flash and 3.5 Flash-Lite through FreeLLMAPI, then Qwen 3.8 27B and GLM 4.7 Flash, then your Settings judges, then one OpenRouter model as a last resort.
+**Who judged at first (free mode, the video's AI review only)**
+- **Slot A**, the full prompt and full source: Gemini through Google AI Studio when a Gemini key is set (when the cascade was built there was none, so it was skipped; a Gemini key is now saved in Settings, and the Maximilian film was judged through it), then Gemini 2.5 Flash, 3.8 Flash and 3.5 Flash-Lite through FreeLLMAPI, then Qwen 3.8 27B and GLM 4.7 Flash, then your Settings judges, then one OpenRouter model as a last resort.
 - **Slot B**, a different family than slot A's judge, compact rubric: one OpenRouter free model, 25 s, no retry. If it is busy, down or used up, OpenRouter is skipped for 60 minutes and FreeLLMAPI Qwen, then GLM, answers in the same review.
 
 **Checked before building**
