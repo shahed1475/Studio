@@ -172,7 +172,7 @@ def test_animated_clips_are_not_darkened_like_stock_footage(tmp_path, monkeypatc
         except RuntimeError:
             pass  # the stub writes no scene, so the check refuses it; only the scene command matters here
         vf = next(a[a.index("-vf") + 1] for a in seen if "-vf" in a and str(clip) in a)  # the scene command (generated clips no longer use -stream_loop)
-        assert ("eq=brightness" in vf) == (clip.parent.name != "anim")
+        assert (render.GRADE in vf) == (clip.parent.name != "anim")  # 23 Nov 2026: real footage gets the film's grade (it was eq brightness -0.08)
 
 
 def test_a_3d_remake_always_draws_the_opening_scenes_so_the_hook_is_never_a_museum_photo():

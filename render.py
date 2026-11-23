@@ -31,11 +31,25 @@ def _encoder_flags() -> bool:
     return "libx264" in subprocess.run(["ffmpeg", "-hide_banner", "-encoders"], capture_output=True, text=True).stdout
 
 
+# SDR for YouTube (23 Nov 2026): every encode is BT.709 and says so. Untagged, this ffmpeg converted RGB pictures with the BT.601 matrix while YouTube and
+# browsers read untagged HD as BT.709, so a red 200,60,40 played as 212,72,36. With these tags ffmpeg 7.1 converts with BT.709 (measured: 199,58,39).
+BT709 = ["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv",
+         # the options alone reached only the matrix (a filter graph's frames overrode primaries and transfer): the stream's own VUI flags are written too
+         "-bsf:v", "h264_metadata=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1:video_full_range_flag=0"]
+# The film's one restrained grade (23 Nov 2026), applied to every still and every clip that is not already graded (parallax clips are graded when made):
+# a gentle S-curve that keeps highlights under clipping and blacks above crushing, a small cool-shadow / warm-highlight split, slightly less saturation,
+# a soft vignette. Measured on three real pictures: 0% clipped, 0% crushed, mean brightness about 10% lower, saturation within 10% of the source.
+# The grade it replaces (eq=brightness=-0.05:saturation=0.85) crushed up to 21% of a picture to black and RAISED saturation (0.34 to 0.50).
+GRADE = ("eq=contrast=1.03:saturation=0.9,curves=all='0/0.018 0.25/0.24 0.5/0.52 0.8/0.83 1/0.97',"
+         "colorbalance=rs=-0.02:bs=0.025:rh=0.025:gh=0.008:bh=-0.025,vignette=angle=PI/7")
+AUDIO = ["-c:a", "aac", "-b:a", "320k", "-ar", "48000"]  # YouTube's upload advice: AAC, 48 kHz, 384 kb/s stereo or less (320 kb/s here)
+
+
 def _venc(crf: str, preset: str) -> list[str]:
-    """libx264 when this ffmpeg has it; Fedora's build only ships openh264 (bitrate-based)."""
+    """libx264 when this ffmpeg has it; Fedora's build only ships openh264 (bitrate-based). Always BT.709."""
     if _encoder_flags():
-        return ["-c:v", "libx264", "-preset", preset, "-crf", crf, "-pix_fmt", "yuv420p"]
-    return ["-c:v", "libopenh264", "-b:v", "8M", "-pix_fmt", "yuv420p"]
+        return ["-c:v", "libx264", "-preset", preset, "-crf", crf, "-pix_fmt", "yuv420p", *BT709]
+    return ["-c:v", "libopenh264", "-b:v", "8M", "-pix_fmt", "yuv420p", *BT709]
 
 
 def _ff(*args: str, cwd: Path) -> None:
@@ -71,7 +85,7 @@ def _picture_filter(w: int, h: int, frames: int, shot: dict | None, i: int) -> s
         zoom = "min(zoom+0.0007,1.25)" if i % 2 == 0 else "if(eq(on,0),1.25,max(zoom-0.0007,1.0))"
         move = f"z='{zoom}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
     return (f"scale={w * 2}:{h * 2}:force_original_aspect_ratio=increase,crop={w * 2}:{h * 2},"
-            f"zoompan={move}:d={frames}:s={w}x{h}:fps={config.FPS},setsar=1,eq=brightness=-0.05:saturation=0.85")
+            f"zoompan={move}:d={frames}:s={w}x{h}:fps={config.FPS},setsar=1,{GRADE}")
 
 
 def clip_fit(clip_s: float, scene_s: float, max_slow: float = 1.25) -> tuple[float, float]:
@@ -104,7 +118,7 @@ def _segment_job(i: int, clip, length: float, w: int, h: int, shot: dict | None,
     elif clip:
         anim = Path(clip).parent.name == "anim"
         vf = (f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},"
-              f"fps={config.FPS},setsar=1" + ("" if anim else ",eq=brightness=-0.08"))  # stock clips are darkened a little; generated animation keeps its light
+              f"fps={config.FPS},setsar=1" + ("" if anim else f",{GRADE}"))  # real footage gets the film's grade (shots match); animation was graded when it was made
         if anim:  # generated animation and camera clips play once: slowed a little and held, never looped
             factor, hold = clip_fit(_clip_seconds(clip), length)
             vf += (f",setpts={factor:.4f}*PTS,framerate=fps={config.FPS}" if factor > 1.0001 else "") + (f",tpad=stop_mode=clone:stop_duration={hold:.3f}" if hold > 0.001 else "")
@@ -269,7 +283,7 @@ def _assemble_in_parts(segs, keys, narration, ass, work, out, music, loudness, g
     if any(s <= 0 for s in secs):
         raise RuntimeError("a scene's length cannot be read; nothing was assembled")
     done = man.get("parts") or {}
-    venc = _venc("21", "medium")
+    venc = _venc("18", "medium")  # the final pass: visually lossless (23 Nov 2026: CRF 21 gave about 1.5 Mb/s for 1080p)
     post = ([GRAIN] if grain else []) + ([f"subtitles={ass.name}"] if ass else [])
     caption_key = _content(ass)
     names, offset, made, kept = [], 0.0, 0, 0
@@ -307,7 +321,7 @@ def _assemble_in_parts(segs, keys, narration, ass, work, out, music, loudness, g
         tmp = work / "sound.part.m4a"
         tmp.unlink(missing_ok=True)
         extra, args = _audio_filter(music, loudness)
-        _ff("-i", Path(narration).name, *extra, *args, "-vn", "-c:a", "aac", "-b:a", "160k", tmp.name, cwd=work)
+        _ff("-i", Path(narration).name, *extra, *args, "-vn", *AUDIO, tmp.name, cwd=work)
         want = checkpoint.media_seconds(voice)
         bad = checkpoint.check_media(tmp, seconds=want or None, need=("audio",), tol=1.0)
         if bad:
@@ -323,7 +337,7 @@ def _assemble_in_parts(segs, keys, narration, ass, work, out, music, loudness, g
 
 def _assemble(segs, durations, narration, ass, work, out, music, loudness, grain, fade, n) -> None:
     norm = f"loudnorm=I={loudness:g}:TP=-1.5:LRA=11" if loudness is not None else ""
-    venc = [*_venc("21", "medium"), "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", str(out)]
+    venc = [*_venc("18", "medium"), *AUDIO, "-shortest", "-movflags", "+faststart", str(out)]
     if fade:  # dissolve chain: scene k+1 starts fading in exactly where its narration line starts
         a = n  # index of the narration input
         args = [x for s in segs for x in ("-i", s.name)] + ["-i", narration.name]

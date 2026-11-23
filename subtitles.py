@@ -151,7 +151,7 @@ def burn_into_video(folder: Path) -> None:
     tmp = folder / "video.tmp.mp4"
     try:
         subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", "video.mp4", "-vf", f"subtitles={ass.name}",
-                        *render._venc("21", "medium"), "-c:a", "copy", "-movflags", "+faststart", tmp.name], check=True, cwd=folder)
+                        *render._venc("18", "medium"), "-c:a", "copy", "-movflags", "+faststart", tmp.name], check=True, cwd=folder)
         tmp.replace(folder / "video.mp4")
     except BaseException:
         tmp.unlink(missing_ok=True)

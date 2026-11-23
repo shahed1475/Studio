@@ -664,6 +664,36 @@ def extend_to_length(lines: list[dict], chapters: list[dict], outline: dict, top
     return out, [{**c, "start_line": starts[n]} for n, c in enumerate(chapters)]
 
 
+HOOK_RULE = ("Line 1 of the film is the hook: the central question of the whole story, asked openly (who, what, where, why or how; never yes/no), "
+             "naming its subject so a stranger understands, under 20 words; line 2 says what the viewer will know by the end. Never open on a birth "
+             "date, a family tree or an encyclopedia sentence. ")
+REHOOK_RULE = ("Keep the listener asking: at least one line in every five raises a question the story answers later, or turns with 'but', 'yet' or "
+               "'until' (a surprise, a doubt, a choice). ")
+
+
+def hook_fix(lines: list[dict], chapters: list[dict], topic: str, title: str, rules: str, style: str, chat=None) -> tuple[list[dict], list[dict]]:
+    """23 Nov 2026: the Maximilian film opened on a birth date and held no question in 89 lines (reviewer warning hook_question). When neither of the
+    first two lines asks a question, the writer is asked once for one opening question line, which goes BEFORE the film's first line (nothing written is
+    lost) and through the same fact-check as every line. A failed call, or an answer that is not a short question, leaves the script as it was."""
+    if not lines or any("?" in l["text"] for l in lines[:2]):
+        return lines, chapters
+    try:
+        r = (chat or _script_chat)(llm.cached(
+            f"You are narrating a documentary titled '{title}' about: {topic}.\nStyle: {style}\n{rules}\n\n",
+            f"The film's first line is: {lines[0]['text']}\nIts second line is: {lines[1]['text'] if len(lines) > 1 else ''}\n"
+            "Write ONE new line to come before them: the central question of the whole film, asked openly (who, what, where, why or how; never yes/no), "
+            "naming its subject so a stranger understands, under 20 words, then one short sentence on what the viewer will know by the end. "
+            "Use only what the sources support; add no new names, dates or numbers. "
+            'Return JSON: {"text": "...", "visual": "2 to 4 words to search an archival image for"}'))
+        text = str(r.get("text", "")).strip()
+    except Exception:
+        return lines, chapters
+    if "?" not in text or len(text.split()) > 45:
+        return lines, chapters
+    new = {"text": text, "visual": str(r.get("visual") or lines[0].get("visual", "")).strip()}
+    return [new, *lines], [c if c.get("start_line", 0) == 0 else {**c, "start_line": c["start_line"] + 1} for c in chapters]
+
+
 def doc_script(topic: str, facts: str | None = None, grounded: str | None = None) -> dict:
     """Outline first, then one request per chapter: small local models undershoot a one-shot long script.
 
@@ -719,6 +749,7 @@ def doc_script(topic: str, facts: str | None = None, grounded: str | None = None
                     f"Style: {nc['style']}\n{rules}\n\n",  # the same for every chapter, source article included: sent once as a cache block
                     f"Story so far: {told or '(nothing yet, this is the opening)'}\n\n"
                     f"Write chapter {n}: '{ch.get('title', '')}' - {ch.get('summary', '')}\n"
+                    + (HOOK_RULE if n == 1 else "") + REHOOK_RULE +
                     f"Write {n_lines} narration lines of {line_words(n_chapters, n_lines)[0]} to {line_words(n_chapters, n_lines)[1]} words each. Do not repeat earlier chapters: a name, date or event already told in the story so far is never told again, "
                     "and an opening only teases its payoff in one line, saving the details for the chapter where they belong. "
                     "Never write chapter numbers, headings or phrases like 'this chapter' in a line: every line is story the listener hears. "
@@ -740,6 +771,7 @@ def doc_script(topic: str, facts: str | None = None, grounded: str | None = None
             told += f" Chapter {n} ({ch.get('title', '')}): {ch.get('summary', '')}"
         lines, chapters, _ = strip_labels(lines, chapters)  # the writer must not narrate its own outline
         lines, chapters = extend_to_length(lines, chapters, outline, topic, rules, nc["style"])  # before the fact-check, so every added line is checked too
+        lines, chapters = hook_fix(lines, chapters, topic, str(outline.get("title", "")), rules, nc["style"])  # an opening question, before the fact-check
         _save_draft(topic, grounded or facts, outline, lines, chapters, rules)
     if grounded:
         before = sum(len(l["text"].split()) for l in lines)

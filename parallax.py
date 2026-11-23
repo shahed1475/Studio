@@ -98,7 +98,7 @@ def render_clip(path, dmap: Image.Image, seconds: float, out: Path, size: tuple[
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_name(out.stem + ".part.mp4")
     cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{w}x{h}", "-r", str(fps), "-i", "-",
-           "-vf", "eq=brightness=-0.05:saturation=0.85,setsar=1", "-an", *render._venc("18", "veryfast"), str(tmp)]  # the same grade the still-picture path gives
+           "-vf", f"{render.GRADE},setsar=1", "-an", *render._venc("18", "veryfast"), str(tmp)]  # the same grade the still-picture path gives
     with Image.open(path) as im:
         src = im.convert("RGB")
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE)

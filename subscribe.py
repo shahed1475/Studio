@@ -85,7 +85,7 @@ def command(video: Path, out: Path, times: list[float], size: tuple[int, int], v
         graph.append(f"[{i + n}:v]scale={tw}:-1,format=rgba,setpts=PTS+{t:.3f}/TB[p{i}]")
         graph.append(f"{prev}[p{i}]overlay=x={x}:y={y}:eof_action=pass[v{i}]")
         prev = f"[v{i}]"
-    return [*cmd, "-filter_complex", ";".join(graph), "-map", prev, "-map", "0:a?", *render._venc("19", "veryfast"), "-c:a", "copy", "-movflags", "+faststart", str(out)]
+    return [*cmd, "-filter_complex", ";".join(graph), "-map", prev, "-map", "0:a?", *render._venc("18", "veryfast"), "-c:a", "copy", "-movflags", "+faststart", str(out)]
 
 
 def _seconds(path) -> float:
