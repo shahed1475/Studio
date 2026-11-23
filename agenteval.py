@@ -2179,7 +2179,74 @@ def case_the_doctor_checks_the_model_key_for_real_and_never_calls_old_or_unprove
     return ok, f"failed={bool(failed)} routed_off={routed_off} unknown={unknown} stale={stale}"
 
 
-CASES = [case_the_doctor_checks_the_model_key_for_real_and_never_calls_old_or_unproven_health_healthy, case_an_openrouter_401_is_one_refused_key_not_a_failure_of_every_model, case_an_unchanged_routine_report_is_logged_once_and_the_bell_counts_only_problems_alerts_and_decisions, case_a_cut_at_the_very_end_never_makes_the_video_twice_and_a_cut_short_resumes_in_its_folder, case_a_render_cut_by_a_power_cut_is_found_kept_and_never_trusted_half_written, case_busy_judges_never_discard_a_draft_and_never_pass_it_unchecked, case_the_reviewer_flags_a_line_that_calls_proven_what_its_source_only_suggests, case_blender_scenes_are_true_to_the_line_and_never_stop_a_video, case_a_judge_is_never_the_writer_even_through_the_owners_provider, case_an_a2a_task_is_answered_once_only_by_its_target_and_never_off_the_hand_over_map,case_free_mode_never_sends_a_request_to_a_paid_model_through_the_video_checks, case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic, case_the_guardian_closes_its_draft_tasks_only_when_the_video_has_left_output, case_search_demand_is_no_signal_on_failure_spends_youtube_quota_only_within_its_budget_and_cleans_outside_text, case_comment_insights_keep_no_names_nothing_over_30_days_and_only_cleaned_questions_and_never_write,
+def case_a_cut_or_a_lost_network_never_breaks_a_saved_file_or_asks_the_owner_to_reconnect():
+    """23 Nov 2026 (master mission sub-plan 7, recovery tests): the worker's job times and the YouTube login were written in place, so a cut mid-write
+    (power, OOM, a killed container) could make every job run at once on restart or leave half a login; and the offline drill showed a lost network
+    reported as a lost login with the reconnect steps. Now both files are renamed into place, and a Google that cannot be reached is 'offline':
+    no alert, the Risks row keeps following the login's age."""
+    import socket
+
+    import alerts
+    import risk
+    import upload
+    import worker
+    import ytlogin
+
+    class Cut(BaseException):
+        pass
+
+    class Creds:
+        def __init__(self, text):
+            self.text = text
+
+        def to_json(self):
+            return self.text
+
+    def die(*a, **k):
+        raise Cut()
+
+    def down():
+        raise socket.gaierror(-3, "Temporary failure in name resolution")
+
+    real_replace = os.replace
+    saved = [(o, n, getattr(o, n)) for o, n in ((worker, "STATE"), (upload, "TOKEN"), (ytlogin, "STATE"), (agentlog, "FILE"), (alerts, "push"))]
+    saved_run = agentlog.subprocess.run
+    files_ok = net_ok = False
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            base = Path(d)
+            worker.STATE, upload.TOKEN, ytlogin.STATE, agentlog.FILE = base / "worker_state.json", base / "token.json", base / "yl.json", base / "ev.jsonl"
+            alerts.push = lambda *a, **k: None
+            agentlog.subprocess.run = lambda *a, **k: None
+            first = {"autopilot": "2026-11-23T07:00:00Z", "weekly": "2026-11-23T09:00:00Z"}
+            worker.save_state(first)
+            upload.save_token(Creds('{"refresh_token": "old"}'))
+            for fn in (lambda: worker.save_state({**first, "autopilot": "later"}), lambda: upload.save_token(Creds('{"refresh_token": "new"}'))):
+                os.replace = die
+                try:
+                    fn()
+                except Cut:
+                    pass
+                finally:
+                    os.replace = real_replace
+            files_ok = worker.load_state() == first and json.loads(upload.TOKEN.read_text()) == {"refresh_token": "old"}
+            now = dt.datetime(2026, 11, 23, 7, 0, tzinfo=dt.timezone.utc)
+            ytlogin.stamp(now - dt.timedelta(days=1), mode="production")
+            ytlogin.check(now - dt.timedelta(hours=1), refresh=lambda: None)
+            r = ytlogin.check(now, refresh=down)
+            reconnect = [e for e in agentlog.recent(50) if "Reconnect" in e.get("detail", "")]
+            net_ok = r.get("offline") is True and not reconnect and risk.login(now)["level"] == "ok"
+    finally:
+        os.replace = real_replace
+        agentlog.subprocess.run = saved_run
+        for o, n, v in saved:
+            setattr(o, n, v)
+    ok = files_ok and net_ok
+    return ok, ("a cut mid-save leaves the job times and the login whole; a lost network is never reported as a lost login" if ok
+                else f"files_ok={files_ok} net_ok={net_ok}")
+
+
+CASES = [case_a_cut_or_a_lost_network_never_breaks_a_saved_file_or_asks_the_owner_to_reconnect, case_the_doctor_checks_the_model_key_for_real_and_never_calls_old_or_unproven_health_healthy,case_an_openrouter_401_is_one_refused_key_not_a_failure_of_every_model, case_an_unchanged_routine_report_is_logged_once_and_the_bell_counts_only_problems_alerts_and_decisions, case_a_cut_at_the_very_end_never_makes_the_video_twice_and_a_cut_short_resumes_in_its_folder, case_a_render_cut_by_a_power_cut_is_found_kept_and_never_trusted_half_written, case_busy_judges_never_discard_a_draft_and_never_pass_it_unchecked, case_the_reviewer_flags_a_line_that_calls_proven_what_its_source_only_suggests, case_blender_scenes_are_true_to_the_line_and_never_stop_a_video, case_a_judge_is_never_the_writer_even_through_the_owners_provider, case_an_a2a_task_is_answered_once_only_by_its_target_and_never_off_the_hand_over_map,case_free_mode_never_sends_a_request_to_a_paid_model_through_the_video_checks, case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic, case_the_guardian_closes_its_draft_tasks_only_when_the_video_has_left_output, case_search_demand_is_no_signal_on_failure_spends_youtube_quota_only_within_its_budget_and_cleans_outside_text, case_comment_insights_keep_no_names_nothing_over_30_days_and_only_cleaned_questions_and_never_write,
          case_ladder_ends_with_owner_not_a_crash, case_ladder_respects_budget_and_whitelist_and_lessons, case_outside_text_is_cleaned,
          case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules, case_registry_is_consistent,
          case_playbook_scope_injects_role_and_limits_only_when_acting, case_doctor_finds_stale_and_failing_agents_and_fixes_only_safely,

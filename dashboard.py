@@ -145,7 +145,7 @@ def yt_creds():
     creds = upload.load_creds(TOKEN)
     if not creds.valid and creds.refresh_token:
         creds.refresh(Request())
-        TOKEN.write_text(creds.to_json())
+        upload.save_token(creds, TOKEN)
     return creds
 
 
@@ -173,8 +173,9 @@ def yt_connect() -> None:
     try:
         scopes = SCOPES if tenantmode.is_tenant() else SCOPES + [safety.WRITE_SCOPE, safety.ANALYTICS_SCOPE]  # the owner's login can also change titles (the title test) and read the channel's own analytics
         creds = InstalledAppFlow.from_client_secrets_file(str(SECRET), scopes).run_local_server(port=0, timeout_seconds=300)
-        TOKEN.write_text(creds.to_json())
-        TOKEN.chmod(0o600)
+        import upload
+
+        upload.save_token(creds, TOKEN)
         import datetime as dt
 
         import ytlogin

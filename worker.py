@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 
 import agentlog
+import checkpoint
 import config
 import records
 
@@ -82,15 +83,12 @@ def _plan_confirmed() -> bool:
 
 
 def load_state() -> dict:
-    try:
-        return json.loads(STATE.read_text())
-    except (OSError, ValueError):
-        return {}
+    """The last start of every job. A file the disk lost falls back to the previous copy: an empty state would make every job due at once."""
+    return checkpoint.read_json(STATE)
 
 
 def save_state(state: dict) -> None:
-    STATE.parent.mkdir(parents=True, exist_ok=True)
-    STATE.write_text(json.dumps(state, indent=2))
+    checkpoint.write_json(STATE, state)  # renamed into place (23 Nov 2026: written in place, a cut mid-write made every job run at once on restart)
 
 
 def _log(msg: str) -> None:

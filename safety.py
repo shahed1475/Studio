@@ -102,6 +102,12 @@ def _pause_for_lost(now: dt.datetime) -> None:
             pass
 
 
+def _told_since(title: str, since: dt.datetime) -> bool:
+    """The owner already has this message from `since` on (the 23 Nov 2026 offline drill: an outage posted the same alert every hour)."""
+    cut = since.strftime(TS)
+    return any(e.get("title") == title and str(e.get("at", "")) >= cut for e in agentlog.recent(400))
+
+
 def check(now: dt.datetime | None = None, yt=None) -> dict:
     now = now or dt.datetime.now(dt.timezone.utc)
     try:
@@ -118,12 +124,15 @@ def check(now: dt.datetime | None = None, yt=None) -> dict:
         try:
             yt = _service()
         except Exception as e:
-            if type(e).__name__ == "RefreshError" or "invalid_grant" in str(e):
+            import ytlogin
+
+            if "invalid_grant" in str(e) or (type(e).__name__ == "RefreshError" and not ytlogin.offline(e)):
                 msg = ("The YouTube login expired", "Reconnect YouTube in the dashboard. If this repeats every 7 days, set the Google OAuth consent "
                        "screen to \"In production\" (Google Cloud Console, Audience, Publish app).")
             else:
                 msg = ("Could not reach YouTube to check published videos", f"{type(e).__name__}: {e}")
-            agentlog.event("error", msg[0], msg[1], notify=True, now=now)
+            if not (msg[0].startswith("Could not reach") and _told_since(msg[0], now - dt.timedelta(hours=24))):  # an outage: once a day, not every hour
+                agentlog.event("error", msg[0], msg[1], notify=True, now=now)
             return {"checked": 0, "problems": [], "paused": False, "error": msg[0]}
     found = {}
     ids = [m[1]["video_id"] for m in due]

@@ -438,9 +438,20 @@ def login(now: dt.datetime | None = None) -> dict:
     now = now or dt.datetime.now(dt.timezone.utc)
     s = ytlogin.status(now)
     last = s.get("last_check")
-    failed = bool(last) and not last.get("ok")
+    offline = bool(last) and bool(last.get("offline"))  # Google was not reached: the login was not tested (23 Nov 2026 offline drill)
+    failed = bool(last) and not last.get("ok") and not offline
     level = "act" if failed else s["level"]
-    ev = s["detail"] + (f". The last check ({last['at']}) {'failed: ' + last['error'] if failed else 'got a fresh token from Google'}." if last else ". No refresh check has run yet.")
+    if offline:
+        ok_at = s.get("last_ok")
+        try:
+            stale = not ok_at or now - dt.datetime.strptime(ok_at, ytlogin.TS).replace(tzinfo=dt.timezone.utc) > dt.timedelta(hours=26)
+        except ValueError:
+            stale = True
+        level = "watch" if stale and level == "ok" else level  # nobody can vouch for a login untested for more than a day
+        ev = s["detail"] + (f". The last check ({last['at']}) could not reach Google (no network), so the login was not tested; "
+                            + (f"the last working check was {ok_at}." if ok_at else "no working check is recorded."))
+    else:
+        ev = s["detail"] + (f". The last check ({last['at']}) {'failed: ' + last['error'] if failed else 'got a fresh token from Google'}." if last else ". No refresh check has run yet.")
     return ind("login", "YouTube login stays valid", level, ev,
                "a refresh check every hour (a failure is reported at once with the steps), the consent date stamped on every connect, uploads are marked before they are sent",
                "Reconnect before it runs out (steps in the alert). To stop the 7-day limit: Google Cloud Console, Audience, Publish app, reconnect once, then python run.py youtube-login production. docs/GOOGLE_PRODUCTION.md")

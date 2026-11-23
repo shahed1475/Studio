@@ -26,6 +26,15 @@ def load_creds(path: Path | None = None):
     return Credentials.from_authorized_user_file(str(path or TOKEN))
 
 
+def save_token(creds, path: Path | None = None) -> None:
+    """Save the login: renamed into place with owner-only permissions (anyone who copies it can upload to the channel). 23 Nov 2026: every refresh
+    (hourly, and in every process whose access token had run out) rewrote token.json in place; a cut in that moment left half a login and the owner
+    had to reconnect in a browser. Two processes refreshing at once now each write a whole file; the last one stays."""
+    import checkpoint
+
+    checkpoint.write_text_atomic(path or TOKEN, creds.to_json(), mode=0o600)
+
+
 def _service():
     creds = load_creds() if TOKEN.exists() else None
     if not creds or not creds.valid:
@@ -35,8 +44,7 @@ def _service():
             if not SECRET.exists():
                 raise SystemExit("client_secret.json missing. Follow the YouTube setup steps in README.md.")
             creds = InstalledAppFlow.from_client_secrets_file(str(SECRET), SCOPES).run_local_server(port=0)
-        TOKEN.write_text(creds.to_json())
-        TOKEN.chmod(0o600)  # the login lets anyone who copies it upload to the channel
+        save_token(creds)
     return build("youtube", "v3", credentials=creds)
 
 

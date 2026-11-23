@@ -131,7 +131,9 @@ def load_config() -> dict:
 
 
 def save_config(cfg: dict) -> None:
-    CONFIG_FILE.write_text(json.dumps({k: cfg[k] for k in DEFAULTS}, indent=2))
+    import checkpoint
+
+    checkpoint.write_text_atomic(CONFIG_FILE, json.dumps({k: cfg[k] for k in DEFAULTS}, indent=2))  # a cut mid-save leaves the owner's last settings whole
 
 
 def validate_config(raw: dict) -> dict:

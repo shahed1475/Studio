@@ -27,16 +27,38 @@ def _now() -> str:
 
 def write_json(path: Path, data: dict) -> None:
     """Atomic: a reader sees the old file or the new one, never half of one. The previous version is kept as <name>.prev."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
     text = json.dumps(data, indent=1, sort_keys=True)
     json.loads(text)  # the structure is checked before it can replace anything
-    with open(tmp, "w") as f:
-        f.write(text)
-        f.flush()
-        os.fsync(f.fileno())
-    if path.exists():
+    write_text_atomic(path, text, keep_prev=True)
+
+
+def write_text_atomic(path: Path, text: str, keep_prev: bool = False, mode: int | None = None) -> None:
+    """A temporary file, flushed to disk, then renamed over the old one: a cut (power, OOM, a killed container) leaves the old file or the new one,
+    never half of one. `mode` sets the permissions before the rename (token.json: 0o600); without it the old file's are kept (llm.json and
+    autopilot.json are the owner's only). 23 Nov 2026: worker_state.json, autopilot.json, llm.json and token.json were written in place; a cut
+    mid-write made every worker job due at once, crashed every Autopilot tick, or left half a YouTube login."""
+    import tempfile
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, name = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")  # its own name (two writers never share one) and created 0600
+    tmp = Path(name)
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        if mode is not None:
+            os.chmod(tmp, mode)
+        else:
+            try:
+                os.chmod(tmp, path.stat().st_mode & 0o7777 if path.exists() else 0o644)
+            except OSError:
+                pass
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+    if keep_prev and path.exists():
         try:
             shutil.copy2(path, path.with_name(path.name + ".prev"))
         except OSError:

@@ -1405,3 +1405,23 @@ def test_the_quiet_notifications_case_passes_and_fails_when_its_rules_are_broken
         real = agentlog.record
         m.setattr(agentlog, "record", lambda *a, **k: {x: y for x, y in real(*a, **k).items() if x != "alert"})  # mutation: notify leaves no mark
         assert not case()[0]
+
+
+def test_the_recovery_case_catches_a_file_written_in_place_and_an_outage_called_a_lost_login(monkeypatch):
+    """Case and mutation checks for case_a_cut_or_a_lost_network_never_breaks_a_saved_file_or_asks_the_owner_to_reconnect (23 Nov 2026, sub-plan 7)."""
+    import upload
+    import worker
+    import ytlogin
+
+    case = agenteval.case_a_cut_or_a_lost_network_never_breaks_a_saved_file_or_asks_the_owner_to_reconnect
+    ok, detail = case()
+    assert ok, detail
+    with monkeypatch.context() as m:
+        m.setattr(worker, "save_state", lambda s: worker.STATE.write_text(json.dumps(s)))  # mutation: the job times written in place again
+        assert not case()[0]
+    with monkeypatch.context() as m:
+        m.setattr(upload, "save_token", lambda creds, path=None: (path or upload.TOKEN).write_text(creds.to_json()))  # mutation: the login written in place
+        assert not case()[0]
+    with monkeypatch.context() as m:
+        m.setattr(ytlogin, "offline", lambda e: False)  # mutation: no network is taken for a failed login
+        assert not case()[0]

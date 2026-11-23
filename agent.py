@@ -50,7 +50,9 @@ def save_config(cfg: dict) -> dict:
         if isinstance(v, bool) or not isinstance(v, int) or not lo <= v <= hi:
             raise ValueError(f"{k} must be a whole number from {lo} to {hi}")
     out = {**DEFAULTS, **{k: cfg[k] for k in DEFAULTS if k in cfg}}
-    CONFIG_FILE.write_text(json.dumps(out, indent=2))
+    import checkpoint
+
+    checkpoint.write_text_atomic(CONFIG_FILE, json.dumps(out, indent=2))  # a cut mid-save leaves the owner's last settings whole
     return out
 
 

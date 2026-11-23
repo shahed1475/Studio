@@ -138,6 +138,7 @@ def finish(code: str, state: str, redirect: str, now: float | None = None) -> No
     flow.code_verifier = entry["verifier"]
     flow.fetch_token(code=code)
     _claim(_channel_id(flow.credentials))  # refused here: nothing is written, the login is thrown away
-    TOKEN.write_text(flow.credentials.to_json())
-    TOKEN.chmod(0o600)
+    import upload
+
+    upload.save_token(flow.credentials, TOKEN)  # renamed into place, owner-only
     _after_login()
