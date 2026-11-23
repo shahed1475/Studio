@@ -95,11 +95,16 @@ def line_prosody(style: str | None, text: str, index: int, total: int) -> dict |
     return {"voice": spec["voice"], "rate": part["rate"], "pitch": part["pitch"]}
 
 
+LINE_TIMEOUT = 120  # seconds for one voice line (23 Nov 2026: a stream that stopped sending held the Mary Celeste film for 20 minutes on line 71)
+RETRY_WAITS = (1, 3, 8, 0)
+
+
 async def _synth_line(text: str, mp3: Path, prosody: dict | None = None) -> list[tuple[float, float, str]]:
-    """The voice service sometimes returns no audio for a line. Try again with a growing wait before giving up."""
-    for attempt, wait in enumerate((1, 3, 8, 0)):
+    """The voice service sometimes returns no audio for a line, or stops sending in the middle of one. Each attempt has a time limit; try again with a
+    growing wait before giving up."""
+    for attempt, wait in enumerate(RETRY_WAITS):
         try:
-            return await (_synth_once(text, mp3) if prosody is None else _synth_once(text, mp3, prosody))
+            return await asyncio.wait_for(_synth_once(text, mp3) if prosody is None else _synth_once(text, mp3, prosody), LINE_TIMEOUT)
         except Exception:
             if not wait:
                 raise

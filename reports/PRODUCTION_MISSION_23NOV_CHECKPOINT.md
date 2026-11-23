@@ -24,3 +24,10 @@ Resume from the first unticked line. Workshop off-limits. Topic report: reports/
 - Fixed: `render.BT709` in every `_venc` (options + h264_metadata VUI flags; options alone reached only the matrix), `render.GRADE` (S-curve with highlight roll-off, lifted blacks, small cool/warm split, saturation 0.9, soft vignette; 0% clipped, 0% crushed, about 10% darker on 3 real pictures) for stills, real footage and parallax clips, final passes CRF 18 (was 21/19), `render.AUDIO` AAC 320 kb/s 48 kHz. tests/test_render_grade.py 3 passed on host (openh264) and worker (libx264); render-related suites in the worker 132 passed (test_animation updated for the new grade). DaVinci Resolve: not installed, not used.
 - [ ] Short (after the documentary: one render at a time): pin "The Mary Celeste" short, `python run.py autopilot make short`.
 ## Phases 6-15: [ ] QC both files, grade/colour metadata, captions, audits, browser QA, report, suite, commit.
+
+## 10:15 UTC status
+- Script: written and fact-checked 09:04-09:25 UTC (89 lines, 3,335 words, 13 chapters, title "The Ghost Ship: The True Story of the Mary Celeste"); opens on a question (the hook fix worked); saved in data/pending_doc.json, tries 0.
+- Voice: lines 0-70 made and recorded; the edge-tts stream HUNG on line 71 from 09:49 to 10:10 UTC (no timeout in tts._synth_once). Fixed: `tts.LINE_TIMEOUT` 120 s per attempt with retries (tests/test_tts_timeout.py, 40 voice tests pass). Job stopped and resumed 10:10:47.
+- Resume REFUSED by the memory gate (1.8 GB free, needs 3 GB; the owner's QEMU VM ~6 GB, Chrome, VS Code). Not bypassed. `logs/.mary-celeste-wait.sh` (setsid, host) checks every 2 min for 8 h and resumes at 3.3 GB free; it never starts a second job.
+- Free pictures: about 2,750 of 10,000 Cloudflare units left today, a film needs about 6,000: the picture stage will finish after the 00:00 UTC reset (built-in wait).
+- NEXT: when the film is made -> QC (ffprobe, full decode, colour tags, frames, audio, captions), then the Short (pin "The Mary Celeste" short; `python run.py autopilot make short`), QC, browser check, report reports/PRODUCTION_MISSION_23NOV.md, suite, commit.
