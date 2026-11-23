@@ -346,7 +346,8 @@ button.wd{cursor:pointer}button.wd:hover{transform:translateY(-2px);border-color
 const NAV=[["home","Home","squares-four"],["live","Live","broadcast"],["videos","Videos","film-strip"],["autopilot","Autopilot","robot"],["desk","Tasks","list-checks"],["create","Create","magic-wand"],["growth","Growth","sparkle"],["activity","Activity","pulse"],["youtube","YouTube","youtube-logo"]]; const TOOLS=[["footage","Footage","film-slate"],["channels","Channels","users-three"],["downloads","Downloads","download-simple"],["reports","Reports","books"]]; const SET=["settings","Settings","gear-six"];
 let weekDone=false;
 let apSub=(()=>{try{return sessionStorage.getItem('apSub')||'overview'}catch(e){return 'overview'}})();
-let S=null,tab=(location.hash.slice(1)||"home"),openSlug=null,openJob=null,ytInfo=null,editing=false,lastSig="",logTimer=null;
+function hashSlug(){try{const p=location.hash.slice(1).split("/")[1];return p?decodeURIComponent(p):null}catch(e){return null}}  // a malformed link must never stop the page (24 Nov 2026 review)
+let S=null,tab=(location.hash.slice(1).split("/")[0]||"home"),openSlug=hashSlug(),openJob=null,ytInfo=null,editing=false,lastSig="",logTimer=null;
 
 const url=u=>/^https?:\/\//i.test(u||"")?u:"";
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -394,7 +395,7 @@ function toggleTheme(ev){
 }
 setTheme(safe(()=>localStorage.getItem("theme"))||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"));
 
-function go(t,opts={}){sheet(false);weekDone=false;window.scrollTo(0,0);if(opts.slug!==undefined)openSlug=opts.slug;tab=t;location.hash=t;clearInterval(logTimer);render(true)}
+function go(t,opts={}){sheet(false);weekDone=false;window.scrollTo(0,0);if(opts.slug!==undefined)openSlug=opts.slug;tab=t;location.hash=t+(t==="videos"&&openSlug?"/"+encodeURIComponent(openSlug):"");clearInterval(logTimer);render(true)}
 async function job(cmd,args=[]){const r=await api("/api/job",{cmd,args});openJob=r.id;toast("Started. It keeps running if you close this page.");await refresh(true);go("activity")}
 
 async function refresh(force){
@@ -853,7 +854,7 @@ function videos(m){
   if(openSlug){
     const v=S.videos.find(x=>x.slug===openSlug);if(!v){openSlug=null;return videos(m)}
     const can=v.state!=="uploaded",yt=S.youtube.token;
-    m.innerHTML=`<div class="head"><div><button class="btn quiet sm" onclick="openSlug=null;editing=false;render()">${ico("arrow-left")}All videos</button></div><h1>${esc(v.title)}</h1>
+    m.innerHTML=`<div class="head"><div><button class="btn quiet sm" onclick="openSlug=null;editing=false;history.replaceState(null,'','#videos');render()">${ico("arrow-left")}All videos</button></div><h1>${esc(v.title)}</h1>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${stateBadge(v.state)}<span class="mute">${v.format==="doc"?"Documentary":"Short"}, ${v.mb} MB, made ${esc(v.made)}${v.cost?`, cost so far ${usd(v.cost)}`:""}</span></div></div>
     <div class="detail">
       <div class="stack">${v.mb>0?`<video controls preload="metadata" poster="${posterUrl(v)}" src="/video/${esc(v.slug)}"></video>`:`<div class="panel pad stack" style="gap:10px"><h2>The file is not on this computer</h2><p class="sub">${v.video_id?"This video is on your channel; the local copy was not kept. Watch it on YouTube.":"The video file is missing from this computer."}</p>${v.video_id?`<div><a class="btn" target="_blank" rel="noopener" href="https://youtu.be/${esc(v.video_id)}">Open on YouTube</a></div>`:""}</div>`}
@@ -891,6 +892,10 @@ function reviewPanel(v){
   const row=c=>`<div><i class="ic ${c.ok?"ck-ok":c.severity==="warn"?"ck-warn":"ck-bad"}" style="--i:url(/static/icons/${c.ok?"check":c.severity==="warn"?"warning":"x"}.svg)"></i><div><div class="ttl" style="font-weight:560">${esc(CK[c.name]||c.name)}</div><div class="mute">${esc(c.detail)}</div></div></div>`;
   return `<div class="panel pad stack" style="gap:12px"><h2>Reviewer report</h2>
   ${r?`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${verdictBadge(r.verdict)}<span class="mute">${bad.length?bad.length+" to look at":"All "+good.length+" checks passed"}${v.approved_by?", approved by "+(v.approved_by==="you"?"you":"the reviewer agent"):""}</span></div>
+  <p class="mute" data-review-meta>Reviewed ${esc(r.at||"at an unknown time")}${r.at?" ("+agoIso(r.at)+")":""} · review ${esc(r.id||"no id (made before 24 Nov)")} · script ${esc(r.script_sha||"not recorded")}${r.script_sha&&v.script_sha_now&&r.script_sha!==v.script_sha_now?` · <b>stale: the script changed after this review</b>`:r.script_sha&&(v.review_history||[]).length&&v.review_history[0].script_sha===r.script_sha?" · same script as the previous review, so the same rule findings are expected":""}</p>`:""}
+  ${v.review_attempt?`<p class="help" data-review-attempt>The last review try (${esc(v.review_attempt.at)}, ${agoIso(v.review_attempt.at)}) did not finish: ${esc(v.review_attempt.why)}</p>`:""}
+  ${(v.review_history||[]).length?`<details data-review-history><summary class="mute" style="cursor:pointer">Earlier reviews (${v.review_history.length})</summary><div class="rows">${v.review_history.map(h=>`<div><div class="grow"><div class="ttl">${esc(h.at)} · ${esc(h.verdict)}</div><div class="mute">review ${esc(h.id||"no id")} · script ${esc(h.script_sha||"not recorded")} · ${h.findings.length?esc(h.findings.join(", ")):"no findings"}</div></div></div>`).join("")}</div></details>`:""}
+  ${r?`
   ${bad.length?`<div class="checks">${bad.map(row).join("")}</div>`:""}
   <details><summary class="mute" style="cursor:pointer">Passed checks (${good.length})</summary><div class="checks">${good.map(row).join("")}</div></details>`:empty("shield-check","Not checked yet","The reviewer agent checks the files, the script and the metadata before anything is uploaded.")}
   <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn quiet" ${b||v.state==="uploaded"?"disabled":""} onclick="job('review',['${v.slug}'])">${ico("shield-check")}${r?"Check again":"Run the reviewer"}</button>
@@ -1459,7 +1464,7 @@ async function kaggleAct(act,btn){/* Kaggle token: a read-only test, or removal 
   btn.disabled=false;if(act==="remove"){kgArmed=0;refresh(true)}}
 async function testSources(){const b=document.getElementById("srcbtn"),o=document.getElementById("srcout");b.disabled=true;o.textContent="Searching every library (this can take up to a minute)...";try{const r=await api("/api/sources/test",{query:document.getElementById("srcq").value});const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));o.innerHTML=r.rows.map(x=>`<div>${x.state==="ok"?"&#10003;":x.state==="needs key"?"&#9675;":"&#10007;"} <b>${esc(x.label)}</b> (${esc(x.kind)}): ${esc(x.state)}. ${esc(x.detail)}${x.first?` <a target="_blank" rel="noopener" href="${esc(x.first)}">first result</a>`:""}</div>`).join("")}catch(e){o.textContent="The test could not run: "+(e.message||e)}b.disabled=false}
 
-window.addEventListener("hashchange",()=>{const t=location.hash.slice(1);if(t&&t!==tab&&[...NAV,...TOOLS,SET].some(n=>n[0]===t)){tab=t;render(true)}});
+window.addEventListener("hashchange",()=>{const t=location.hash.slice(1).split("/")[0],sl=t==="videos"?hashSlug():openSlug;if(t&&(t!==tab||sl!==openSlug)&&[...NAV,...TOOLS,SET].some(n=>n[0]===t)){tab=t;openSlug=sl;render(true)}});
 refresh(true);setInterval(()=>refresh(),4000);startLive();
 </script>
 </body>

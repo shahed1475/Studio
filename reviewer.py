@@ -613,8 +613,32 @@ def probe_video(path: Path) -> dict:
             "mean_db": float(m.group(1)) if m else None, "lufs": lufs, "true_peak": peak, "black_ratio": black / duration if duration else 1.0}
 
 
+HISTORY_KEEP = 20  # earlier reviews kept on the record, newest last
+
+
+def script_fingerprint(meta: dict) -> str:
+    """Twelve hex characters that change when the narration or the title changes: two reviews with the same fingerprint read the same script."""
+    import hashlib
+
+    lines = meta.get("lines") if isinstance(meta.get("lines"), list) else []
+    text = str(meta.get("title", "")) + "\n" + "\n".join(str(l.get("text", "")) if isinstance(l, dict) else str(l) for l in lines)
+    return hashlib.sha256(text.encode()).hexdigest()[:12]
+
+
+def keep_history(meta: dict) -> None:
+    """Moves the stored review into review_history before it is replaced or dropped (24 Nov 2026: a review had no date, id or history on the
+    dashboard, so a new review of an unchanged script looked like the same old report, and a failed AI review erased the last one)."""
+    old = meta.get("review")
+    if isinstance(old, dict) and old.get("checks") is not None:  # kept short: the failing checks and a count of the rest, not every passed check (a full
+        checks = old.get("checks") or []                         # review is 5 to 12 KB; twenty of them would slow every dashboard read)
+        short = {k: old[k] for k in ("verdict", "at", "id", "script_sha") if k in old} | {
+            "checks": [c for c in checks if isinstance(c, dict) and not c.get("ok")], "passed": sum(1 for c in checks if isinstance(c, dict) and c.get("ok"))}
+        meta["review_history"] = ([*meta.get("review_history", [])] + [short])[-HISTORY_KEEP:]
+
+
 def apply_verdict(meta: dict, result: dict) -> None:
     """Store the result. A video the reviewer no longer passes loses the reviewer's own approval (never yours)."""
+    keep_history(meta)
     meta["review"] = result
     meta["autopilot_fails"] = 0
     if result["verdict"] != "pass" and meta.get("approved_by") != "you" and not meta.get("video_id"):  # an uploaded video is already on YouTube: the file's approval is history
@@ -623,7 +647,8 @@ def apply_verdict(meta: dict, result: dict) -> None:
 
 
 def invalidate(meta: dict) -> None:
-    """After any edit the old review means nothing: drop it, the reviewer's approval and the slot."""
+    """After any edit the old review means nothing: drop it (kept in review_history), the reviewer's approval and the slot."""
+    keep_history(meta)
     meta.pop("review", None)
     meta.pop("prelaunch", None)  # an edited video is checked again before it posts
     if meta.get("video_id"):
@@ -650,8 +675,11 @@ def review(folder: Path, existing_titles: list[str] | None = None, use_llm: bool
     checks = rule_checks(meta, probe_video(folder / "video.mp4"), existing_titles, thumb_bytes, recent, source)
     if use_llm:
         checks += llm_review(meta, source)
+    import uuid
+
     result = {"verdict": verdict_from(checks, meta.get("source")), "checks": checks,
-              "at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+              "at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "id": uuid.uuid4().hex[:12], "script_sha": script_fingerprint(meta)}  # every review is its own run, tied to the script it read
     if not persist:
         return result
     alert = []
@@ -659,12 +687,15 @@ def review(folder: Path, existing_titles: list[str] | None = None, use_llm: bool
     def apply(d):
         apply_verdict(d, result)
         if result["verdict"] == "unreviewed":
-            d.pop("review", None)  # no stored verdict means Autopilot reviews it again on its next look
+            d.pop("review", None)  # no stored verdict means Autopilot reviews it again on its next look (the previous one is in review_history)
+            why = next((c["detail"] for c in checks if c["name"] == "llm_review" and not c["ok"]), "the AI review did not answer")
+            d["review_attempt"] = {k: result[k] for k in ("id", "at", "verdict", "script_sha")} | {"why": why[:300]}
             d["unreviewed_tries"] = d.get("unreviewed_tries", 0) + 1
             if d["unreviewed_tries"] == UNREVIEWED_ALERT:  # the model keeps failing on this video: the owner is told once
                 alert.append(d.get("title", folder.name))
         else:
             d.pop("unreviewed_tries", None)
+            d.pop("review_attempt", None)
 
     meta = records.update(folder, apply)  # the review took minutes: change the CURRENT record, not the copy read at the start
     if alert:

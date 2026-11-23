@@ -52,6 +52,16 @@ def mask(s: str) -> str:
 
 
 # ---------- data ----------
+def review_trail(d: dict) -> dict:
+    """What the Reviewer report panel needs to tell a new review from an old one (24 Nov 2026): the current script's fingerprint, earlier reviews
+    (newest first, short form) and the last review whose AI part did not answer. Old reviews stored before ids existed show as 'no id'."""
+    import reviewer
+
+    hist = [{"at": h.get("at", ""), "id": h.get("id", ""), "verdict": h.get("verdict", ""), "script_sha": h.get("script_sha", ""),
+             "findings": [c["name"] for c in h.get("checks", []) if not c.get("ok")]} for h in reversed(d.get("review_history") or []) if isinstance(h, dict)]
+    return {"script_sha_now": reviewer.script_fingerprint(d), "review_history": hist[:10], "review_attempt": d.get("review_attempt")}
+
+
 def videos() -> list[dict]:
     out = []
     for m in config.OUT.glob("*/meta.json"):
@@ -64,6 +74,7 @@ def videos() -> list[dict]:
             "description": d.get("description", ""), "tags": d.get("tags", []),
             "subtitles": d.get("subtitles"), "has_srt": (m.parent / "captions.srt").exists(), "review": d.get("review"), "approved_by": d.get("approved_by"), "hold": bool(d.get("hold")), "publish_at": d.get("publish_at"), "seo": d.get("seo"), "tags": d.get("tags", []), "thumbs": d.get("thumbnails", []), "thumbnail": d.get("thumbnail", ""), "cover": d.get("cover", ""), "hook": d.get("thumb_hook", ""),
             "thumb_v": int((m.parent / "thumbs").stat().st_mtime) if (m.parent / "thumbs").exists() else 0,
+            **review_trail(d),
             "mb": round(v.stat().st_size / 1e6, 1) if v.exists() else 0, "cost": round(__import__("llm").video_cost(m.parent.name), 2),
             "made": time.strftime("%Y-%m-%d %H:%M", time.localtime(v.stat().st_mtime)) if v.exists() else "",
             "mtime": v.stat().st_mtime if v.exists() else 0,

@@ -107,6 +107,9 @@ def reissue(folder: Path, meta: dict, now: dt.datetime) -> bool:
         for k in ("hold", "approved", "approved_by", "fix_attempts", "fix_gave_up", "recheck", "polish_done"):
             d.pop(k, None)
         d["guardian"] = g
+        import reviewer
+
+        reviewer.keep_history(d)  # the dropped review stays in review_history (24 Nov 2026)
         d.pop("review", None)
 
     try:
