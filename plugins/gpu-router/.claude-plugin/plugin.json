@@ -1,0 +1,8 @@
+{
+  "name": "gpu-router",
+  "version": "0.1.1",
+  "description": "Quota-aware GPU job router for a video render pipeline. Routes work across Kaggle and Modal free tiers by job shape, tracks remaining quota in a local ledger, and keeps artifacts in R2 so a killed session never costs GPU hours twice.",
+  "author": {
+    "name": "Abdullah Al Fahad"
+  }
+}

@@ -1,0 +1,20 @@
+[project]
+name = "gpu-router"
+version = "0.1.1"
+description = "Quota-aware GPU job router across free tiers (Kaggle, Modal) with R2 artifact storage"
+requires-python = ">=3.10"
+dependencies = ["kaggle>=1.6"]
+
+[project.optional-dependencies]
+r2 = ["boto3>=1.34"]
+modal = ["modal>=0.64"]
+
+[project.scripts]
+gpu-router = "gpu_router.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["gpu_router*"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

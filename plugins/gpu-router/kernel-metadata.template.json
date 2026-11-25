@@ -1,0 +1,17 @@
+{
+  "id": "your-kaggle-username/REPLACE-WITH-SLUG",
+  "title": "REPLACE WITH TITLE",
+  "code_file": "notebook.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": [
+    "your-kaggle-username/render-manifest"
+  ],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": []
+}
