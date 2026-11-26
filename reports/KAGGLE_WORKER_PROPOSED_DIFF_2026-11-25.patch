@@ -1,0 +1,68 @@
+PROPOSED, NOT APPLIED (25 Nov 2026). Step K1a of reports/KAGGLE_WORKER_IMPLEMENTATION_PROPOSAL_2026-11-25.md. Uses no Kaggle quota.
+Apply only after the owner's yes: `patch -p1 --dry-run < this-file`, then without --dry-run; undo with `patch -p1 -R`.
+--- a/config/compute.json
++++ b/config/compute.json
+@@ -58,7 +58,7 @@
+    "ram_evidence": "not verified: Kaggle's docs page renders by JavaScript and was not read",
+    "weekly_gpu_hours": 30,
+    "quota_evidence": "kaggle quota (CLI 2.2.5) 24 Nov 2026 16:59 UTC: GPU 11.74 h used of 30 h, refresh 2026-11-28 00:00 UTC; TPU 0 of 20 h",
+-   "session_hours": 12,
++   "session_hours": 9,
+    "session_evidence": "kaggle.com/docs/notebooks read 24 Nov 2026: 12 h execution for CPU and GPU sessions, 9 h TPU; 20 GB saved in /kaggle/working",
+    "internet": true,
+    "engines": [
+@@ -81,7 +81,9 @@
+    "accelerator": "NvidiaTeslaT4",
+    "session_cap_s": 3600,
+    "test_input": "data/compute/inputs/kaggle_benchmark_v1.json",
+-   "test_competition": "spaceship-titanic"
++   "test_competition": "",
++   "quota_safety_margin_h": 2.0,
++   "queue_timeout_s": 3600
+   }
+  },
+  "licenses_ok_for_production": [
+--- a/kaggleworker.py
++++ b/kaggleworker.py
+@@ -254,6 +254,32 @@
+     return submit(job, twin, owner, env_cfg, run=run)
+ 
+ 
++def quota_preflight(job: dict, env_cfg: dict, run=subprocess.run) -> tuple[bool, str]:
++    """(allowed, why) before any push: the LIVE quota from `kaggle quota` (CLI 2.2.5, get_accelerator_quota_statistics), never the fixed
++    weekly_gpu_hours; no push while another studio Kaggle job is waiting or running (Kaggle docs: a second commit makes a concurrent batch
++    session); never a session longer than session_hours. Unknown means no."""
++    q = _cli(["quota", "--format", "json"], run=run, timeout=60)
++    try:
++        rows = json.loads(q.stdout)
++        rows = rows if isinstance(rows, list) else [rows]
++        gpu = next(r for r in rows if str(r.get("resource", "")).upper() == "GPU")
++        remaining = float(str(gpu["remaining"]).rstrip("h"))
++    except (ValueError, TypeError, KeyError, AttributeError, StopIteration):
++        return False, "quota unknown: `kaggle quota` gave no readable GPU line"
++    busy = [j["id"] for j in computejobs.all_jobs(200) if j.get("kaggle_ref") and j["id"] != job["id"]
++            and j["status"] in ("PREPARING", "MODEL_LOADING", "RUNNING", "CHECKPOINTED", "RECOVERY_PENDING")]
++    if busy:
++        return False, f"another Kaggle job is not finished yet ({', '.join(busy[:3])}): one GPU session at a time"
++    cap_h = int(job.get("timeout_s") or 3600) / 3600
++    limit_h = float(env_cfg.get("session_hours") or 9)
++    if cap_h > limit_h:
++        return False, f"time cap {cap_h:.1f} h is longer than a Kaggle GPU session ({limit_h:g} h)"
++    margin = float(env_cfg.get("quota_safety_margin_h", 2.0))
++    if remaining < cap_h + margin:
++        return False, f"{remaining:.2f} GPU h left this week; this job may use {cap_h:.2f} h and {margin:g} h is kept in reserve"
++    return True, f"{remaining:.2f} GPU h left; cap {cap_h:.2f} h"
++
++
+ def check(run=subprocess.run) -> dict:
+     """Read-only account check: CLI version, login (through a quota call), quota, entered competitions, own notebooks. Prints no credential."""
+     out = {}
+@@ -287,7 +313,7 @@
+ MODEL_DIR = os.environ.get("STUDIO_MODEL_DIR", "/tmp/model")  # outside /kaggle/working: the 2.5 GB file is never saved as output
+ RES, REP = os.path.join(W, "results.jsonl"), os.path.join(W, "report.json")
+ T0 = time.time()
+-rep = {"job": JOB, "stages": [], "errors": [], "finished": False}
++rep = {"job": JOB, "stages": [], "errors": [], "finished": False, "started_at_utc": T0}  # absolute start: queue wait = started_at_utc - pushed_at
+ 
+ def save():
+     tmp = REP + ".tmp"

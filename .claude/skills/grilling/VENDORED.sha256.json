@@ -1,0 +1,8 @@
+{
+ "source": "https://github.com/mattpocock/skills.git",
+ "commit": "d653911",
+ "files": {
+  "SKILL.md": "a146842ed93ca43d833550fa9adf02e58cb63c83fea9d4b4522995b82242d4e2",
+  "agents/openai.yaml": "1411d7df7d99b7e621a1ff8283c8133cc2464be63d064e52d8ce169c6800ee9b"
+ }
+}
