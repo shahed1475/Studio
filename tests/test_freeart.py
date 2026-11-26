@@ -89,3 +89,21 @@ def test_a_user_studio_never_uses_the_owners_account(free, monkeypatch):
 def test_a_non_image_answer_is_a_failure_and_the_token_never_leaks(free, tmp_path):
     bad = lambda *a: (200, json.dumps({"success": True, "result": {"image": base64.b64encode(b"nope").decode()}}).encode())
     assert freeart.draw("x", "film", tmp_path / "x.jpg", fetch=bad, now=NOW) is None and not (tmp_path / "x.jpg").exists()
+
+
+SPENT = (429, b'{"errors":[{"message":"AiError: you have used up your daily free allocation of 10,000 neurons","code":4006}],"success":false}')
+
+
+def test_cloudflares_own_daily_limit_stops_free_drawing_until_midnight_utc(free, tmp_path):
+    """24 Nov 2026: the account's 10,000 a day were spent (text judges on the same account) while the studio had counted 1,667 picture units, and every spec
+    picture failed as "allowance ok". Cloudflare's own answer (429, code 4006) now marks the whole account spent for the UTC day."""
+    assert freeart.draw("x", "short", tmp_path / "x.jpg", fetch=lambda *a: SPENT, now=NOW) is None
+    assert freeart.account_exhausted(NOW) and freeart.available(now=NOW + dt.timedelta(hours=5)) is False  # not a 10-minute pause: the whole day
+    assert (tmp_path / "cloudflare_account_spent.json").exists()  # beside the usage file, never the real data folder in a test
+    nxt = NOW + dt.timedelta(days=1)
+    assert not freeart.account_exhausted(nxt) and freeart.available(now=nxt) is True  # the next UTC day it draws again
+
+
+def test_an_ordinary_busy_answer_is_never_read_as_the_daily_limit(free, tmp_path):
+    assert freeart.draw("x", "short", tmp_path / "x.jpg", fetch=lambda *a: (429, b'{"errors":[{"code":3040}]}'), now=NOW) is None
+    assert not freeart.account_exhausted(NOW) and freeart.available(now=NOW + dt.timedelta(minutes=11)) is True

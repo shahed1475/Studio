@@ -2,20 +2,48 @@
  "_doc": "The judge cascade (judges.py, owner's order of 22 Nov 2026). Two judges of different model families read every video in free mode; the stricter answer counts; a writer never judges. gemini: = Google AI Studio with GEMINI_API_KEY from .env (skipped when it is not set); extra: = the owner's FreeLLMAPI; OpenRouter models are taken from its live free list. gemini-2.5-flash is deprecated by Google: from 1 Dec 2026 its requests go to gemini-3.5-flash-lite (ai.google.dev/gemini-api/docs/models, read 22 Nov 2026). The DeepSeek :free ids below were NOT on OpenRouter's list on 22 Nov 2026; they are tried only if they come back.",
  "enabled": true,
  "slot_a": {
-  "models": ["gemini:gemini-2.5-flash", "gemini:gemini-3.8-flash", "gemini:gemini-3.5-flash-lite",
-             "extra:gemini-2.5-flash", "extra:gemini-3.8-flash", "extra:gemini-3.5-flash-lite",
-             "extra:qwen-3.8-27b", "extra:glm-4.7-flash"],
+  "models": [
+   "gemini:gemini-2.5-flash",
+   "gemini:gemini-3.8-flash",
+   "gemini:gemini-3.5-flash-lite",
+   "extra:gemini-2.5-flash",
+   "extra:gemini-3.8-flash",
+   "extra:gemini-3.5-flash-lite",
+   "extra:qwen-3.8-27b",
+   "extra:glm-4.7-flash"
+  ],
   "timeout_s": 120,
   "openrouter_last_resort": true
  },
  "slot_b": {
-  "openrouter": {"prefer": ["deepseek/deepseek-chat-v3-0324:free", "deepseek/deepseek-r1-0528:free"], "from_roster": true, "attempts": 1,
-                 "timeout_s": 25, "cooldown_minutes": 60, "think_tokens": 1024},
-  "models": ["extra:qwen-3.8-27b", "extra:glm-4.7-flash"],
+  "openrouter": {
+   "prefer": [
+    "deepseek/deepseek-chat-v3-0324:free",
+    "deepseek/deepseek-r1-0528:free"
+   ],
+   "from_roster": true,
+   "attempts": 1,
+   "timeout_s": 25,
+   "cooldown_minutes": 60,
+   "think_tokens": 1024
+  },
+  "models": [
+   "extra:qwen-3.8-27b",
+   "extra:glm-4.7-flash"
+  ],
   "timeout_s": 120
  },
  "owner_judges": true,
- "slice": {"cap_chars": 9000, "max_cap_chars": 12000, "fill_chars": 6000, "lead_chars": 1200},
+ "slice": {
+  "cap_chars": 9000,
+  "max_cap_chars": 12000,
+  "fill_chars": 6000,
+  "lead_chars": 1200
+ },
  "compact_tokens": 3000,
- "max_seconds": 600
+ "max_seconds": 600,
+ "shares_picture_allowance": [
+  "extra:glm-4.7-flash",
+  "extra:qwen-3.8-27b"
+ ]
 }

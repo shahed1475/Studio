@@ -1,0 +1,107 @@
+{
+ "_doc": "Compute and model routing (computerouter.py, 24 Nov 2026). Environments say where a model can run; a model and an environment are different things. Numbers marked unverified are not used to claim a fit. API providers (OpenRouter, Gemini, FreeLLMAPI, Cloudflare) are routed by llm.py, not here.",
+ "model_roots": [
+  "~/gguf-work",
+  "~/gemma4-model",
+  "~/colibri-models",
+  "~/DevAI-models",
+  "~/Downloads",
+  "~/cyberexpert-gguf",
+  "~/.argon-train/out",
+  "~/ai-models",
+  "~/tools/sdcpp",
+  "~/AI_Video_Studio/ComfyUI/models",
+  "~/ComfyUI/models",
+  "~/voice-lab/hf",
+  "~/studio/data/models",
+  "~/.cache/huggingface/hub"
+ ],
+ "never_scan": [
+  "~/Desktop/Youtube-automation"
+ ],
+ "ollama_url": "http://127.0.0.1:11434",
+ "default_context": 4096,
+ "environments": {
+  "local_gpu": {
+   "enabled": true,
+   "label": "This PC: NVIDIA GPU (Ollama / llama.cpp)",
+   "engines": [
+    "ollama",
+    "llama.cpp"
+   ]
+  },
+  "local_cpu": {
+   "enabled": true,
+   "label": "This PC: CPU (Ollama with no GPU layers)",
+   "engines": [
+    "ollama",
+    "llama.cpp"
+   ]
+  },
+  "vps": {
+   "enabled": false,
+   "label": "VPS model server",
+   "why": "no VPS: Hostinger deleted it on 17 Nov 2026; the Tailscale node vps-ai has been offline since then and the old tunnel port 11436 answers nothing (checked 24 Nov 2026)"
+  },
+  "kaggle_gpu": {
+   "enabled": true,
+   "label": "Kaggle notebook GPU (finite sessions)",
+   "gpus": [
+    {
+     "name": "Tesla T4",
+     "vram_gb": 15.0,
+     "count": 2
+    }
+   ],
+   "gpu_evidence": "2 x T4 seen in a real session of this account on 23 Nov 2026 (reports/KAGGLE_GPU_RESEARCH_2026-11-23.md); 15 GB usable of 16 per card assumed",
+   "ram_gb": null,
+   "ram_evidence": "not verified: Kaggle's docs page renders by JavaScript and was not read",
+   "weekly_gpu_hours": 30,
+   "quota_evidence": "kaggle quota (CLI 2.2.5) 24 Nov 2026 16:59 UTC: GPU 11.74 h used of 30 h, refresh 2026-11-28 00:00 UTC; TPU 0 of 20 h",
+   "session_hours": 12,
+   "session_evidence": "kaggle.com/docs/notebooks read 24 Nov 2026: 12 h execution for CPU and GPU sessions, 9 h TPU; 20 GB saved in /kaggle/working",
+   "internet": true,
+   "engines": [
+    "transformers",
+    "llama.cpp"
+   ],
+   "terms": "Kaggle Terms of Use (version 22 Jun 2025, re-read 24 Nov 2026): 'internal, personal, non-commercial use'; AUP (22 Jun 2025): no 'server farming', no 'activity unrelated to ML data science'",
+   "commercial_use_permitted": false,
+   "owner_permitted_tasks": [
+    "benchmark"
+   ],
+   "never_send": [
+    "production",
+    "voice",
+    "unpublished_video",
+    "private_model"
+   ],
+   "owner": "shahedalfahad",
+   "owner_permission_note": "Owner's message of 24 Nov 2026: configure and test eligible competition or personal, non-commercial workloads; production stays BLOCKED until Kaggle's written permission. 'benchmark' = measuring an open model on Kaggle hardware with public test prompts; its output is never channel material.",
+   "accelerator": "NvidiaTeslaT4",
+   "session_cap_s": 3600,
+   "test_input": "data/compute/inputs/kaggle_benchmark_v1.json",
+   "test_competition": "spaceship-titanic"
+  }
+ },
+ "licenses_ok_for_production": [
+  "apache-2.0",
+  "mit",
+  "bsd-3-clause",
+  "openrail",
+  "llama3",
+  "llama3.1",
+  "llama3.2",
+  "llama3.3",
+  "gemma",
+  "qwen",
+  "deepseek"
+ ],
+ "licenses_never": [
+  "cc-by-nc",
+  "cc-by-nc-4.0",
+  "cc-by-nc-sa-4.0",
+  "non-commercial",
+  "research-only"
+ ]
+}

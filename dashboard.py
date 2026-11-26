@@ -808,6 +808,16 @@ class H(BaseHTTPRequestHandler):
             self.wfile.write(b)
         elif u.path == "/monitor":
             self.send_page_file("monitor.html")
+        elif u.path == "/compute":  # the owner's own models across this PC, a VPS and Kaggle (computerouter.py); read only
+            self.send_page_file("compute.html")
+        elif u.path == "/api/compute":
+            import tenantmode
+
+            if tenantmode.is_tenant():  # a user studio never sees the owner's models, paths or GPU
+                return self.send_json({"error": "only in the owner's studio"}, 404)
+            import computerouter
+
+            self.send_json(computerouter.view())
         elif u.path == "/notifications":
             self.send_page_file("notifications.html")
         elif u.path == "/mail":  # a small page just for the Gmail and Telegram settings (alerts.py), behind the same login as everything else

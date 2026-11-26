@@ -1,7 +1,7 @@
 """Real pictures for a film or a Short, from every free library the owner approved (10 Nov 2026): real first, a drawn picture only where nothing real fits.
 
 `Finder` is called by `footage.scene_images` after the Wikimedia Commons public-domain search. For a query it asks the libraries (openmedia.py), keeps only items whose licence the studio accepts
-(licences.py), keeps only items that name the film's subject or that the picture judge approves, prefers public domain and CC0 over items that need a credit, caps the credit-needing items per video
+(licences.py), keeps only items the picture judge approves (with no judge: only items that name the film's subject), prefers public domain and CC0 over items that need a credit, caps the credit-needing items per video
 (each must be written into the description), downloads only what it will use, and records for every picture its address, licence, credit, date and hash (`assets`, saved in the video's record).
 Never used: NASA logos, anything below a usable size, Pexels (not on the owner's list), anything a library marks with a licence the studio refuses. A library that fails is skipped and noted."""
 import datetime as dt
@@ -72,11 +72,10 @@ class Finder:
         cands = [c for c in cands if not self._unrelated_portrait(c, query)]
         cands = list({c["url"]: c for c in cands}.values())
         direct = [c for c in cands if self._names_subject(c, anchors)]
-        rest = [c for c in cands if c not in direct]
-        if self.judge and rest:
-            labels = {f"{c['title']} | {c['source']}": c for c in rest}
-            kept = set(self.judge(list(labels)))
-            direct += [c for l, c in labels.items() if l in kept]
+        if self.judge and cands:  # a title that names the subject is judged too (23 Nov 2026: "Mary Celeste - Thoroughbred", a racehorse, "Victoria Dei Gratia", a statue,
+            label = lambda c: f"{c['title']} | {c['source']}"  # and a bar party "Mary Celeste crew" named the film's anchors and were shown in a film about a ship)
+            kept = set(self.judge(list(dict.fromkeys(label(c) for c in cands))))  # a judge that cannot answer keeps every title (footage.cached_judge): as before
+            direct = [c for c in cands if label(c) in kept]  # every item of a kept title, not only the last one (two copies may differ in licence)
         direct.sort(key=lambda c: (licences.PREFERENCE.get(licences.kind(c["licence"]), 9), c["_rank"]))
         out: list[tuple[Path, str]] = []
         for c in direct:

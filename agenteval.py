@@ -1460,11 +1460,15 @@ def case_a_free_review_needs_two_free_models_the_strictest_counts_and_it_is_off_
     answers = []
     on = {**llm.DEFAULTS, "enabled": False, "free": True, "free_review": True}
 
-    def fake(prompt, role, cfg, key, now, avoid=None):
+    pair = ["extra:glm-4.7-flash", "extra:qwen-3.8-27b"]  # two families: since 24 Nov 2026 one family counts as one opinion
+
+    def fake(prompt, role, cfg, key, now, avoid=None, avoid_families=frozenset()):
         out = answers.pop(0) if answers else None
-        if out is not None:
-            llm._last_free[role] = f"free/m{len(answers)}"
-        return out
+        pick = [m for m in pair if m not in (avoid or ()) and not (llm.model_family(m) & avoid_families)]
+        if out is not None and pick:
+            llm._last_free[role] = pick[0]
+            return out
+        return None
 
     def ask(cfg, replies):
         llm.load_config, llm.api_key, llm._free_chat = (lambda: cfg), (lambda: "k"), fake
@@ -1639,9 +1643,11 @@ def case_a_judge_is_never_the_writer_even_through_the_owners_provider():
     asked = []
     fm = ("refresh", "choose", "remaining", "requests_today", "count_request", "record", "available")
     saved_fm = {n: getattr(freemodels, n) for n in fm}
-    saved = (llm.SETTINGS_FILE, llm._post, llm._catalog_get, llm.record, llm._note, llm.time.sleep, dict(llm._last_free), set(llm._WRITERS), dict(llm._served))
+    saved = (llm.SETTINGS_FILE, llm._post, llm._catalog_get, llm.record, llm._note, llm.time.sleep, dict(llm._last_free), set(llm._WRITERS), dict(llm._served),
+             llm.judge_extra_models)
     filtered = refused = avoided = discovered = answered = False
     try:
+        llm.judge_extra_models = lambda: []  # a closed world: the cascade's judges in the real config/judges.json are not asked here
         with tempfile.TemporaryDirectory() as d:
             f = Path(d) / "settings.json"
             f.write_text(json.dumps({"extra_llm_on": True, "extra_llm_url": "http://127.0.0.1:31415/v1", "extra_llm_local": True, "extra_llm_key": "k-0123456789abcdef",
@@ -1693,6 +1699,7 @@ def case_a_judge_is_never_the_writer_even_through_the_owners_provider():
         for n, fn in saved_fm.items():
             setattr(freemodels, n, fn)
         llm.SETTINGS_FILE, llm._post, llm._catalog_get, llm.record, llm._note, llm.time.sleep = saved[:6]
+        llm.judge_extra_models = saved[9]
         llm._last_free.clear()
         llm._last_free.update(saved[6])
         llm._WRITERS.clear()
@@ -2101,7 +2108,7 @@ def case_an_openrouter_401_is_one_refused_key_not_a_failure_of_every_model():
     import llm
 
     now = dt.datetime(2026, 11, 22, 17, 0, tzinfo=dt.timezone.utc)
-    saved = [(llm, "USAGE_FILE"), (llm, "_post"), (llm, "gemini_key"), (llm, "extra_models"), (llm, "extra_status"), (freemodels, "record"),
+    saved = [(llm, "USAGE_FILE"), (llm, "_post"), (llm, "gemini_key"), (llm, "extra_models"), (llm, "judge_extra_models"), (llm, "extra_status"), (freemodels, "record"),
              (freemodels, "count_request"), (freemodels, "remaining"), (freemodels, "requests_today"), (freemodels, "choose"), (freemodels, "refresh"),
              (freemodels, "available"), (agentlog, "event")]
     old = [(m, n, getattr(m, n)) for m, n in saved]
@@ -2119,7 +2126,7 @@ def case_an_openrouter_401_is_one_refused_key_not_a_failure_of_every_model():
         try:
             llm.USAGE_FILE = Path(d) / "llm_usage.json"
             llm._post, llm.gemini_key = post, (lambda: "")
-            llm.extra_models, llm.extra_status = (lambda role: ["extra:own-judge"]), (lambda m: "")
+            llm.extra_models, llm.extra_status, llm.judge_extra_models = (lambda role: ["extra:own-judge"]), (lambda m: ""), (lambda: [])
             freemodels.record = lambda mid, ok, *a, **k: marks.append((mid, ok))
             freemodels.count_request = lambda *a, **k: None
             freemodels.remaining, freemodels.requests_today = (lambda *a, **k: 500), (lambda *a, **k: 0)
@@ -2279,7 +2286,286 @@ def case_the_opening_and_ending_are_never_padded_and_no_film_line_runs_past_its_
                 else f"ends kept: {ends_kept} (chapters extended: {asked}); long line cut at a sentence: {cut}")
 
 
-CASES = [case_the_opening_and_ending_are_never_padded_and_no_film_line_runs_past_its_limit, case_a_cut_or_a_lost_network_never_breaks_a_saved_file_or_asks_the_owner_to_reconnect, case_the_doctor_checks_the_model_key_for_real_and_never_calls_old_or_unproven_health_healthy,case_an_openrouter_401_is_one_refused_key_not_a_failure_of_every_model, case_an_unchanged_routine_report_is_logged_once_and_the_bell_counts_only_problems_alerts_and_decisions, case_a_cut_at_the_very_end_never_makes_the_video_twice_and_a_cut_short_resumes_in_its_folder, case_a_render_cut_by_a_power_cut_is_found_kept_and_never_trusted_half_written, case_busy_judges_never_discard_a_draft_and_never_pass_it_unchecked, case_the_reviewer_flags_a_line_that_calls_proven_what_its_source_only_suggests, case_blender_scenes_are_true_to_the_line_and_never_stop_a_video, case_a_judge_is_never_the_writer_even_through_the_owners_provider, case_an_a2a_task_is_answered_once_only_by_its_target_and_never_off_the_hand_over_map,case_free_mode_never_sends_a_request_to_a_paid_model_through_the_video_checks, case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic, case_the_guardian_closes_its_draft_tasks_only_when_the_video_has_left_output, case_search_demand_is_no_signal_on_failure_spends_youtube_quota_only_within_its_budget_and_cleans_outside_text, case_comment_insights_keep_no_names_nothing_over_30_days_and_only_cleaned_questions_and_never_write,
+def case_two_judges_of_one_family_are_one_opinion_and_a_missing_second_family_blocks_the_fact_check():
+    """24 Nov 2026 (continuation mission): the Seven Sleepers script was fact-checked by two NVIDIA Nemotron models and that counted as two judges; the
+    script fact-check could ask only the Settings review list, so it could never reach the cascade's GLM and Qwen judges. Now the second judge must be of
+    another family, a check that cannot get one is BLOCKED (reason kept, never a pass, never one local model), and the cascade's judges on the owner's
+    provider may answer it. Real llm.chat -> _free_review -> _free_chat; only the network, the allowance counters and the clock are fakes."""
+    import freemodels
+    import llm
+
+    NEMO, LIGHT, GLM = "extra:nemotron-3-ultra-550b", "nvidia/nemotron-3.5-lightning:free", "extra:glm-4.7-flash"
+    fm = ("refresh", "choose", "remaining", "requests_today", "count_request", "record", "available", "soonest_free", "roster_ids")
+    saved_fm = {n: getattr(freemodels, n) for n in fm}
+    names = ("SETTINGS_FILE", "_post", "gemini_key", "extra_status", "_judge_ids", "load_config", "openrouter_refused", "record", "_note", "picture_sharing_models")
+    saved = {n: getattr(llm, n) for n in names}
+    saved_state = (dict(llm._last_free), set(llm._WRITERS), dict(llm._served), dict(llm.LAST_REVIEW))
+    blocked = passed = False
+    detail = ""
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "settings.json"
+            f.write_text(json.dumps({"openrouter_key": "sk-or-test", "extra_llm_on": True, "extra_llm_url": "http://127.0.0.1:31415/v1", "extra_llm_local": True,
+                                     "extra_llm_key": "k-0123456789abcdef", "extra_llm_models": {"script": "writer-x", "review": "nemotron-3-ultra-550b"}}))
+            llm.SETTINGS_FILE = f
+            llm._url_cache.clear()
+            cfg = {**llm.DEFAULTS, "enabled": False, "free": True, "free_review": True, "local_fallback": True, "free_timeout_s": 5,
+                   "models": {"script": "", "review": "", "cheap": ""}}
+            llm.load_config, llm.gemini_key, llm.extra_status, llm.openrouter_refused = (lambda: dict(cfg)), (lambda: ""), (lambda m: ""), (lambda now, key: False)
+            llm.record, llm._note, llm.picture_sharing_models = (lambda *a, **k: None), (lambda *a, **k: None), (lambda: [])  # closed world
+            for n, fake in (("refresh", lambda now, *a, **k: None), ("choose", lambda role, now, avoid=None, n=4: [LIGHT]), ("remaining", lambda *a, **k: 500),
+                            ("requests_today", lambda *a, **k: 0), ("count_request", lambda *a, **k: None), ("record", lambda *a, **k: None),
+                            ("available", lambda mid, now: True), ("soonest_free", lambda ids, now: None), ("roster_ids", lambda *a, **k: [LIGHT])):
+                setattr(freemodels, n, fake)
+            asked: list = []
+
+            def post(payload, key):
+                asked.append(payload["model"])
+                return {"model": payload["model"].replace("extra:", ""), "choices": [{"message": {"content": '{"unsupported": [{"n": %d, "why": "x"}]}' % len(asked)}}],
+                        "usage": {}}
+
+            llm._post = post
+            now = dt.datetime(2026, 11, 24, 0, 30, tzinfo=dt.timezone.utc)
+            used_local: list = []
+            for world in ("nvidia only", "glm on the cascade list"):
+                llm._last_free.clear()
+                llm._WRITERS.clear()
+                llm._served.clear()
+                asked.clear()
+                llm._judge_ids = (lambda p: []) if world == "nvidia only" else (lambda p: [GLM] if p == llm.EXTRA_PREFIX else [])  # config/judges.json
+                try:
+                    got = llm.chat("SOURCES: s\nLINES: 0: a", "review", now=now, strict=True, fallback=lambda p: used_local.append(p) or {"unsupported": []})
+                except llm.ModelUnavailable as e:
+                    got = e
+                llm.settle(10)  # a raced loser may still be answering
+                lr = dict(llm.LAST_REVIEW)
+                if world == "nvidia only":
+                    blocked = (isinstance(got, llm.ModelUnavailable) and lr.get("mode") == "blocked" and "nvidia" in str(lr.get("why")) and not used_local
+                               and sorted(asked) == sorted([NEMO, LIGHT]))  # the first judge's race only: no NVIDIA model is asked again as the second judge
+                    detail += f"[{world}: got={type(got).__name__} mode={lr.get('mode')} asked={asked}] "
+                else:
+                    fams = {tuple(x) for x in lr.get("families") or []}
+                    passed = (isinstance(got, dict) and lr.get("mode") == "free" and fams == {("nvidia",), ("zhipu",)} and len(lr.get("answers") or []) == 2
+                              and lr["answers"][0] != lr["answers"][1] and bool(lr.get("at")) and GLM in asked)
+                    detail += f"[{world}: got={got if isinstance(got, dict) else type(got).__name__} families={sorted(fams)} asked={asked}]"
+    finally:
+        for n, fn in saved_fm.items():
+            setattr(freemodels, n, fn)
+        for n, fn in saved.items():
+            setattr(llm, n, fn)
+        llm._last_free.clear()
+        llm._last_free.update(saved_state[0])
+        llm._WRITERS.clear()
+        llm._WRITERS.update(saved_state[1])
+        llm._served.clear()
+        llm._served.update(saved_state[2])
+        llm.LAST_REVIEW.clear()
+        llm.LAST_REVIEW.update(saved_state[3])
+        llm._url_cache.clear()
+    ok = blocked and passed
+    return ok, ("two NVIDIA judges are blocked with the reason kept and no local stand-in; NVIDIA + Zhipu (from the cascade list) is a review with both answers kept"
+                if ok else f"blocked: {blocked}; two families passed: {passed}; {detail}")
+
+
+def case_the_picture_accounts_own_limit_stops_drawing_and_its_judges_are_asked_last():
+    """24 Nov 2026 (owner: "create a routing system"): the free pictures and two text judges (GLM, Qwen on the owner's FreeLLMAPI) share one Cloudflare
+    account. Its own daily-limit answer (429, code 4006) marks the account spent until 00:00 UTC (the studio's counter cannot see the judges' use), and the
+    judges on that account are asked after every other judge and never while it is spent. Real freeart.draw and llm._free_chat; network and clock faked."""
+    import freeart
+    import freemodels
+    import llm
+
+    now = dt.datetime(2026, 11, 24, 3, 0, tzinfo=dt.timezone.utc)
+    GLM, OWN, OR = "extra:glm-4.7-flash", "extra:gemini-3.6-flash", "or/a:free"
+    saved_f = {n: getattr(freeart, n) for n in ("USAGE", "available")}
+    saved_l = {n: getattr(llm, n) for n in ("extra_models", "judge_extra_models", "picture_sharing_models", "gemini_key", "openrouter_refused", "_race", "_ask_free", "ROUNDS")}
+    saved_m = {n: getattr(freemodels, n) for n in ("refresh", "choose", "available", "soonest_free", "roster_ids")}
+    marked = last = skipped = False
+    order: list = []
+    env = {k: os.environ.get(k) for k in ("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN")}
+    try:
+        os.environ.update({"CLOUDFLARE_ACCOUNT_ID": "eval-account", "CLOUDFLARE_API_TOKEN": "eval-token"})  # placeholders: the network is faked
+        with tempfile.TemporaryDirectory() as d:
+            freeart.USAGE = Path(d) / "cf.json"
+            freeart.available = lambda cfg=None, now=None: True
+            spent = (429, b'{"errors":[{"message":"you have used up your daily free allocation of 10,000 neurons","code":4006}],"success":false}')
+            freeart.draw("x", "short", Path(d) / "x.jpg", fetch=lambda *a: spent, now=now)
+            marked = freeart.account_exhausted(now) and not freeart.account_exhausted(now + dt.timedelta(days=1))
+            freeart.available = saved_f["available"]
+            llm.extra_models, llm.judge_extra_models, llm.picture_sharing_models = (lambda role: [GLM, OWN]), (lambda: []), (lambda: [GLM])
+            llm.gemini_key, llm.openrouter_refused, llm.ROUNDS = (lambda: ""), (lambda now, key: False), 1
+            llm._race = lambda models, *a: order.extend(models) or None
+            llm._ask_free = lambda mid, *a, **k: order.append(mid) or None
+            for n, fake in (("refresh", lambda now: None), ("choose", lambda *a, **k: [OR]), ("available", lambda mid, now: True),
+                            ("soonest_free", lambda ids, now: None), ("roster_ids", lambda *a, **k: [])):
+                setattr(freemodels, n, fake)
+            cfg = {**llm.DEFAULTS, "free": True}
+            llm._free_chat("p", "review", cfg, "k", now + dt.timedelta(days=1))  # a new day: the account is free again
+            last = order == [OWN, OR, GLM]
+            order.clear()
+            llm._free_chat("p", "review", cfg, "k", now)  # the spent day
+            skipped = GLM not in order and order == [OWN, OR]
+    finally:
+        for k, v in env.items():
+            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+        for n, v in saved_f.items():
+            setattr(freeart, n, v)
+        for n, v in saved_l.items():
+            setattr(llm, n, v)
+        for n, v in saved_m.items():
+            setattr(freemodels, n, v)
+    ok = marked and last and skipped
+    return ok, ("Cloudflare's own daily limit marks the account spent for the UTC day; its judges are asked last, and not at all while it is spent" if ok
+                else f"marked: {marked}; asked last: {last}; skipped when spent: {skipped}; order: {order}")
+
+
+def case_the_kaggle_worker_runs_only_a_verified_twin_for_a_personal_task_and_never_completes_unproven_output():
+    """24 Nov 2026 (owner: use my own models on Kaggle's GPU, without crossing a policy line). The gate lets the owner's file reach Kaggle only through a verified
+    public twin, only for a task the owner listed and only with public-test data; a production request is never handed a public-test job; a retrieved output
+    that does not match the notebook's manifest is never COMPLETED. Real computerouter.kaggle_gate, computejobs and kaggleworker.verify; files are temporary."""
+    import computejobs
+    import computerouter
+    import kaggleworker
+
+    env = {"enabled": True, "commercial_use_permitted": False, "owner_permitted_tasks": ["benchmark"], "weekly_gpu_hours": 30}
+    m = {"id": "twin:x/y", "private": True, "license": "apache-2.0", "public_twin": {"verified": True}}
+    gate_ok = (computerouter.kaggle_gate(m, {"task": "benchmark", "data_class": "public-test"}, env) == ("", "")
+               and computerouter.kaggle_gate({**m, "public_twin": {"verified": False}}, {"task": "benchmark", "data_class": "public-test"}, env)[0] == "BLOCKED"
+               and computerouter.kaggle_gate(m, {"task": "benchmark", "data_class": "production"}, env)[0] == "BLOCKED"
+               and computerouter.kaggle_gate(m, {"task": "voice", "data_class": "public-test"}, env)[0] == "BLOCKED_PENDING_TERMS_REVIEW")
+    saved = computejobs.DIR
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            computejobs.DIR = Path(d) / "jobs"
+            a = computejobs.submit("twin:x/y", "benchmark", "inline:hi", environment="kaggle_gpu", data_class="public-test")
+            b = computejobs.submit("twin:x/y", "benchmark", "inline:hi", environment="kaggle_gpu", data_class="production")
+            ids_ok = a["id"] != b["id"]
+            out = Path(d) / "out"
+            out.mkdir()
+            (out / "results.jsonl").write_text(json.dumps({"id": "0", "text": "tampered"}) + "\n")
+            (out / "report.json").write_text(json.dumps({"finished": True, "model_file": {"matches_owner_file": True}}))
+            (out / "manifest.json").write_text(json.dumps({"files": {"results.jsonl": "0" * 64, "report.json": kaggleworker.sha256_file(out / "report.json")}}))
+            unproven_refused = not kaggleworker.verify(out, a)["ok"]
+    finally:
+        computejobs.DIR = saved
+    ok = gate_ok and ids_ok and unproven_refused
+    return ok, ("Kaggle takes only a verified twin for a listed personal task with public-test data, and unproven output is never completed" if ok
+                else f"gate {gate_ok}, separate ids {ids_ok}, unproven refused {unproven_refused}")
+
+
+def case_every_scene_is_traceable_to_its_line_and_a_reserve_run_is_never_passed_silently():
+    """25 Nov 2026 (owner: find why the Seven Sleepers v2 pictures did not match the narration): footage.scene_images gave 46 scenes the subject's reserve pool in
+    search order and the record kept only "109 different on-topic images". Now each scene's pick is traced (how), written with a stable id from its narration
+    (scenemanifest), a re-render reports unchanged lines whose picture moved, and the reviewer warns on a run of reserve scenes. Real footage.scene_images,
+    scenemanifest and reviewer.footage_checks; only the Commons search is faked (no network)."""
+    import footage
+    import reviewer
+    import scenemanifest
+
+    saved = footage.images_for
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            pics = {}
+            for n in ("icon", "fresco", "coin", "herm"):
+                pics[n] = (Path(d) / f"{n}.jpg", f"{n} (Wikimedia Commons, Public domain)")
+                pics[n][0].write_bytes(n.encode())
+            db = {"Seven Sleepers": [pics["icon"], pics["fresco"]], "Ephesus": [pics["coin"], pics["herm"]]}
+            footage.images_for = lambda q, anchors=None, limit=1, skip=(), judge=None: [h for h in db.get(q, []) if h[0] not in skip][:limit]
+            lines = [{"text": t, "visual": "nothing found"} for t in ("Jacob of Serugh", "the lost source", "the Orthodox feast", "the Qur'an's chapter")]
+            trace = []
+            clips, _, _ = footage.scene_images(lines, "Seven Sleepers", ["Ephesus"], trace=trace)
+            s1 = scenemanifest.write(Path(d), lines, [("selected", clips)], trace)
+            run_flagged = s1["reserve_runs"] == [[0, 1, 2, 3]]
+            rows = {r["name"]: r for r in reviewer.footage_checks({"format": "doc", "footage": {"unique": 4, "missing": 0}, "grounded": True, "scene_manifest": s1})}
+            warned = rows.get("scene_sources", {}).get("ok") is False
+            longer = [{"text": "a new first line", "visual": "nothing found"}] + lines
+            t2 = []
+            c2, _, _ = footage.scene_images(longer, "Seven Sleepers", ["Ephesus"], trace=t2)
+            s2 = scenemanifest.write(Path(d), longer, [("selected", c2)], t2)
+            moved_seen = s2["changes_since_last_render"]["changed"] == [1, 2, 3, 4]
+            stable = scenemanifest.scene_ids(lines) == scenemanifest.scene_ids(longer)[1:]
+    finally:
+        footage.images_for = saved
+    ok = run_flagged and warned and moved_seen and stable
+    return ok, ("each scene's pick is traced with a stable id, a reserve run is warned and a silent reassignment after an inserted line is reported" if ok
+                else f"run flagged {run_flagged}, reviewer warned {warned}, reassignment seen {moved_seen}, ids stable {stable}")
+
+
+def case_a_films_own_drawing_limit_is_honoured_within_a_ceiling_that_fits_the_free_day():
+    """24 Nov 2026 (owner: fix the repeated pictures of the Seven Sleepers film): the creator draws up to the film's own `art_limit` when the owner set one,
+    never fewer than the standard 16 and never more than run.ART_LIMIT_MAX, whose worst case still fits Cloudflare's free 10,000 Neurons a day."""
+    import aiart
+    import run
+
+    std = aiart.MAX_PER_VIDEO["doc"]
+    ok = (run._art_limit({}) == std and run._art_limit({"art_limit": 40}) == 40 and run._art_limit({"art_limit": 2}) == std
+          and run._art_limit({"art_limit": 999}) == run.ART_LIMIT_MAX and run.ART_LIMIT_MAX * 104 < 10_000)
+    return ok, ("the film's own drawing limit is used, floored at the standard and capped inside the free day" if ok
+                else f"limits: none {run._art_limit({})}, 40 -> {run._art_limit({'art_limit': 40})}, 999 -> {run._art_limit({'art_limit': 999})}")
+
+
+def case_a_picture_reading_that_could_not_run_is_never_recorded_as_a_pass():
+    """24 Nov 2026 (power-outage recovery): the vision model answered 429 and autopilot.read_pictures stored visual_check ok=true, so the Seven Sleepers
+    film, with a wrong-place picture and garbled AI lettering, counted as picture-checked when it was approved. A reading that cannot run still never
+    blocks, but it is recorded as not checked (ok false, ran false, with its reason). Real autopilot.read_pictures and records; the model is faked."""
+    import autopilot
+    import videoinspect
+
+    saved_out, saved_vr = config.OUT, videoinspect.visual_review
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            config.OUT = Path(d)
+            (Path(d) / "v").mkdir()
+            (Path(d) / "v" / "meta.json").write_text(json.dumps({"review": {"verdict": "pass", "checks": []}}))
+            videoinspect.visual_review = lambda folder: [{"name": "visual_review", "ok": False, "severity": "warn", "detail": "could not run: HTTPError: 429"}]
+            blocked = autopilot.visually_ok("v") is not True
+            seen = json.loads((Path(d) / "v" / "meta.json").read_text()).get("visual_check") or {}
+    finally:
+        config.OUT, videoinspect.visual_review = saved_out, saved_vr
+    ok = not blocked and seen.get("ok") is False and seen.get("ran") is False
+    return ok, ("a picture reading that could not run is recorded as not checked and blocks nothing" if ok else f"blocked: {blocked}; recorded: {seen}")
+
+
+def case_the_compute_router_never_sends_production_or_private_work_to_kaggle_and_never_pays():
+    """24 Nov 2026 (owner: route my own models across this PC, a VPS and Kaggle where permitted). The router's hard rules: production data and the owner's
+    private models never go to Kaggle; a Kaggle task waits for the owner while its non-commercial terms are not cleared; a paid environment is never chosen;
+    an unknown licence is never used for production; a job never carries a credential."""
+    import computejobs
+    import computerouter
+
+    k = {"enabled": True, "gpus": [{"name": "Tesla T4", "vram_gb": 15.0, "count": 2}], "weekly_gpu_hours": 30, "commercial_use_permitted": False,
+         "owner_permitted_tasks": [], "never_send": ["production"]}
+    cfg = {"default_context": 4096, "licenses_ok_for_production": ["apache-2.0"], "licenses_never": ["cc-by-nc"],
+           "environments": {"local_gpu": {"enabled": True}, "local_cpu": {"enabled": True}, "kaggle_gpu": k, "rented": {"enabled": True, "paid": True}}}
+    live = {"gpu": {"present": True, "free_gb": 2.9, "util_pct": 0}, "ram": {"available_gb": 4.0}}
+    big = lambda lic="apache-2.0", private=False: {"id": "ollama:big", "name": "big", "source": "ollama", "format": "gguf", "kind": "llm", "bytes": int(14e9),
+                                                   "layers": 40, "kv_heads": 8, "head_dim": 128, "context_length": 32768, "license": lic, "private": private,
+                                                   "params": int(12e9)}  # 14 GB file: too big here; 24 GB in fp16 fits 2 x T4
+    req = lambda dc: {"task": "text-generation", "data_class": dc}
+    prod = computerouter.route(req("production"), {"models": [big()]}, cfg, live)["status"] == "BLOCKED"
+    terms = computerouter.route(req("public-test"), {"models": [big()]}, cfg, live)["status"] == "BLOCKED_PENDING_TERMS_REVIEW"
+    k2 = dict(k, owner_permitted_tasks=["text-generation"])
+    cfg2 = {**cfg, "environments": {**cfg["environments"], "kaggle_gpu": k2}}
+    private = computerouter.route(req("public-test"), {"models": [big(private=True)]}, cfg2, live)["status"] == "BLOCKED"
+    allowed = computerouter.route(req("public-test"), {"models": [big()]}, cfg2, live).get("environment") == "kaggle_gpu"
+    paid = all(r[1] != "rented" or "paid" in r[2] for r in computerouter.route(req("public-test"), {"models": [big()]}, cfg2, live).get("rejected", []))
+    unknown = computerouter.route(req("production"), {"models": [dict(big(lic=None), bytes=int(1e9))]}, cfg, live)["status"] == "BLOCKED"
+    with tempfile.TemporaryDirectory() as d:
+        saved = computejobs.DIR
+        computejobs.DIR = Path(d)
+        try:
+            computejobs.submit("ollama:m", "text-generation", "inline:x", environment="local_cpu", params={"token": "abc"})
+            cred = False
+        except computejobs.JobError:
+            cred = True
+        finally:
+            computejobs.DIR = saved
+    ok = prod and terms and private and allowed and paid and unknown and cred
+    return ok, ("production and private models never reach Kaggle, its terms wait for the owner, paid compute and unknown licences are refused, jobs carry no keys"
+                if ok else f"prod {prod} terms {terms} private {private} allowed {allowed} paid {paid} unknown {unknown} credential {cred}")
+
+
+CASES = [case_every_scene_is_traceable_to_its_line_and_a_reserve_run_is_never_passed_silently, case_the_kaggle_worker_runs_only_a_verified_twin_for_a_personal_task_and_never_completes_unproven_output, case_a_films_own_drawing_limit_is_honoured_within_a_ceiling_that_fits_the_free_day, case_a_picture_reading_that_could_not_run_is_never_recorded_as_a_pass, case_the_compute_router_never_sends_production_or_private_work_to_kaggle_and_never_pays, case_the_picture_accounts_own_limit_stops_drawing_and_its_judges_are_asked_last, case_two_judges_of_one_family_are_one_opinion_and_a_missing_second_family_blocks_the_fact_check, case_the_opening_and_ending_are_never_padded_and_no_film_line_runs_past_its_limit,case_a_cut_or_a_lost_network_never_breaks_a_saved_file_or_asks_the_owner_to_reconnect, case_the_doctor_checks_the_model_key_for_real_and_never_calls_old_or_unproven_health_healthy,case_an_openrouter_401_is_one_refused_key_not_a_failure_of_every_model, case_an_unchanged_routine_report_is_logged_once_and_the_bell_counts_only_problems_alerts_and_decisions, case_a_cut_at_the_very_end_never_makes_the_video_twice_and_a_cut_short_resumes_in_its_folder, case_a_render_cut_by_a_power_cut_is_found_kept_and_never_trusted_half_written, case_busy_judges_never_discard_a_draft_and_never_pass_it_unchecked, case_the_reviewer_flags_a_line_that_calls_proven_what_its_source_only_suggests, case_blender_scenes_are_true_to_the_line_and_never_stop_a_video, case_a_judge_is_never_the_writer_even_through_the_owners_provider, case_an_a2a_task_is_answered_once_only_by_its_target_and_never_off_the_hand_over_map,case_free_mode_never_sends_a_request_to_a_paid_model_through_the_video_checks, case_playbooks_complete, case_public_video_is_never_edited, case_metadata_repaired_before_public, case_reissue_only_held_unapproved_nonpublic, case_the_guardian_closes_its_draft_tasks_only_when_the_video_has_left_output, case_search_demand_is_no_signal_on_failure_spends_youtube_quota_only_within_its_budget_and_cleans_outside_text, case_comment_insights_keep_no_names_nothing_over_30_days_and_only_cleaned_questions_and_never_write,
          case_ladder_ends_with_owner_not_a_crash, case_ladder_respects_budget_and_whitelist_and_lessons, case_outside_text_is_cleaned,
          case_agent_code_has_no_forbidden_calls, case_stuck_draft_rules, case_registry_is_consistent,
          case_playbook_scope_injects_role_and_limits_only_when_acting, case_doctor_finds_stale_and_failing_agents_and_fixes_only_safely,

@@ -146,3 +146,15 @@ def test_empty_chapter_title_is_filled_from_the_summary_or_first_line():
     assert scriptgen.chapter_title({"title": " ", "summary": "How priestesses were chosen. More."}, []) == "How priestesses were chosen"
     assert scriptgen.chapter_title({"title": ""}, [{"text": "Visitors queued for days to ask a single question."}]) == "Visitors queued for days to ask"
     assert scriptgen.chapter_title({"title": ""}, []) == ""
+
+
+def test_a_rerender_keeps_the_old_review_in_its_history():
+    """24 Nov 2026: reset_for_rerender dropped the stored review without a trace; the review panel's history must keep it (reviewer.keep_history)."""
+    import run
+
+    old = {"verdict": "pass", "at": "2026-11-21T12:32:26Z", "checks": [{"name": "a", "ok": True}, {"name": "b", "ok": False, "detail": "x"}]}
+    data = {"title": "t", "lines": [], "approved": True, "review": old, "review_history": [{"verdict": "fail", "at": "2026-11-20T00:00:00Z"}]}
+    out = run.reset_for_rerender(data)
+    assert "review" not in out and "approved" not in out
+    assert out["review_history"][-1]["at"] == "2026-11-21T12:32:26Z" and out["review_history"][-1]["passed"] == 1 and len(out["review_history"]) == 2
+    assert data["review"] is old and len(data["review_history"]) == 1  # the caller's record is not changed in place

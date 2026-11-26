@@ -18,6 +18,7 @@ def _settings(tmp_path, monkeypatch, **extra):
     f.write_text(json.dumps({**base, **extra}))
     monkeypatch.setattr(llm, "SETTINGS_FILE", f)
     monkeypatch.setattr(dashboard, "SETTINGS", f)
+    monkeypatch.setattr(llm, "judge_extra_models", lambda: [])  # a closed world: the cascade's judges in the real config/judges.json are not asked here
     return f
 
 

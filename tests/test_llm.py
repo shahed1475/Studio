@@ -338,16 +338,27 @@ def test_cached_input_tokens_are_counted_next_to_the_real_cost(monkeypatch):
 
 
 # ---- free review (13 Nov 2026): the owner runs the whole studio on free models; a review is then two free models, the strictest answer counts ----
-def _free_pair(monkeypatch, answers, **over):
-    """Free models on, paid off. `answers` is what each free model says in turn (None = nobody answered)."""
-    enable(monkeypatch, enabled=False, free=True, models={"script": "", "review": "", "cheap": ""}, **over)
-    asked = []
+GLM, QWEN = "extra:glm-4.7-flash", "extra:qwen-3.8-27b"  # two families (Zhipu, Qwen), both answering on 23 Nov 2026
 
-    def fake(prompt, role, cfg, key, now, avoid=None):
-        asked.append((role, avoid))
+
+def _free_pair(monkeypatch, answers, judges=(GLM, QWEN), served=None, **over):
+    """Free models on, paid off. `answers` is what each free model says in turn (None = nobody answered). `judges` are the models that may answer, in order;
+    like the real _free_chat the fake never answers with a model it was told to avoid or one of an avoided family (CLAUDE.md: fakes refuse what the real
+    thing refuses). `served`: what the provider says answered an id (a router's real model)."""
+    enable(monkeypatch, enabled=False, free=True, models={"script": "", "review": "", "cheap": ""}, **over)
+    asked, pool = [], list(judges)
+    monkeypatch.setattr(llm, "_served", {})  # what a provider "served" never leaks into the next test
+
+    def fake(prompt, role, cfg, key, now, avoid=None, avoid_families=frozenset()):
+        asked.append((role, avoid, avoid_families))
         out = answers.pop(0) if answers else None
-        if out is not None:
-            llm._last_free[role] = f"free/model-{len(asked)}"
+        ok = [m for m in pool if m not in (avoid or ()) and not (avoid_families and (llm.is_router(m) or llm.model_family(m) & avoid_families))]
+        if out is None or not ok:
+            return None
+        pool.remove(ok[0])
+        llm._last_free[role] = ok[0]
+        if served and ok[0] in served:
+            llm._served[ok[0]] = served[ok[0]]
         return out
 
     monkeypatch.setattr(llm, "_free_chat", fake)
@@ -366,8 +377,84 @@ def test_free_review_asks_two_different_models_and_keeps_the_strictest_answer(mo
                                      {"invented_facts_risk": 6, "misleading_title": True, "issues": ["b"]}], free_review=True)
     got = llm.chat("check this", "review", now=NOW, strict=True)
     assert got == {"invented_facts_risk": 6, "misleading_title": True, "issues": ["a", "b"]}
-    assert len(asked) == 2 and asked[1][1] and "free/model-1" in asked[1][1]  # the second opinion avoids the first model
-    assert llm.LAST_REVIEW == {"mode": "free", "models": ["free/model-1", "free/model-2"], "served": ["free/model-1", "free/model-2"]}  # served: what the provider says answered
+    assert len(asked) == 2 and asked[1][1] and GLM in asked[1][1]  # the second opinion avoids the first model
+    assert asked[1][2] == {"zhipu"}  # ... and the first model's whole family
+    assert llm.LAST_REVIEW == {"mode": "free", "models": [GLM, QWEN], "served": [GLM, QWEN], "families": [["zhipu"], ["qwen"]],
+                               "providers": ["owner-provider", "owner-provider"], "at": NOW.isoformat(timespec="seconds"),
+                               "answers": [{"invented_facts_risk": 2, "misleading_title": False, "issues": ["a"]},
+                                           {"invented_facts_risk": 6, "misleading_title": True, "issues": ["b"]}]}  # each judge's own answer is kept
+
+
+# ---- 24 Nov 2026: two models of one family are one opinion (the Seven Sleepers script was "checked" by two NVIDIA Nemotron models) ----
+def test_two_judges_of_one_family_are_one_opinion_and_the_review_is_blocked(monkeypatch):
+    asked = _free_pair(monkeypatch, [{"unsupported": []}, {"unsupported": []}], judges=("extra:nemotron-3-ultra-550b", "nvidia/nemotron-3.5-lightning:free"), free_review=True)
+    with pytest.raises(llm.ModelUnavailable, match="blocked"):
+        llm.chat("check this", "review", now=NOW, strict=True)
+    assert asked[1][2] == {"nvidia"}  # the second judge was asked for another family; only NVIDIA could answer, so nobody did
+    assert llm.LAST_REVIEW["mode"] == "blocked" and "nvidia" in llm.LAST_REVIEW["why"]
+
+
+def test_a_second_judge_the_provider_served_with_the_first_family_is_refused(monkeypatch):
+    _free_pair(monkeypatch, [{"unsupported": []}, {"unsupported": []}], served={QWEN: "@cf/zai-org/glm-4.7-flash"}, free_review=True)
+    with pytest.raises(llm.ModelUnavailable, match="blocked"):  # asked as Qwen, answered by GLM: the same family as the first judge
+        llm.chat("check this", "review", now=NOW, strict=True)
+    assert llm.LAST_REVIEW["mode"] == "blocked" and "zhipu" in llm.LAST_REVIEW["why"]
+
+
+def test_a_router_that_does_not_say_who_answered_cannot_be_a_judge(monkeypatch):
+    asked = _free_pair(monkeypatch, [{"unsupported": []}, {"unsupported": []}], judges=("openrouter/free", QWEN), free_review=True)
+    with pytest.raises(llm.ModelUnavailable, match="did not say which model answered"):
+        llm.chat("check this", "review", now=NOW, strict=True)
+    assert len(asked) == 1  # no second judge is asked: none could be shown to be of another family
+
+
+def test_a_router_that_named_its_model_counts_as_that_models_family(monkeypatch):
+    _free_pair(monkeypatch, [{"unsupported": []}, {"unsupported": [{"n": 3}]}], judges=("openrouter/free", "extra:gemma-4-31b", QWEN),
+               served={"openrouter/free": "google/gemini-3.6-flash"}, free_review=True)
+    assert llm.chat("check this", "review", now=NOW, strict=True) == {"unsupported": [{"n": 3}]}
+    assert llm.LAST_REVIEW["models"] == ["openrouter/free", QWEN]  # Gemma is Google's too: skipped for the second judge
+
+
+def test_a_blocked_judge_prompt_never_falls_back_to_one_local_model(monkeypatch):
+    _free_pair(monkeypatch, [{"unsupported": []}, None], free_review=True, local_fallback=True)
+    used = []
+    with pytest.raises(llm.ModelUnavailable):
+        llm.chat("check this", "review", now=NOW, strict=True, fallback=lambda p: used.append(p) or {"unsupported": []})
+    assert used == []  # one local model's word is no review; a missing second judge is never an approval
+
+
+def test_the_second_judge_search_never_asks_or_waits_for_the_first_family(monkeypatch, tmp_path):
+    import freemodels
+
+    cfg = _race_setup(monkeypatch, tmp_path, [], free_review=True)
+    monkeypatch.setattr(llm, "extra_models", lambda role: ["extra:nemotron-3-ultra-550b", "extra:auto", GLM])
+    monkeypatch.setattr(llm, "judge_extra_models", lambda: [QWEN, "extra:nemotron-3-ultra-550b"])
+    monkeypatch.setattr(llm, "gemini_key", lambda: "")
+    monkeypatch.setattr(llm, "openrouter_refused", lambda now, key: True)
+    asked = []
+    monkeypatch.setattr(llm, "_race", lambda models, *a: asked.append(("race", list(models))) or None)
+    monkeypatch.setattr(llm, "_ask_free", lambda mid, *a: asked.append(mid) or None)
+    waited = []
+    monkeypatch.setattr(freemodels, "soonest_free", lambda ids, now: waited.append(list(ids)) or None)
+    assert llm._free_chat("p", "review", cfg, "k", NOW, avoid_families=frozenset({"nvidia"})) is None
+    flat = [m for a in asked for m in (a[1] if isinstance(a, tuple) else [a])]
+    assert flat and set(flat) <= {GLM, QWEN}  # never Nemotron, never the router "auto"
+    assert all(not (set(ids) & {"extra:nemotron-3-ultra-550b", "extra:auto"}) for ids in waited)
+
+
+def test_the_script_fact_check_may_ask_the_cascade_judges_of_the_owners_provider(monkeypatch, tmp_path):
+    import config
+
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "judges.json").write_text(json.dumps({"slot_a": {"models": ["gemini:gemini-3.5-flash-lite", GLM, "extra:auto", "extra:writer-1"]},
+                                                                 "slot_b": {"models": [QWEN, GLM]}}))
+    monkeypatch.setattr(config, "ROOT", tmp_path)
+    monkeypatch.setattr(llm, "extra_cfg", lambda: None)
+    assert llm.judge_extra_models() == []  # without the owner's provider there is nobody to ask
+    monkeypatch.setattr(llm, "extra_cfg", lambda: {"script": ["writer-1"], "review": []})
+    assert llm.judge_extra_models() == [GLM, QWEN]  # in order, once each; never a router, never a writer
+    assert llm.gemini_models() == ["gemini:gemini-3.5-flash-lite"]
+    assert llm.provider_of(GLM) == "owner-provider" and llm.provider_of("gemini:x") == "google-ai-studio" and llm.provider_of("a/b:free") == "openrouter"
 
 
 def test_free_review_needs_both_models_to_answer(monkeypatch):
@@ -699,3 +786,36 @@ def test_an_answer_that_ends_in_time_is_read_whole(monkeypatch):
     reply = _Trickle(seconds=0.1, end=b'{"choices": [{"message": {"content": "{}"}}]}')
     monkeypatch.setattr(llm.requests, "post", lambda url, **kw: reply)
     assert llm._post({"model": "a/m1:free", "messages": [], "max_tokens": 10, "_timeout_s": 5}, "k") == {"choices": [{"message": {"content": "{}"}}]}
+
+
+def test_a_routers_earlier_served_name_never_names_a_later_reply(monkeypatch, tmp_path):
+    """24 Nov 2026 review: _served kept what openrouter/free said last time, so a later reply without "model" looked like a named model."""
+    cfg = _race_setup(monkeypatch, tmp_path, [])
+    llm._served["openrouter/free"] = "google/gemini-3.6-flash"
+    monkeypatch.setattr(llm, "_post", lambda payload, key: {"choices": [{"message": {"content": '{"ok": 1}'}}], "usage": {}})
+    assert llm._ask_free("openrouter/free", "p", "review", cfg, "k", NOW) == {"ok": 1}
+    assert llm.answer_family("openrouter/free") is None  # unknown again: it cannot be shown independent
+
+
+def test_judges_on_the_picture_account_are_asked_last_and_never_once_it_is_spent(monkeypatch, tmp_path):
+    """24 Nov 2026 (owner: "create a routing system"): GLM and Qwen judges run on the Cloudflare account that draws the free pictures. They go after every
+    other judge, and are not asked at all while Cloudflare says the account's day is spent."""
+    import freeart
+
+    cfg = _race_setup(monkeypatch, tmp_path, ["or/a:free", "or/b:free"])
+    monkeypatch.setattr(llm, "extra_models", lambda role: [GLM, "extra:gemini-3.6-flash"])
+    monkeypatch.setattr(llm, "judge_extra_models", lambda: [QWEN])
+    monkeypatch.setattr(llm, "picture_sharing_models", lambda: [GLM, QWEN])
+    monkeypatch.setattr(llm, "gemini_key", lambda: "")
+    monkeypatch.setattr(llm, "openrouter_refused", lambda now, key: False)
+    order = []
+    monkeypatch.setattr(llm, "_race", lambda models, *a: order.extend(models) or None)
+    monkeypatch.setattr(llm, "_ask_free", lambda mid, *a, **k: order.append(mid) or None)
+    monkeypatch.setattr(llm, "ROUNDS", 1)
+    monkeypatch.setattr(freeart, "account_exhausted", lambda now=None: False)
+    llm._free_chat("p", "review", cfg, "k", NOW)
+    assert order == ["extra:gemini-3.6-flash", "or/a:free", "or/b:free", GLM, QWEN]  # the picture account's judges last
+    order.clear()
+    monkeypatch.setattr(freeart, "account_exhausted", lambda now=None: True)
+    llm._free_chat("p", "review", cfg, "k", NOW)
+    assert order == ["extra:gemini-3.6-flash", "or/a:free", "or/b:free"]  # spent: never asked (each try would fail and cost nothing but time)

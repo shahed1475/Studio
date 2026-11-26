@@ -157,3 +157,15 @@ def test_a_short_slug_can_never_leave_the_output_folder(tmp_path):
     import re
     slug = "../../x/Evil Slug"
     assert re.sub(r"[^a-z0-9]+", "-", slug.lower()).strip("-") == "x-evil-slug"
+
+
+def test_a_spec_waiting_on_cloudflares_own_limit_says_so(monkeypatch, tmp_path):
+    """24 Nov 2026: the reason said "free allowance ok" while Cloudflare refused every picture (its account's day was spent)."""
+    import freeart
+    import specrun
+
+    monkeypatch.setattr(specrun, "check", lambda base: ("short", {}, [], []))
+    monkeypatch.setattr(specrun, "draw_missing", lambda base, spec, kind: {"drawn": 0, "failed": 12, "cap": False, "undrawable": []})
+    monkeypatch.setattr(freeart, "account_exhausted", lambda now=None: True)
+    out = specrun.process(tmp_path)
+    assert out["status"] == "waiting" and "Cloudflare account" in out["reasons"][0] and "ok" not in out["reasons"][0].split(":")[0]

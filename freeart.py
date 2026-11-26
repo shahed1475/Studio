@@ -65,9 +65,24 @@ def available(cfg: dict | None = None, now: dt.datetime | None = None) -> bool:
     cfg = cfg if cfg is not None else llm.load_config()
     if not cfg.get("free_art") or not have_keys() or tenantmode.is_tenant():
         return False
-    if _off.get("day") == now.strftime("%Y-%m-%d"):
+    if _off.get("day") == now.strftime("%Y-%m-%d") or account_exhausted(now):
         return False
     return not (_off.get("until") and now < _off["until"])
+
+
+def _spent_file():
+    """Cloudflare's own word (429, code 4006): the whole account's 10,000 a day are used. Beside USAGE, so a test that moves USAGE moves this too."""
+    return USAGE.parent / "cloudflare_account_spent.json"
+
+
+def account_exhausted(now: dt.datetime | None = None) -> bool:
+    """True when Cloudflare itself said today's account allowance is used up (24 Nov 2026: the studio counted 1,667 picture units while the account's
+    10,000 were spent, mostly by text judges on the owner's FreeLLMAPI on the same account, and every spec picture failed as "allowance ok")."""
+    now = now or _now()
+    try:
+        return json.loads(_spent_file().read_text()).get("date") == now.strftime("%Y-%m-%d")
+    except (OSError, ValueError):
+        return False
 
 
 MIN_LEFT_TO_START = 1500  # Neurons: below this a new film would be drawn mostly from archive pictures, so Autopilot does not count on the free account today
@@ -123,10 +138,12 @@ def draw(prompt: str, kind: str, dest, style: str | None = None, fetch=None, now
         data = json.loads(raw)
         img = base64.b64decode(data["result"]["image"]) if status == 200 and data.get("success") else b""
     except Exception:  # a network error or an unreadable answer: the same as a refusal
-        status, img = 0, b""
+        status, img, raw = 0, b"", b""
     if img[:2] not in (b"\xff\xd8", b"\x89P"):
         if status in (401, 403):
             _off["day"] = today  # a wrong key or a missing permission will not mend itself today
+        elif status == 429 and b"4006" in (raw if isinstance(raw, bytes) else str(raw).encode()):
+            _spent_file().write_text(json.dumps({"date": today, "at": now.isoformat(timespec="seconds")}))  # spent until 00:00 UTC
         elif status == 429 or status >= 500 or status == 0:
             _off["until"] = now + dt.timedelta(minutes=PAUSE_MINUTES)
         return None

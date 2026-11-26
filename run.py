@@ -44,6 +44,8 @@ Agents and checks:
   python run.py agent [force]    the growth agent's daily research
   python run.py script-review NAME [--llm]   check a script before voice and pictures
   python run.py judges NAME      who would judge this video's AI review now, and why (asks no model)
+  python run.py compute [inventory|matrix|route [public-test] [min_b]|smoke [ollama:model]|recover|view]
+                                 the owner's own models: what exists, where each fits, a routing choice, a real local test (computerouter.py)
   python run.py listen NAME [--local]   compare the narration with the script (a warning only)
   python run.py inspect ...      measure and sample a video, save its sources (videoinspect.py)
   python run.py analyze-video NAME   one of OUR videos, shrunk, read by a vision model
@@ -76,6 +78,7 @@ Setup and self-tests:
   python run.py tenant-quota     enforce user-studio storage limits
 """
 import json
+import math
 import os
 import re
 import shutil
@@ -100,7 +103,12 @@ STALE = {"approved", "approved_by", "review", "publish_at", "autopilot_fails", "
 
 
 def reset_for_rerender(data: dict) -> dict:
-    """A re-rendered video is a new video: drop approval, review and schedule from the old render."""
+    """A re-rendered video is a new video: drop approval, review and schedule from the old render. The old review goes into review_history first
+    (24 Nov 2026: a re-render erased it, while reviewer.invalidate and apply_verdict keep it)."""
+    import reviewer
+
+    data = dict(data)
+    reviewer.keep_history(data)
     out = {k: v for k, v in data.items() if k not in STALE}
     if data.get("video_id"):
         out["replaces_video"] = data["video_id"]  # the old upload stays on YouTube until the owner approves deleting it
@@ -551,6 +559,20 @@ def cmd_doc(topic: str | None = None, photo: bool = False) -> Path:
 
 
 MIN_VARIETY = 0.55  # share of a documentary's scenes that must show a different picture (Pied Piper showed 28%, Delphi 100%)
+ART_LIMIT_MAX = 64  # the most drawings one film may ask for in its record (about 6,700 of Cloudflare's 10,000 free Neurons a day at 104 a film picture)
+
+
+def _art_limit(data: dict) -> int:
+    """Drawings this documentary may make: the standard limit (aiart.MAX_PER_VIDEO["doc"]), or more when the owner set `art_limit` in its record, never above
+    ART_LIMIT_MAX. 24 Nov 2026: the Seven Sleepers film stopped drawing at 16 and, being at 65% variety (over the 55% floor that unlocks 12 more), replayed scenes
+    9 to 32 for its whole last third. The free allowance and its wait still apply (_wait_for_pictures); only the cap moves."""
+    import aiart
+
+    try:
+        asked = int(data.get("art_limit") or 0)
+    except (TypeError, ValueError):
+        asked = 0
+    return min(max(asked, aiart.MAX_PER_VIDEO["doc"]), ART_LIMIT_MAX)
 PENDING_DOC = config.ROOT / "data" / "pending_doc.json"  # a paid script whose video is not finished: the next pass renders it instead of paying for a new one
 MAX_RESUMES = 3
 
@@ -762,34 +784,57 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
 
         bl_got = _blender_scenes(data, durations, "doc", (1920, 1080))  # a globe at the story's place and true-to-the-line 3D scenes, rendered headless (blenderscenes.py)
         bl_still = {data["lines"][i]["text"]: (pic, credit) for i, (pic, credit) in bl_got.items() if pic.suffix.lower() == ".png"}
-        forced, ran_out = _forced_art(data), []
+        forced, ran_out, short_of_art = _forced_art(data), [], []
 
         def art(l):  # a line Blender drew is not drawn again; style "3d": a 3D animated-film look
             got = bl_still.get(l["text"]) or aiart.generate(l["text"], l.get("visual", ""), data["topic"], style=data.get("art_style"), case=_is_case(data))
-            if got is None and l["text"] in forced and _free_pictures_spent():
-                ran_out.append(l["text"])  # a scene that must be drawn found today's free allowance spent
+            if got is None and _free_pictures_spent():
+                (ran_out if l["text"] in forced else short_of_art).append(l["text"])  # a scene that must (or could) be drawn found today's free allowance spent
             return got
 
         finder = _real_finder(data, "doc")
         pics = dict(judge=_image_judge(data["topic"]), art=art, art_first=bool(data.get("art_first")), force_art=_forced_art(data), finder=finder, real_when_named=_real_photos_on(data))
-        clips, credits, stats = footage.scene_images(data["lines"], data["topic"], anchors, art_limit=aiart.MAX_PER_VIDEO["doc"], **pics)
+        trace: list = []  # how each scene's picture was chosen (scenemanifest.py, 25 Nov 2026): a fresh list per call, so it always matches the clips kept
+        clips, credits, stats = footage.scene_images(data["lines"], data["topic"], anchors, art_limit=_art_limit(data), trace=trace, **pics)
         if stats["unique"] < MIN_VARIETY * stats["scenes"] and aiart.enabled():  # the same few pictures again and again: draw illustrations for the scenes that would repeat
             print(f"  only {stats['unique']} different pictures for {stats['scenes']} scenes: drawing more")
-            clips, credits, stats = footage.scene_images(data["lines"], data["topic"], anchors, art_limit=aiart.MAX_PER_VIDEO["doc"] + aiart.EXTRA_FOR_VARIETY, **pics)
+            trace = []
+            clips, credits, stats = footage.scene_images(data["lines"], data["topic"], anchors, art_limit=max(_art_limit(data), aiart.MAX_PER_VIDEO["doc"] + aiart.EXTRA_FOR_VARIETY), trace=trace, **pics)
+            need = math.ceil(round(MIN_VARIETY * stats["scenes"], 6)) - stats["unique"]
+            if need > 0 and short_of_art and stats.get("drawn", 0) < max(_art_limit(data), aiart.MAX_PER_VIDEO["doc"] + aiart.EXTRA_FOR_VARIETY):  # only when tomorrow's pictures can close the gap
+                if in_place:  # a re-render or a repair has no pending script to continue it: it stops and is run again after the reset (24 Nov 2026 review)
+                    raise SystemExit(f"re-render stopped: only {stats['unique']} different pictures for {stats['scenes']} scenes and today's free pictures are spent; "
+                                     "the pictures drawn so far are cached: run it again after 00:00 UTC")  # 23 Nov 2026: the Mary Celeste film ran out of free pictures, every scene it could not draw reused an earlier
+                print(f"  still only {stats['unique']} different pictures for {stats['scenes']} scenes and today's free pictures are spent")  # picture and its second
+                _wait_for_pictures(data, folder, need, len(data["lines"]))  # half replayed its first (54 for 104): the film waits for tomorrow's pictures instead
         if ran_out:
             _wait_for_pictures(data, folder, len(set(ran_out)), len(data["lines"]))
         if stats["missing"] or stats["unique"] < 6:
             shutil.rmtree(work if in_place else folder, ignore_errors=True)
             raise SystemExit(f"only {stats['unique']} on-topic images found ({stats['missing']} scenes without one); "
                              "not rendering a video of unrelated pictures")
+        stages = [("selected", list(clips))]
         clips, credits = _real_footage(data, clips, credits)  # real moving footage on the scenes that may carry it (before the animation step: a real clip is not animated)
+        stages.append(("real_footage", list(clips)))
         import blenderscenes
 
         clips, credits = blenderscenes.place(clips, credits, bl_got)  # the lines Blender was planned for show Blender's scene (its stills then get camera motion from their exact depth)
+        stages.append(("blender", list(clips)))
         clips, credits, anim = _animate(data, clips, credits, durations)  # some drawn scenes become short moving clips when the video asks for it
+        stages.append(("animated", list(clips)))
         if anim:
             data["animation"] = anim
             print(f"  animation: {anim['animated']} new clip(s), {anim['cached']} from the cache, {anim['failed']} failed, ${anim['spent']:.2f} spent")
+    if local:
+        stages, trace = [("selected", list(clips))], [{"how": "local", "query": l.get("visual")} for l in data["lines"]]
+    import scenemanifest
+
+    try:  # which picture each scene shows and how it was chosen, by a stable id from its narration (25 Nov 2026: the Seven Sleepers v2 mapping was never saved)
+        data["scene_manifest"] = scenemanifest.write(folder, data["lines"], stages, trace)
+        sm = data["scene_manifest"]
+        print(f"  scene manifest: {sm['scenes']} scenes, how: {sm['how']}" + (f"; reserve runs {[(r[0], r[-1]) for r in sm['reserve_runs']]}" if sm["reserve_runs"] else ""))
+    except Exception as e:  # the manifest never stops a film, but its absence is recorded and the reviewer flags it
+        data["scene_manifest"] = {"error": f"{type(e).__name__}: {e}"[:200]}
     clips = _parallax(data, clips, durations, (1920, 1080))  # free 2.5D camera motion when the video asks for it
     import musicbed
 
@@ -836,6 +881,8 @@ def _produce_doc(data: dict, folder: Path | None = None) -> Path:
     src = "".join(f"\n{x}" for x in ccdoc.source_lines(data))  # sources are dicts of title+url: their repr()s once went into a description verbatim
     data["description"] = intro + (f"\n\nSources:{src}" if src else "") + "\n\nChapters:\n" + "\n".join(starts)
     data["footage"] = stats
+    if isinstance(data.get("scene_manifest"), dict) and "error" not in data["scene_manifest"]:
+        data["scene_manifest"]["video_sha256"] = scenemanifest._sha(folder / "video.mp4")  # the finished file (after the pop-up and sound passes) traces back to scenes.json
     data["credits"] = credits
     data["assets"] = finder.assets if finder else []  # every library picture: address, licence, credit, date, hash
     data["subtitles"] = "burned" if config.DOC_SUBTITLES else "srt"
@@ -868,7 +915,7 @@ def _free_pictures_spent() -> bool:
     try:
         import freeart
 
-        return freeart.have_keys() and freeart.quota_left() < freeart.neurons(1024, 576)
+        return freeart.available() and freeart.quota_left() < freeart.neurons(1024, 576)
     except Exception:
         return False
 
@@ -1535,6 +1582,66 @@ def main() -> None:
         import newswatch
 
         print(newswatch.make_next_news_video(" ".join(a[1:]) or None))
+    elif a[0] == "compute":  # the owner's own models across this PC, a VPS and Kaggle (computerouter.py, 24 Nov 2026); nothing is downloaded or paid
+        import datetime as dt
+
+        import computecompat
+        import computejobs
+        import computerouter
+        import modelinventory
+
+        sub = a[1] if len(a) > 1 else "view"
+        if sub == "inventory":  # read-only: Ollama's API and file headers
+            inv = modelinventory.build()
+            print(f"{len(inv['models'])} models -> {modelinventory.save(inv)}")
+        elif sub == "matrix":
+            for r in computecompat.matrix()["rows"]:
+                print(f"{r['name'][:44]:44} {r['gb']:7.2f} GB  " + "  ".join(f"{e}:{v['status']}" for e, v in r["env"].items()))
+        elif sub == "route":  # run.py compute route [public-test] [min_params_b]
+            req = {"task": "text-generation", "data_class": a[2] if len(a) > 2 else "production", "min_params_b": float(a[3]) if len(a) > 3 else 0}
+            print(json.dumps({k: v for k, v in computerouter.route(req).items() if k != "rejected"}, indent=1))
+        elif sub == "smoke":  # one tiny public prompt on a model on each LOCAL environment that can hold it; never Kaggle (terms), never paid
+            model = a[2] if len(a) > 2 else "ollama:qwen2.5:1.5b"
+            for env in ("local_gpu", "local_cpu"):
+                j = computejobs.submit(model, "text-generation", "inline:Name the capital of France in one word.", environment=env,
+                                       params={"context": 512, "smoke": dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d%H")}, data_class="public-test", timeout_s=300)
+                j = computerouter.execute(j["id"])
+                print(env, j["status"], json.dumps((j.get("checkpoint") or {}).get("done", {}).get("0", {}))[:300])
+        elif sub == "recover":
+            for j in computerouter.recover():
+                print(j["id"], j["status"])
+        elif sub.startswith("kaggle-"):  # Kaggle notebooks as temporary GPU workers (kaggleworker.py): personal, non-commercial tasks only; never channel work
+            import kaggleworker
+
+            env = modelinventory.load_cfg()["environments"]["kaggle_gpu"]
+            owner = env.get("owner", "")
+            if sub == "kaggle-check":  # read-only: CLI, login (no credential shown), quota, competitions, own notebooks
+                print(json.dumps(kaggleworker.check(), indent=1))
+            elif sub == "kaggle-twin":  # run.py compute kaggle-twin <local file> <hf repo> <file name>
+                print(json.dumps(kaggleworker.verify_twin(a[2], a[3], a[4]), indent=1))
+            elif sub == "kaggle-test":  # run.py compute kaggle-test [twin sha256] [competition]: the benchmark of one verified twin on a T4
+                tw = kaggleworker.twins()
+                twin = tw[a[2]] if len(a) > 2 else next(iter(tw.values()), None)
+                if not twin:
+                    raise SystemExit("no verified public twin: run `compute kaggle-twin` first")
+                comp = a[3] if len(a) > 3 else env.get("test_competition", "")
+                j = computejobs.submit(f"twin:{twin['repo']}/{twin['file']}", kaggleworker.TASK, env.get("test_input", "data/compute/inputs/kaggle_benchmark_v1.json"),
+                                       environment="kaggle_gpu", data_class="public-test", timeout_s=int(env.get("session_cap_s", 3600)),
+                                       params={"twin": twin["sha256"], "competition": comp, "max_new_tokens": 160})
+                if j["status"] in ("QUEUED", "RECOVERY_PENDING"):
+                    kaggleworker.prepare(j, twin, owner, comp)
+                j = kaggleworker.submit(j, twin, owner, env)
+                print(j["id"], j["status"], j.get("kaggle_ref", ""), (j.get("history") or [[None, None, ""]])[-1][2])
+            elif sub == "kaggle-poll":  # run.py compute kaggle-poll <job>
+                j = kaggleworker.poll(a[2])
+                print(j["id"], j["status"], (j.get("history") or [[None, None, ""]])[-1][2], json.dumps(j.get("output") or {})[:600])
+            elif sub == "kaggle-recover":  # run.py compute kaggle-recover <job>: only an INTERRUPTED job, skipping its recovered answers
+                job = computejobs.get(a[2])
+                twin = kaggleworker.twins().get(job["params"].get("twin"))
+                j = kaggleworker.recover(a[2], twin, owner, env, job["params"].get("competition", ""), timeout_s=int(env.get("session_cap_s", 3600)))
+                print(j["id"], j["status"], (j.get("history") or [[None, None, ""]])[-1][2])
+        else:
+            print(json.dumps({k: v for k, v in computerouter.view().items() if k not in ("matrix",)}, indent=1, default=str)[:4000])
     elif a[0] == "judges":  # who would judge this video's AI review now, and why each model is or is not eligible; asks no model (judges.py)
         import judges
 

@@ -1446,3 +1446,149 @@ def test_the_padding_case_catches_an_extended_ending_and_an_uncut_long_line(monk
     with monkeypatch.context() as m:
         m.setattr(scriptgen, "sentences", lambda text: text.split())  # mutation: lines cut between words, not at sentences
         assert not case()[0]
+
+
+def test_the_family_case_catches_one_family_counted_twice_and_a_missing_block(monkeypatch):
+    """Case and mutation checks for case_two_judges_of_one_family_are_one_opinion_and_a_missing_second_family_blocks_the_fact_check (24 Nov 2026)."""
+    import llm
+
+    case = agenteval.case_two_judges_of_one_family_are_one_opinion_and_a_missing_second_family_blocks_the_fact_check
+    ok, detail = case()
+    assert ok, detail
+    with monkeypatch.context() as m:
+        m.setattr(llm, "model_family", lambda mid: frozenset({llm.model_identity(mid)}))  # mutation: every model is its own family (the 23 Nov behaviour)
+        assert not case()[0]
+    with monkeypatch.context() as m:
+        m.setattr(llm, "answer_family", lambda mid: frozenset({str(mid)}))  # mutation: the family check compares names, not makers
+        assert not case()[0]
+    with monkeypatch.context() as m:
+        m.setattr(llm, "_blocked_review", lambda now, models, why: None)  # mutation: a blocked check leaves no reason
+        assert not case()[0]
+    with monkeypatch.context() as m:
+        m.setattr(llm, "judge_extra_models", lambda: [])  # mutation: the fact-check cannot reach the cascade's judges (the 23 Nov behaviour)
+        assert not case()[0]
+    with monkeypatch.context() as m:
+        orig = llm._free_chat
+        m.setattr(llm, "_free_chat", lambda *a, avoid_families=frozenset(), **k: orig(*a, **k))  # mutation: the second judge's family is not excluded
+        assert not case()[0]
+
+
+def test_the_picture_account_case_catches_a_missed_limit_and_a_judge_asked_too_early(monkeypatch):
+    """Case and mutation checks for case_the_picture_accounts_own_limit_stops_drawing_and_its_judges_are_asked_last (24 Nov 2026, routing)."""
+    import freeart
+    import llm
+
+    case = agenteval.case_the_picture_accounts_own_limit_stops_drawing_and_its_judges_are_asked_last
+    ok, detail = case()
+    assert ok, detail
+    with monkeypatch.context() as m:
+        m.setattr(freeart, "account_exhausted", lambda now=None: False)  # mutation: Cloudflare's own limit is not remembered
+        assert not case()[0]
+    with monkeypatch.context() as m:
+        class Forgets:  # mutation: the 4006 answer is "recorded" nowhere
+            def write_text(self, *a, **k):
+                return 0
+
+            def read_text(self, *a, **k):
+                raise OSError("nothing was kept")
+
+        m.setattr(freeart, "_spent_file", lambda: Forgets())
+        assert not case()[0]
+
+
+def test_the_compute_router_case_catches_kaggle_paid_licence_and_credential_mistakes(monkeypatch):
+    """Case and mutation checks for case_the_compute_router_never_sends_production_or_private_work_to_kaggle_and_never_pays (24 Nov 2026)."""
+    import computejobs
+    import computerouter
+
+    case = agenteval.case_the_compute_router_never_sends_production_or_private_work_to_kaggle_and_never_pays
+    ok, detail = case()
+    assert ok, detail
+    with monkeypatch.context() as m:
+        m.setattr(computerouter, "kaggle_gate", lambda *a: ("", ""))  # mutation: Kaggle takes anything
+        assert not case()[0]
+    with monkeypatch.context() as m:
+        m.setattr(computerouter, "licence_ok", lambda *a: "")  # mutation: no licence check
+        assert not case()[0]
+    with monkeypatch.context() as m:
+        m.setattr(computejobs, "SECRET", __import__("re").compile("never-matches-anything-xyz"))  # mutation: credentials may travel in a job
+        assert not case()[0]
+
+
+def test_the_scene_trace_case_catches_an_untraced_pick_a_silent_reviewer_and_position_based_ids(monkeypatch):
+    """Case and mutation checks for case_every_scene_is_traceable_to_its_line_and_a_reserve_run_is_never_passed_silently (25 Nov 2026, Seven Sleepers v2)."""
+    import hashlib
+    import scenemanifest
+
+    case = agenteval.case_every_scene_is_traceable_to_its_line_and_a_reserve_run_is_never_passed_silently
+    ok, detail = case()
+    assert ok, detail
+    real_build = scenemanifest.build
+    with monkeypatch.context() as m:  # mutation: the pick is not traced (every scene looks like its own line search, as the old record implied)
+        m.setattr(scenemanifest, "build", lambda lines, stages, trace=None: real_build(lines, stages, [{"how": "line_search"}] * len(lines)))
+        assert not case()[0]
+    with monkeypatch.context() as m:  # mutation: the reviewer passes the manifest whatever it says
+        m.setattr(scenemanifest, "check", lambda meta: (True, "ok") if meta.get("scene_manifest") else None)
+        assert not case()[0]
+    with monkeypatch.context() as m:  # mutation: ids from positions, so an inserted line renames every later scene and the reassignment is invisible
+        m.setattr(scenemanifest, "scene_ids", lambda lines: [hashlib.sha1(str(i).encode()).hexdigest()[:10] for i in range(len(lines))])
+        assert not case()[0]
+
+
+def test_the_unread_pictures_case_catches_a_failed_reading_stored_as_a_pass(monkeypatch):
+    """Case and mutation checks for case_a_picture_reading_that_could_not_run_is_never_recorded_as_a_pass (24 Nov 2026, recovery)."""
+    import autopilot
+    import records
+
+    case = agenteval.case_a_picture_reading_that_could_not_run_is_never_recorded_as_a_pass
+    ok, detail = case()
+    assert ok, detail
+
+    def old(slug):  # mutation: the behaviour before the fix, a reading with no rows stored as ok
+        records.merge(autopilot.config.OUT / slug, {"visual_check": {"ok": True, "rows": [], "wrong_at": []}})
+        return {"bad": False, "rows": []}
+    with monkeypatch.context() as m:
+        m.setattr(autopilot, "read_pictures", old)
+        assert not case()[0]
+    with monkeypatch.context() as m:
+        m.setattr(autopilot, "visually_ok", lambda slug: False)  # mutation: a reading that cannot run blocks the video
+        assert not case()[0]
+
+
+def test_the_drawing_limit_case_catches_an_ignored_or_unbounded_limit(monkeypatch):
+    """Case and mutation checks for case_a_films_own_drawing_limit_is_honoured_within_a_ceiling_that_fits_the_free_day (24 Nov 2026)."""
+    import aiart
+    import run
+
+    case = agenteval.case_a_films_own_drawing_limit_is_honoured_within_a_ceiling_that_fits_the_free_day
+    ok, detail = case()
+    assert ok, detail
+    with monkeypatch.context() as m:
+        m.setattr(run, "_art_limit", lambda data: aiart.MAX_PER_VIDEO["doc"])  # mutation: the owner's limit is ignored
+        assert not case()[0]
+    with monkeypatch.context() as m:
+        m.setattr(run, "_art_limit", lambda data: max(int(data.get("art_limit") or 0), aiart.MAX_PER_VIDEO["doc"]))  # mutation: no ceiling
+        assert not case()[0]
+
+
+def test_the_kaggle_worker_case_catches_an_unverified_twin_a_shared_job_id_and_a_skipped_manifest(monkeypatch):
+    """Case and mutation checks for case_the_kaggle_worker_runs_only_a_verified_twin_for_a_personal_task_and_never_completes_unproven_output (24 Nov 2026)."""
+    import computejobs
+    import computerouter
+    import kaggleworker
+
+    case = agenteval.case_the_kaggle_worker_runs_only_a_verified_twin_for_a_personal_task_and_never_completes_unproven_output
+    ok, detail = case()
+    assert ok, detail
+    real_gate = computerouter.kaggle_gate
+    with monkeypatch.context() as m:  # mutation: any private model passes once it says public_twin
+        m.setattr(computerouter, "kaggle_gate", lambda mo, req, env: ("", "") if req.get("data_class") == "public-test" and req.get("task") == "benchmark" else real_gate(mo, req, env))
+        assert not case()[0]
+    real_id = computejobs.job_id
+    with monkeypatch.context() as m:  # mutation: the data class is left out of the job id again
+        m.setattr(computejobs, "job_id", lambda model, task, ref, params=None, environment="", data_class="production": real_id(model, task, ref, params, environment))
+        assert not case()[0]
+    real_verify = kaggleworker.verify
+    with monkeypatch.context() as m:  # mutation: the manifest is not checked
+        m.setattr(kaggleworker, "verify", lambda dest, job: {**real_verify(dest, job), "ok": True})
+        assert not case()[0]

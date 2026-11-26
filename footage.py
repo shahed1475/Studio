@@ -233,7 +233,7 @@ def named_photo(visual: str, anchors: list[str], hits: list[tuple[Path, str]]) -
 
 
 def scene_images(lines: list[dict], topic: str, anchors: list[str], pool_size: int = 10, judge=None, art=None, art_limit: int = 0, art_first: bool = False, force_art: set[str] | None = None,
-                 finder=None, real_when_named: bool = False) -> tuple[list, list[str], dict]:
+                 finder=None, real_when_named: bool = False, trace: list | None = None) -> tuple[list, list[str], dict]:
     """One relevant image per scene: a specific search first, then unused images about the subject, then reuse.
     When no real picture is left, art(line) may draw one illustration (up to art_limit per video) instead of repeating a picture.
     art_first: skip the generic reserve of subject pictures (the usual source of a ruin or map that is not quite the place) and draw instead.
@@ -241,7 +241,8 @@ def scene_images(lines: list[dict], topic: str, anchors: list[str], pool_size: i
     object drawn by a picture model comes out as a generic one: a wooden pagoda for a stone one, 13 Nov 2026); every other forced scene is drawn as before.
     force_art: narration lines whose picture was judged wrong: they are drawn whatever a search finds, outside the art cap (the cache makes a repeat free).
     finder (realmedia.Finder, off by default): after the Commons public-domain search, the other approved libraries and licences are tried before any picture is drawn.
-    A scene only goes blank when nothing about the subject can be found at all."""
+    A scene only goes blank when nothing about the subject can be found at all.
+    trace (a list, optional): one {"how", "query"} per line is appended, saying how its picture was chosen (scenemanifest.py); it changes no choice."""
     used: list[Path] = []
     drawn = forced = 0
     credit: dict[Path, str] = {}
@@ -257,24 +258,30 @@ def scene_images(lines: list[dict], topic: str, anchors: list[str], pool_size: i
         pool += [h for h in look(q, pool_size, [p for p, _ in pool], wide=True) if h[0] not in [p for p, _ in pool]]
     clips: list[Path | None] = []
     for l in lines:
-        hit = None
+        hit, how = None, None
         if art and l.get("text") in (force_art or ()):
             if real_when_named and l.get("visual"):
                 hit = named_photo(l["visual"], anchors, look(l["visual"], 3, used))
+                how = "forced_named" if hit else None
             if not hit:
                 hit = art(l)
                 forced += bool(hit)
+                how = "forced_drawn" if hit else None
         if not hit and l.get("visual"):
             hits = look(l["visual"], 1, used)
             hit = hits[0] if hits else None
+            how = "line_search" if hit else None
         if not hit and art_first and art and drawn < art_limit:
             hit = art(l)
             drawn += bool(hit)
+            how = "art_first" if hit else None
         if not hit:
             hit = next((h for h in pool if h[0] not in used and not unrelated_portrait(h[1], l.get("visual") or "")), None)  # a reserve portrait is for its own scene only
+            how = "reserve" if hit else None
         if not hit and art and drawn < art_limit:
             hit = art(l)
             drawn += bool(hit)
+            how = "drawn" if hit else None
         if hit:
             if hit[0] not in used:
                 used.append(hit[0])
@@ -282,7 +289,11 @@ def scene_images(lines: list[dict], topic: str, anchors: list[str], pool_size: i
             clips.append(hit[0])
         elif used:  # everything on-topic was already shown: show the least recently used one again
             clips.append(used[len([c for c in clips if c]) % len(used)])
+            how = "reuse"
         else:
             clips.append(None)
+            how = "missing"
+        if trace is not None:
+            trace.append({"how": how, "query": l.get("visual")})
     stats = {"scenes": len(lines), "unique": len(used), "missing": sum(c is None for c in clips), "drawn": drawn + forced}
     return clips, list(dict.fromkeys(credit[p] for p in used)), stats

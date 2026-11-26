@@ -73,7 +73,7 @@ def _seconds(path) -> float:
 
 
 def apply(video: Path, plan: list[tuple[float, str]], cache: Path | None = None) -> bool:
-    """Lay the cues under the narration of `video` in place. False (video untouched) when ffmpeg fails or the new file's length is not the old one's."""
+    """Lay the cues under the narration of `video` in place, at 48 kHz like render.AUDIO (this last pass resampled every film to 44.1 kHz until 24 Nov 2026). False (video untouched) when ffmpeg fails or the new file's length is not the old one's."""
     video, cache = Path(video), Path(cache or CACHE_DIR)
     tmp = video.with_name(video.stem + ".sfx.tmp.mp4")
     try:
@@ -82,10 +82,10 @@ def apply(video: Path, plan: list[tuple[float, str]], cache: Path | None = None)
         for i, (t, name) in enumerate(plan, 1):
             cmd += ["-i", str(_effect(name, cache))]
             ms = round(t * 1000)
-            parts.append(f"[{i}:a]aformat=sample_rates=44100:channel_layouts=stereo,adelay={ms}:all=1,volume={GAIN_DB[name]}dB[c{i}]")
+            parts.append(f"[{i}:a]aformat=sample_rates=48000:channel_layouts=stereo,adelay={ms}:all=1,volume={GAIN_DB[name]}dB[c{i}]")
             labels.append(f"[c{i}]")
-        graph = ";".join(parts) + f";[0:a]aformat=sample_rates=44100:channel_layouts=stereo[v];[v]{''.join(labels)}amix=inputs={len(plan) + 1}:duration=first:normalize=0:dropout_transition=0[a]"
-        subprocess.run([*cmd, "-filter_complex", graph, "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "256k", "-movflags", "+faststart", str(tmp)],
+        graph = ";".join(parts) + f";[0:a]aformat=sample_rates=48000:channel_layouts=stereo[v];[v]{''.join(labels)}amix=inputs={len(plan) + 1}:duration=first:normalize=0:dropout_transition=0[a]"
+        subprocess.run([*cmd, "-filter_complex", graph, "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac", "-b:a", "256k", "-ar", "48000", "-movflags", "+faststart", str(tmp)],
                        check=True, capture_output=True, timeout=3600)
         after = _seconds(tmp)
         if before <= 0 or abs(after - before) > 0.5:

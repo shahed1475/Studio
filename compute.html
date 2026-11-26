@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Studio compute</title>
+<style>
+@font-face{font-family:"Geist";src:url(/static/geist.woff2) format("woff2");font-weight:100 900;font-display:swap}
+:root{color-scheme:light;--bg:#eef2f8;--surface:#ffffff;--ink:#0e1a2f;--ink2:#4a5a76;--line:#d3dbe8;--accent:#2e5cb8;--ok:#176f46;--ok-bg:#e1f3e9;--warn:#8a5d00;--warn-bg:#fbefd2;--bad:#b83227;--bad-bg:#fbe2df}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#0a1220;--surface:#101a2c;--ink:#e6ebf5;--ink2:#94a2bb;--line:#22304b;--accent:#7ea6ec;--ok:#5fcf99;--ok-bg:#123227;--warn:#e8bd63;--warn-bg:#3a2d12;--bad:#f17b7b;--bad-bg:#3e1a20}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 "Geist",system-ui,sans-serif}
+main{max-width:1200px;margin:0 auto;padding:16px}h1{font-size:22px;margin:4px 0 2px}h2{font-size:16px;margin:22px 0 8px}
+.sub{color:var(--ink2)}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px}.card b{display:block;margin-bottom:4px}
+.wrap{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+th{color:var(--ink2);font-weight:560;position:sticky;top:0;background:var(--surface)}
+.st{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px}
+.fits{background:var(--ok-bg);color:var(--ok)}.fits_with_cpu_offload,.needs_import{background:var(--warn-bg);color:var(--warn)}
+.too_big,.not_configured,.not_runnable,.unknown{background:var(--bad-bg);color:var(--bad)}
+.COMPLETED{background:var(--ok-bg);color:var(--ok)}.FAILED,.BLOCKED,.BLOCKED_PENDING_TERMS_REVIEW,.INTERRUPTED{background:var(--bad-bg);color:var(--bad)}
+input{font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);width:min(320px,100%)}
+</style>
+</head>
+<body>
+<main>
+<h1>Compute and models</h1>
+<div class="sub" id="when">Loading...</div>
+<h2>Environments</h2><div class="cards" id="envs"></div>
+<h2>API providers (separate from GPU compute)</h2><div class="cards" id="prov"></div>
+<h2>Jobs</h2><div class="wrap"><table><thead><tr><th>Job</th><th>Model</th><th>Where</th><th>Status</th><th>Last step</th></tr></thead><tbody id="jobs"></tbody></table></div>
+<h2>Models and where they can run</h2>
+<input id="q" placeholder="Filter models" aria-label="Filter models">
+<div class="wrap" style="margin-top:8px"><table><thead><tr><th>Model</th><th>Kind</th><th>Size</th><th>Licence</th><th>This PC GPU</th><th>This PC CPU</th><th>VPS</th><th>Kaggle GPU</th></tr></thead><tbody id="rows"></tbody></table></div>
+<p class="sub">Fits are estimates (weights, KV cache at the shown context, engine overhead) against live free memory; only a job that completed proves a model runs. Kaggle sizes are Kaggle's spec, and Kaggle stays blocked until its terms are cleared for a task.</p>
+</main>
+<script>
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pill = (s, t) => `<span class="st ${esc(s)}" title="${esc(t || "")}">${esc(String(s).replaceAll("_", " "))}</span>`;
+let data = null;
+function rows() {
+  const q = document.getElementById("q").value.toLowerCase();
+  document.getElementById("rows").innerHTML = data.matrix.filter(r => !q || r.name.toLowerCase().includes(q)).map(r =>
+    `<tr><td>${esc(r.name)}</td><td>${esc(r.kind)}</td><td>${r.gb.toFixed(2)} GB</td><td>${esc(r.license || "unknown")}</td>` +
+    ["local_gpu", "local_cpu", "vps", "kaggle_gpu"].map(e => `<td>${pill(r.env[e].status, r.env[e].why)}</td>`).join("") + "</tr>").join("");
+}
+async function load() {
+  try {
+    const r = await fetch("/api/compute", {credentials: "same-origin"});
+    if (!r.ok) throw new Error("the server answered " + r.status);
+    data = await r.json();
+  } catch (e) { document.getElementById("when").textContent = "Could not load: " + e.message; return; }
+  const g = data.live.gpu, ram = data.live.ram;
+  document.getElementById("when").textContent = `${data.models} models in the inventory (${data.inventory_at || "never run"}); estimates at ${data.context} tokens of context`;
+  const env = data.environments;
+  document.getElementById("envs").innerHTML =
+    `<div class="card"><b>This PC: GPU</b>${g.present ? `${esc(g.name)}<br>${g.free_gb.toFixed(2)} of ${g.total_gb.toFixed(1)} GB VRAM free, ${g.util_pct}% busy` : "No GPU: " + esc(g.why)}</div>` +
+    `<div class="card"><b>This PC: RAM</b>${ram.available_gb.toFixed(1)} of ${ram.total_gb.toFixed(1)} GB available</div>` +
+    `<div class="card"><b>VPS</b>${esc(env.vps.why || "")}</div>` +
+    `<div class="card"><b>Kaggle GPU</b>${env.kaggle_gpu.enabled ? "on" : "off"}; ${esc((env.kaggle_gpu.gpus || []).map(x => x.count + " x " + x.name).join(", "))} (spec)<br>Weekly quota ${esc(env.kaggle_gpu.weekly_gpu_hours)} h; hours used are not readable by API<br>Terms: personal, non-commercial; permitted tasks: ${esc((env.kaggle_gpu.owner_permitted_tasks || []).join(", ") || "none confirmed")}</div>`;
+  const p = data.providers;
+  document.getElementById("prov").innerHTML =
+    `<div class="card"><b>Paid models</b>${p.paid_models_allowed ? "allowed (Settings)" : "off: never used"}</div>` +
+    `<div class="card"><b>Free models</b>${p.free_models_on ? "on" : "off"}; Gemini key ${p.gemini_key_saved ? "saved" : "not saved"}; own provider ${p.owner_provider_on ? "on" : "off"}; OpenRouter ${p.openrouter_refused ? "refusing the key" : p.openrouter_refused === null ? "no key" : "accepted"}</div>` +
+    `<div class="card"><b>Cloudflare (pictures + GLM/Qwen judges)</b>${p.cloudflare_account_spent_today ? "account's day used up (Cloudflare said so)" : "available"}; studio pictures today ${p.cloudflare_pictures_used_today} units</div>`;
+  document.getElementById("jobs").innerHTML = data.jobs.map(j => `<tr><td>${esc(j.id)}</td><td>${esc(j.model)}</td><td>${esc(j.environment)}</td><td>${pill(j.status)}</td><td>${esc((j.history.at(-1) || [])[2] || "")}</td></tr>`).join("") || `<tr><td colspan="5">No jobs yet.</td></tr>`;
+  rows();
+}
+document.getElementById("q").addEventListener("input", () => data && rows());
+load();
+</script>
+</body>
+</html>

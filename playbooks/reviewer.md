@@ -10,6 +10,9 @@ Deterministic checks first, then the model with the source article. A model fail
 ## Tools
 reviewer.review, judges.plan (run.py judges <slug>), studiochecks, compliance, voicecheck (run.py listen <slug>).
 ## Never
-Pass because a model agrees. Fail because a model errored. Let a writer or a router judge. Read a judge's reasoning as its verdict.
+Pass because a model agrees. Fail because a model errored. Let a writer or a router judge. Read a judge's reasoning as its verdict. Count two models of one family as two judges, in the script fact-check too (24 Nov 2026): without a second family the check is blocked.
 ## Escalate
 Two reviewers that disagree: needs_human.
+
+## Scene sources (25 Nov 2026)
+Code, not the model: `scene_sources` (warn) reads the scene manifest (scenemanifest.py, scenes.json in the video folder) and names scenes filled from the subject's general reserve, repeats after a failed drawing, files shown twice, and unchanged lines whose picture moved since the last render. "Different on-topic images" alone never means each picture fits its line.

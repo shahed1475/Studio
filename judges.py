@@ -39,7 +39,7 @@ DEFAULTS = {
 }
 _ID = re.compile(r"^(?:extra:|gemini:)?[A-Za-z0-9~][A-Za-z0-9/._:+~-]{1,99}$")
 # names that let a provider pick the model (it could pick the writer, and its family is unknown): never a judge
-ROUTERS = frozenset(llm.ROUTER_NAMES | {"free", "free-router", "auto-route", "kilo-auto", "bazaarlink-auto", "logfare-auto"})
+ROUTERS = llm.ROUTER_IDS  # one list for the video review and the script fact-check (llm.is_router)
 STRICT_NOTE_WORDS = 12
 
 
@@ -142,8 +142,7 @@ def writers_of(meta: dict, avoid=None) -> set:
 
 
 def is_router(mid) -> bool:
-    ident = llm.model_identity(mid)
-    return ident in ROUTERS or str(mid).lower().startswith("openrouter/") or "auto" in ident.split("-")
+    return llm.is_router(mid)
 
 
 def _usable(mid: str, now) -> str:

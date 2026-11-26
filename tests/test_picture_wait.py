@@ -78,3 +78,63 @@ def test_a_film_with_enough_pictures_is_rendered_as_before(world):
     with pytest.raises(RuntimeError, match="reached render"):
         run._produce_doc(film())
     assert world["render"]
+
+
+def _variety_world(world, monkeypatch, drawn: int, spent: bool):
+    """A film that is NOT drawn on purpose: the picker reuses a picture for every scene it cannot fill (as footage.scene_images does), drawing stops after `drawn`."""
+    import aiart
+
+    cache: dict = {}
+
+    def generate(text, visual, topic, **k):
+        if text in cache:
+            return cache[text]
+        if len(cache) >= drawn:
+            return None
+        p = run.config.CACHE / "art" / f"{len(cache)}.jpg"
+        p.write_bytes(b"x")
+        cache[text] = (p, "AI-generated illustration")
+        return cache[text]
+
+    monkeypatch.setattr(aiart, "generate", generate)
+    monkeypatch.setattr(aiart, "enabled", lambda: True)
+    monkeypatch.setattr(run, "_free_pictures_spent", lambda: spent)
+
+
+def test_a_film_that_would_repeat_its_pictures_waits_when_the_free_pictures_are_spent(world, monkeypatch):
+    """23 Nov 2026: the Mary Celeste film (real pictures first, not drawn on purpose) ran out of free pictures, reused a picture for every scene it could not draw and was
+    rendered with 54 different pictures for 104 scenes. Now it waits for tomorrow's allowance like a film drawn on purpose."""
+    _variety_world(world, monkeypatch, drawn=6, spent=True)
+    data = {**film(12), "art_style": None}
+    run.PENDING_DOC.write_text(json.dumps({"data": data, "folder": "", "tries": 1}))
+    with pytest.raises(SystemExit, match="waiting for pictures"):
+        run._produce_doc(data)
+    assert not world["render"]
+    assert json.loads(run.PENDING_DOC.read_text())["waiting_for_pictures"] == {"short": 1, "total": 12}  # 55% of 12 is 7 different pictures: one more is needed
+
+
+def test_a_film_short_of_pictures_with_drawing_still_possible_is_rendered_as_before(world, monkeypatch):
+    _variety_world(world, monkeypatch, drawn=6, spent=False)  # nothing to wait for: tomorrow would not change it, so no film waits forever
+    with pytest.raises(RuntimeError, match="reached render"):
+        run._produce_doc({**film(12), "art_style": None})
+    assert world["render"]
+
+
+def test_a_rerender_short_of_pictures_stops_instead_of_waiting_on_a_pending_script(world, monkeypatch, tmp_path):
+    """24 Nov 2026 review: a re-render or repair has no pending script to continue it; it stops with an honest message and renders nothing."""
+    _variety_world(world, monkeypatch, drawn=6, spent=True)
+    folder = tmp_path / "out" / "doc-a-long-film"
+    folder.mkdir(parents=True)
+    with pytest.raises(SystemExit, match="re-render stopped"):
+        run._produce_doc({**film(12), "art_style": None}, folder)
+    assert not world["render"] and folder.is_dir()
+
+
+def test_a_film_whose_drawing_cap_is_used_never_waits_for_tomorrow(world, monkeypatch):
+    _variety_world(world, monkeypatch, drawn=6, spent=True)  # tomorrow cannot add a picture once the art cap is used: render as before
+    import aiart
+
+    monkeypatch.setattr(aiart, "MAX_PER_VIDEO", {"doc": 0, "short": 0})
+    monkeypatch.setattr(aiart, "EXTRA_FOR_VARIETY", 3)
+    with pytest.raises(RuntimeError, match="reached render"):
+        run._produce_doc({**film(12), "art_style": None})

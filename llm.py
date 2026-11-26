@@ -552,6 +552,24 @@ def same_family(a, b) -> bool:
     return bool(model_family(a) & model_family(b))
 
 
+ROUTER_IDS = frozenset(ROUTER_NAMES | {"free", "free-router", "auto-route", "kilo-auto", "bazaarlink-auto", "logfare-auto"})
+
+
+def is_router(mid) -> bool:
+    """A name that lets the provider pick the model (openrouter/free, the owner's "auto"): its family is unknown until it has answered."""
+    ident = model_identity(mid)
+    return ident in ROUTER_IDS or str(mid).lower().startswith("openrouter/") or "auto" in ident.split("-")
+
+
+def answer_family(mid) -> frozenset | None:
+    """The makers behind one judge's answer: the id asked and the model the provider said answered. None when a router answered without saying which
+    model it used: then nobody can show that a second judge is of another family, so the pair is not independent."""
+    served = _served.get(mid or "", "")
+    if is_router(mid) and (not served or is_router(served)):
+        return None
+    return model_family(mid) | (model_family(served) if served else frozenset())
+
+
 def judge_names_problem(script, review) -> str:
     """Why a judge list breaks the writer-is-never-the-judge rule ("" when it does not): a router name, or a model that is also on the writer list."""
     writers = {model_identity(n) for n in script}
@@ -743,6 +761,30 @@ def _post_gemini(payload: dict, timeout: float) -> dict:
 
 def gemini_models() -> list[str]:
     """The Gemini models the judges may ask directly (config/judges.json, ids with the gemini: prefix), in the configured order."""
+    return _judge_ids(GEMINI_PREFIX)
+
+
+def judge_extra_models() -> list[str]:
+    """The owner's provider models the judge cascade names (config/judges.json, ids with the extra: prefix), for the script fact-check too: on 23 Nov 2026
+    the fact-check could ask only the Settings review list (Gemini, down at Google, and Nemotron), so with the one-family rule it could never get a second
+    family, while the cascade's GLM (Zhipu) and Qwen judges were answering. Never a router, never a model on the provider's writer list; none without the provider."""
+    cfg = extra_cfg()
+    if not cfg:
+        return []
+    writers = {model_identity(n) for n in cfg["script"]}
+    return [m for m in _judge_ids(EXTRA_PREFIX) if not is_router(m) and model_identity(m) not in writers]
+
+
+def picture_sharing_models() -> list[str]:
+    """Judges whose provider spends the free picture allowance (config/judges.json `shares_picture_allowance`): asked after every other judge."""
+    try:
+        return list(json.loads((config.ROOT / "config" / "judges.json").read_text()).get("shares_picture_allowance") or [])
+    except (OSError, ValueError):
+        return []
+
+
+def _judge_ids(prefix: str) -> list[str]:
+    """Every id with this prefix in config/judges.json, in the configured order, once each."""
     try:
         cfg = json.loads((config.ROOT / "config" / "judges.json").read_text())
     except (OSError, ValueError):
@@ -750,7 +792,7 @@ def gemini_models() -> list[str]:
     found: list[str] = []
 
     def walk(v):
-        if isinstance(v, str) and v.startswith(GEMINI_PREFIX):
+        if isinstance(v, str) and v.startswith(prefix):
             found.append(v)
         elif isinstance(v, (list, tuple)):
             for x in v:
@@ -936,6 +978,7 @@ def _ask_free(mid: str, prompt: str, role: str, cfg: dict, key: str, now: dt.dat
     The judge cascade (judges.py, 22 Nov 2026) may add: `deadline` (time.monotonic) bounds the whole call, re-asks included; `once` sends no second
     request after a cut-off reply; `why` (a dict) is filled with the failure kind (see _fail_kind), the status and any reset time; `cap` the output
     tokens; `think` the thinking budget of an OpenRouter model. A request ended by a short deadline is not held against the model (reason "deadline")."""
+    _served.pop(mid, None)  # what answered THIS request only: a router's earlier "served as" must not name a later reply that names no model (24 Nov 2026 review)
     is_extra = mid.startswith(EXTRA_PREFIX)
     via_or = not (is_extra or mid.startswith(GEMINI_PREFIX))  # the owner's provider and Google directly need none of OpenRouter's allowance
     if via_or and freemodels.remaining(now, key, cfg["free_daily_limit"]) <= 0:
@@ -1086,8 +1129,10 @@ def _served_a_writer(mid, skip_ids: set) -> str:
     return served if served and model_identity(served) != model_identity(mid) and model_identity(served) in skip_ids else ""
 
 
-def _free_chat(prompt: str, role: str, cfg: dict, key: str, now: dt.datetime, avoid=None) -> dict | None:
+def _free_chat(prompt: str, role: str, cfg: dict, key: str, now: dt.datetime, avoid=None, avoid_families=frozenset()) -> dict | None:
     """Try the free models in turn, waiting and trying again when they are all busy. None means: nothing answered. `avoid` (a model or a set of them) is never asked.
+    `avoid_families`: makers (model_family) whose models are never asked, and no router either (its family is unknown until it answers): the second judge of a
+    free review (24 Nov 2026: two NVIDIA Nemotron models fact-checked one script and counted as two independent judges).
     A script or a review starts with the two best models raced (Task 2 of the 17 Nov plan); the rest of the round then walks the remaining ones in order."""
     freemodels.refresh(now)
     refused: set = set()  # judges whose router served a writer in this call: not asked again by it
@@ -1099,16 +1144,27 @@ def _free_chat(prompt: str, role: str, cfg: dict, key: str, now: dt.datetime, av
         skip_ids = {model_identity(m) for m in skip}  # the same model under another provider's name is the same judge
         # the owner's own provider is asked first (it needs none of OpenRouter's allowance), except models it says it cannot serve now
         extras = [m for m in extra_models(role) if model_identity(m) not in skip_ids and freemodels.available(m, now) and extra_status(m) not in UNUSABLE]
+        if role == "review":  # then the cascade's own judges on the same provider (GLM, Qwen): a second family for the script fact-check
+            listed = {model_identity(m) for m in extras}
+            extras += [m for m in judge_extra_models() if model_identity(m) not in skip_ids | listed and freemodels.available(m, now) and extra_status(m) not in UNUSABLE]
         # Google directly, for judging only, when the owner saved a Gemini key (22 Nov 2026: the script fact-check never reached the judge cascade's Gemini
         # models, so a saved key changed nothing while every OpenRouter and FreeLLMAPI judge was failing). Same rules: never a writer, two must answer.
         gem = [m for m in gemini_models() if role == "review" and model_identity(m) not in skip_ids and freemodels.available(m, now)] if gemini_key() else []
         routed = [] if openrouter_refused(now, key) else [m for m in freemodels.choose(role, now, avoid=skip, n=4) if model_identity(m) not in skip_ids]
-        models = gem + extras + routed
+        sharing = set(picture_sharing_models())  # judges on the picture account (GLM, Qwen on Cloudflare) are asked last, never once it is spent
+        if sharing:
+            import freeart
+
+            spent = freeart.account_exhausted(now)
+            extras = [m for m in extras if m not in sharing] + ([] if spent else [m for m in extras if m in sharing])
+        models = gem + [m for m in extras if m not in sharing] + routed + [m for m in extras if m in sharing]
+        if avoid_families:
+            models = [m for m in models if not is_router(m) and not (model_family(m) & avoid_families)]
         if role == "script" and _WRITERS:  # a model that already wrote this script writes the next part first: a film written by six rotating free models left no
             mine = {model_identity(w) for w in _WRITERS}  # model free to judge it (20 Nov 2026, "no free judge could answer" after two hours of writing)
             models = sorted(models, key=lambda m: model_identity(m) not in mine)  # stable: the usual order otherwise
         if not models:
-            wait = freemodels.soonest_free(extra_models(role) + freemodels.roster_ids(), now)  # everyone is only busy (429): wait for the first to come back instead of giving up
+            wait = freemodels.soonest_free(_waitable(role, avoid_families), now)  # everyone is only busy (429): wait for the first to come back instead of giving up
             if wait is not None and wait <= FREE_WAIT_LIMIT and rnd < ROUNDS - 1:
                 time.sleep(wait + 1)
                 now = now + dt.timedelta(seconds=wait + 1)
@@ -1131,7 +1187,10 @@ def _free_chat(prompt: str, role: str, cfg: dict, key: str, now: dt.datetime, av
                 _last_free.pop(role, None)
                 _note(now, f"review: {won} was answered by {writer}, a writer of this script; that judgement is not used")
             rest = models[2:]
+        or_failed = False
         for mid in rest:
+            if or_failed and not mid.startswith((EXTRA_PREFIX, GEMINI_PREFIX)):
+                continue  # after an OpenRouter failure no more OpenRouter models this round, but the owner's own models after them are still asked
             try:
                 got = _ask_free(mid, prompt, role, cfg, key, now)
             except _NoAllowance:
@@ -1147,10 +1206,11 @@ def _free_chat(prompt: str, role: str, cfg: dict, key: str, now: dt.datetime, av
             if mid.startswith((EXTRA_PREFIX, GEMINI_PREFIX)):  # Google directly is a separate free tier too (22 Nov 2026: gemini-2.5-flash answered 404)
                 continue  # one of the owner's models failed (app not running, its free tier used up, a bad reply): the next model is asked now. Its models are
                 # separate free tiers; ending the round here let three failing own models use all three rounds and no OpenRouter model was asked (21 Nov 2026)
-            break  # an OpenRouter failure (network, or a reply that is not JSON) ends this round: wait, then ask again
+            or_failed = True  # an OpenRouter failure (network, or a reply that is not JSON) ends OpenRouter's part of this round: wait, then ask again
+            # (24 Nov 2026: a `break` here also ended the round for the judges routed after OpenRouter, so "asked last" meant "never asked")
         if rnd < ROUNDS - 1:
             pause = 20 * (rnd + 1)  # everyone was busy: wait, then ask again (only as long as the first model needs, when it said so)
-            soon = freemodels.soonest_free(extra_models(role) + freemodels.roster_ids(), now)
+            soon = freemodels.soonest_free(_waitable(role, avoid_families), now)
             if soon is not None and soon + 1 < pause:
                 pause = soon + 1
             time.sleep(pause)
@@ -1217,18 +1277,48 @@ def _free_review(prompt: str, cfg: dict, key: str, now: dt.datetime, avoid=None)
     if not isinstance(first, dict) or not first:
         return None
     one = _last_free.get("review")
-    second = _free_chat(prompt, "review", cfg, key, now, avoid=(base | ({one} if one else set())) or None)
+    fam_one = answer_family(one)
+    if not fam_one:  # a router that did not say who answered: no second judge can be shown to be independent of it
+        _blocked_review(now, [one], f"the first judge {one} did not say which model answered, so no second judge can be shown to be of another family")
+        return None
+    second = _free_chat(prompt, "review", cfg, key, now, avoid=(base | ({one} if one else set())) or None, avoid_families=fam_one)
     if not isinstance(second, dict) or not second:
+        _blocked_review(now, [one], f"no judge of a family other than {'/'.join(sorted(fam_one))} answered")
         return None
     two = _last_free.get("review")
+    fam_two = answer_family(two)
+    if not fam_two or fam_one & fam_two:  # the provider served the second request with a model of the first judge's family: one family, one opinion
+        _blocked_review(now, [one, two], f"both judges are of the {'/'.join(sorted(fam_one & (fam_two or fam_one)))} family; one family is one opinion")
+        return None
     LAST_REVIEW.clear()
-    LAST_REVIEW.update({"mode": "free", "models": [one, two], "served": [_served.get(one, one), _served.get(two, two)]})
+    LAST_REVIEW.update({"mode": "free", "models": [one, two], "served": [_served.get(one, one), _served.get(two, two)],
+                        "families": [sorted(fam_one), sorted(fam_two)], "providers": [provider_of(one), provider_of(two)],
+                        "answers": [first, second], "at": now.isoformat(timespec="seconds")})  # each judge's own answer is kept: a disagreement stays visible
     try:
         return strictest(first, second)
     except ValueError:  # the two answers disagree in shape: that is no review, never a pass
         LAST_REVIEW.clear()
         LAST_REVIEW["mode"] = "paid"
         return None
+
+
+def provider_of(mid) -> str:
+    """Which service answered under this id: the owner's own provider (extra:), Google AI Studio (gemini:) or OpenRouter (any other id)."""
+    m = str(mid or "")
+    return "owner-provider" if m.startswith(EXTRA_PREFIX) else "google-ai-studio" if m.startswith(GEMINI_PREFIX) else "openrouter"
+
+
+def _waitable(role: str, avoid_families=frozenset()) -> list[str]:
+    """The models worth waiting for when every candidate is busy: none of an excluded family (a second judge never waits for the first judge's family)."""
+    ids = extra_models(role) + (judge_extra_models() if role == "review" else []) + freemodels.roster_ids()
+    return [m for m in ids if not (avoid_families and (is_router(m) or model_family(m) & avoid_families))]
+
+
+def _blocked_review(now: dt.datetime, models: list, why: str) -> None:
+    """A free review that could not get two judges of different families: BLOCKED (never a pass, never one family counted twice); the reason is kept."""
+    LAST_REVIEW.clear()
+    LAST_REVIEW.update({"mode": "blocked", "models": [m for m in models if m], "why": why, "at": now.isoformat(timespec="seconds")})
+    _note(now, f"review: blocked: {why}")
 
 
 def paid_allowed(cfg: dict | None = None) -> bool:
@@ -1300,7 +1390,9 @@ def chat(prompt: str, role: str = "cheap", fallback=None, now: dt.datetime | Non
         got = _free_review(plain, cfg, key, now, **more) if role == "review" else _free_chat(plain, role, cfg, key, now, **more)
         if got is not None:
             return got
-    if fallback is None or not cfg.get("local_fallback"):
+    if role == "review" and strict and LAST_REVIEW.get("mode") == "blocked":
+        raise ModelUnavailable(f"the review is blocked: {LAST_REVIEW.get('why')}; it will be tried again later")
+    if fallback is None or not cfg.get("local_fallback") or (role == "review" and strict):  # a judge prompt never falls back to one local model: one opinion is no review
         if capped:
             raise ModelUnavailable(f"the daily spending cap (${cfg['daily_budget_usd']:.2f}) is used up and the free models did not answer the {role} job; raise the cap in Settings or wait for tomorrow (UTC)")
         raise ModelUnavailable(f"no cloud model answered the {role} job; it will be tried again later")

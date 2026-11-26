@@ -116,7 +116,10 @@ def test_the_notification_routes_answer_and_read_marks_the_feed(tmp_path, monkey
     agentlog.event("error", "A render failed", "ffmpeg exited 1")
     agentlog.event("applied", "Repaired a title")
     d = dashboard.notifications_view()
-    assert d["counts"]["unread"] >= 2 and d["counts"]["badge"] >= 2 and any(i["title"] == "A render failed" and i["source"] == "Warnings" for i in d["items"])
+    # Since 22 Nov (quiet notifications) only the warning counts toward the bell; the routine "applied" event is listed but not
+    # counted. "attention" comes from this test's own events only; "badge" also adds standing items read from the live data folder.
+    assert d["counts"]["unread"] >= 2 and d["counts"]["attention"] == 1 and d["counts"]["badge"] >= 1
+    assert any(i["title"] == "A render failed" and i["source"] == "Warnings" for i in d["items"])
     dashboard.agent_read()
     assert dashboard.notifications_view()["counts"]["unread"] == 0
 

@@ -257,8 +257,13 @@ def footage_checks(meta: dict) -> list[dict]:
         out = [_c("images", False, "pictures were never checked for relevance (made before this check existed)", "warn")]
     else:
         ok = f.get("missing", 0) == 0 and f.get("unique", 0) >= (6 if meta.get("format") == "doc" else 4)
-        out = [_c("images", ok, f"{f.get('unique', 0)} different on-topic images, {f.get('missing', 0)} scenes without one"
+        out = [_c("images", ok, f"{f.get('unique', 0)} different on-topic images (different files about the subject, not checked against each line), {f.get('missing', 0)} scenes without one"
                   if ok else f"only {f.get('unique', 0)} on-topic images and {f.get('missing', 0)} scenes without a picture")]
+    import scenemanifest
+
+    sm = scenemanifest.check(meta)  # 25 Nov 2026: the Seven Sleepers v2 film showed its subject's reserve in search order for 46 scenes and passed "109 different on-topic images"
+    if sm is not None:
+        out.append(_c("scene_sources", sm[0], sm[1], "warn"))
     grounded = meta.get("grounded") is True
     out.append(_c("grounded", grounded, "script built from a source article" if grounded else
                   "script is not tied to a source, so facts need a human check",

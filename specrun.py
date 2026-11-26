@@ -196,7 +196,7 @@ def process(base: Path) -> dict:
     if drawn["undrawable"]:
         return {"status": "rejected", "reasons": [f"picture '{p}' is not drawn and cannot be drawn on the server: give it a prompt in pictures.json" for p in drawn["undrawable"][:5]]}
     if drawn["cap"] or drawn["failed"]:
-        return {"status": "waiting", "reasons": [f"{drawn['drawn']} drawn, {drawn['failed']} failed, free allowance {'used up for today' if drawn['cap'] else 'ok'}: the rest is tried again next time"]}
+        return {"status": "waiting", "reasons": [f"{drawn['drawn']} drawn, {drawn['failed']} failed, free allowance {'used up for today' if drawn['cap'] else 'used up for today on the Cloudflare account (its own answer)' if __import__('freeart').account_exhausted() else 'ok'}: the rest is tried again next time"]}
     try:
         with no_model():
             if kind == "doc":

@@ -92,6 +92,8 @@ def test_a_real_film_keeps_its_length_picture_and_loudness_and_the_cues_are_hear
     assert subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v", "-show_entries", "stream=codec_name", "-of", "csv=p=0", str(video)], capture_output=True, text=True).stdout.strip() == "h264"
     assert rms_db(video, 0.2, 1.6) > quiet_before + 10  # the riser is there where there was silence
     assert abs(lufs(video) - loud_before) < 0.6          # the loudness target does not move
+    rate = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=sample_rate", "-of", "csv=p=0", str(video)], capture_output=True, text=True).stdout.strip()
+    assert rate == "48000"  # the last pass keeps the studio's 48 kHz (render.AUDIO); it used to resample every film to 44.1 kHz
 
 
 def test_a_mix_that_comes_out_a_different_length_replaces_nothing(tmp_path, monkeypatch):

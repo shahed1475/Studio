@@ -377,16 +377,22 @@ def read_pictures(slug: str) -> dict | None:
     than the narration names; atmospheric pictures do not count) or a garbled caption. None when the reading cannot run: that never blocks anything."""
     import videoinspect
 
+    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
         rows = videoinspect.visual_review(config.OUT / slug)
-    except Exception:
+    except Exception as e:
+        rows = [{"name": "visual_review", "ok": False, "severity": "warn", "detail": f"could not run: {type(e).__name__}"}]
+    if not any(r["name"] in ("pictures_fit_story", "captions_readable") for r in rows):
+        # the model never read a frame (429, outage): recorded as NOT checked, never as a pass (24 Nov 2026: a 429 was stored as ok and a film with
+        # known wrong pictures counted as picture-checked); it still never blocks
+        records.merge(config.OUT / slug, {"visual_check": {"at": stamp, "ok": False, "ran": False, "rows": [r["name"] + ": " + r["detail"][:120] for r in rows], "wrong_at": []}})
         return None
     pics = next((r for r in rows if r["name"] == "pictures_fit_story"), None)
     caps = next((r for r in rows if r["name"] == "captions_readable"), None)
     n_pics = (pics["detail"].count(" s: ") if pics and not pics["ok"] else 0)
     garbled = bool(caps and not caps["ok"] and re.search(r"garbl|gibberish|stray|nonsens", caps["detail"], re.I))
     bad = n_pics >= WRONG_PICTURES or garbled
-    records.merge(config.OUT / slug, {"visual_check": {"at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "ok": not bad, "rows": [r["name"] + ": " + r["detail"][:120] for r in rows if not r["ok"]],
+    records.merge(config.OUT / slug, {"visual_check": {"at": stamp, "ok": not bad, "ran": True, "rows": [r["name"] + ": " + r["detail"][:120] for r in rows if not r["ok"]],
                                                       "wrong_at": (pics or {}).get("times", []) if pics and not pics["ok"] else []}})
     return {"bad": bad, "rows": rows}
 

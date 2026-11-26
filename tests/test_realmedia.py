@@ -122,7 +122,20 @@ def test_relevance_by_the_films_anchors_or_by_the_judge_only(tmp_cache):
 
     f2, _ = finder(tmp_cache, table, judge=judge)
     got = [h[1].split(",")[0] for h in f2("gears", ["Antikythera"], 5, wide=True)]
-    assert set(got) == {"Bronze mirror with a relief", "Antikythera related bronze gear"} and asked == ["Bronze mirror with a relief | met"]  # the judge only sees what the anchors did not already settle
+    # 24 Nov 2026: the judge sees every item, also one whose title names an anchor (it used to see only the rest, and a racehorse called "Mary Celeste" was shown in
+    # the Mary Celeste film); here it keeps only the mirror, so the named gear is dropped
+    assert got == ["Bronze mirror with a relief"] and sorted(asked) == ["Antikythera related bronze gear | met", "Bronze mirror with a relief | met"]
+
+
+def test_a_title_that_only_shares_the_subjects_name_is_judged_not_taken(tmp_cache):
+    """23 Nov 2026: Openverse's "Mary Celeste - Thoroughbred" (a racehorse) and "Victoria Dei Gratia" (a statue) named the film's anchors and skipped the judge."""
+    table = {"openverse": [item("openverse", "Mary Celeste - Thoroughbred mare", "CC BY 2.0", 1), item("openverse", "Victoria Dei Gratia", "CC BY-SA 2.0", 2),
+                           item("openverse", "Mary Celeste engraving of the brigantine", "Public domain", 3)]}
+    judge = lambda labels: [l for l in labels if "brigantine" in l]
+    f, _ = finder(tmp_cache, table, judge=judge)
+    assert [h[1].split(",")[0] for h in f("Mary Celeste", ["Mary Celeste", "Dei Gratia"], 5)] == ["Mary Celeste engraving of the brigantine"]
+    f2, _ = finder(tmp_cache, table, judge=lambda labels: list(labels))  # a judge that could not answer keeps everything (cached_judge): as before
+    assert len(f2("Mary Celeste", ["Mary Celeste", "Dei Gratia"], 5)) == 3
 
 
 def test_a_library_that_fails_is_skipped_and_the_run_goes_on(tmp_cache):

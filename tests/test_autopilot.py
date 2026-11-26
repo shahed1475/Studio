@@ -228,6 +228,24 @@ def test_a_clearly_bad_picture_set_is_not_auto_approved_but_a_few_warnings_are(t
     assert autopilot.visually_ok("ok") is True
     monkeypatch.setattr(videoinspect, "visual_review", lambda folder: (_ for _ in ()).throw(RuntimeError("no model")))
     assert autopilot.visually_ok("ok") is True  # a reading that cannot run never blocks
+    seen = json.loads((tmp_path / "ok" / "meta.json").read_text())["visual_check"]
+    assert seen["ok"] is False and seen["ran"] is False  # ...but it is never recorded as a pass
+
+
+def test_a_picture_reading_that_could_not_run_is_recorded_as_not_checked_never_as_a_pass(tmp_path, monkeypatch):
+    import config, videoinspect
+    monkeypatch.setattr(config, "OUT", tmp_path)
+    (tmp_path / "v").mkdir()
+    (tmp_path / "v" / "meta.json").write_text(json.dumps({"review": {"verdict": "pass", "checks": []}}))
+    monkeypatch.setattr(videoinspect, "visual_review", lambda folder: [{"name": "visual_review", "ok": False, "severity": "warn", "detail": "could not run: HTTPError: 429 Too Many Requests"}])
+    assert autopilot.read_pictures("v") is None and autopilot.visually_ok("v") is True
+    seen = json.loads((tmp_path / "v" / "meta.json").read_text())["visual_check"]
+    assert seen["ok"] is False and seen["ran"] is False and "429" in seen["rows"][0]
+    monkeypatch.setattr(videoinspect, "visual_review", lambda folder: [{"name": "pictures_fit_story", "ok": True, "severity": "warn", "detail": "ok"},
+                                                                       {"name": "captions_readable", "ok": True, "severity": "warn", "detail": "fine"}])
+    autopilot.read_pictures("v")
+    seen = json.loads((tmp_path / "v" / "meta.json").read_text())["visual_check"]
+    assert seen["ok"] is True and seen["ran"] is True
 
 
 def test_no_new_videos_while_three_of_that_kind_are_stuck_failed():

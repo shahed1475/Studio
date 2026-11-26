@@ -115,6 +115,7 @@ def script(topic: str, grounded: str | None = None, note: str = "") -> dict:
     """`note` is what went wrong with the last try (run._cmd_make): free writers undershoot the word budget by about 15 percent and a retry that repeats the same prompt repeats the mistake."""
     base = short_prompt(topic, grounded) + (f"\n{note}\n" if note else "")
     llm.begin_script()
+    FACTCHECK.clear()
     data = _script_chat(base)
     if not case_rules(topic) and case_rules(topic, title=str(data.get("title", "")), anchors=data.get("anchors") or []):
         data = _script_chat(base + "\n" + CASE_RULES)  # the title shows it is a real case: written again once, with the rules
@@ -128,7 +129,7 @@ def script(topic: str, grounded: str | None = None, note: str = "") -> dict:
         raise ValueError(f"script too thin ({len(lines)} lines, {words} words)")
     lines, _ = subscribe_invitation(lines)
     return {
-        "topic": topic, "grounded": bool(grounded), "script_model": _writer_model(), "script_writers": llm.writers(),
+        "topic": topic, "grounded": bool(grounded), "script_model": _writer_model(), "script_writers": llm.writers(), "script_factcheck": factchecks() or None,
         "anchors": [str(a).strip() for a in data.get("anchors", []) if str(a).strip()][:5],
         "title": str(data["title"]).strip()[:95],
         "description": str(data.get("description", "")).strip(),
@@ -161,6 +162,13 @@ REVISE_ROUNDS = 2
 
 
 CHECK_CHUNK = 30  # lines per fact-check request (20 Nov 2026: a 90-line film in one request made the free judges' answers run past their output limit again and again)
+FACTCHECK: list[dict] = []  # who checked each part of the current script: models, what answered, families, providers, time, each judge's own answer (`script_factcheck`)
+FACTCHECK_KEEP = 40
+
+
+def factchecks() -> list[dict]:
+    """The fact-check judgments of the current script (since llm.begin_script), newest last; the video's record keeps them."""
+    return [dict(c) for c in FACTCHECK[-FACTCHECK_KEEP:]]
 
 
 def unsupported(lines: list[dict], sources: str) -> dict[int, str]:
@@ -182,14 +190,30 @@ def unsupported(lines: list[dict], sources: str) -> dict[int, str]:
                 '\n\nReturn JSON: {"unsupported": [{"n": line number, "why": "one short sentence"}]}'))
         except Exception as e:
             tried = llm.attempts_since(asked_at)  # which judges were asked and how each failed, so the log says why (22 Nov 2026: it said only ModelUnavailable)
+            _keep_check(start, part, "blocked", error=f"{type(e).__name__}: {e}"[:300], judges_tried=tried)
             raise ValueError(f"the script could not be fact-checked ({type(e).__name__}{'; judges: ' + tried if tried else ''})") from e
         if not isinstance(out, dict) or not isinstance(out.get("unsupported"), list):  # a reply without the verdict is no verdict: it never passes as "nothing
+            _keep_check(start, part, "blocked", error="the judges' reply had no 'unsupported' list")
             raise ValueError("the script could not be fact-checked (the judges' reply had no 'unsupported' list)")  # unsupported" (22 Nov 2026 audit)
+        lr = llm.LAST_REVIEW
+        if lr.get("mode") == "free" and any(not isinstance(a, dict) or not isinstance(a.get("unsupported"), list) for a in lr.get("answers") or []):
+            _keep_check(start, part, "blocked", error="one judge's reply had no 'unsupported' list: one family's verdict is not a check")  # 24 Nov 2026 review:
+            raise ValueError("the script could not be fact-checked (one judge's reply had no 'unsupported' list)")  # strictest() kept the other's empty list
+        mine = []
         for item in out["unsupported"]:
             n = item.get("n") if isinstance(item, dict) else item
             if str(n).lstrip("-").isdigit() and start <= int(n) < start + len(part):
                 found[int(n)] = str(item.get("why", "")) if isinstance(item, dict) else ""
+                mine.append(int(n))
+        _keep_check(start, part, "checked", flagged=sorted(set(mine)))
     return found
+
+
+def _keep_check(start: int, part: list, result: str, **more) -> None:
+    """One part's fact-check, as the judges left it in llm.LAST_REVIEW: each judge's model, what answered, family, provider, time and own answer."""
+    lr = {k: v for k, v in llm.LAST_REVIEW.items() if k in ("mode", "models", "served", "families", "providers", "answers", "at", "why")}
+    FACTCHECK.append({"lines": [start, start + len(part) - 1], "result": result, **lr, **more})
+    del FACTCHECK[:-FACTCHECK_KEEP]
 
 
 def rewrite_words(lines: list[dict]) -> tuple[int, int]:
@@ -752,6 +776,7 @@ def doc_script(topic: str, facts: str | None = None, grounded: str | None = None
     nc = dict(config.niche())
     n_chapters, n_lines = shape_for(topic)
     llm.begin_script()
+    FACTCHECK.clear()
     rules = (
         "Retell it in your own original words and never copy sentences from any source. Use only well-documented "
         "facts or public-domain legends; say 'legend says' or 'historians disagree' for anything uncertain. "
@@ -853,7 +878,7 @@ def doc_script(topic: str, facts: str | None = None, grounded: str | None = None
     if len(chapters) < 5 or words < 400:
         raise ValueError(f"documentary too thin ({len(chapters)} chapters, {words} words)")
     return {
-        "topic": topic, "format": "doc", "grounded": bool(facts or grounded), "script_model": _writer_model(), "script_writers": llm.writers(),
+        "topic": topic, "format": "doc", "grounded": bool(facts or grounded), "script_model": _writer_model(), "script_writers": llm.writers(), "script_factcheck": factchecks(),
         "anchors": [str(a).strip() for a in outline.get("anchors", []) if str(a).strip()][:6],
         "title": str(outline["title"]).strip()[:95],
         "description": str(outline.get("description", "")).strip(),
